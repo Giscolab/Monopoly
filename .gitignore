@@ -1,0 +1,22 @@
+
+# ============================================================
+# Monopoly port - local archives / archaeology artifacts
+# Keep locally; never commit these bulky/reference files.
+# ============================================================
+/modern*.zip
+/Source.zip
+/Source/Monopoly.iso
+/Source/monopoly/DirectX.ini.bak
+/Source/monopoly/Monopoly.exe
+/Source/monopoly/Monopoly_compat.exe
+
+# ============================================================
+# Modern CMake / MSVC local build trees
+# ============================================================
+/modern/build/
+/modern/build-*/
+/modern/build-ninja/
+/modern/out/
+/modern/.vs/
+/modern/CMakeUserPresets.json
+/.local/
