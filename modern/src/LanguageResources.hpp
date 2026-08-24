@@ -49,7 +49,8 @@ namespace monopoly::data
         message(std::uint32_t messageId) const;
 
         // Conforme au code reel : seuls espaces U+0020 et controles finaux
-        // sont retires; les retours a la ligne internes sont conserves.
+        // sont retires; les retours a la ligne internes sont conserves. Une
+        // chaine entierement blanche conserve son premier code unit.
         [[nodiscard]] std::expected<SharedLanguageText, DataError>
         cleanMessage(std::uint32_t messageId) const;
 

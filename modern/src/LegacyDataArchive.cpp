@@ -570,6 +570,15 @@ namespace monopoly::data
     {
         std::scoped_lock lock(mutex_);
 
+        if (!open_)
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::ArchiveClosed,
+                path_,
+                "cannot unload an item from a closed archive",
+                tag));
+        }
+
         if (static_cast<std::size_t>(tag) >= items_.size())
         {
             return std::unexpected(makeError(
