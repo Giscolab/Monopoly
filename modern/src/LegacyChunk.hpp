@@ -62,6 +62,9 @@ namespace monopoly::data
         explicit LegacyChunkReader(std::span<const std::byte> bytes) noexcept;
         explicit LegacyChunkReader(SharedDataBytes bytes) noexcept;
 
+        // findId == 0 selectionne le prochain sibling et rejette alors les
+        // sentinelles 0/128. Une recherche precise peut les franchir, comme
+        // LE_CHUNK_Descend, mais les rejette si la sentinelle est selectionnee.
         [[nodiscard]] std::expected<ChunkInfo, ChunkError>
         descend(std::uint8_t findId = NullStandardId);
 
@@ -104,4 +107,13 @@ namespace monopoly::data
         std::size_t level_{};
         std::size_t currentOffset_{};
     };
+
+
+    // Equivalent RAII de LE_CHUNK_ReadFromDataID : verifie le type CNK,
+    // charge par le registre DATA et conserve la lease partagee dans le
+    // reader, y compris si la banque est ensuite demontee.
+    [[nodiscard]] std::expected<LegacyChunkReader, DataError>
+    openLegacyChunkReader(
+        const DataBankRegistry& registry,
+        DataId id);
 }

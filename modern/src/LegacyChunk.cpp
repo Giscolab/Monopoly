@@ -117,18 +117,22 @@ namespace monopoly::data
                     candidateOffset));
             }
 
-            if ((id & 0x7FU) == 0)
-            {
-                return std::unexpected(error(
-                    ChunkErrorCode::InvalidId,
-                    "chunk IDs 0 and 128 are null sentinels",
-                    candidateOffset));
-            }
-
             const std::size_t chunkEnd = candidateOffset + totalSize;
 
             if (findId == NullStandardId || findId == id)
             {
+                // LE_CHUNK_Descend ne testait le sentinel nul qu'apres avoir
+                // trouve le chunk demande. Une recherche par ID peut donc
+                // franchir un sibling 0/128 bien forme; descend() (next) ou
+                // une recherche explicite de 128 doivent en revanche echouer.
+                if ((id & 0x7FU) == 0)
+                {
+                    return std::unexpected(error(
+                        ChunkErrorCode::InvalidId,
+                        "selected chunk ID 0 or 128 is a null sentinel",
+                        candidateOffset));
+                }
+
                 ++level_;
                 const std::size_t dataStart =
                     candidateOffset + PhysicalHeaderSize;
@@ -258,5 +262,38 @@ namespace monopoly::data
     std::size_t LegacyChunkReader::remaining() const noexcept
     {
         return levels_[level_].end - currentOffset_;
+    }
+
+
+    std::expected<LegacyChunkReader, DataError> openLegacyChunkReader(
+        const DataBankRegistry& registry,
+        DataId id)
+    {
+        auto metadata = registry.metadata(id);
+
+        if (!metadata)
+        {
+            return std::unexpected(metadata.error());
+        }
+
+        if (metadata->type != LegacyDataType::Chunky)
+        {
+            return std::unexpected(DataError
+            {
+                DataErrorCode::TypeMismatch,
+                {},
+                dataTag(id),
+                "LE_CHUNK_ReadFromDataID requires a DataChunky item"
+            });
+        }
+
+        auto bytes = registry.load(id);
+
+        if (!bytes)
+        {
+            return std::unexpected(bytes.error());
+        }
+
+        return LegacyChunkReader(std::move(*bytes));
     }
 }

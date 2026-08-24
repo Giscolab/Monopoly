@@ -15,6 +15,8 @@ effectivement present sous `modern/`.
   le contrat consomme par Monopoly.
 - `BLOCKED_MISSING_DATA` : le code ou les identifiants existent, mais les
   payloads necessaires ne sont pas disponibles et ne doivent pas etre inventes.
+- `MISSING_TOOLING` : un outil historique necessaire a une reproduction
+  bit-a-bit n'est pas present dans le depot inspecte.
 - `LEGACY_UNUSED` : le callgraph a prouve que Monopoly ne consomme pas ce
   composant. Ne pas utiliser ce statut sans preuve.
 
@@ -23,7 +25,7 @@ effectivement present sous `modern/`.
 | Original | Equivalent moderne | Statut | Symboles originaux importants | Dependances | Travail restant / blocage |
 |---|---|---|---|---|---|
 | `Source/monopoly/Main.cpp` | `Application`, `Engine`, `Game`, `RenderSlots`, `Timers`, `GPUFrame` | `PORTED_PARTIAL` | `GameInitialise`, `InitRenderSlots`, `ProcessUIMessage`, `GameShutdown`, `GameUpdateCycle` | SDL3, SDL_GPU, DISPLAY, UI messages | Les slots ne pilotent pas encore un vrai renderer 2D/3D; completer les chemins d'erreur et les tests de lifecycle avec fakes GPU. |
-| `Source/monopoly/GameInc.cpp/.h` | `RuleTypes`, `DataBanks`, includes modernes explicites | `PORTED_PARTIAL` | constantes `DAT_*`, `MAIN_GAME_TIMER`, configuration de build | Tous les sous-systemes | Les contrats de groupes sont portes; continuer a remplacer le precompiled-header implicite par des interfaces explicites. |
+| `Source/monopoly/GameInc.cpp/.h` | `RuleTypes`, `DataBanks`, `LegacyDataArchive`, includes modernes explicites | `PORTED_PARTIAL` | constantes `DAT_*`, `MAIN_GAME_TIMER`, configuration de build | Tous les sous-systemes | Groupes, chemins de banques et triplets de langue sont portes; continuer a remplacer le precompiled-header implicite par des interfaces explicites. |
 | `Source/monopoly/Mdef.cpp` | `RuleTypes`, `RuntimeState`, `BoardRules` | `PORTED_PARTIAL` | constantes de jeu, langues, plateaux, joueurs | RULE, LANG, DISPLAY | Comparaison systematique des constantes encore a terminer. |
 | `Source/monopoly/Mess.cpp` | `Messaging` | `PORTED_PARTIAL` | `MESS_InitializeSystem`, `MESS_SendAction`, `MESS_ReceiveActionMessage`, modes serveur/reseau | RULE, UI, futur transport | File locale fonctionnelle; DirectPlay/Winsock volontairement absents; saturation, voice-chat et transport futur restent a porter. |
 | `Source/monopoly/Rule.cpp` | `RulesEngine`, `Rule*`, `BoardRules`, `PhaseStack`, `CardDeck*` | `PORTED_PARTIAL` | creation, phases, tours, economie, cartes, prison, enchere, trade, save/resync | Messaging, RNG, donnees plateau | Couverture importante mais inventaire symbole-par-symbole et scenarios complets encore requis; ne pas reecrire RULE. |
@@ -32,8 +34,8 @@ effectivement present sous `modern/`.
 | `Source/monopoly/Ai_load.cpp` | Aucun | `NOT_STARTED` | chargement `Boot.ai`, `Normal.ai`, parametres | fichiers `*.AI`, parser | Identifier le format et les fichiers reels avant implementation. |
 | `Source/monopoly/Ai_trade.cpp` | Aucun | `NOT_STARTED` | evaluation et negociation de trades | AI, RuleTrade | Porter apres le noyau AI et ajouter des tests deterministes. |
 | `Source/monopoly/Ai_util.cpp` | Aucun | `NOT_STARTED` | evaluations joueurs/proprietes/cash | AI, BoardRules | Extraire les calculs purs puis tester contre les constantes originales. |
-| `Source/monopoly/Lang.cpp` | contrats `DataBanks` et `LegacyTextIds` uniquement | `BLOCKED_MISSING_DATA` | `LANG_InitializeSystem`, `StartupExternalLanguage`, `GetLanguageString`, formatage nombres/monnaie | DAT langue, index table, UTF-16LE, fonts | Les `dat_lnNN.dat` ne sont pas presents. Porter lookup/fallback/formatage quand une reconstruction ou fixture fidele est disponible; ne pas inventer les chaines. |
-| `Source/monopoly/TexInfo.cpp` | Aucun catalogue complet | `NOT_STARTED` | tableaux de textures villes/plateaux, positions | BMP bruts, resolver d'assets | Porter les tableaux immuables et chemins reels, avec tests de tailles/coordonnees et gestion de casse portable. |
+| `Source/monopoly/Lang.cpp` | `LanguageCatalog`, `LanguageService`, `DataBanks`, `LegacyTextIds` | `PORTED_PARTIAL` | `LANG_InitializeSystem`, `StartupExternalLanguage`, `GetLanguageString`, fallback, clean | lecteur DAT, index packed, UTF-16LE | Selection 1..10, publication transactionnelle des trois banques, lookup sparse, ownership, UTF-16LE, fallback et cas limite clean entierement blanc exacts sont testes. Restent l'adaptateur aux callers, fonts/mesures/impression et le formatage locale; les textes retail exacts sont bloques separement. |
+| `Source/monopoly/TexInfo.cpp` | `TextureCatalog` | `PORTED_COMPLETE` | tableaux USA/Europe, recettes 8/16/14/22, overlays, 39 vues 2D, tags HMD | BMP bruts, futur resolver/mesh | Catalogue CPU, ordre, coordonnees, noms et anomalie `CityHigh128 -> *_256.BMP` sont portes et testes. Les meshes/resolutions hors contrat produisent une erreur typee avant toute indexation. L'application GPU/PC3D des substitutions appartient au futur chargeur de mesh. |
 | `Source/monopoly/Tickler.cpp` | `TimeStep`, `Messaging`, `UserInterface` | `PORTED_PARTIAL` | `AdvanceTimeStep`, action unique par cycle, `ACTION_TICK` | Timers, RULE, AI | Routage local/broadcast et reset moderne presents; verrou de game queue, AI et voice-chat restent absents. |
 | `Source/monopoly/L_voice.cpp` | Aucun | `NOT_STARTED` | voix, capture/lecture, timing | audio portable, MESS | Identifier les contrats consommes; ne pas porter les codecs/wrappers Win32 litteralement. |
 | `Source/monopoly/display.cpp` | `Display`, `GPUFrame`, `RenderSlots`, `LogicalViewport` | `PORTED_PARTIAL` | `DISPLAY_initialize`, `DISPLAY_tickActions`, `DISPLAY_showAll2`, `DISPLAY_destroy` | modules UD, renderer, assets | Ordre relatif, cycle desired/current et repere logique letterbox conserves; renderer 2D et nombreux modules manquent. |
@@ -54,7 +56,7 @@ effectivement present sous `modern/`.
 | `Source/monopoly/UDRules.cpp` | `RuleOptions` couvre la regle, pas l'ecran | `NOT_STARTED` | choix/reglage des regles | RuleOptions, PlayerSetupFlow, DISPLAY | Implementer une projection controlee de `RuleOptions`. |
 | `Source/monopoly/UDTitle.cpp` | Aucun | `NOT_STARTED` | title/opening flow | video, assets, DISPLAY | Identifier les ecrans et l'ordre; Bink/AVI seront remplaces par un service portable. |
 | `Source/monopoly/UDPenny.cpp` | Aucun | `NOT_STARTED` | Penny Bags/assistant | animations, audio, assets | Porter seulement les comportements effectivement appeles. |
-| `Source/monopoly/UDUtils.cpp` | `UDUtils` | `PORTED_PARTIAL` | chemins, INI, helpers UI | filesystem, assets | Le resolver de chemins est inerte; fusionner avec DataBanks/LegacyAssets sans chemins machine. |
+| `Source/monopoly/UDUtils.cpp` | `UDUtils`, `TextureCatalog` | `PORTED_PARTIAL` | chemins, INI, choix HMD, substitutions de textures | filesystem, DATA, assets | Les recettes USA/Europe de `UDUTILS_SwitchToBoard*` sont maintenant des donnees testees; raccorder un resolver contextuel ville/langue/plateau/devise et le futur mesh sans chemins machine. |
 | `Source/monopoly/Unility.cpp` | Aucun mapping complet confirme | `NOT_STARTED` | utilitaires de jeu | callers a inventorier | Etablir definitions et callers avant tout port. |
 | `Source/monopoly/Debugart.cpp` | Aucun | `NOT_STARTED` | outils/debug runtime | callgraph | Ne classer `LEGACY_UNUSED` qu'apres preuve par callgraph. |
 
@@ -65,11 +67,11 @@ effectivement present sous `modern/`.
 | `Source/artlib/L_Main.*` | `Application`, `Engine`, `Game` | `REPLACED_PORTABLE` | boucle evenementielle, init/shutdown | SDL3 | Fenetre redimensionnable/HiDPI, presentation, erreurs de startup et formats GPU Vulkan/D3D12/Metal sont raccordes; test de lifecycle GPU et smoke test interactif restent requis. |
 | `Source/artlib/L_Timers.*` | `Timers` + `UIMessages` | `REPLACED_PORTABLE` | horloge 60 Hz, 4 timers, speed/restart, evenement index+tick | steady_clock, file UI | Contrat actuellement raccorde teste de facon deterministe; les appels historiques `LE_TIMER_Delay` identifies dans `Main`, `UDUtils` et les diagnostics DISPLAY appartiennent a des chemins remplaces, inactifs ou encore differes. |
 | `Source/artlib/L_UIMsg.*` | `UIMessages` | `PORTED_PARTIAL` | FIFO 100, evenements timer/input, delestage | Application, Timers | Ajouter davantage de tests de pression/coalescence et les types requis par les futurs modules. |
-| `Source/artlib/L_Data.*` | `DataBanks`, futurs chargeur/resolver | `BLOCKED_MISSING_DATA` | DataId 16:16, groupes, index DAT, chargement paresseux | PKWARE explode, filesystem, formats bitmap/audio | Aucun DAT retail present; contrats d'identifiants portes, payload/loader non implemente. |
-| `Source/artlib/L_Chunk.*` | Aucun | `BLOCKED_MISSING_DATA` | chunks 24-bit size + 8-bit id pour le sequenceur | donnees CNK, L_Seqncr | Aucun CNK reel present; decoder explicitement les octets, jamais les bitfields ABI. |
+| `Source/artlib/L_Data.*` | `DataBanks`, `LegacyDataArchive`, `DataBankRegistry`, `LegacyDataArchiveBuilder` | `PORTED_PARTIAL` | DataId 16:16, groupes, header/index DAT, zlib, chargement paresseux, refs | zlib, filesystem | Lecture LE explicite, validation, metadata, cache, leases partagees, mount/unmount, index packed et writer de fixtures sont testes. Restent les sources runtime/user-created/external-file, le budget/LRU automatique et une validation sur banque retail. |
+| `Source/artlib/L_Chunk.*` | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | lecteur consomme : header 24-bit + ID 8-bit, descend/ascend/seek/map/read, limite 8 niveaux | `LegacyDataArchive`, futur `L_Seqncr` | Contrat read-only et ownership `ReadFromDataID` portes sans bitfield ABI et testes sur fixtures, y compris le franchissement historique des siblings ID 0/128 lors d'une recherche precise. La validation d'un CNK retail reste bloquee separement; l'editeur/writer non consomme n'est pas dans ce perimetre. |
 | `Source/artlib/L_Grafix.*`, `L_Rend2D.*`, `L_Sprite.*` | `Display`, futur renderer UI SDL_GPU | `PORTED_PARTIAL` | composition 2D, clipping, priorites, surfaces | SDL_GPU, assets, transformation 800x600 | Seul le cycle d'etat existe; rendu des objets/sprites/fonts a construire. |
 | `Source/artlib/L_Rend3D.*` | `GPUFrame` et futur renderer 3D | `PORTED_PARTIAL` | viewport et fond 3D | SDL_GPU, PC3D moderne | Fond BMP seulement; scene, camera, mesh, materiaux et animations absents. |
-| `Source/artlib/L_Seqncr.*` | Aucun | `NOT_STARTED` | sequences UI/audio/video et render priorities | L_Chunk, assets, timers | Cartographier les sous-contrats reellement appeles puis creer un sequenceur portable. |
+| `Source/artlib/L_Seqncr.*` | Aucun | `NOT_STARTED` | sequences UI/audio/video et render priorities | `LegacyChunkReader`, assets, timers | La dependance CNK generique est disponible; decoder ensuite explicitement les trois mots de bitfields communs et les records reellement appeles, avec fixtures semantiques. |
 | `Source/artlib/L_Fonts.*`, `L_Print.*` | Aucun | `NOT_STARTED` | Arial 10, mesure/rendu de texte | font rasterizer portable, LANG | Choisir un backend portable et conserver metriques/layout observables. |
 | `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer` partiel | `REPLACED_PORTABLE` | input clavier/souris | SDL3, `LogicalViewport` | Souris reconvertie vers 800x600 et bandes noires rejetees; rendu du pointeur et certains types d'evenements restent partiels. |
 | `Source/artlib/L_Sound.*`, `L_Midi.*` | Aucun | `NOT_STARTED` | WAV, musique, mixage, voice | audio portable, data | Inventorier les appels Monopoly et remplacer DirectSound/MIDI legacy. |
@@ -81,39 +83,75 @@ effectivement present sous `modern/`.
 |---|---|---|---|---|---|
 | cameras, viewports, background (`camera.*`, `D3DDevice.*`, view code) | `GPUFrame`, `Display::Viewport3D`, `LogicalViewport` | `PORTED_PARTIAL` | rectangles Main/Status/Trade, fond et clear | SDL_GPU | Rectangles mis a l'echelle dans le viewport letterbox; cameras, scene et projection 3D reelles restent a porter. |
 | meshes/scenes/materials (`mesh*`, `NewMesh*`, `Scene.h`, `l_material.h`) | Aucun | `NOT_STARTED` | plateau et pieces effectivement references | HMD/MESHX, textures, SDL_GPU | Faire l'inventaire des services appeles; ne pas porter PC3D entier. |
-| chargeur HMD/MESHX (`hmdload.*`) | Aucun | `BLOCKED_MISSING_DATA` | modeles 3D DAT | DAT_3D, decompression | Headers/tags disponibles, payloads retail absents. |
+| decodeur/relocation HMD/MESHX (`HMDData.h`, `NewMesh.cpp`, `hmdload.*`) | Aucun | `NOT_STARTED` | offsets disque 32-bit, modeles 3D | `DAT_3D`, mesh moderne | Le code source suffit pour porter des vues bornees `u32 offset -> span`; ne jamais reloger vers des pointeurs natifs 64-bit. La validation sur payload HMD retail reste bloquee separement. |
 | vieux DirectDraw/Direct3D drivers (`DDraw*`, `D3DDevice*`) | SDL3 / SDL_GPU | `REPLACED_PORTABLE` | creation device, swapchain, soumission | SDL3 | Les implementations legacy ne seront pas portees; completer seulement les comportements de rendu consommes. |
 
 ## Donnees et verification
 
-- Les headers generes `Dat_Mon/*.h` et les BMP bruts sont disponibles.
-- Les banques compilees `dat_main.dat`, `dat_pat.dat`, `dat_bord.dat`,
-  `dat_brd2.dat`, `dat_3d.dat`, `dat_lnNN.dat`, `dat_lmNN.dat` et
-  `dat_lkNN.dat` ne sont pas presentes dans le depot inspecte.
-- Une absence de DAT ne justifie jamais l'invention d'un chunk, d'une chaine,
-  d'un offset ou d'une texture.
-- Validation requise pour chaque lot : configure CMake reussi, build reussi,
-  puis CTest. Un ancien executable de test ne constitue pas une validation.
+| Sous-composant DATA | Equivalent moderne / preuve | Statut | Limite exacte |
+|---|---|---|---|
+| `DataId` / `DataTag` / groupes | `DataBanks`, y compris `IdWithFileFromParent` | `PORTED_COMPLETE` | Contrat 16 bits groupe + 16 bits tag; groupe zero reserve, tag zero valide. |
+| Header et index physique DAT | `LegacyDataArchive` | `PORTED_COMPLETE` | Header Win32 28 octets et records 16 octets lus champ par champ en LE; signature/version/types/ranges/troncatures testes. |
+| Codec DAT | zlib via `uncompress2` avec consommation exacte | `PORTED_COMPLETE` | `ZImplode.c` prouve un stream zlib enveloppe (`windowBits=15`), pas un codec PKWARE opaque. |
+| Lifecycle, lookup, metadata et ownership | `LegacyDataArchive`, `DataBankRegistry` | `PORTED_PARTIAL` | Open/close/mount/unmount/cache/leases sont testes; sources runtime, external-file et LRU automatique restent a porter. |
+| CRC global DAT | option `ChecksumPolicy::Verify` | `PORTED_PARTIAL` | Le runtime original ne le verifiait pas et aucune banque retail ne confirme la convention du writer; politique runtime par defaut `Ignore`, audit explicite disponible. |
+| Writer DAT portable | `LegacyDataArchiveBuilder` | `PORTED_COMPLETE` | Reconstruit deterministement un conteneur valide depuis des payloads fournis; ne pretend pas reproduire les payloads ou octets retail. |
+| Index logique packed 6 octets | `DataIndexTable`, `lookupIndexedDataId` | `PORTED_COMPLETE` | Tri strict, cles dupliquees rejetees, plusieurs cles vers le meme tag permises, groupe parent reapplique. |
+| Lecteur CNK | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | Lecture hierarchique source-compatible sur fixtures, y compris la semantique des sentinelles nulles selectionnees ou sautees; aucune validation retail faute de CNK. |
+| Parseurs semantiques CNK / sequence | aucun | `NOT_STARTED` | Le format generique n'est plus bloquant; porter les records `L_Seqncr` sans supposer leur contenu retail. |
+| LANG core | `LanguageCatalog`, `LanguageService` | `PORTED_PARTIAL` | Selection, index sparse, UTF-16LE, fallback, clean exact (premier code unit conserve si tout est blanc) et snapshots transactionnels testes; adaptateurs de rendu/callers non raccordes. |
+| Chaines/audio/dialogues LANG retail | aucun payload | `BLOCKED_MISSING_DATA` | Les neuf fichiers texte bruts sont vides et les `dat_ln/lm/lkNN.dat` sont absents; aucune chaine ne sera inventee. |
+| Catalogue `TexInfo` | `TextureCatalog` | `PORTED_COMPLETE` | Huit atlas, recettes USA/Europe, overlays, provenances et tags HMD portes et testes; meshes/resolutions invalides rejetes par erreurs typees. |
+| Corpus BMP `TexInfo` | `LegacyBitmap`, manifeste de 1 001 assets | `PORTED_COMPLETE` | 1 001/1 001 fichiers trouves : 497 en 128x128, 504 en 256x256, 881 en 8-bit, 120 en 24-bit, tous `BI_RGB`; offsets, tailles declarees, stride DWORD, raster complet et overflows sont verifies. |
+| Loader BMP runtime | `LegacyAssets` / `SDL_LoadBMP` | `PORTED_PARTIAL` | Decodage et upload du fond existent; raccorder les substitutions `TextureCatalog` au resolver et aux slots mesh. |
+| Manifestes DMake | `LegacyManifest`, `MonopolyManifestTool` | `PORTED_COMPLETE` | Les dix headers reels donnent 46 423 tags/noms/types contigus et peuvent etre exportes en TSV. |
+| DMAKE99 et reconstruction bit-a-bit | aucun outil historique | `MISSING_TOOLING` | Sources/executable DMAKE99, fichiers `.df`, chemins source, payloads, tailles et offsets manquent. |
+| Banques DAT retail exactes | absentes | `BLOCKED_MISSING_DATA` | `dat_main`, `dat_pat`, `dat_bord[e]`, `dat_brd2`, `dat_3d`, `dat_ln/lm/lkNN` introuvables dans l'arbre, `Source.zip` et l'ISO inspectes. |
+| `2DVIEW01..39` externes | noms portes, fichiers absents | `BLOCKED_MISSING_DATA` | Ne pas confondre ces vues custom avec les vues 2D standard stockees en DAT/TAB. |
+| HMD/MESHX retail | headers/tags seulement | `BLOCKED_MISSING_DATA` | Le futur decodeur peut etre porte depuis le code, mais aucun mesh retail ne permet encore sa validation. |
+
+`MonopolyManifestTool <output.tsv> <header-DMake>...` exporte uniquement les
+informations effectivement reconstructibles : banque, tag decimal, type et
+symbole. Il ne genere jamais silencieusement un DAT ou un payload fictif.
+
+Une absence de DAT ne justifie jamais l'invention d'un chunk, d'une chaine,
+d'un offset ou d'une texture. Les fixtures DAT/CNK/LANG presentes sous
+`modern/tests` valident le format source et sont explicitement synthetiques.
+
+Validation requise pour chaque lot : configure CMake reussi, build reussi,
+puis CTest. Un ancien executable de test ne constitue pas une validation.
 
 ### Derniere validation locale
 
-Le 2026-08-24, avec MSVC 19.50 et le generateur Visual Studio de CMake :
+Le 2026-08-24, avec MSVC 19.50, CMake/Ninja, SDL 3.4.14 et zlib 1.3.2 :
 
-- configuration Debug existante revalidee avec la source SDL 3.4.14 locale ;
-- executable `MonopolyModern` compile et lie ;
-- toutes les cibles de tests compilees ;
-- CTest : 10/10 suites passees apres le lot courant.
+- configuration Debug explicite reussie dans `modern/build-phase-c` ;
+- build complet de la cible `all` reussi, y compris `MonopolyModern`,
+  `MonopolyManifestTool`, `MonopolyDataCore` et toutes les suites ;
+- CTest : **16/16 suites passees** apres le build complet ;
+- audit reel : 10 manifestes DMake / 46 423 entrees et 1 001 BMP TexInfo ;
+- execution reelle du convertisseur : TSV de 46 424 lignes (entete incluse) ;
+- copie autonome sans arbre `Source` : configuration et build complet de la
+  cible `all` reussis, y compris `MonopolyModern`, puis **16/16 suites passees** ;
+  les trois audits retail sont annonces `[SKIP]`, tandis que toutes les fixtures
+  synthetiques restent executees et qu'aucune copie de fond legacy n'est exigee.
 
-Cette validation prouve la compilation et les contrats automatises. Elle ne
-prouve pas encore un parcours interactif complet ni le rendu sur un GPU reel.
+Les nouvelles suites couvrent les fixtures DAT/zlib, mutations et troncatures,
+registre/ownership/cache, index packed, CNK hierarchique et sentinelles,
+UTF-16LE/LANG, manifestes DMake, bornes de raster BMP et recettes TexInfo avec
+erreurs typees. Cette validation prouve la compilation et les contrats
+automatises; elle ne prouve ni compatibilite avec une banque retail absente,
+ni parcours interactif, ni rendu sur GPU reel.
 
 ## Prochaines priorites
 
-1. Ajouter un smoke test runtime/injectable de la colonne vertebrale
-   timer -> UIMessages -> TimeStep -> RULE/UI -> Display -> GPU.
-2. Completer le parcours Player Select : SelectCity, regles standard/custom,
-   `NotifyProposedConfiguration`, puis transition de jeu verifiee.
-3. Consolider le resolver de ressources et porter le catalogue `TexInfo` a
-   partir des donnees brutes verifiables.
-4. Completer le miroir UI notification par notification, puis rendre IBar et
-   Player Select sans dupliquer l'etat RULE.
+1. Raccorder `DataBankRegistry`, `LanguageService` et un resolver de chemins
+   contextuels au lifecycle d'initialisation, sans fallback vers des fixtures.
+2. Porter les vues HMD/MESHX bornees (`u32` little-endian vers `span`) et les
+   records `L_Seqncr` effectivement consommes au-dessus de `LegacyChunkReader`.
+3. Raccorder `TextureCatalog` au resolver BMP puis aux slots de textures du
+   futur mesh; conserver la composition Europe sur CPU avant upload GPU.
+4. Ajouter les adaptateurs LANG de mesure/impression et migrer les callers vers
+   des snapshots proprietaires, sans inventer les textes retail absents.
+5. Seulement apres cette stabilisation DATA, reprendre la Phase D dans l'ordre
+   `UDBoard -> UDIBar -> UDPsel -> UDPieces -> UDAuct -> UDTrade -> UDOpts`.

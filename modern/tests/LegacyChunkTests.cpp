@@ -4,8 +4,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -288,6 +290,40 @@ namespace
     }
 
 
+    void testNullSiblingSearchSemantics()
+    {
+        DataBytes bytes;
+        appendChunk(bytes, 0, std::span<const std::byte>{});
+        appendChunk(bytes, 128, std::span<const std::byte>{});
+        appendChunk(bytes, 9, std::span<const std::byte>{});
+
+        LegacyChunkReader searched(bytes);
+        const auto found = searched.descend(9);
+        expect(
+            found && found->id == 9 && found->headerOffset == 8,
+            "precise ID search skips well-formed null siblings 0 and 128"
+        );
+
+        LegacyChunkReader next(bytes);
+        const auto selectedNull = next.descend();
+        expect(
+            hasError(selectedNull, ChunkErrorCode::InvalidId) &&
+                selectedNull.error().offset == 0 &&
+                next.currentOffset() == 0,
+            "sequential next rejects a selected null sibling"
+        );
+
+        LegacyChunkReader selectedContextNull(bytes);
+        const auto explicitNull = selectedContextNull.descend(128);
+        expect(
+            hasError(explicitNull, ChunkErrorCode::InvalidId) &&
+                explicitNull.error().offset == 4 &&
+                selectedContextNull.currentOffset() == 4,
+            "precise search rejects ID 128 when that sentinel is selected"
+        );
+    }
+
+
     void testMalformedBoundariesAndIds()
     {
         LegacyChunkReader empty(std::span<const std::byte>{});
@@ -360,7 +396,7 @@ namespace
 
     void testMaximumDepth()
     {
-        DataBytes nested = makeChunk(8, {});
+        DataBytes nested = makeChunk(8);
 
         for (std::uint8_t id = 7; id > 0; --id)
         {
@@ -425,6 +461,7 @@ int main()
     testPhysicalHeaderAndLarge24BitSize();
     testSiblingsSearchAndAscend();
     testNestingReadSeekAndQueries();
+    testNullSiblingSearchSemantics();
     testMalformedBoundariesAndIds();
     testMaximumDepth();
     testOwningReaderLease();

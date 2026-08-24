@@ -171,7 +171,7 @@ namespace monopoly::data
             return std::unexpected(textError(
                 DataErrorCode::TypeMismatch,
                 "language item tag 0 must be an index table",
-                0));
+                DataTag{0}));
         }
 
         auto indexBytes = textArchive->load(0);
@@ -334,7 +334,10 @@ namespace monopoly::data
 
         auto cleaned = std::make_shared<std::u16string>(**source);
 
-        while (!cleaned->empty())
+        // LANG_CleanString reculait le pointeur seulement tant qu'il etait
+        // strictement apres le premier code unit. Une chaine entierement
+        // blanche conserve donc historiquement son premier caractere.
+        while (cleaned->size() > 1)
         {
             const char16_t character = cleaned->back();
 

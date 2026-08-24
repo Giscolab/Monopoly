@@ -22,6 +22,57 @@ include(CTest)
 
 include(FetchContent)
 
+set(
+    MONOPOLY_LEGACY_SOURCE_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Source"
+)
+
+set(MONOPOLY_LEGACY_MANIFESTS_AVAILABLE TRUE)
+
+foreach(LEGACY_MANIFEST_HEADER IN ITEMS
+    dat_3d.h
+    dat_bord.h
+    DAT_BORDE.h
+    dat_brd2.h
+    dat_lk01.h
+    dat_lk02.h
+    dat_lm01.h
+    dat_lm02.h
+    dat_main.h
+    dat_pat.h
+)
+    if(NOT EXISTS
+        "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/Dat_Mon/${LEGACY_MANIFEST_HEADER}"
+    )
+        set(MONOPOLY_LEGACY_MANIFESTS_AVAILABLE FALSE)
+    endif()
+endforeach()
+
+set(MONOPOLY_LEGACY_TEXTURE_CORPUS_AVAILABLE TRUE)
+
+foreach(LEGACY_TEXTURE_DIRECTORY IN ITEMS
+    Boards
+    Cities
+    Currency
+    Languages
+)
+    if(NOT IS_DIRECTORY
+        "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/${LEGACY_TEXTURE_DIRECTORY}"
+    )
+        set(MONOPOLY_LEGACY_TEXTURE_CORPUS_AVAILABLE FALSE)
+    endif()
+endforeach()
+
+if(
+    EXISTS "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/BackGround.bmp"
+    AND EXISTS
+        "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/BackGroundEuro.bmp"
+)
+    set(MONOPOLY_LEGACY_BACKGROUNDS_AVAILABLE TRUE)
+else()
+    set(MONOPOLY_LEGACY_BACKGROUNDS_AVAILABLE FALSE)
+endif()
+
 # Source/ZLib/ZImplode.c proves that the historical implode/explode names
 # wrap ordinary zlib streams (windowBits = 15). Prefer an installed package;
 # otherwise build the pinned upstream release, never the private SDL copy.
@@ -63,6 +114,9 @@ add_library(
     src/LegacyDataArchiveBuilder.cpp
     src/LegacyChunk.cpp
     src/LanguageResources.cpp
+    src/LegacyManifest.cpp
+    src/LegacyBitmap.cpp
+    src/TextureCatalog.cpp
 )
 
 target_include_directories(
@@ -84,6 +138,129 @@ if(MSVC)
         /W4
         /permissive-
     )
+endif()
+
+add_executable(
+    MonopolyManifestTool
+    src/ManifestTool.cpp
+)
+
+target_link_libraries(
+    MonopolyManifestTool
+    PRIVATE
+    MonopolyDataCore
+)
+
+if(MSVC)
+    target_compile_options(
+        MonopolyManifestTool
+        PRIVATE
+        /W4
+        /permissive-
+    )
+endif()
+
+if(BUILD_TESTING)
+
+    add_executable(
+        MonopolyLegacyManifestTests
+        tests/LegacyManifestTests.cpp
+    )
+
+    target_link_libraries(
+        MonopolyLegacyManifestTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MONOPOLY_LEGACY_MANIFESTS_AVAILABLE)
+        target_compile_definitions(
+            MonopolyLegacyManifestTests
+            PRIVATE
+            MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}"
+        )
+    endif()
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyLegacyManifestTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.LegacyManifest
+        COMMAND MonopolyLegacyManifestTests
+    )
+
+    add_executable(
+        MonopolyLegacyBitmapTests
+        tests/LegacyBitmapTests.cpp
+    )
+
+    target_link_libraries(
+        MonopolyLegacyBitmapTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MONOPOLY_LEGACY_TEXTURE_CORPUS_AVAILABLE)
+        target_compile_definitions(
+            MonopolyLegacyBitmapTests
+            PRIVATE
+            MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}"
+        )
+    endif()
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyLegacyBitmapTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.LegacyBitmap
+        COMMAND MonopolyLegacyBitmapTests
+    )
+
+    add_executable(
+        MonopolyTextureCatalogTests
+        tests/TextureCatalogTests.cpp
+    )
+
+    target_link_libraries(
+        MonopolyTextureCatalogTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyTextureCatalogTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    if(MONOPOLY_LEGACY_TEXTURE_CORPUS_AVAILABLE)
+        add_test(
+            NAME Monopoly.TextureCatalog
+            COMMAND MonopolyTextureCatalogTests
+                "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly"
+        )
+    else()
+        add_test(
+            NAME Monopoly.TextureCatalog
+            COMMAND MonopolyTextureCatalogTests
+        )
+    endif()
+
 endif()
 
 add_executable(
@@ -259,6 +436,81 @@ if(BUILD_TESTING)
         COMMAND MonopolyLegacyDataContractTests
     )
 
+    add_executable(
+        MonopolyLegacyDataArchiveTests
+        tests/LegacyDataArchiveTests.cpp
+    )
+
+    target_link_libraries(
+        MonopolyLegacyDataArchiveTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyLegacyDataArchiveTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.LegacyDataArchive
+        COMMAND MonopolyLegacyDataArchiveTests
+    )
+
+    add_executable(
+        MonopolyLegacyChunkTests
+        tests/LegacyChunkTests.cpp
+    )
+
+    target_link_libraries(
+        MonopolyLegacyChunkTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyLegacyChunkTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.LegacyChunk
+        COMMAND MonopolyLegacyChunkTests
+    )
+
+    add_executable(
+        MonopolyLanguageResourcesTests
+        tests/LanguageResourcesTests.cpp
+    )
+
+    target_link_libraries(
+        MonopolyLanguageResourcesTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyLanguageResourcesTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.LanguageResources
+        COMMAND MonopolyLanguageResourcesTests
+    )
+
 endif()
 
 target_sources(
@@ -378,21 +630,23 @@ target_sources(
     src/LegacyAssets.cpp
 )
 
-add_custom_command(
-    TARGET MonopolyModern
-    POST_BUILD
+if(MONOPOLY_LEGACY_BACKGROUNDS_AVAILABLE)
+    add_custom_command(
+        TARGET MonopolyModern
+        POST_BUILD
 
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy"
 
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/../Source/monopoly/BackGround.bmp"
-        "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy/BackGround.bmp"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/BackGround.bmp"
+            "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy/BackGround.bmp"
 
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/../Source/monopoly/BackGroundEuro.bmp"
-        "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy/BackGroundEuro.bmp"
-)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/BackGroundEuro.bmp"
+            "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy/BackGroundEuro.bmp"
+    )
+endif()
 
 target_sources(
     MonopolyModern
