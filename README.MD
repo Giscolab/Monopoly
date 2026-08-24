@@ -1,7 +1,7 @@
 # Monopoly — portage moderne
 
 Ce dépôt conserve le code source historique de *Monopoly* et accueille le
-portage moderne que nous sommes en train de développer ensemble.
+portage moderne "work in progress".
 
 Le portage, encore en cours, utilise C et C++23 avec des technologies portables
 actuelles. Il se trouve dans [`modern/`](modern/), tandis que le code d'origine
