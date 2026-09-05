@@ -116,6 +116,7 @@ add_library(
     src/LegacySequence.cpp
     src/SequenceClock.cpp
     src/SequenceChildSchedule.cpp
+    src/SequenceRuntime.cpp
     src/LegacyMeshData.cpp
     src/LanguageResources.cpp
     src/ResourcePaths.cpp

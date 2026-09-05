@@ -3,6 +3,7 @@
 #include "LegacySequence.hpp"
 
 #include <vector>
+#include <memory>
 
 namespace monopoly::sequence
 {
@@ -47,10 +48,16 @@ namespace monopoly::sequence
         [[nodiscard]] static std::expected<SequenceChildSchedule, ChildScheduleError>
         readChildren(data::LegacyChunkReader reader, data::DataId containingDataId,
             std::size_t maximumRecords);
-        SequenceChildSchedule(data::LegacyChunkReader reader, data::DataId id);
-        data::LegacyChunkReader reader_;
-        data::DataId containingDataId_{};
-        std::vector<data::LegacySequenceRecord> records_;
+        struct Description
+        {
+            data::LegacyChunkReader reader;
+            data::DataId containingDataId;
+            std::vector<data::LegacySequenceRecord> records;
+        };
+        explicit SequenceChildSchedule(std::shared_ptr<const Description> description);
+        // Copies share immutable definitions/bytes; only the scan cursor is
+        // mutable. A runtime birth must not duplicate whole sibling payloads.
+        std::shared_ptr<const Description> description_;
         std::size_t nextIndex_{};
     };
 
