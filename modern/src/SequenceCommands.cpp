@@ -6,6 +6,22 @@
 
 namespace monopoly::sequence
 {
+    MoveSequenceCommand makeMoveTheWorks(data::DataId dataId,
+        std::uint16_t priority, SequenceTransform transform, bool wholeTree) noexcept
+    { return {dataId, priority, std::move(transform), wholeTree}; }
+
+    MoveSequenceCommand makeMoveXY(data::DataId dataId,
+        std::uint16_t priority, std::int32_t x, std::int32_t y) noexcept
+    { return makeMoveTheWorks(dataId, priority, moveXYTransform(x, y)); }
+
+    MoveSequenceCommand makeMoveRySTxz(data::DataId dataId,
+        std::uint16_t priority, float yaw, float scale,
+        float x, float z) noexcept
+    {
+        return makeMoveTheWorks(dataId, priority,
+            SequenceTransform(moveRySTxzTransform(yaw, scale, x, z)));
+    }
+
     SequenceCommandQueue::SequenceCommandQueue(SequenceRuntime& runtime) noexcept
         : runtime_(runtime)
     {
@@ -32,6 +48,12 @@ namespace monopoly::sequence
         StopSequenceCommand command)
     {
         return enqueueValidated(command);
+    }
+
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        MoveSequenceCommand command)
+    {
+        return enqueueValidated(std::move(command));
     }
 
     std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
@@ -90,6 +112,13 @@ namespace monopoly::sequence
                         value.dataId, value.priority, value.wholeTree);
                     outcomes_.push_back(SequenceCommandOutcome{
                         SequenceCommandKind::Stop, {}, count, {}});
+                }
+                else if constexpr (std::is_same_v<Command, MoveSequenceCommand>)
+                {
+                    const auto count = runtime_.moveMatching(
+                        value.dataId, value.priority, value.transform, value.wholeTree);
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::Move, {}, count, {}});
                 }
                 else
                 {

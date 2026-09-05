@@ -54,6 +54,17 @@ namespace
         word(payload, target);
         return chunk(2, payload);
     }
+    DataBytes mesh(DataId target, bool absolute, std::int32_t start = 0,
+        const DataBytes& attributes = {})
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint32_t>(start) & 0x00FF'FFFFU);
+        word(payload, 4U << 24U);
+        word(payload, 2U | (absolute ? 16U : 0U)); // Hold + absolute IDs flag.
+        word(payload, target);
+        append(payload, attributes);
+        return chunk(9, payload);
+    }
 
     struct Fixture
     {
@@ -271,6 +282,45 @@ namespace
             "seek to exact Stop end destroys only the selected root");
     }
 
+    void testMeshLeafRuntimeIntent()
+    {
+        Fixture fixture;
+        const auto rawMesh = packDataId(77, 9);
+        const std::array relativeItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            mesh(rawMesh, false)}};
+        DataBankRegistry relativeRegistry;
+        (void)archive(fixture.root / "mesh-relative.dat", relativeItems, relativeRegistry);
+        auto relativeProgram = program(relativeRegistry);
+        expect(relativeProgram && relativeProgram->descriptions().front().contentsDataId ==
+            packDataId(2, 9),
+            "relative 3D mesh contents DataID inherits the containing sequence group");
+        SequenceRuntime runtime;
+        const auto root = runtime.start(relativeProgram, 42).value();
+        auto view = runtime.inspect(root);
+        expect(view && view->dimensionality == 3 &&
+            view->contentsDataId == packDataId(2, 9) &&
+            std::holds_alternative<Matrix3D>(view->worldTransform),
+            "3D mesh sequence is an executable transform-bearing runtime leaf");
+        auto meshes = runtime.meshInstances();
+        expect(meshes.size() == 1 && meshes.front().node == root &&
+            meshes.front().contentsDataId == packDataId(2, 9) &&
+            meshes.front().priority == 42,
+            "active mesh intent exposes resolved content and runtime identity without renderer state");
+        expect(runtime.update(4).has_value() && runtime.meshInstances().size() == 1,
+            "3D mesh leaf participates in normal clock updates without fake rendering");
+        runtime.stopAll();
+        expect(runtime.meshInstances().empty(),
+            "destroyed mesh leaves disappear from renderer-independent runtime intent");
+
+        const std::array absoluteItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            mesh(rawMesh, true)}};
+        DataBankRegistry absoluteRegistry;
+        (void)archive(fixture.root / "mesh-absolute.dat", absoluteItems, absoluteRegistry, 3);
+        const auto absolute = SequenceProgram::load(absoluteRegistry, packDataId(3, 0));
+        expect(absolute && (*absolute)->descriptions().front().contentsDataId == rawMesh,
+            "absolute 3D mesh contents DataID is preserved verbatim");
+    }
+
     void testCommandsAndFailureLimits()
     {
         Fixture fixture;
@@ -424,6 +474,7 @@ int main()
         testRecursiveLifecycleAndOrder();
         testEndCrossingHoldAndLoop();
         testPauseAndSeek();
+        testMeshLeafRuntimeIntent();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
         testSnapshotReplacementLifetime();

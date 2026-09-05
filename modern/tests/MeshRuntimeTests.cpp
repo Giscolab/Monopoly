@@ -1,0 +1,215 @@
+#include "MeshRuntime.hpp"
+#include "LegacyDataArchiveBuilder.hpp"
+
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <filesystem>
+#include <iostream>
+#include <memory>
+#include <string_view>
+
+namespace
+{
+    using namespace monopoly::data;
+    int failures{};
+
+    void expect(bool condition, std::string_view description)
+    {
+        std::cout << (condition ? "[PASS] " : "[FAIL] ") << description << '\n';
+        if (!condition) ++failures;
+    }
+    bool near(float left, float right)
+    { return std::fabs(left - right) < 0.0001F; }
+    void setWord(DataBytes& data, std::size_t index, std::uint32_t value)
+    {
+        for (unsigned i = 0; i < 4; ++i)
+            data[index * 4 + i] = static_cast<std::byte>((value >> (i * 8U)) & 0xFFU);
+    }
+    DataBytes words(std::initializer_list<std::uint32_t> values)
+    {
+        DataBytes result(values.size() * 4);
+        std::size_t index{};
+        for (const auto value : values) setWord(result, index++, value);
+        return result;
+    }
+    DataBytes flatTriangle()
+    {
+        return words({
+            0x01020304, 0, 6, 2, 11, 0,
+            1, 3, 0x80000011, 0x80000014, 0x8000001A,
+            0xFFFFFFFF, 7, 0x80000001,
+            0x00000008, 0x80010002, 0,
+            0x00563412, 0, 0x00020001,
+            0xFFEC000A, 30, 0x00280014, 60, 0x003C001E, 90,
+            0xF8001000, 1024
+        });
+    }
+    DataBytes texturedTriangle()
+    {
+        auto data = flatTriangle();
+        data.resize(17 * 4);
+        const auto tail = words({
+            0x00002211, 0x12344433, 0x00006655,
+            0, 0x00010001, 0x00020002,
+            0xFFEC000A, 30, 0x00280014, 60, 0x003C001E, 90,
+            4096, 0, 0x10000000, 0, 0, 4096
+        });
+        data.insert(data.end(), tail.begin(), tail.end());
+        setWord(data, 9, 0x80000017);
+        setWord(data, 10, 0x8000001D);
+        setWord(data, 14, 0x0080000D);
+        return data;
+    }
+    std::shared_ptr<const LegacyMeshData> parse(DataBytes bytes)
+    {
+        auto mesh = LegacyMeshData::parse(
+            std::make_shared<const DataBytes>(std::move(bytes)));
+        expect(mesh.has_value(), "synthetic immutable HMD parses before MESHX build");
+        return mesh ? std::make_shared<const LegacyMeshData>(std::move(*mesh)) : nullptr;
+    }
+
+    struct ResourceFixture
+    {
+        std::filesystem::path root;
+        ResourceFixture()
+        {
+            root = std::filesystem::current_path() / ("MeshRuntimeResources-" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+            std::filesystem::create_directories(root / "Dat_Mon");
+        }
+        ~ResourceFixture()
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all(root, ignored);
+        }
+    };
+    bool writeResources(const std::filesystem::path& root, const DataBytes& hmd)
+    {
+        const std::array names{"dat_main.dat", "dat_pat.dat", "dat_bord.dat",
+            "dat_brd2.dat", "dat_3d.dat", "dat_ln01.dat", "dat_lm01.dat", "dat_lk01.dat"};
+        for (std::size_t index = 0; index < names.size(); ++index)
+        {
+            std::vector<ArchiveBuildItem> items;
+            if (index == 4) items.push_back({LegacyDataType::Hmd, hmd});
+            else if (index == 5)
+            {
+                items.push_back({LegacyDataType::IndexTable,
+                    {std::byte{42}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{1}, std::byte{0}}});
+                items.push_back({LegacyDataType::String,
+                    {std::byte{'A'}, std::byte{0}, std::byte{0}, std::byte{0}}});
+            }
+            else items.push_back({LegacyDataType::Native, {std::byte{1}}});
+            if (!writeLegacyDataArchive(root / "Dat_Mon" / names[index], items)) return false;
+        }
+        return true;
+    }
+
+    void testUntexturedMeshAndRenderData()
+    {
+        auto source = parse(flatTriangle());
+        auto built = MeshXRuntime::build(source);
+        expect(built.has_value(), "MESHX runtime builds from supported HMD triangle data");
+        if (!built) return;
+        source.reset();
+        expect(built->source() && built->source()->bytes().size() == 112,
+            "MESHX owns its immutable HMD source after caller release");
+        expect(built->vertices().size() == 3 && built->groups().size() == 1 &&
+            built->groups()[0].indices.size() == 3,
+            "MESHX contains deduplicated geometry and one material group");
+        const auto& first = built->vertices()[0];
+        expect(near(first.position[0], 10) && near(first.position[1], 20) &&
+            near(first.position[2], 30) && near(first.normal[0], 1) &&
+            near(first.normal[1], .5F) && near(first.normal[2], .25F),
+            "MESHX applies the historical Y-axis conversion and 12-bit fixed normals");
+        expect(near(first.uv[0], -1) && near(first.uv[1], -1) &&
+            built->groups()[0].material.rawDiffuse == 0x00563412 &&
+            near(built->groups()[0].material.diffuse[0], 0x12 / 255.0F) &&
+            near(built->groups()[0].material.diffuse[2], 0x56 / 255.0F),
+            "untextured UV sentinel and byte-ordered diffuse material are retained");
+        expect(near(built->bounds().minimum[0], 10) &&
+            near(built->bounds().maximum[0], 30) &&
+            near(built->bounds().minimum[1], -60) &&
+            near(built->bounds().maximum[1], 20),
+            "MESHX computes CPU bounds from converted vertices");
+
+        const auto render = makeMeshRenderData(*built);
+        expect(render.vertices.size() == 3 && render.indices.size() == 3 &&
+            render.batches.size() == 1 && render.batches[0].firstIndex == 0 &&
+            render.batches[0].indexCount == 3 && !render.batches[0].texture,
+            "renderer-independent data flattens MESHX groups into an indexed batch");
+    }
+
+    void testResourceScopedCache()
+    {
+        ResourceFixture fixture;
+        expect(writeResources(fixture.root, flatTriangle()),
+            "synthetic eight-bank resource set with HMD payload is written");
+        ResourceRuntime runtime;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        expect(paths && runtime.initialize(*paths).has_value(),
+            "resource snapshot for MESHX cache initializes");
+        auto snapshot = runtime.snapshot();
+        MeshRuntimeCache cache(snapshot);
+        const auto id = packDataId(LegacyGroupId::ThreeD, 0);
+        auto first = cache.resolve(id);
+        expect(first && (*first)->mesh && (*first)->renderData &&
+            (*first)->renderData->indices.size() == 3 && cache.size() == 1,
+            "MESHX cache resolves HMD through the immutable resource snapshot once");
+        auto second = cache.resolve(id);
+        expect(second && first && first->get() == second->get() && cache.size() == 1,
+            "repeated MESHX resolution reuses the exact immutable asset");
+        runtime.shutdown();
+        snapshot.reset();
+        auto afterShutdown = cache.resolve(id);
+        expect(afterShutdown && first && afterShutdown->get() == first->get() &&
+            cache.resources(),
+            "cache-owned resource snapshot and MESHX asset survive service shutdown");
+        cache.clear();
+        expect(cache.size() == 0 && first && (*first)->mesh->source()->bytes().size() == 112,
+            "external asset handles survive cache eviction through immutable HMD ownership");
+    }
+
+    void testTextureResolutionAndHistoricalDrop()
+    {
+        auto source = parse(texturedTriangle());
+        auto unresolved = MeshXRuntime::build(source);
+        expect(!unresolved &&
+            unresolved.error().code == MeshRuntimeErrorCode::NoRenderableGeometry &&
+            unresolved.error().skippedTexturedTriangles == 1,
+            "a textured triangle without a resolved historical texture is dropped");
+
+        const MeshTextureResolver resolver = [](const MeshTextureLookup& lookup)
+            -> std::optional<MeshTextureRegion>
+        {
+            if (lookup.page != 0x1234 || lookup.u != 0x11 || lookup.v != 0x22)
+                return std::nullopt;
+            return MeshTextureRegion{99, lookup.page, 0, 0, 256, 128};
+        };
+        auto built = MeshXRuntime::build(std::move(source), resolver);
+        expect(built && built->groups().size() == 1 &&
+            built->groups()[0].texture && built->groups()[0].texture->key == 99,
+            "textured MESHX group retains the resolved texture identity and page");
+        if (!built) return;
+        const auto& vertices = built->vertices();
+        expect(near(vertices[0].uv[0], 0x11 / 256.0F) &&
+            near(vertices[0].uv[1], 0x22 / 128.0F) &&
+            near(vertices[2].uv[0], 0x55 / 256.0F) &&
+            near(vertices[2].uv[1], 0x66 / 128.0F),
+            "texture coordinates use the source region origin and dimensions");
+        const auto render = makeMeshRenderData(*built);
+        expect(render.batches[0].texture &&
+            render.batches[0].texture->page == 0x1234,
+            "render data preserves texture references without owning a renderer resource");
+    }
+}
+
+int main()
+{
+    testUntexturedMeshAndRenderData();
+    testResourceScopedCache();
+    testTextureResolutionAndHistoricalDrop();
+    std::cout << (failures ? "MESHX runtime tests FAILED\n" :
+        "MESHX runtime tests passed\n");
+    return failures ? 1 : 0;
+}
