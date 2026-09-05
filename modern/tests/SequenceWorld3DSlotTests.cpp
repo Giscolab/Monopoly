@@ -118,6 +118,7 @@ namespace
 
 int main()
 {
+    std::cout << std::unitbuf;
     testLifecycleAndStableIdentity();
     testProjectionVisibilityLifecycle();
     testRemovalAndTransactionalDuplicateFailure();

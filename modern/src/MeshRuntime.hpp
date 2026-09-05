@@ -22,6 +22,7 @@ namespace monopoly::data
         MissingResources,
         SourceLoadFailed,
         TriangleDecodeFailed,
+        TextureDecodeFailed,
         InvalidTextureRegion,
         VertexLimitExceeded,
         GroupLimitExceeded,
@@ -60,7 +61,15 @@ namespace monopoly::data
         std::int32_t y{};
         std::uint32_t width{};
         std::uint32_t height{};
-        auto operator<=>(const MeshTextureRegion&) const = default;
+        // Present for HMD-embedded GsUIMG1 textures. External resolvers may
+        // leave this empty and keep their existing renderer-owned identity.
+        std::shared_ptr<const HmdTextureImage> sourceImage;
+
+        [[nodiscard]] bool operator==(const MeshTextureRegion& other) const noexcept
+        {
+            return key == other.key && page == other.page && x == other.x &&
+                y == other.y && width == other.width && height == other.height;
+        }
     };
 
     using MeshTextureResolver = std::function<std::optional<MeshTextureRegion>(

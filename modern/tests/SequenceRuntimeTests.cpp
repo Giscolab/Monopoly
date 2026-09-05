@@ -406,6 +406,41 @@ namespace
             "parsed but unexecuted attributes are refused instead of silently ignored");
     }
 
+    void testRawHmdStartContract()
+    {
+        Fixture fixture;
+        const std::array items{ArchiveBuildItem{LegacyDataType::Hmd,
+            {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}}};
+        DataBankRegistry registry;
+        (void)archive(fixture.root / "raw-hmd.dat", items, registry,
+            legacyGroupValue(LegacyGroupId::ThreeD));
+        const auto id = packDataId(LegacyGroupId::ThreeD, 0);
+        auto executable = SequenceProgram::load(registry, id);
+        expect(executable && (*executable)->descriptions().size() == 1,
+            "raw HMD DataID is accepted as a legacy sequencer root");
+        if (!executable) return;
+        const auto& description = (*executable)->descriptions().front();
+        expect(description.record.chunk.id == 9 &&
+            description.record.header.timeMultiple == 60 &&
+            description.record.header.endingAction == 2 &&
+            description.contentsDataId == id,
+            "raw HMD synthesizes the source 3D mesh cadence/hold contract");
+        SequenceRuntime runtime;
+        auto root = runtime.start(*executable, 90);
+        expect(root.has_value(), "raw HMD synthetic sequence starts at board priority 90");
+        if (!root) return;
+        const auto view = runtime.inspect(*root);
+        expect(view && view->dimensionality == 3 && view->timeMultiple == 60 &&
+            std::holds_alternative<Matrix3D>(view->worldTransform),
+            "raw HMD runtime is a persistent identity 3D node");
+        expect(runtime.update(0).has_value() && runtime.update(60).has_value() &&
+            runtime.meshInstances().size() == 1,
+            "raw HMD remains renderable until an explicit Stop command");
+        const auto badOffset = SequenceProgram::load(registry, id, 4);
+        expect(!badOffset && badOffset.error().code == RuntimeErrorCode::DecodeFailure,
+            "raw HMD rejects nonzero sequence offsets instead of inventing chunks");
+    }
+
     std::vector<ArchiveBuildItem> textItems(char16_t marker)
     {
         return {
@@ -477,6 +512,7 @@ int main()
         testMeshLeafRuntimeIntent();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
+        testRawHmdStartContract();
         testSnapshotReplacementLifetime();
     }
     catch (const std::exception& exception)

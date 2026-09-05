@@ -109,6 +109,20 @@ namespace monopoly::data
         std::array<HmdShortVector, 3> normals{};
     };
 
+    struct HmdTextureImage
+    {
+        std::uint16_t texturePage{};
+        std::uint16_t rawX{};
+        std::uint16_t rawY{};
+        std::int32_t logicalX{};
+        std::int32_t logicalY{};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        // RGBA8 conversion of the source 8-bit CLUT image. NewMesh.cpp does
+        // not use the PSX transparency bit when constructing its DIB texture.
+        std::vector<std::uint8_t> rgba;
+    };
+
     // Immutable, CPU-owned inspection of the unmapped HMD disk payload.
     // All physical pointers are little-endian u32 DWORD offsets, never native
     // pointers. MESHX is the runtime postload object, not another disk format
@@ -139,6 +153,12 @@ namespace monopoly::data
         [[nodiscard]] std::expected<HmdTriangle, MeshDataError> triangle(
             std::size_t primitiveIndex, std::size_t sectionIndex,
             std::size_t triangleIndex) const;
+
+        // Category-2 GsUIMG1 images as consumed by NewMesh.cpp::ProcessHMDImage.
+        // Header fields are IMAGE TOP and CLUT TOP word-offset bases; image
+        // records remain immutable disk data and are converted without GDI.
+        [[nodiscard]] std::expected<std::vector<HmdTextureImage>, MeshDataError>
+            textureImages() const;
 
     private:
         LegacyMeshData() = default;

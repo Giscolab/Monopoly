@@ -54,6 +54,41 @@ namespace
         });
     }
 
+    DataBytes imageWithClut()
+    {
+        // Psy-Q File Formats 2-95 / NewMesh.cpp::ProcessHMDImage:
+        // one GsUIMG1 record, 4x2 indexed pixels and a 256-entry CLUT.
+        DataBytes data(150U * 4U);
+        setWord(data, 0, 0x01020304);
+        setWord(data, 1, 0);
+        setWord(data, 2, 5); // primitive header table
+        setWord(data, 3, 1); // one block
+        setWord(data, 4, 9); // primitive root
+        setWord(data, 5, 1); // one primitive header
+        setWord(data, 6, 2); // IMAGE TOP + CLUT TOP
+        setWord(data, 7, 0x80000014); // word 20
+        setWord(data, 8, 0x80000016); // word 22
+        setWord(data, 9, 0xFFFFFFFF);
+        setWord(data, 10, 6); // header descriptor at word 6
+        setWord(data, 11, 0x80000001); // one section, scan required
+        setWord(data, 12, 0x02000001); // GsUIMG1
+        setWord(data, 13, 0x80010007); // one image, eight section words
+        setWord(data, 14, 0x00140008); // image x=8, y=20
+        setWord(data, 15, 0x00020002); // 2 words wide => 4 pixels, h=2
+        setWord(data, 16, 0);          // image_idx
+        setWord(data, 17, 0);          // CLUT x/y (not sampled by PC loader)
+        setWord(data, 18, 0x00010100); // CLUT 256x1
+        setWord(data, 19, 0);          // clut_idx
+        setWord(data, 20, 0x03020100); // indices 0,1,2,3
+        setWord(data, 21, 0x07060504); // indices 4,5,6,7
+        // Two 16-bit CLUT entries per DWORD.
+        setWord(data, 22, 0x001F0000); // black, red
+        setWord(data, 23, 0x7C0003E0); // green, blue
+        setWord(data, 24, 0x0000FFFF); // white + PSX transparency bit, black
+        setWord(data, 25, 0x42107FFF); // white, mid grey
+        return data;
+    }
+
     auto parse(DataBytes data, MeshParseLimits limits = {})
     {
         return LegacyMeshData::parse(std::make_shared<const DataBytes>(
@@ -152,6 +187,40 @@ namespace
             tiledTriangle->colours[2] == 0x00563412 &&
             tiledTriangle->vertices[0].y == -20,
             "tiled descriptor is skipped before three separate colour words");
+    }
+
+    void testEmbeddedImageAndClut()
+    {
+        auto source = parse(imageWithClut());
+        expect(source.has_value(), "GsUIMG1 synthetic HMD hierarchy parses");
+        if (!source) return;
+        const auto images = source->textureImages();
+        expect(images && images->size() == 1,
+            "category-2 CLUT image decodes into one immutable texture");
+        if (!images || images->empty()) return;
+        const auto& image = images->front();
+        expect(image.texturePage == 128 && image.rawX == 8 && image.rawY == 20 &&
+            image.logicalX == 16 && image.logicalY == 20 &&
+            image.width == 4 && image.height == 2,
+            "TIM page, PSX 8-bit logical origin and dimensions match NewMesh");
+        expect(image.rgba.size() == 32 &&
+            image.rgba[0] == 0 && image.rgba[1] == 0 && image.rgba[2] == 0 && image.rgba[3] == 255 &&
+            image.rgba[4] == 255 && image.rgba[5] == 0 && image.rgba[6] == 0 && image.rgba[7] == 255 &&
+            image.rgba[8] == 0 && image.rgba[9] == 255 && image.rgba[10] == 0 &&
+            image.rgba[12] == 0 && image.rgba[13] == 0 && image.rgba[14] == 255,
+            "8-bit indices expand through the 5-5-5 CLUT to RGBA8");
+        expect(image.rgba[16] == 255 && image.rgba[17] == 255 &&
+            image.rgba[18] == 255 && image.rgba[19] == 255,
+            "PSX CLUT transparency bit stays ignored like the original DIB path");
+
+        auto malformed = imageWithClut();
+        setWord(malformed, 19, 0x7FFFFFFF);
+        const auto malformedSource = parse(std::move(malformed));
+        const auto badImages = malformedSource ? malformedSource->textureImages() :
+            std::expected<std::vector<HmdTextureImage>, MeshDataError>(
+                std::unexpected(malformedSource.error()));
+        expect(hasError(badImages, MeshDataErrorCode::RangeOutOfBounds),
+            "GsUIMG1 CLUT index is bounded before palette access");
     }
 
     void testChainsAndOpaqueSections()
@@ -328,6 +397,7 @@ int main()
     std::cout << "Monopoly HMD CPU format tests (synthetic fixtures)\n";
     testFlatTriangleAndOwnership();
     testTexturedGouraudAndTiledColours();
+    testEmbeddedImageAndClut();
     testChainsAndOpaqueSections();
     testMalformedHierarchy();
     testMalformedTriangleReferences();

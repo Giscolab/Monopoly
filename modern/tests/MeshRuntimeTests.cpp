@@ -61,6 +61,45 @@ namespace
         setWord(data, 14, 0x0080000D);
         return data;
     }
+    DataBytes texturedTriangleWithEmbeddedImage()
+    {
+        DataBytes data(179U * 4U);
+        setWord(data, 0, 0x01020304); setWord(data, 1, 0);
+        setWord(data, 2, 6); setWord(data, 3, 2);
+        setWord(data, 4, 14); setWord(data, 5, 25);
+        setWord(data, 6, 2);
+        setWord(data, 7, 2);
+        setWord(data, 8, 0x80000031); setWord(data, 9, 0x80000033);
+        setWord(data, 10, 3);
+        setWord(data, 11, 0x8000001F); setWord(data, 12, 0x80000025);
+        setWord(data, 13, 0x8000002B);
+
+        setWord(data, 14, 0xFFFFFFFF); setWord(data, 15, 7);
+        setWord(data, 16, 0x80000001);
+        setWord(data, 17, 0x02000001); setWord(data, 18, 0x80010007);
+        setWord(data, 19, 0); setWord(data, 20, 0x00020002);
+        setWord(data, 21, 0); setWord(data, 22, 0);
+        setWord(data, 23, 0x00010100); setWord(data, 24, 0);
+
+        setWord(data, 25, 0xFFFFFFFF); setWord(data, 26, 10);
+        setWord(data, 27, 0x80000001);
+        setWord(data, 28, 0x0080000D); setWord(data, 29, 0x80010002);
+        setWord(data, 30, 0);
+        setWord(data, 31, 0x00000000);
+        setWord(data, 32, 0x00800003);
+        setWord(data, 33, 0x00000100);
+        setWord(data, 34, 0x00000000);
+        setWord(data, 35, 0x00010001); setWord(data, 36, 0x00020002);
+        setWord(data, 37, 0x0014000A); setWord(data, 38, 30);
+        setWord(data, 39, 0x00140028); setWord(data, 40, 30);
+        setWord(data, 41, 0x0014000A); setWord(data, 42, 60);
+        setWord(data, 43, 0x00001000); setWord(data, 44, 0);
+        setWord(data, 45, 0x10000000); setWord(data, 46, 0);
+        setWord(data, 47, 0); setWord(data, 48, 4096);
+        setWord(data, 49, 0x03020100); setWord(data, 50, 0x07060504);
+        setWord(data, 51, 0x03E0001F); setWord(data, 52, 0x7FFF7C00);
+        return data;
+    }
     std::shared_ptr<const LegacyMeshData> parse(DataBytes bytes)
     {
         auto mesh = LegacyMeshData::parse(
@@ -170,6 +209,36 @@ namespace
             "external asset handles survive cache eviction through immutable HMD ownership");
     }
 
+    void testEmbeddedTextureResolution()
+    {
+        auto source = parse(texturedTriangleWithEmbeddedImage());
+        auto built = MeshXRuntime::build(source);
+        expect(built && built->groups().size() == 1 && built->groups()[0].texture &&
+            built->groups()[0].texture->sourceImage,
+            "embedded GsUIMG1 resolves textured MESHX without an external resolver");
+        if (!built) return;
+        const auto& texture = *built->groups()[0].texture;
+        expect(texture.page == 128 && texture.x == 0 && texture.y == 0 &&
+            texture.width == 4 && texture.height == 2 && texture.sourceImage->rgba.size() == 32,
+            "automatic FindTexture region retains decoded HMD image ownership");
+        const auto& vertices = built->vertices();
+        expect(vertices.size() == 3 && near(vertices[0].uv[0], 0.0F) &&
+            near(vertices[0].uv[1], 0.0F) && near(vertices[1].uv[0], 0.75F) &&
+            near(vertices[2].uv[1], 0.5F),
+            "embedded texture UVs use the historical local region coordinates");
+        const auto render = makeMeshRenderData(*built);
+        expect(render.batches.size() == 1 && render.batches[0].texture &&
+            render.batches[0].texture->sourceImage.get() == texture.sourceImage.get(),
+            "render batch keeps the immutable embedded texture pixels alive");
+
+        auto malformed = texturedTriangleWithEmbeddedImage();
+        setWord(malformed, 24, 0x7FFFFFFF);
+        auto bad = MeshXRuntime::build(parse(std::move(malformed)));
+        expect(!bad && bad.error().code == MeshRuntimeErrorCode::TextureDecodeFailed &&
+            bad.error().sourceError &&
+            bad.error().sourceError->code == MeshDataErrorCode::RangeOutOfBounds,
+            "malformed embedded CLUT propagates a precise texture decode failure");
+    }
     void testTextureResolutionAndHistoricalDrop()
     {
         auto source = parse(texturedTriangle());
@@ -208,6 +277,7 @@ int main()
 {
     testUntexturedMeshAndRenderData();
     testResourceScopedCache();
+    testEmbeddedTextureResolution();
     testTextureResolutionAndHistoricalDrop();
     std::cout << (failures ? "MESHX runtime tests FAILED\n" :
         "MESHX runtime tests passed\n");

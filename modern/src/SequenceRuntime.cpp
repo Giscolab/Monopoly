@@ -44,6 +44,38 @@ namespace monopoly::sequence
             limits.maximumDescriptions == 0)
             return std::unexpected(error(RuntimeErrorCode::InvalidLimits, id, offset,
                 "description depth must be 1..128 and node budget nonzero"));
+
+        // L_Seqncr.cpp:3637-3663, 4260-4275. LE_SEQNCR_Start accepts a raw
+        // MESHX/HMD DataID by synthesizing an infinite 3D mesh sequence with
+        // the ArtLib basic cadence (60 Hz), StayAtEnd, and modelDataID=DataID.
+        // This is the path used by UDBoard for CurrentBoard.
+        auto metadata = registry.metadata(id);
+        if (!metadata)
+            return std::unexpected(caused(RuntimeErrorCode::DataFailure,
+                id, offset, metadata.error()));
+        if (metadata->type == data::LegacyDataType::Hmd)
+        {
+            if (offset != 0)
+                return std::unexpected(error(RuntimeErrorCode::DecodeFailure,
+                    id, offset, "raw HMD sequence must start at offset zero"));
+            auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
+            data::LegacySequenceHeader header{};
+            header.timeMultiple = 60;
+            header.endingAction = 2; // LE_SEQNCR_EndingActionStayAtEnd.
+            data::LegacySequenceRecord record{
+                data::ChunkInfo{9, 0, 0, 0, 0}, header,
+                data::SequenceMeshData{id}, 0};
+            auto children = SequenceChildSchedule::read({}, id,
+                limits.maximumReferences);
+            if (!children)
+                return std::unexpected(std::visit([&](const auto& cause) {
+                    return caused(RuntimeErrorCode::DecodeFailure, id, offset, cause);
+                }, children.error()));
+            program->descriptions_.push_back({id, std::move(record),
+                std::move(*children), {}, id, {}});
+            return std::shared_ptr<const SequenceProgram>(std::move(program));
+        }
+
         auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
         struct Entry { std::size_t index; bool active; std::size_t height; };
         std::map<std::pair<data::DataId, std::size_t>, Entry> visited;
