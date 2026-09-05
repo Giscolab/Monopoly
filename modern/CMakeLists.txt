@@ -878,6 +878,8 @@ target_sources(
     PRIVATE
     src/BoardRules.cpp
     src/BoardGeometry.cpp
+    src/PiecePlacement.cpp
+    src/PieceRuntime.cpp
 )
 
 target_sources(
@@ -1143,6 +1145,74 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.DisplayContract
         COMMAND MonopolyDisplayContractTests
+    )
+
+endif()
+# ============================================================
+# DISPLAY_UDPIECES geometry subset
+# ============================================================
+
+if(BUILD_TESTING)
+
+    add_executable(
+        MonopolyPiecePlacementTests
+        tests/PiecePlacementTests.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+
+    target_include_directories(
+        MonopolyPiecePlacementTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyPiecePlacementTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.PiecePlacement
+        COMMAND MonopolyPiecePlacementTests
+    )
+
+    add_executable(
+        MonopolyPieceRuntimeTests
+        tests/PieceRuntimeTests.cpp
+        src/PieceRuntime.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+
+    target_include_directories(
+        MonopolyPieceRuntimeTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(
+        MonopolyPieceRuntimeTests
+        PRIVATE
+        MonopolyDataCore
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceRuntimeTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.PieceRuntime
+        COMMAND MonopolyPieceRuntimeTests
     )
 
 endif()

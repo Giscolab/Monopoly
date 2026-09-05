@@ -44,7 +44,7 @@ effectivement present sous `modern/`.
 | `Source/monopoly/UDBoard.cpp` | etat de backdrop dans `Display`, geometie dans `BoardGeometry` | `PORTED_PARTIAL` | `UDBOARD_SetBackdrop`, `DISPLAY_UDBOARD_Show` | assets plateau, renderer, PC3D | Valeurs des huit ecrans, etat initial invalide, commit differe et mapping Main/Portfolio/Trade portes; composition et hotspots absents. |
 | `Source/monopoly/UDIBar.cpp` | `IBar`, `IBarLayout` | `PORTED_PARTIAL` | initialize/destroy/tick/show/process, filtrage joueurs | LocalPlayers, DISPLAY, assets/fonts | Visibilite setup/Main/Portfolio/Trade et layout purs presents; aucun dessin reel, icones, textes, cash ou animation complete. |
 | `Source/monopoly/UDOpts.cpp` | Aucun | `NOT_STARTED` | options UI | persistence options, DISPLAY | Porter apres le resolver de ressources et le renderer UI. |
-| `Source/monopoly/UDPieces.cpp` | geometrie de plateau partielle seulement | `NOT_STARTED` | pieces, positions, animations, cameras | PC3D moderne, BoardGeometry, RULE | Necessite mesh/camera/scene SDL_GPU. |
+| `Source/monopoly/UDPieces.cpp` | `PiecePlacement`, `PieceRuntime`, `BoardGeometry` | `PORTED_PARTIAL` | orientation de base/repos des tokens et resolution de pose runtime | `SequenceRuntime`, PC3D moderne, BoardGeometry, RULE | Les offsets 5x6, rotations token, JUST_VISITING/IN_JAIL/OFF_BOARD et l ordre GetInfo/GetChildMeshWorldMatrix -> LastKnownData sont portes et testes. Restent maisons/hotels, choix cameras, planification/stack d animations, show/lifecycle et raccordement complet au DISPLAY. |
 | `Source/monopoly/UDPsel.cpp` | `PlayerSelection`, `PlayerSetupFlow`, `LocalPlayers`, `IBar` | `PORTED_PARTIAL` | phases, noms, tokens, humains/IA, add/remove/start | UserInterface, Messaging, DISPLAY | Commit de phase limite a `DISPLAY_UDPSEL_Show`, refresh one-shot, reset zero-joueur et initialisation de la premiere notification non nulle portes; SelectCity/regles, projections mortes et rendu restent a traiter. |
 | `Source/monopoly/UDSound.cpp` | Aucun | `NOT_STARTED` | options son, volume, musique/SFX | service audio portable, persistence | Choisir l'equivalent portable apres inventaire des assets et callers. |
 | `Source/monopoly/UDStats.cpp` | Aucun | `NOT_STARTED` | statistiques joueur/partie | miroir UI, fonts, assets | Porter state/layout/show/process apres consolidation du miroir UI. |
@@ -278,9 +278,9 @@ zlib 1.3.2 :
 - reconstruction **clean-first complete** de `modern/build-phase-c`, code de
   sortie zero, incluant `MonopolyModern.exe`, `MonopolyDataCore` et
   `MonopolyGPU3DCore` ;
-- suite complete depuis ce build neuf : **34/34 suites passees**, zero echec ;
+- suite complete depuis ce build neuf : **36/36 suites passees**, zero echec ;
 - trace conservee dans le build ignore sous
-  `modern/build-phase-c/ctest-full-20260906-force-redraw.log` ;
+  `modern/build-phase-c/ctest-full-20260906-pieces-core.log` ;
 - les suites `MeshGPUResources`, `World3DGPUScene` et `World3DRenderer` utilisent
   un vrai device SDL_GPU **Direct3D 12**. Les readbacks prouvent le triangle
   indexe, l'echantillonnage d'une texture HMD RGBA8 et le deplacement visible
