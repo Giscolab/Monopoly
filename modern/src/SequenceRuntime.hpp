@@ -122,6 +122,15 @@ namespace monopoly::sequence
         SequenceMeshChoice3D meshChoice{};
     };
 
+    struct SequenceInfoView
+    {
+        SequenceNodeId node{};
+        std::int32_t sequenceClock{};
+        std::int32_t endTime{};
+        std::uint8_t dimensionality{};
+        std::optional<Matrix3D> sequenceToWorldTransformation;
+    };
+
     struct SequenceMeshInstanceView
     {
         SequenceNodeId node{};
@@ -174,6 +183,14 @@ namespace monopoly::sequence
             bool wholeTree = false);
 
         [[nodiscard]] std::optional<SequenceNodeView> inspect(SequenceNodeId node) const;
+        // Source-compatible LE_SEQNCR_GetInfo subset used by Monopoly: first
+        // DataID/priority match at offset zero, optionally including descendants.
+        [[nodiscard]] std::optional<SequenceInfoView> info(data::DataId id,
+            std::uint16_t priority, bool wholeTree = false) const;
+        // LE_SEQNCR_GetChildMeshWorldMatrix: select the first matching top-level
+        // root, then search only that root/subtree for the first active 3D mesh.
+        [[nodiscard]] std::optional<Matrix3D> childMeshWorldMatrix(
+            data::DataId id, std::uint16_t priority) const;
         // Active 3D mesh leaves in runtime traversal order. This is CPU render
         // intent only: no HMD decoding, GPU resource or render-slot ownership.
         [[nodiscard]] std::vector<SequenceMeshInstanceView> meshInstances() const;
