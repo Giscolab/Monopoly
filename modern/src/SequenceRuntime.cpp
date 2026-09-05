@@ -713,6 +713,42 @@ namespace monopoly::sequence
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }
+    std::optional<SequenceInfoView> SequenceRuntime::info(data::DataId id,
+        std::uint16_t priority, bool wholeTree) const
+    {
+        const auto matches = matching(id, priority, wholeTree);
+        if (matches.empty()) return std::nullopt;
+        const auto* node = find(matches.front());
+        if (!node) return std::nullopt;
+
+        SequenceInfoView result{node->id, node->clock.clock(), node->clock.endTime(),
+            node->dimensionality, std::nullopt};
+        if (node->dimensionality == 3)
+            if (const auto* matrix = std::get_if<Matrix3D>(&node->worldTransform))
+                result.sequenceToWorldTransformation = *matrix;
+        return result;
+    }
+
+    std::optional<Matrix3D> SequenceRuntime::childMeshWorldMatrix(
+        data::DataId id, std::uint16_t priority) const
+    {
+        const auto roots = matching(id, priority, false);
+        if (roots.empty()) return std::nullopt;
+        const auto* selected = find(roots.front());
+        if (!selected) return std::nullopt;
+
+        const auto visit = [&](const auto& self, const Node& node) -> std::optional<Matrix3D>
+        {
+            if (node.definition().record.chunk.id == 9 && node.dimensionality == 3)
+                if (const auto* matrix = std::get_if<Matrix3D>(&node.worldTransform))
+                    return *matrix;
+            for (const auto& child : node.children)
+                if (auto found = self(self, *child)) return found;
+            return std::nullopt;
+        };
+        return visit(visit, *selected);
+    }
+
     std::vector<SequenceMeshInstanceView> SequenceRuntime::meshInstances() const
     {
         std::vector<SequenceMeshInstanceView> result;

@@ -490,6 +490,136 @@ namespace
             "camera FOV tweeker under a non-camera parent fails and tears down the staged forest");
     }
 
+    void testGetInfoContract()
+    {
+        Fixture fixture;
+
+        const std::array simpleItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 8, 2, 0, true)}};
+        DataBankRegistry simpleRegistry;
+        (void)archive(fixture.root / "get-info-simple.dat", simpleItems, simpleRegistry);
+        auto simpleProgram = program(simpleRegistry);
+        const auto simpleId = packDataId(2, 0);
+        SequenceRuntime simple;
+        const auto first = simple.start(simpleProgram, 500).value();
+        expect(!simple.info(packDataId(2, 99), 500),
+            "GetInfo returns absent for an unmatched DataID/priority");
+        expect(simple.update(0).has_value() && simple.update(4).has_value(),
+            "GetInfo clock fixture advances through normal runtime updates");
+        auto current = simple.info(simpleId, 500);
+        expect(current && current->node == first && current->sequenceClock == 4 &&
+            current->endTime == 8 && current->dimensionality == 0 &&
+            !current->sequenceToWorldTransformation,
+            "GetInfo exposes the consumed generic clock/end-time subset without fake 3D data");
+        const auto second = simple.start(simpleProgram, 500).value();
+        current = simple.info(simpleId, 500);
+        expect(current && current->node == second && current->sequenceClock == 0,
+            "GetInfo returns the first runtime-order duplicate, matching FindNextSequence");
+
+        DataBytes rootContents;
+        append(rootContents, dimensionality(3));
+        append(rootContents, indirect(packDataId(2, 1), true));
+        DataBytes meshAttributes;
+        append(meshAttributes, offset3D(0x3F800000U, 0x00000000U, 0x40000000U));
+        const std::array treeItems{
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 20, 2, 0, true, rootContents)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                mesh(packDataId(77, 9), true, 0, meshAttributes)}};
+        DataBankRegistry treeRegistry;
+        (void)archive(fixture.root / "get-info-tree.dat", treeItems, treeRegistry);
+        auto treeProgram = program(treeRegistry);
+        SequenceRuntime tree;
+        const auto root = tree.start(treeProgram, 90).value();
+        expect(tree.update(0).has_value(), "GetInfo whole-tree fixture births its indirect mesh");
+        expect(!tree.info(packDataId(2, 1), 0, false),
+            "GetInfo top-level search does not see an offset-zero node nested under another root");
+        auto nested = tree.info(packDataId(2, 1), 0, true);
+        const auto* initialWorld = nested && nested->sequenceToWorldTransformation ?
+            &*nested->sequenceToWorldTransformation : nullptr;
+        expect(nested && nested->dimensionality == 3 && initialWorld &&
+            initialWorld->values[12] == 1.0F && initialWorld->values[13] == 0.0F &&
+            initialWorld->values[14] == 2.0F,
+            "GetInfo whole-tree search returns the nested offset-zero 3D sequence world matrix");
+        expect(tree.moveMatching(packDataId(2, 0), 90,
+            SequenceTransform(translate3D(10.0F, 20.0F, 30.0F))) == 1 &&
+            tree.update(0).has_value(),
+            "MoveTheWorks-style replacement forces same-tick world-transform propagation");
+        nested = tree.info(packDataId(2, 1), 0, true);
+        const auto* movedWorld = nested && nested->sequenceToWorldTransformation ?
+            &*nested->sequenceToWorldTransformation : nullptr;
+        expect(tree.inspect(root) && movedWorld && movedWorld->values[12] == 11.0F &&
+            movedWorld->values[13] == 20.0F && movedWorld->values[14] == 32.0F,
+            "GetInfo 3D snapshot observes parent movement after runtime reevaluation");
+    }
+
+    void testGetChildMeshWorldMatrixContract()
+    {
+        Fixture fixture;
+
+        DataBytes rootMeshAttributes;
+        append(rootMeshAttributes, offset3D(0x3F800000U, 0x40000000U, 0x40400000U));
+        const std::array rootMeshItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            mesh(packDataId(77, 9), true, 0, rootMeshAttributes)}};
+        DataBankRegistry rootMeshRegistry;
+        (void)archive(fixture.root / "child-matrix-root-mesh.dat",
+            rootMeshItems, rootMeshRegistry);
+        auto rootMeshProgram = program(rootMeshRegistry);
+        SequenceRuntime roots;
+        const auto meshRoot = roots.start(rootMeshProgram, 55).value();
+        expect(roots.update(0).has_value(), "child-matrix root mesh enters evaluated runtime state");
+        auto matrix = roots.childMeshWorldMatrix(packDataId(2, 0), 55);
+        expect(matrix && matrix->values[12] == 1.0F && matrix->values[13] == 2.0F &&
+            matrix->values[14] == 3.0F,
+            "GetChildMeshWorldMatrix returns the selected root itself when it is a 3D mesh");
+        expect(!roots.childMeshWorldMatrix(packDataId(2, 99), 55),
+            "GetChildMeshWorldMatrix returns absent when no top-level target matches");
+
+        const std::array emptyItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 20, 2, 0, true)}};
+        DataBankRegistry emptyRegistry;
+        (void)archive(fixture.root / "child-matrix-empty-root.dat", emptyItems, emptyRegistry);
+        auto emptyProgram = program(emptyRegistry);
+        const auto emptyRoot = roots.start(emptyProgram, 55).value();
+        expect(roots.roots().front() == emptyRoot && !roots.childMeshWorldMatrix(packDataId(2, 0), 55),
+            "GetChildMeshWorldMatrix stays inside the first matching root and never leaks to a duplicate sibling");
+        expect(roots.stop(emptyRoot).has_value() && roots.inspect(meshRoot) &&
+            roots.childMeshWorldMatrix(packDataId(2, 0), 55).has_value(),
+            "removing the selected empty duplicate exposes the older matching mesh root normally");
+
+        DataBytes treeContents;
+        append(treeContents, dimensionality(3));
+        DataBytes firstAttributes;
+        append(firstAttributes, offset3D(0x3F800000U, 0, 0));
+        DataBytes secondAttributes;
+        append(secondAttributes, offset3D(0x40000000U, 0, 0));
+        append(treeContents, mesh(packDataId(88, 1), true, 0, firstAttributes));
+        append(treeContents, mesh(packDataId(88, 2), true, 0, secondAttributes));
+        const std::array treeItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 20, 2, 0, true, treeContents)}};
+        DataBankRegistry treeRegistry;
+        (void)archive(fixture.root / "child-matrix-tree.dat", treeItems, treeRegistry);
+        auto treeProgram = program(treeRegistry);
+        SequenceRuntime tree;
+        const auto treeRoot = tree.start(treeProgram, 70).value();
+        expect(tree.update(0).has_value(), "child-matrix nested fixture births both mesh children");
+        const auto rootView = tree.inspect(treeRoot);
+        expect(rootView && rootView->children.size() == 2 &&
+            tree.inspect(rootView->children.front())->contentsDataId == packDataId(88, 2),
+            "equal-priority mesh children retain historical newest-first runtime order");
+        matrix = tree.childMeshWorldMatrix(packDataId(2, 0), 70);
+        expect(matrix && matrix->values[12] == 2.0F,
+            "GetChildMeshWorldMatrix returns the first 3D mesh in runtime pre-order");
+        expect(tree.moveMatching(packDataId(2, 0), 70,
+            SequenceTransform(translate3D(10.0F, 20.0F, 30.0F))) == 1 &&
+            tree.update(0).has_value(),
+            "parent movement reevaluates nested mesh world transforms before query");
+        matrix = tree.childMeshWorldMatrix(packDataId(2, 0), 70);
+        expect(matrix && matrix->values[12] == 12.0F && matrix->values[13] == 20.0F &&
+            matrix->values[14] == 30.0F,
+            "GetChildMeshWorldMatrix observes the first mesh after parent transform propagation");
+    }
+
     void testCommandsAndFailureLimits()
     {
         Fixture fixture;
@@ -681,6 +811,8 @@ int main()
         testMeshLeafRuntimeIntent();
         testMeshChoiceRuntimeAndTweeker();
         testCameraRuntimeAndFieldOfViewTweeker();
+        testGetInfoContract();
+        testGetChildMeshWorldMatrixContract();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
         testRawHmdStartContract();
