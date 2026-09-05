@@ -11,6 +11,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
+    # CMake's MSVC probe can decode the French UTF-8 nonbreaking spaces as
+    # OEM text. Ninja then records zero header dependencies and retains stale
+    # ABI objects. Repair only this detected corruption; other locales retain
+    # their compiler-probed prefix (an English language pack is not required).
+    if(CMAKE_GENERATOR MATCHES "Ninja")
+        string(REPLACE "┬á" " " CMAKE_CL_SHOWINCLUDES_PREFIX
+            "${CMAKE_CL_SHOWINCLUDES_PREFIX}")
+    endif()
     # MSVC does not enable standard C++ stack unwinding for these Ninja
     # targets automatically in the current VS 18 toolchain.
     add_compile_options(
@@ -19,6 +27,14 @@ if(MSVC)
 endif()
 
 include(CTest)
+
+# Keep generated shader assets beside the application, independent of cwd.
+# configure_file also registers shader changes as build dependencies.
+foreach(WORLD_SHADER IN ITEMS World3D.vert.dxil World3D.frag.dxil
+    World3D.vert.spv World3D.frag.spv World3D.vert.msl World3D.frag.msl)
+    configure_file("shaders/generated/${WORLD_SHADER}"
+        "shaders/${WORLD_SHADER}" COPYONLY)
+endforeach()
 
 include(FetchContent)
 
@@ -118,6 +134,7 @@ add_library(
     src/SequenceChildSchedule.cpp
     src/SequenceRuntime.cpp
     src/SequenceCommands.cpp
+    src/SequencePlayback.cpp
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
@@ -762,6 +779,8 @@ if(BUILD_TESTING)
     add_executable(
         MonopolyWorld3DRendererTests
         tests/World3DRendererTests.cpp
+        src/GPUFrame.cpp
+        src/LogicalViewport.cpp
     )
     target_link_libraries(
         MonopolyWorld3DRendererTests
@@ -769,7 +788,7 @@ if(BUILD_TESTING)
     )
     target_compile_definitions(
         MonopolyWorld3DRendererTests PRIVATE
-        MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders/generated"
+        MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders"
     )
     if(MSVC)
         target_compile_options(

@@ -31,9 +31,34 @@ namespace
 
 namespace monopoly::engine::gpuframe
 {
+    std::expected<World3DRenderStats, World3DRendererError> recordWorld3D(
+        SDL_GPUCommandBuffer* command, SDL_GPUTexture* target,
+        Uint32 width, Uint32 height, World3DRenderer& renderer,
+        const SequenceWorld3DSlot& world)
+    {
+        if (!world.view()) return World3DRenderStats{};
+        if (width > static_cast<Uint32>(std::numeric_limits<int>::max()) ||
+            height > static_cast<Uint32>(std::numeric_limits<int>::max()))
+            return std::unexpected(World3DRendererError{
+                World3DRendererErrorCode::InvalidTargetSize,
+                "World3D target exceeds logical viewport range", {}, {}});
+        const auto rect = world.view()->viewport;
+        const auto transform = logicalviewport::makeTransform(
+            static_cast<int>(width), static_cast<int>(height));
+        const auto pixels = logicalviewport::logicalToPixelRect(transform,
+            {static_cast<double>(rect.left), static_cast<double>(rect.top),
+             static_cast<double>(rect.right - rect.left),
+             static_cast<double>(rect.bottom - rect.top)});
+        const SDL_GPUViewport viewport{static_cast<float>(pixels.x),
+            static_cast<float>(pixels.y), static_cast<float>(pixels.width),
+            static_cast<float>(pixels.height), 0, 1};
+        return renderer.render(command, target, width, height, viewport, world);
+    }
     bool present(
         SDL_GPUDevice* device,
-        SDL_Window* window)
+        SDL_Window* window,
+        World3DRenderer* renderer,
+        const SequenceWorld3DSlot* world)
     {
         if (device == nullptr || window == nullptr)
         {
@@ -125,36 +150,13 @@ namespace monopoly::engine::gpuframe
 
             if (background.texture != nullptr)
             {
-                logicalviewport::LogicalRect logicalDestination{};
-
-                switch (
-                    display::stateReadOnly().viewportInUse)
-                {
-                    case display::Viewport3D::Main:
-                        // viewRects[0]
-                        // { 0, 0, 800, 450 }
-                        logicalDestination =
-                            { 0.0, 0.0, 800.0, 450.0 };
-                        break;
-
-                    case display::Viewport3D::Status:
-                        // viewRects[1]
-                        // { 0, 0, 400, 225 }
-                        logicalDestination =
-                            { 0.0, 0.0, 400.0, 225.0 };
-                        break;
-
-                    case display::Viewport3D::Trade:
-                        // viewRects[2]
-                        // { 200, 0, 600, 225 }
-                        logicalDestination =
-                            { 200.0, 0.0, 400.0, 225.0 };
-                        break;
-
-                    case display::Viewport3D::Off:
-                    default:
-                        break;
-                }
+                const auto logicalView = display::worldViewport(
+                    display::stateReadOnly().viewportInUse);
+                const logicalviewport::LogicalRect logicalDestination{
+                    static_cast<double>(logicalView.left),
+                    static_cast<double>(logicalView.top),
+                    static_cast<double>(logicalView.right - logicalView.left),
+                    static_cast<double>(logicalView.bottom - logicalView.top)};
 
 
                 if (logicalDestination.width > 0.0 &&
@@ -271,6 +273,20 @@ namespace monopoly::engine::gpuframe
                         commandBuffer,
                         &blit
                     );
+                }
+            }
+
+            // Slot 1 follows the clear and the historical 3D background.
+            // LOAD in World3DRenderer preserves both and the letterbox bars.
+            if (renderer && world && world->view())
+            {
+                const auto drawn = recordWorld3D(commandBuffer, swapchainTexture,
+                    width, height, *renderer, *world);
+                if (!drawn)
+                {
+                    // SDL forbids cancelling a command after swapchain acquire.
+                    (void)SDL_SubmitGPUCommandBuffer(commandBuffer);
+                    return SDL_SetError("World3D: %s", drawn.error().detail.c_str());
                 }
             }
         }

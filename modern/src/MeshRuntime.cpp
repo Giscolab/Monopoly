@@ -100,7 +100,47 @@ namespace monopoly::data
         std::size_t skippedUnsupported{};
         std::size_t skippedTextured{};
         std::size_t totalIndices{};
+        std::optional<std::vector<std::shared_ptr<const HmdTextureImage>>> embeddedTextures;
 
+        auto resolveEmbeddedTexture = [&](const MeshTextureLookup& lookup)
+            -> std::expected<std::optional<MeshTextureRegion>, MeshRuntimeError>
+        {
+            if (!embeddedTextures)
+            {
+                auto decoded = result.source_->textureImages();
+                if (!decoded)
+                {
+                    auto failure = runtimeError(MeshRuntimeErrorCode::TextureDecodeFailed,
+                        "embedded HMD texture image could not be decoded");
+                    failure.sourceError = decoded.error();
+                    failure.skippedUnsupportedSections = skippedUnsupported;
+                    failure.skippedTexturedTriangles = skippedTextured;
+                    return std::unexpected(std::move(failure));
+                }
+                embeddedTextures.emplace();
+                embeddedTextures->reserve(decoded->size());
+                for (auto& image : *decoded)
+                    embeddedTextures->push_back(
+                        std::make_shared<const HmdTextureImage>(std::move(image)));
+            }
+
+            // NewMesh.cpp::FindTexture scans newest-to-oldest and includes edges.
+            for (std::size_t index = embeddedTextures->size(); index-- > 0;)
+            {
+                const auto& image = (*embeddedTextures)[index];
+                const auto u = static_cast<std::int32_t>(lookup.u);
+                const auto v = static_cast<std::int32_t>(lookup.v);
+                const auto right = image->logicalX + static_cast<std::int32_t>(image->width);
+                const auto bottom = image->logicalY + static_cast<std::int32_t>(image->height);
+                if (lookup.page == image->texturePage &&
+                    u >= image->logicalX && u <= right &&
+                    v >= image->logicalY && v <= bottom)
+                    return std::optional<MeshTextureRegion>{MeshTextureRegion{
+                        static_cast<std::uint64_t>(index + 1U), image->texturePage,
+                        image->logicalX, image->logicalY, image->width, image->height, image}};
+            }
+            return std::optional<MeshTextureRegion>{};
+        };
         for (std::size_t primitiveIndex = 0;
             primitiveIndex < result.source_->primitives().size(); ++primitiveIndex)
         {
@@ -133,10 +173,17 @@ namespace monopoly::data
                     const bool textured = triangle->texturePage != 0xFFFFU;
                     if (textured)
                     {
+                        const MeshTextureLookup lookup{triangle->texturePage,
+                            triangle->texturePoints[0].u, triangle->texturePoints[0].v};
                         if (textureResolver)
-                            texture = textureResolver({triangle->texturePage,
-                                triangle->texturePoints[0].u,
-                                triangle->texturePoints[0].v});
+                            texture = textureResolver(lookup);
+                        else
+                        {
+                            auto embedded = resolveEmbeddedTexture(lookup);
+                            if (!embedded)
+                                return std::unexpected(std::move(embedded.error()));
+                            texture = std::move(*embedded);
+                        }
                         if (!texture)
                         {
                             // NewMesh.cpp::AddTriangle returns without adding a face

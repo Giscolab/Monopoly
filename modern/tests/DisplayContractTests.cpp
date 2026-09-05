@@ -106,6 +106,17 @@ namespace
                "VIEWPORT_TRADE == 2");
         expect(static_cast<std::uint8_t>(Viewport3D::Off) == 3,
                "VIEWPORT_OFF == 3");
+        expect(Board3DPriority == 90,
+               "DISPLAY_Board3dPriority == 90");
+        expect(isBoardVisible(Screen2D::Main) &&
+               isBoardVisible(Screen2D::Trade) &&
+               isBoardVisible(Screen2D::Portfolio),
+               "Main, Trade and Portfolio keep the historical board visible");
+        expect(!isBoardVisible(Screen2D::PlayerSelect) &&
+               !isBoardVisible(Screen2D::Options) &&
+               !isBoardVisible(Screen2D::Auction) &&
+               !isBoardVisible(Screen2D::Black),
+               "non-board screens do not request the historical board");
 
         expect(static_cast<std::uint8_t>(PlayerSetupPhase::EnterName) == 4,
                "UDPSEL_ENTERNAME == 4");

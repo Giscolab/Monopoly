@@ -1,6 +1,8 @@
 #include "LegacyMeshData.hpp"
 
+#include <algorithm>
 #include <bit>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -33,6 +35,22 @@ namespace monopoly::data
                 result |= std::to_integer<std::uint32_t>(bytes[offset + i])
                     << (i * 8U);
             return result;
+        }
+
+        std::uint16_t u16(std::span<const std::byte> bytes,
+            std::size_t offset) noexcept
+        {
+            return static_cast<std::uint16_t>(
+                std::to_integer<std::uint16_t>(bytes[offset]) |
+                (std::to_integer<std::uint16_t>(bytes[offset + 1]) << 8U));
+        }
+
+        std::uint16_t texturePage8(std::uint16_t x, std::uint16_t y) noexcept
+        {
+            // Source/PC3D/Libgpu.h getTPage(1, 0, x, y).
+            return static_cast<std::uint16_t>(
+                (1U << 7U) | ((y & 0x100U) >> 4U) |
+                ((x & 0x3FFU) >> 6U) | ((y & 0x200U) << 2U));
         }
 
         std::expected<std::size_t, MeshDataError> wordOffset(
@@ -356,6 +374,130 @@ namespace monopoly::data
                     polygonStart, "Triangle references an out-of-payload SVECTOR"));
             result.vertices[i] = shortVector(data, bases[1] + vertexIndex * 8);
             result.normals[i] = shortVector(data, bases[2] + normalIndex * 8);
+        }
+        return result;
+    }
+
+    std::expected<std::vector<HmdTextureImage>, MeshDataError>
+    LegacyMeshData::textureImages() const
+    {
+        const auto data = bytes();
+        std::vector<HmdTextureImage> result;
+        for (const auto& primitive : primitives_)
+        {
+            const auto& header = headers_[primitive.headerIndex];
+            for (const auto& section : primitive.sections)
+            {
+                // HMDData.h HMDDT_IMAGE=2. The PC loader only calls
+                // ProcessHMDImage for GsUIMG1 (category 2 + CLUT bit 0).
+                if (((section.type >> 24U) & 0xFU) != 2U ||
+                    (section.type & 1U) == 0U)
+                    continue;
+                if (header.fields.size() < 2)
+                    return std::unexpected(error(MeshDataErrorCode::InvalidPrimitiveHeader,
+                        header.offset, "HMD image header needs IMAGE TOP and CLUT TOP fields"));
+                if (!header.fields[0].isOffset() || !header.fields[1].isOffset())
+                    return std::unexpected(error(MeshDataErrorCode::ExpectedOffset,
+                        header.offset + 4, "HMD image header bases must be word offsets"));
+                const auto imageBase = static_cast<std::size_t>(
+                    header.fields[0].rawValue & ~Flag) * 4U;
+                const auto clutBase = static_cast<std::size_t>(
+                    header.fields[1].rawValue & ~Flag) * 4U;
+
+                // File Formats 2-95: each WITHCLUT entry is six DWORDs after
+                // the shared type/count pair: image x/y, w/h, image_idx,
+                // CLUT x/y, w/h, clut_idx. hmdload.cpp advances by six.
+                const std::size_t requiredWords = 2U +
+                    static_cast<std::size_t>(section.elementCount) * 6U;
+                if (section.sizeWords < requiredWords)
+                    return std::unexpected(error(MeshDataErrorCode::InvalidSectionSize,
+                        section.offset, "GsUIMG1 records exceed HMD image section size"));
+                const auto raw = data.subspan(section.offset,
+                    static_cast<std::size_t>(section.sizeWords) * 4U);
+
+                for (std::size_t i = 0; i < section.elementCount; ++i)
+                {
+                    const auto record = 2U + i * 6U;
+                    const auto xy = u32(raw, record * 4U);
+                    const auto wh = u32(raw, (record + 1U) * 4U);
+                    const auto imageIndex = u32(raw, (record + 2U) * 4U);
+                    const auto clutIndex = u32(raw, (record + 5U) * 4U);
+                    const auto rawX = static_cast<std::uint16_t>(xy);
+                    const auto rawY = static_cast<std::uint16_t>(xy >> 16U);
+                    const auto widthWords = static_cast<std::uint16_t>(wh);
+                    const auto height16 = static_cast<std::uint16_t>(wh >> 16U);
+                    const std::uint32_t width =
+                        static_cast<std::uint32_t>(widthWords) * 2U;
+                    const std::uint32_t height = height16;
+                    if (width == 0U || height == 0U ||
+                        width > std::numeric_limits<std::size_t>::max() / height)
+                        return std::unexpected(error(MeshDataErrorCode::InvalidSectionSize,
+                            section.offset + record * 4U,
+                            "HMD 8-bit texture has invalid dimensions"));
+                    const auto pixelCount =
+                        static_cast<std::size_t>(width) * height;
+                    if (pixelCount > std::numeric_limits<std::size_t>::max() / 4U)
+                        return std::unexpected(error(MeshDataErrorCode::InvalidSectionSize,
+                            section.offset + record * 4U,
+                            "HMD texture RGBA size overflows host range"));
+                    if (imageBase > data.size() ||
+                        imageIndex > (data.size() - imageBase) / 4U)
+                        return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                            section.offset + (record + 2U) * 4U,
+                            "HMD image index leaves IMAGE TOP section"));
+                    if (clutBase > data.size() ||
+                        clutIndex > (data.size() - clutBase) / 4U)
+                        return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                            section.offset + (record + 5U) * 4U,
+                            "HMD CLUT index leaves CLUT TOP section"));
+                    const auto imageOffset = imageBase +
+                        static_cast<std::size_t>(imageIndex) * 4U;
+                    const auto clutOffset = clutBase +
+                        static_cast<std::size_t>(clutIndex) * 4U;
+                    if (!fits(data, imageOffset, pixelCount) ||
+                        !fits(data, clutOffset, 256U, 2U))
+                        return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                            section.offset, "HMD image or 256-entry CLUT is truncated"));
+
+                    HmdTextureImage image;
+                    image.texturePage = texturePage8(rawX, rawY);
+                    image.rawX = rawX;
+                    image.rawY = rawY;
+                    image.logicalX = static_cast<std::int32_t>((rawX & 0x3FU) << 1U);
+                    image.logicalY = static_cast<std::int32_t>(rawY & 0xFFU);
+                    image.width = width;
+                    image.height = height;
+
+                    // TextureHasBeenLoaded compares page/bank/raw X/Y and
+                    // suppresses duplicates before allocating a Surface.
+                    const auto duplicate = std::find_if(result.begin(), result.end(),
+                        [&](const HmdTextureImage& existing)
+                        {
+                            return existing.texturePage == image.texturePage &&
+                                existing.rawX == rawX && existing.rawY == rawY;
+                        });
+                    if (duplicate != result.end()) continue;
+
+                    image.rgba.resize(pixelCount * 4U);
+                    for (std::size_t pixel = 0; pixel < pixelCount; ++pixel)
+                    {
+                        const auto paletteIndex =
+                            std::to_integer<std::uint8_t>(data[imageOffset + pixel]);
+                        const auto colour = u16(data, clutOffset +
+                            static_cast<std::size_t>(paletteIndex) * 2U);
+                        auto expand5 = [](std::uint16_t value) -> std::uint8_t
+                        {
+                            return static_cast<std::uint8_t>(
+                                (static_cast<std::uint32_t>(value) * 255U) / 31U);
+                        };
+                        image.rgba[pixel * 4U] = expand5(colour & 0x1FU);
+                        image.rgba[pixel * 4U + 1U] = expand5((colour >> 5U) & 0x1FU);
+                        image.rgba[pixel * 4U + 2U] = expand5((colour >> 10U) & 0x1FU);
+                        image.rgba[pixel * 4U + 3U] = 255U;
+                    }
+                    result.push_back(std::move(image));
+                }
+            }
         }
         return result;
     }
