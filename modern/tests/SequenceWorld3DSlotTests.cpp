@@ -1,5 +1,6 @@
 #include "SequenceWorld3DSlot.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <string_view>
@@ -15,6 +16,7 @@ namespace
         std::cout << (value ? "[PASS] " : "[FAIL] ") << text << '\n';
         if (!value) ++failures;
     }
+    bool near(float a, float b) { return std::fabs(a - b) < 0.0001F; }
 
     std::shared_ptr<const data::MeshRuntimeAsset> asset(data::DataId id)
     {
@@ -30,6 +32,41 @@ namespace
         auto matrix = sequence::identity3D();
         matrix.values[12] = x;
         return {node, id, 7, 3, matrix, asset(id)};
+    }
+
+    void testCameraCommandResolution()
+    {
+        sequence::SequenceRuntime runtime;
+        sequence::SetCameraCommand direct{1, 0, {10.0F, 20.0F, 30.0F},
+            {0.0F, 0.0F, 2.0F}, {0.0F, 3.0F, 0.0F},
+            0.75F, 2.0F, 1024.0F};
+        const auto directCamera = engine::resolveWorld3DCamera(direct, runtime);
+        expect(directCamera && directCamera->location == direct.position &&
+            directCamera->forward == direct.forwards && directCamera->up == direct.up &&
+            directCamera->fieldOfView == 0.75F && directCamera->nearPlane == 2.0F &&
+            directCamera->farPlane == 1024.0F,
+            "direct SetCamera preserves user vectors and projection values exactly");
+
+        auto labelled = direct;
+        labelled.cameraNumber = 42;
+        expect(!engine::resolveWorld3DCamera(labelled, runtime),
+            "missing labelled camera requests no render-slot update instead of inventing a fallback");
+
+        constexpr float halfPi = 1.57079632679489661923F;
+        sequence::SequenceCamera3DView sequenceCamera;
+        sequenceCamera.worldTransform = sequence::moveRySTxzTransform(
+            halfPi, 2.0F, 10.0F, 20.0F);
+        sequenceCamera.fieldOfView = 0.5F;
+        sequenceCamera.nearPlane = 3.0F;
+        sequenceCamera.farPlane = 900.0F;
+        const auto converted = engine::world3DCameraFromSequence(sequenceCamera);
+        expect(near(converted.location[0], 10.0F) && near(converted.location[1], 0.0F) &&
+            near(converted.location[2], 20.0F) && near(converted.forward[0], 1.0F) &&
+            near(converted.forward[1], 0.0F) && near(converted.forward[2], 0.0F) &&
+            near(converted.up[0], 0.0F) && near(converted.up[1], 1.0F) &&
+            near(converted.up[2], 0.0F) && converted.fieldOfView == 0.5F &&
+            converted.nearPlane == 3.0F && converted.farPlane == 900.0F,
+            "sequenced camera transforms origin/+Z/+Y and normalizes scale exactly like L_Rend3D");
     }
 
     void testLifecycleAndStableIdentity()
@@ -119,6 +156,7 @@ namespace
 int main()
 {
     std::cout << std::unitbuf;
+    testCameraCommandResolution();
     testLifecycleAndStableIdentity();
     testProjectionVisibilityLifecycle();
     testRemovalAndTransactionalDuplicateFailure();

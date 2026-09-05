@@ -70,8 +70,8 @@ effectivement present sous `modern/`.
 | `Source/artlib/L_Data.*` | `DataBanks`, `LegacyDataArchive`, `DataBankRegistry`, `LegacyDataArchiveBuilder` | `PORTED_PARTIAL` | DataId 16:16, groupes, header/index DAT, zlib, chargement paresseux, refs | zlib, filesystem | Lecture LE explicite, validation, metadata, cache, leases partagees, mount/unmount, index packed et writer de fixtures sont testes. Restent les sources runtime/user-created/external-file, le budget/LRU automatique et une validation sur banque retail. |
 | `Source/artlib/L_Chunk.*` | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | lecteur consomme : header 24-bit + ID 8-bit, descend/ascend/seek/map/read, limite 8 niveaux | `LegacyDataArchive`, futur `L_Seqncr` | Contrat read-only et ownership `ReadFromDataID` portes sans bitfield ABI et testes sur fixtures, y compris le franchissement historique des siblings ID 0/128 lors d'une recherche precise. La validation d'un CNK retail reste bloquee separement; l'editeur/writer non consomme n'est pas dans ce perimetre. |
 | `Source/artlib/L_Grafix.*`, `L_Rend2D.*`, `L_Sprite.*` | `Display`, futur renderer UI SDL_GPU | `PORTED_PARTIAL` | composition 2D, clipping, priorites, surfaces | SDL_GPU, assets, transformation 800x600 | Seul le cycle d'etat existe; rendu des objets/sprites/fonts a construire. |
-| `Source/artlib/L_Rend3D.*` | `GPUFrame`, `SequenceWorld3DSlot`, `World3DGPUScene`, `World3DProjection`, `World3DRenderer` | `PORTED_PARTIAL` | slot World3D 1, viewport, camera/projection, bounds/culling, draw indexed et meshes animes | SDL_GPU, `SequenceRenderData`, PC3D moderne | Le chemin sequence -> slot 1 -> scene GPU -> renderer -> GPUFrame est actif. Bounds, projection ecran, culling, textures HMD et vertex buffers MIMe par node sont testes sur D3D12 reel. Restent surtout les sequences camera/FOV/visibility, certains contrats de scene et les primitives HMD encore non consommees. |
-| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice et intention 3D | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot` | Grouping/indirect/tweeker et feuilles mesh 3D sont executes; Start/Stop/SetEndingAction et MoveTheWorks/MoveXY/MoveRySTxz sont raccordes. Le chunk prive 139 `3D_MESH_CHOICE` et ses tweekers constant/linear pilotent maintenant les poses MIMe jusqu au renderer GPU. Restent labels/ForceRedraw/GetInfo, bitmap/model/sound, camera/FOV/visibility et chains seulement si leurs callers reels l exigent. |
+| `Source/artlib/L_Rend3D.*` | `GPUFrame`, `SequenceWorld3DSlot`, `World3DGPUScene`, `World3DProjection`, `World3DRenderer` | `PORTED_PARTIAL` | slot World3D 1, viewport, camera/projection, bounds/culling, draw indexed et meshes animes | SDL_GPU, `SequenceRenderData`, PC3D moderne | Le chemin sequence -> slot 1 -> scene GPU -> renderer -> GPUFrame est actif. Bounds, projection ecran, culling, textures HMD et vertex buffers MIMe par node sont testes sur D3D12 reel. Les records camera 3D, FOV sequence/tweeker et SetCamera direct/labellise sont maintenant raccordes jusqu a la camera de frame. Restent surtout la visibility historique prouvee, les labels generiques d objets 3D non-camera, certains contrats de scene et les primitives HMD encore non consommees. |
+| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice et intention 3D | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot` | Grouping/indirect/tweeker, feuilles mesh 3D et records camera 3D sont executes; Start/Stop/SetEndingAction, MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont raccordes. Les chunks prives 139 `3D_MESH_CHOICE` et 144 `CAMERA_FIELD_OF_VIEW` pilotent respectivement MIMe et FOV. L ownership de label camera reproduit le dernier-demarre sans restauration d un overlap plus ancien. Restent labels generiques/ForceRedraw/GetInfo, bitmap/model/sound, visibility et chains seulement si leurs callers reels l exigent. |
 | `Source/artlib/L_Fonts.*`, `L_Print.*` | Aucun | `NOT_STARTED` | Arial 10, mesure/rendu de texte | font rasterizer portable, LANG | Choisir un backend portable et conserver metriques/layout observables. |
 | `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer` partiel | `REPLACED_PORTABLE` | input clavier/souris | SDL3, `LogicalViewport` | Souris reconvertie vers 800x600 et bandes noires rejetees; rendu du pointeur et certains types d'evenements restent partiels. |
 | `Source/artlib/L_Sound.*`, `L_Midi.*` | Aucun | `NOT_STARTED` | WAV, musique, mixage, voice | audio portable, data | Inventorier les appels Monopoly et remplacer DirectSound/MIDI legacy. |
@@ -81,7 +81,7 @@ effectivement present sous `modern/`.
 
 | Original | Equivalent moderne | Statut | Contrat consomme | Dependances | Travail restant / blocage |
 |---|---|---|---|---|---|
-| cameras, viewports, background (`camera.*`, `D3DDevice.*`, view code) | `GPUFrame`, `World3DProjection`, `World3DRenderer`, `Display::Viewport3D`, `LogicalViewport` | `PORTED_PARTIAL` | rectangles Main/Status/Trade, view/projection, depth, bounds ecran et clear | SDL_GPU | Camera/view/projection portable et viewport letterbox sont raccordes au renderer et testes sur D3D12. Restent le record sequence camera, FOV/visibility tweekers et les transitions de camera effectivement consommees par le jeu. |
+| cameras, viewports, background (`camera.*`, `D3DDevice.*`, view code) | `GPUFrame`, `World3DProjection`, `World3DRenderer`, `Display::Viewport3D`, `LogicalViewport` | `PORTED_PARTIAL` | rectangles Main/Status/Trade, view/projection, depth, bounds ecran et clear | SDL_GPU | Camera/view/projection portable et viewport letterbox sont raccordes au renderer et testes sur D3D12. Le record camera 7, FOV 144, SetCamera direct et selection par label camera sont portes; l angle est confirme comme FOV complet par `PC3D/Matrix.inl`. Restent la visibility historique et l integration des transitions UDBoard/UDPieces au fur et a mesure du port UI. |
 | meshes/scenes/materials (`mesh*`, `NewMesh*`, `Scene.h`, `l_material.h`) | `MeshXRuntime`, `MeshRuntimeCache`, `MeshRenderData`, `MeshGPUCache`, `World3DGPUScene` | `PORTED_PARTIAL` | postload HMD, groupes materiau/texture, poses MIMe, bounds, donnees indexees et buffers GPU | `LegacyMeshData`, SDL_GPU | Pour Monopoly, `USE_OLD_FRAME` rend `hmdload.cpp`/`meshx` autoritatif; `NewMesh.cpp` est le chemin alternatif inactif. Triangles actuellement decodes, textures HMD embarquees, pose 0 + diff MIMe, interpolation/extrapolation mesh choice et buffers vertex GPU par node sont portes. Restent autres primitives/categories et substitutions BMP externes `TextureCatalog`. |
 | decodeur HMD / postload MESHX (`HMDData.h`, `NewMesh.cpp`, `hmdload.*`) | `LegacyMeshData`, `openLegacyMeshData`, `MeshXRuntime` | `PORTED_PARTIAL` | HMD disque LE, offsets DWORD, triangles, `GsUIMG1`, `GsVtxMIMe`/`GsNrmMIMe`, puis construction mesh CPU | `DAT_3D`, textures, GPU | Structure bornee, cycles/budgets, triangles categorie 0, image 8-bit CLUT -> RGBA8 et diff blocks vertex/normal MIMe sont testes sur fixtures synthetiques. Reset/joint MIMe et autres categories/primitives restent explicites/non portees. MESHX demeure un resultat memoire, jamais un second format disque. |
 | vieux DirectDraw/Direct3D drivers (`DDraw*`, `D3DDevice*`) | SDL3 / SDL_GPU | `REPLACED_PORTABLE` | creation device, swapchain, soumission | SDL3 | Les implementations legacy ne seront pas portees; completer seulement les comportements de rendu consommes. |
@@ -99,15 +99,15 @@ effectivement present sous `modern/`.
 | Writer DAT portable | `LegacyDataArchiveBuilder` | `PORTED_COMPLETE` | Reconstruit deterministement un conteneur valide depuis des payloads fournis; ne pretend pas reproduire les payloads ou octets retail. |
 | Index logique packed 6 octets | `DataIndexTable`, `lookupIndexedDataId` | `PORTED_COMPLETE` | Tri strict, cles dupliquees rejetees, plusieurs cles vers le meme tag permises, groupe parent reapplique. |
 | Lecteur CNK | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | Lecture hierarchique source-compatible sur fixtures, y compris la semantique des sentinelles nulles selectionnees ou sautees; aucune validation retail faute de CNK. |
-| Parseurs semantiques CNK / sequence | `LegacySequence` | `PORTED_PARTIAL` | En-tete 12 octets, temps signes 24 bits, records grouping/indirect/bitmap/model/sound/mesh/tweeker et attributs prives dimensionality/offset/matrix/OSRT sont bornes. Le chunk 139 `3D_MESH_CHOICE` decode deux indices signes 16 bits et une proportion float. Video/camera/preloader et attributs encore inconnus sont refuses tant que leurs effets ne sont pas portes. |
+| Parseurs semantiques CNK / sequence | `LegacySequence` | `PORTED_PARTIAL` | En-tete 12 octets, temps signes 24 bits, records grouping/indirect/bitmap/model/sound/camera/mesh/tweeker et attributs prives dimensionality/offset/matrix/OSRT sont bornes. Le record camera packe fait 21 octets (near/far/label); les chunks 139 `3D_MESH_CHOICE` et 144 `CAMERA_FIELD_OF_VIEW` sont decodes explicitement. Video/preloader et attributs encore inconnus sont refuses tant que leurs effets ne sont pas portes. |
 | `SequenceClock` | `SequenceClock` | `PORTED_COMPLETE` | Cadence, premiere evaluation, drop/catch-up enfant, pause/reprise, stop, seek, hold cadence 255 et boucle naturelle a zero sont testes pour les types actuellement executables. |
 | `SequenceChildSchedule` | `SequenceChildSchedule` | `PORTED_COMPLETE` | Selection ouverte a gauche/fermee a droite, ordre disque, refs DATA relatives et rewind; description partagee immutable et curseur runtime independant. |
-| Arbre runtime et execution | `SequenceProgram`, `SequenceRuntime` | `PORTED_PARTIAL` | DAG descriptif borne puis foret mutable a ownership unique; lifecycle, loops, stop/hold/seek, cycles/profondeur/budgets et snapshots testes. Grouping/indirect/tweeker et feuilles mesh 3D sont executes; les meshes exposent `contentsDataId`, world transform et `meshChoice`, ce dernier etant propage jusqu aux render data. |
-| Commandes `L_Seqncr` | `SequenceCommandQueue` | `PORTED_PARTIAL` | FIFO proprietaire 500 commandes, nesting Collect/Execute, Start, Stop, SetEndingAction, MoveTheWorks, MoveXY et MoveRySTxz, priorite 16 bits, doublons et recherche top-level/whole-tree portes. Les callers Monopoly actifs ne donnent aucun chain ID; chains, GetInfo et ForceRedraw restent a porter selon leurs effets reels. |
-| Transformations / tweekers | `SequenceTransforms`, etat `SequenceRuntime` | `PORTED_PARTIAL` | Matrices row-vector 2D/3D, offset/matrix/OSRT, composition parentale, commandes Move*, identity/constant/linear et ordre tweeker-avant-position portes. Le tweeker `3D_MESH_CHOICE` est aussi execute : A/B restent ceux de la premiere cle et seule la proportion interpole sans clamp; Identity ne remet pas cet etat non-transform a zero. Restent son, camera/FOV, visibility et callbacks. |
+| Arbre runtime et execution | `SequenceProgram`, `SequenceRuntime` | `PORTED_PARTIAL` | DAG descriptif borne puis foret mutable a ownership unique; lifecycle, loops, stop/hold/seek, cycles/profondeur/budgets et snapshots testes. Grouping/indirect/tweeker, feuilles mesh 3D et cameras 3D sont executes. Les cameras exposent matrice monde/FOV/near/far et un ownership de label source-compatible; les meshes exposent `contentsDataId`, world transform et `meshChoice` jusqu aux render data. |
+| Commandes `L_Seqncr` | `SequenceCommandQueue` | `PORTED_PARTIAL` | FIFO proprietaire 500 commandes, nesting Collect/Execute, Start, Stop, SetEndingAction, MoveTheWorks, MoveXY, MoveRySTxz et SetCamera, priorite 16 bits, doublons et recherche top-level/whole-tree portes. SetCamera conserve les cinq slots de `C_ArtLib.h` et ses valeurs brutes; le slot World3D 1 resout le mode direct ou camera labellisee. Les callers Monopoly actifs ne donnent aucun chain ID; chains, GetInfo et ForceRedraw restent a porter selon leurs effets reels. |
+| Transformations / tweekers | `SequenceTransforms`, etat `SequenceRuntime` | `PORTED_PARTIAL` | Matrices row-vector 2D/3D, offset/matrix/OSRT, composition parentale, commandes Move*, identity/constant/linear et ordre tweeker-avant-position portes. `3D_MESH_CHOICE` interpole la proportion sans clamp; `CAMERA_FIELD_OF_VIEW` constant/linear modifie le FOV brut du parent camera avec defaut 3D pi/4. Restent son, visibility et callbacks. |
 | MESHX runtime | `MeshXRuntime`, `MeshRuntimeCache` | `PORTED_PARTIAL` | Le chemin Monopoly `USE_OLD_FRAME` est reproduit pour le sous-ensemble HMD porte : inversion Y, normales de base /4096, deduplication, groupes materiau/texture, pose 0 de base puis poses MIMe `base + delta`, interpolation position/normale non clampee, UV de A et bounds interpoles. Le comportement historique ajoute les diff normals SVECTOR bruts apres conversion de la normale de base; ce contrat est teste. Autres primitives et donnees retail restent bloquees. |
 | Render data de sequence | `MeshRenderData`, `SequenceRenderData` | `PORTED_PARTIAL` | Les feuilles mesh actives publient DataID/node/priority/clock/world matrix, `meshChoice`, asset partage et render data de pose evaluee. La topologie/index/texture reste celle de l asset; une pose invalide produit une erreur explicite. Les ressources SDL_GPU sont creees dans la couche GPU, pas ici. |
-| Raccordement sequence -> render slots | `SequenceWorld3DSlot`, `World3DGPUScene` | `PORTED_PARTIAL` | Le slot historique 1 gere startup/moved/shutdown, bounds de la pose courante, visibilite/culling et publication transactionnelle. La scene GPU utilise buffers index/textures statiques et un vertex buffer dynamique propre au `SequenceNodeId` pour MIMe, avec cycling et pruning. Les sequences camera/visibility plus avancees restent a raccorder. |
+| Raccordement sequence -> render slots | `SequenceWorld3DSlot`, `World3DGPUScene` | `PORTED_PARTIAL` | Le slot historique 1 gere startup/moved/shutdown, bounds de la pose courante, culling et publication transactionnelle. Il resout maintenant SetCamera direct ou camera sequence labellisee; origine/+Z/+Y sont transformes puis forward/up normalises comme `L_Rend3D`. La scene GPU utilise buffers index/textures statiques et un vertex buffer dynamique par `SequenceNodeId` pour MIMe. La visibility historique non encore prouvee reste a raccorder. |
 | LANG core | `LanguageCatalog`, `LanguageService`, `ResourceRuntime` | `PORTED_PARTIAL` | Contrats existants conserves et raccordes au startup via les memes archives que DATA; index valide avant publication. Adaptateurs de rendu et migration des callers UI non raccordes. |
 | Chaines/audio/dialogues LANG retail | aucun payload | `BLOCKED_MISSING_DATA` | Les neuf fichiers texte bruts sont vides et les `dat_ln/lm/lkNN.dat` sont absents; aucune chaine ne sera inventee. |
 | Catalogue `TexInfo` | `TextureCatalog` | `PORTED_COMPLETE` | Huit atlas, recettes USA/Europe, overlays, provenances et tags HMD portes et testes; meshes/resolutions invalides rejetes par erreurs typees. |
@@ -191,7 +191,7 @@ blocs/SVECTOR et appariement ordinal. La pose 0 reste le mesh de base; les poses
 explicites/non portees. Une simple reussite de `parse()` ne pretend toujours pas
 valider tous les payloads HMD retail.
 
-`LegacySequence` decode maintenant les sept parties fixes effectivement utiles
+`LegacySequence` decode maintenant les huit parties fixes effectivement utiles
 a cette etape, dont le record tweeker de 13 octets. Il decode aussi les attributs
 prives dimensionality, offset, matrix et OSRT 2D/3D sans copier dans une
 structure native. Les octets/records et attributs restent immutables; ils ne
@@ -245,8 +245,10 @@ Collect/Execute, y compris un Execute surnumeraire negatif. Start cree toujours
 une nouvelle instance; Stop et SetEndingAction ciblent le couple DataId/priorite
 16 bits, top-level ou arbre entier, avec offset de donnees nul. L'audit des
 callers Monopoly ne montre aucun chain ID actif; les listes waiting/dechained ne
-sont donc pas inventees. Les commandes Move*, les labels/actions de fin et les
-callbacks restent a porter.
+sont donc pas inventees. Les commandes MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont portees.
+L ownership des labels camera suit `LE_SEQNCR_LabelArray`: le dernier demarre prend
+le label et sa suppression ne restaure pas un overlap plus ancien. Les labels
+generiques, callbacks, GetInfo/ForceRedraw et chains restent partiels.
 
 `SequenceTransforms` porte les conventions row-vector 2D/3D de `L_Matrix.cpp`,
 les six attributs offset/matrix/OSRT et la composition local puis parent. Les
@@ -259,21 +261,22 @@ proportion seule interpole sans clamp; Identity n'efface pas cet etat.
 Les feuilles 3D publient la pose MIMe evaluee jusqu'au slot World3D 1. La scene
 SDL_GPU conserve indices/textures statiques et alloue un vertex buffer anime par
 node, mis a jour par cycling puis prune avec le lifecycle. Un readback D3D12
-prouve que le changement de pose deplace reellement les pixels rasterizes. Les
-effets son, camera/FOV/visibility/callbacks et les objets sequence non encore
-consommes restent explicitement partiels.
+prouve que le changement de pose deplace reellement les pixels rasterizes. Le record camera 7, le FOV 144 et SetCamera atteignent maintenant la camera
+de projection utilisee par la frame; un label absent conserve la camera precedente.
+Les effets son, visibility/callbacks et les objets sequence non encore consommes
+restent explicitement partiels.
 
 ### Derniere validation locale
 
-Le 2026-09-05, avec MSVC 19.51 / toolset 14.51, CMake/Ninja, SDL 3.4.14 et
+Le 2026-09-06, avec MSVC 19.51 / toolset 14.51, CMake/Ninja, SDL 3.4.14 et
 zlib 1.3.2 :
 
-- reconstruction **clean-first complete** de `modern/build-phase-c` : **471/471**
-  etapes terminees, incluant `MonopolyModern.exe`, `MonopolyDataCore` et
+- reconstruction **clean-first complete** de `modern/build-phase-c`, code de
+  sortie zero, incluant `MonopolyModern.exe`, `MonopolyDataCore` et
   `MonopolyGPU3DCore` ;
 - suite complete depuis ce build neuf : **34/34 suites passees**, zero echec ;
 - trace conservee dans le build ignore sous
-  `modern/build-phase-c/ctest-full-20260905-mime-gpu.log` ;
+  `modern/build-phase-c/ctest-full-20260906-camera-fov.log` ;
 - les suites `MeshGPUResources`, `World3DGPUScene` et `World3DRenderer` utilisent
   un vrai device SDL_GPU **Direct3D 12**. Les readbacks prouvent le triangle
   indexe, l'echantillonnage d'une texture HMD RGBA8 et le deplacement visible
@@ -302,10 +305,10 @@ indisponible.
 
 ## Prochaines priorites
 
-1. Porter le prochain contrat 3D **reellement consomme** maintenant que le mesh
-   anime est stable : auditer puis raccorder les sequences camera, field-of-view
-   et visibility utilisees par `L_Rend3D`, `UDBoard` et `UDPieces`, en gardant
-   `hmdload.cpp`/`USE_OLD_FRAME` comme autorite PC3D pour Monopoly.
+1. Continuer le contrat 3D **reellement consomme** apres camera/FOV/SetCamera :
+   prouver puis raccorder la visibility utilisee par `L_Rend3D`, `UDBoard` et
+   `UDPieces`, puis brancher les transitions camera des ecrans a mesure que leurs
+   callers UI sont portes. Ne pas inventer un chunk visibility non prouve.
 2. Auditer les autres types HMD effectivement atteignables par le jeu sous
    `USE_OLD_FRAME`; ne porter qu'un type prouve par caller/source. Conserver
    explicitement non supportes reset/joint MIMe et primitives non consommees.

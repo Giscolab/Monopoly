@@ -41,6 +41,30 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::setCamera3D(
+        const World3DCamera& camera)
+    {
+        const auto queued = commands_.enqueue(sequence::SetCameraCommand{
+            static_cast<std::uint8_t>(RenderSlot::World3D), 0,
+            camera.location, camera.forward, camera.up, camera.fieldOfView,
+            camera.nearPlane, camera.farPlane});
+        if (!queued) return std::unexpected("sequence command queue rejected World3D camera");
+        return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::setCameraNumber(
+        std::uint8_t cameraNumber)
+    {
+        // L_Seqncr.cpp::LE_SEQNCR_SetCameraNumber supplies these defaults as
+        // ignored placeholders whenever cameraNumber is nonzero.
+        const auto queued = commands_.enqueue(sequence::SetCameraCommand{
+            static_cast<std::uint8_t>(RenderSlot::World3D), cameraNumber,
+            {0.0F, 0.0F, -500.0F}, {0.0F, 0.0F, 1.0F},
+            {0.0F, 1.0F, 0.0F}, 0.785398F, 1.0F, 1000.0F});
+        if (!queued) return std::unexpected("sequence command queue rejected camera label");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::update(std::int32_t tick)
     {
         const auto updated = commands_.updateCycle(tick);

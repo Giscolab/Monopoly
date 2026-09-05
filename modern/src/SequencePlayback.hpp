@@ -20,6 +20,10 @@ namespace monopoly::engine
             sequence::SequenceTransform transform);
         [[nodiscard]] std::expected<void, std::string> stop(
             data::DataId id, std::uint16_t priority);
+        [[nodiscard]] std::expected<void, std::string> setCamera3D(
+            const World3DCamera& camera);
+        [[nodiscard]] std::expected<void, std::string> setCameraNumber(
+            std::uint8_t cameraNumber);
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
         sequence::SequenceCommandQueue& commands() noexcept { return commands_; }
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }

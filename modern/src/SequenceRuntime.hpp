@@ -5,6 +5,7 @@
 #include "SequenceClock.hpp"
 #include "SequenceTransforms.hpp"
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -49,8 +50,8 @@ namespace monopoly::sequence
     // Immutable, bounded description DAG. Shared sublists are not expanded
     // exponentially; cycles are rejected by (DATA ID, chunk offset). Every
     // CNK lease needed by the supported tree is acquired before publication.
-    // Currently executable: grouping/indirect plus transform tweekers. The
-    // private dimensionality/offset/matrix/OSRT attributes are immutable input.
+    // Currently executable: grouping/indirect, 3D mesh, 3D camera and
+    // transform/FOV tweekers. Private attributes are immutable input.
     // Other decoded kinds and attributes fail explicitly; no fake renderer.
     class SequenceProgram final
     {
@@ -87,6 +88,17 @@ namespace monopoly::sequence
         std::int16_t meshIndexB{};
         float meshProportion{};
         auto operator<=>(const SequenceMeshChoice3D&) const = default;
+    };
+    struct SequenceCamera3DView
+    {
+        SequenceNodeId node{};
+        std::uint8_t label{};
+        std::uint16_t priority{};
+        std::int32_t clock{};
+        Matrix3D worldTransform{};
+        float fieldOfView{0.7853981633974483F};
+        float nearPlane{1.0F};
+        float farPlane{5000.0F};
     };
     struct SequenceNodeView
     {
@@ -165,6 +177,14 @@ namespace monopoly::sequence
         // Active 3D mesh leaves in runtime traversal order. This is CPU render
         // intent only: no HMD decoding, GPU resource or render-slot ownership.
         [[nodiscard]] std::vector<SequenceMeshInstanceView> meshInstances() const;
+        // Active 3D camera sequences with raw ArtLib FOV semantics. Projection
+        // interpretation remains the renderer's responsibility.
+        [[nodiscard]] std::vector<SequenceCamera3DView> cameraInstances() const;
+        // Mirrors LE_SEQNCR_LabelArray for camera records: the most recently
+        // started owner wins; deleting it clears the label without restoring
+        // an older overlapping owner.
+        [[nodiscard]] std::optional<SequenceCamera3DView> cameraForLabel(
+            std::uint8_t label) const;
         [[nodiscard]] std::vector<SequenceNodeId> roots() const;
         [[nodiscard]] std::size_t liveNodeCount() const noexcept;
         // Diagnostic lifecycle trace for the last operation, not ArtLib label
@@ -201,5 +221,6 @@ namespace monopoly::sequence
         std::size_t births_{};
         std::int32_t parentClock_{};
         bool clockStarted_{};
+        std::array<SequenceNodeId, 256> cameraLabelOwners_{};
     };
 }

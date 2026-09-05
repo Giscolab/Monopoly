@@ -74,6 +74,12 @@ namespace monopoly::data
         DataId jointPositionsDataId{};
     };
     struct SequenceSoundData { DataId soundDataId{}; };
+    struct SequenceCameraData
+    {
+        float nearClipPlaneDistance{1.0F};
+        float farClipPlaneDistance{5000.0F};
+        std::uint8_t cameraLabel{};
+    };
     struct SequenceMeshData { DataId modelDataId{}; };
     struct SequenceTweekerData { std::uint8_t interpolationType{}; };
 
@@ -83,6 +89,7 @@ namespace monopoly::data
         SequenceBitmapData,
         SequenceModelData,
         SequenceSoundData,
+        SequenceCameraData,
         SequenceMeshData,
         SequenceTweekerData>;
 
@@ -122,6 +129,8 @@ namespace monopoly::data
     };
     struct Sequence3DMeshChoiceAttribute
     { ChunkInfo chunk; std::int16_t meshIndexA{}, meshIndexB{}; float meshProportion{}; };
+    struct SequenceCameraFieldOfViewAttribute
+    { ChunkInfo chunk; float fieldOfView{}; };
     struct SequenceUnsupportedAttribute { ChunkInfo chunk; };
 
     using LegacySequenceAttribute = std::variant<
@@ -133,6 +142,7 @@ namespace monopoly::data
         Sequence3DMatrixAttribute,
         Sequence3DOriginScaleRotateOffsetAttribute,
         Sequence3DMeshChoiceAttribute,
+        SequenceCameraFieldOfViewAttribute,
         SequenceUnsupportedAttribute>;
 
     struct LegacySequenceAttributes
@@ -148,14 +158,14 @@ namespace monopoly::data
         std::size_t maximumAttributes = 256);
 
     // Descend au prochain chunk et decode uniquement sa partie fixe prouvee :
-    // grouping(1), indirect(2), bitmap(3), model(4), sound(5), mesh(9),
+    // grouping(1), indirect(2), bitmap(3), model(4), sound(5), camera(7), mesh(9),
     // tweeker(10).
     // En succes, le reader reste dans ce chunk au debut des sous-chunks.
     // En erreur, position/niveau/ownership du reader sont inchanges.
     // Le resultat contient des valeurs, sans vue empruntee. La possession du
     // payload reste celle du LegacyChunkReader (span ou SharedDataBytes).
     // Les sous-chunks et l'execution/timing ne sont pas valides ici. Video,
-    // camera, preloader, tweeker et tout autre ID sont explicitement refuses.
+    // preloader et tout autre ID non liste sont explicitement refuses.
     [[nodiscard]] std::expected<LegacySequenceRecord, SequenceError>
     readLegacySequenceRecord(LegacyChunkReader& reader);
 

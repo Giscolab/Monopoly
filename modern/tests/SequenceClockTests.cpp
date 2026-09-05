@@ -190,7 +190,7 @@ namespace
 
     void testErrors()
     {
-        for (auto id : std::array<std::uint8_t, 5>{0, 5, 6, 7, 8})
+        for (auto id : std::array<std::uint8_t, 4>{0, 5, 6, 8})
         {
             auto unsupported = record();
             unsupported.chunk.id = id;
@@ -198,6 +198,11 @@ namespace
             expect(!result && result.error() == ClockError::UnsupportedSequenceType,
                 "unsupported and hardware-clock sequence types are refused");
         }
+        auto camera = record();
+        camera.chunk.id = 7;
+        auto cameraClock = SequenceClock::start(camera);
+        expect(cameraClock && cameraClock->update(0).has_value(),
+            "camera sequences use the same deterministic CPU clock as other visual records");
         auto tweeker = record();
         tweeker.chunk.id = 10;
         expect(SequenceClock::start(tweeker).has_value(),

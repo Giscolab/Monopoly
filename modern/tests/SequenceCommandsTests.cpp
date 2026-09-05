@@ -306,6 +306,37 @@ namespace
             "Hold preserves clock/lifecycle while a replacement transform reaches descendants");
     }
 
+    void testSetCameraFifoState()
+    {
+        SequenceRuntime runtime;
+        SequenceCommandQueue commands(runtime);
+        SetCameraCommand direct{1, 0, {10.0F, 20.0F, 30.0F},
+            {0.0F, -1.0F, 0.0F}, {1.0F, 0.0F, 0.0F},
+            0.75F, 10.0F, 1540.0F};
+        expect(commands.collect() == 1 && commands.enqueue(direct).has_value() &&
+            commands.cameraState(1) == nullptr,
+            "SetCamera stays queued while CollectCommands nesting is positive");
+        expect(commands.updateCycle(0).has_value() && commands.cameraState(1) == nullptr,
+            "runtime update does not bypass queued SetCamera during collection");
+        expect(commands.execute() == 0 && commands.cameraState(1) &&
+            commands.cameraState(1)->position == direct.position &&
+            commands.cameraState(1)->fieldOfView == 0.75F,
+            "outer ExecuteCommands publishes direct World3D camera state in FIFO order");
+        expect(commands.outcomes().size() == 1 &&
+            commands.outcomes().front().kind == SequenceCommandKind::SetCamera &&
+            commands.outcomes().front().matched == 1,
+            "SetCamera produces an observable successful queue outcome");
+
+        SetCameraCommand labelled{1, 7, {999.0F, 999.0F, 999.0F},
+            {9.0F, 9.0F, 9.0F}, {8.0F, 8.0F, 8.0F}, 2.0F, 3.0F, 4.0F};
+        expect(commands.enqueue(labelled).has_value() && commands.updateCycle(0).has_value() &&
+            commands.cameraState(1) && commands.cameraState(1)->cameraNumber == 7 &&
+            commands.cameraState(1)->position == labelled.position,
+            "labelled SetCamera replaces slot state while retaining ignored fallback fields verbatim");
+        expect(!commands.enqueue(SetCameraCommand{5}).has_value(),
+            "SetCamera rejects slot five because Monopoly configures only slots zero through four");
+    }
+
     void testMoveRySTxzSeekLoopAndChildRecreation()
     {
         Fixture fixture;
@@ -397,6 +428,7 @@ int main()
     testWholeTreeTargeting();
     testCapacityNegativeNestingAndErrors();
     testMoveXYReplacementAndRecursiveWorldPropagation();
+    testSetCameraFifoState();
     testMoveRySTxzSeekLoopAndChildRecreation();
     std::cout << (failures ? "Sequence command tests FAILED\n" :
         "Sequence command tests passed\n");
