@@ -2,12 +2,14 @@
 
 #include "RenderSlots.hpp"
 #include "SequenceRenderData.hpp"
+#include "World3DProjection.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace monopoly::engine
@@ -28,7 +30,9 @@ namespace monopoly::engine
         std::int32_t clock{};
         sequence::Matrix3D worldTransform{};
         std::shared_ptr<const data::MeshRuntimeAsset> asset;
+        std::optional<World3DRect> screenBounds;
     };
+
     struct SequenceWorld3DSyncStats
     {
         std::size_t started{};
@@ -45,16 +49,30 @@ namespace monopoly::engine
     public:
         [[nodiscard]] static constexpr RenderSlot slot() noexcept
         { return RenderSlot::World3D; }
+
         [[nodiscard]] std::expected<SequenceWorld3DSyncStats,
             SequenceWorld3DSlotError> sync(
                 const std::vector<sequence::SequenceMeshRenderItem>& items);
+
+        [[nodiscard]] std::expected<std::size_t, World3DProjectionError>
+            configureView(World3DRect viewport, World3DCamera camera = {});
+        void clearView() noexcept;
+
         void clear() noexcept;
         [[nodiscard]] std::size_t size() const noexcept;
         [[nodiscard]] const SequenceWorld3DObject* find(
             sequence::SequenceNodeId node) const noexcept;
         [[nodiscard]] std::vector<sequence::SequenceNodeId> order() const;
+        [[nodiscard]] std::vector<sequence::SequenceNodeId> visibleOrder() const;
+        [[nodiscard]] const std::optional<World3DProjectionState>&
+            view() const noexcept;
+
     private:
+        void refreshBounds(SequenceWorld3DObject& object) noexcept;
+        void refreshAllBounds() noexcept;
+
         std::map<sequence::SequenceNodeId, SequenceWorld3DObject> objects_;
         std::vector<sequence::SequenceNodeId> order_;
+        std::optional<World3DProjectionState> view_;
     };
 }
