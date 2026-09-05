@@ -8,6 +8,7 @@ namespace monopoly::engine
     buildWorld3DGPUScene(const SequenceWorld3DSlot& slot, MeshGPUCache& cache)
     {
         std::vector<World3DGPUIndexedBatch> result;
+        std::vector<std::uint64_t> activeDynamicVertices;
         for (const auto node : slot.visibleOrder())
         {
             const auto* object = slot.find(node);
@@ -15,12 +16,23 @@ namespace monopoly::engine
                 !object->asset->renderData)
                 continue;
 
+            const auto renderData = object->renderData ?
+                object->renderData : object->asset->renderData;
+            if (!renderData) continue;
             auto gpu = cache.resolve(object->asset);
             if (!gpu) return std::unexpected(gpu.error());
-            const auto& renderData = *object->asset->renderData;
-            result.reserve(result.size() + renderData.batches.size());
+            SDL_GPUBuffer* vertexBuffer = (*gpu)->vertexBuffer;
+            if (renderData != object->asset->renderData)
+            {
+                auto dynamic = cache.resolveDynamicVertices(object->node,
+                    object->asset, renderData);
+                if (!dynamic) return std::unexpected(dynamic.error());
+                vertexBuffer = (*dynamic)->vertexBuffer;
+                activeDynamicVertices.push_back(object->node);
+            }
+            result.reserve(result.size() + renderData->batches.size());
 
-            for (const auto& batch : renderData.batches)
+            for (const auto& batch : renderData->batches)
             {
                 if (batch.firstIndex > std::numeric_limits<std::uint32_t>::max() ||
                     batch.indexCount > std::numeric_limits<std::uint32_t>::max())
@@ -45,7 +57,7 @@ namespace monopoly::engine
                     object->clock,
                     object->worldTransform,
                     *object->screenBounds,
-                    (*gpu)->vertexBuffer,
+                    vertexBuffer,
                     (*gpu)->indexBuffer,
                     gpuTexture,
                     static_cast<std::uint32_t>(batch.firstIndex),
@@ -54,6 +66,7 @@ namespace monopoly::engine
                     batch.texture});
             }
         }
+        cache.pruneDynamicVertices(activeDynamicVertices);
         return result;
     }
 }

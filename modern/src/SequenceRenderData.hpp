@@ -9,7 +9,7 @@
 
 namespace monopoly::sequence
 {
-    enum class SequenceRenderDataErrorCode { MeshResolutionFailed };
+    enum class SequenceRenderDataErrorCode { MeshResolutionFailed, MeshPoseEvaluationFailed };
 
     struct SequenceRenderDataError
     {
@@ -28,6 +28,7 @@ namespace monopoly::sequence
         Matrix3D worldTransform{};
         std::shared_ptr<const data::MeshRuntimeAsset> asset;
         SequenceMeshChoice3D meshChoice{};
+        std::shared_ptr<const data::MeshRenderData> renderData;
     };
 
     // Resolves the current CPU mesh intent transactionally. No SDL/GPU/render

@@ -378,6 +378,161 @@ namespace monopoly::data
         return result;
     }
 
+    std::expected<std::vector<HmdMimePose>, MeshDataError>
+    LegacyMeshData::mimePoses(HmdMimeLimits limits) const
+    {
+        const auto data = bytes();
+        std::vector<HmdMimeDiffBlock> vertexBlocks;
+        std::vector<HmdMimeDiffBlock> normalBlocks;
+        std::size_t totalBlocks{};
+        std::size_t totalVectors{};
+
+        std::unordered_map<std::size_t, std::size_t> primitiveByOffset;
+        for (std::size_t index = 0; index < primitives_.size(); ++index)
+            primitiveByOffset.emplace(primitives_[index].offset, index);
+
+        auto relativeWordOffset = [&](std::size_t base, std::uint32_t words,
+            std::size_t fieldOffset, std::size_t minimumSize)
+            -> std::expected<std::size_t, MeshDataError>
+        {
+            if (base > data.size() || words > (data.size() - base) / 4U)
+                return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                    fieldOffset, "MIMe word offset leaves the diff section"));
+            const auto offset = base + static_cast<std::size_t>(words) * 4U;
+            if (!fits(data, offset, minimumSize))
+                return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                    fieldOffset, "MIMe target is truncated"));
+            return offset;
+        };
+
+        auto decodeSection = [&](const HmdPrimitive& primitive,
+            const HmdDataSection& section, bool normal)
+            -> std::expected<void, MeshDataError>
+        {
+            if (!primitive.processRequired || !section.scanRequired)
+                return {};
+            const auto& header = headers_[primitive.headerIndex];
+            if (header.fields.size() < 4)
+                return std::unexpected(error(MeshDataErrorCode::InvalidPrimitiveHeader,
+                    header.offset, "MIMe header needs a diff-block base field"));
+            if (!header.fields[3].isOffset())
+                return std::unexpected(error(MeshDataErrorCode::ExpectedOffset,
+                    header.offset + 16U,
+                    "MIMe diff-block base must be a word offset"));
+            const auto blockBase = wordOffset(data,
+                header.fields[3].rawValue & ~Flag, header.offset + 16U, 8U);
+            if (!blockBase)
+                return std::unexpected(blockBase.error());
+            if (section.sizeWords < 2U + section.elementCount)
+                return std::unexpected(error(MeshDataErrorCode::InvalidSectionSize,
+                    section.offset, "MIMe record offsets exceed section size"));
+
+            auto& destination = normal ? normalBlocks : vertexBlocks;
+            for (std::size_t item = 0; item < section.elementCount; ++item)
+            {
+                const auto itemField = section.offset + (2U + item) * 4U;
+                const auto current = relativeWordOffset(*blockBase,
+                    u32(data, itemField), itemField, 8U);
+                if (!current)
+                    return std::unexpected(current.error());
+                const auto counts = u32(data, *current);
+                const auto diffCount = normal
+                    ? static_cast<std::size_t>(counts & 0xFFFFU)
+                    : static_cast<std::size_t>(counts >> 16U);
+                if (!fits(data, *current + 8U, diffCount, 4U))
+                    return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                        *current, "MIMe current-block diff offsets are truncated"));
+
+                for (std::size_t diff = 0; diff < diffCount; ++diff)
+                {
+                    if (totalBlocks >= limits.maximumDiffBlocks)
+                        return std::unexpected(error(
+                            MeshDataErrorCode::RecordLimitExceeded, *current,
+                            "MIMe diff-block budget exceeded"));
+                    const auto diffField = *current + (2U + diff) * 4U;
+                    const auto blockOffset = relativeWordOffset(*blockBase,
+                        u32(data, diffField), diffField, 8U);
+                    if (!blockOffset)
+                        return std::unexpected(blockOffset.error());
+                    const auto vectorCount = static_cast<std::size_t>(
+                        u32(data, *blockOffset + 4U) >> 16U);
+                    if (totalVectors > limits.maximumVectors ||
+                        vectorCount > limits.maximumVectors - totalVectors)
+                        return std::unexpected(error(
+                            MeshDataErrorCode::RecordLimitExceeded,
+                            *blockOffset + 4U, "MIMe SVECTOR budget exceeded"));
+                    if (!fits(data, *blockOffset + 8U, vectorCount, 8U))
+                        return std::unexpected(error(MeshDataErrorCode::RangeOutOfBounds,
+                            *blockOffset, "MIMe diff SVECTOR run is truncated"));
+
+                    HmdMimeDiffBlock decoded;
+                    decoded.offset = *blockOffset;
+                    decoded.startIndex = u32(data, *blockOffset);
+                    decoded.diffs.reserve(vectorCount);
+                    for (std::size_t vector = 0; vector < vectorCount; ++vector)
+                        decoded.diffs.push_back(shortVector(data,
+                            *blockOffset + 8U + vector * 8U));
+                    totalVectors += vectorCount;
+                    ++totalBlocks;
+                    destination.push_back(std::move(decoded));
+                }
+            }
+            return {};
+        };
+
+        std::unordered_set<std::size_t> processedPrimitives;
+        for (const auto& root : blockRoots_)
+        {
+            if (!root)
+                continue;
+            std::vector<std::size_t> chain;
+            std::optional<std::size_t> current = *root;
+            while (current && !processedPrimitives.contains(*current))
+            {
+                const auto found = primitiveByOffset.find(*current);
+                if (found == primitiveByOffset.end())
+                    return std::unexpected(error(
+                        MeshDataErrorCode::InvalidPrimitiveHeader, *current,
+                        "MIMe chain references an unknown primitive"));
+                chain.push_back(found->second);
+                current = primitives_[found->second].nextOffset;
+            }
+            for (auto iterator = chain.rbegin(); iterator != chain.rend(); ++iterator)
+            {
+                const auto& primitive = primitives_[*iterator];
+                if (!processedPrimitives.insert(primitive.offset).second)
+                    continue;
+                for (const auto& section : primitive.sections)
+                {
+                    const auto type = section.type & 0xFF7F'FFFFU;
+                    if (type == 0x0401'0020U)
+                    {
+                        auto decoded = decodeSection(primitive, section, false);
+                        if (!decoded)
+                            return std::unexpected(decoded.error());
+                    }
+                    else if (type == 0x0401'0021U)
+                    {
+                        auto decoded = decodeSection(primitive, section, true);
+                        if (!decoded)
+                            return std::unexpected(decoded.error());
+                    }
+                }
+            }
+        }
+
+        const auto poseCount = std::max(vertexBlocks.size(), normalBlocks.size());
+        std::vector<HmdMimePose> poses(poseCount);
+        for (std::size_t index = 0; index < poseCount; ++index)
+        {
+            if (index < vertexBlocks.size())
+                poses[index].vertex = std::move(vertexBlocks[index]);
+            if (index < normalBlocks.size())
+                poses[index].normal = std::move(normalBlocks[index]);
+        }
+        return poses;
+    }
+
     std::expected<std::vector<HmdTextureImage>, MeshDataError>
     LegacyMeshData::textureImages() const
     {

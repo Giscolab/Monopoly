@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,6 +39,7 @@ namespace monopoly::engine
         SizeOverflow,
         InvalidIndex,
         InvalidBatchRange,
+        DynamicTopologyMismatch,
         MissingTexturePixels,
         InvalidTexturePixels,
         VertexBufferCreationFailed,
@@ -66,6 +68,16 @@ namespace monopoly::engine
         std::uint32_t width{};
         std::uint32_t height{};
         std::shared_ptr<const data::HmdTextureImage> source;
+    };
+
+    struct MeshGPUDynamicVertexResource
+    {
+        std::uint64_t key{};
+        data::DataId dataId{};
+        SDL_GPUBuffer* vertexBuffer{};
+        std::uint32_t vertexCount{};
+        std::shared_ptr<const data::MeshRuntimeAsset> sourceAsset;
+        std::shared_ptr<const data::MeshRenderData> sourceRenderData;
     };
 
     struct MeshGPUResource
@@ -103,13 +115,24 @@ namespace monopoly::engine
             resolve(std::shared_ptr<const data::MeshRuntimeAsset> asset);
         [[nodiscard]] const MeshGPUResource* find(data::DataId id) const noexcept;
         [[nodiscard]] std::size_t size() const noexcept;
+        [[nodiscard]] std::expected<const MeshGPUDynamicVertexResource*, MeshGPUError>
+            resolveDynamicVertices(std::uint64_t key,
+                std::shared_ptr<const data::MeshRuntimeAsset> asset,
+                std::shared_ptr<const data::MeshRenderData> renderData);
+        [[nodiscard]] const MeshGPUDynamicVertexResource* findDynamic(
+            std::uint64_t key) const noexcept;
+        [[nodiscard]] std::size_t dynamicSize() const noexcept;
+        void pruneDynamicVertices(std::span<const std::uint64_t> activeKeys) noexcept;
         void erase(data::DataId id) noexcept;
         void clear() noexcept;
         [[nodiscard]] SDL_GPUDevice* device() const noexcept { return device_; }
 
     private:
         void release(MeshGPUResource& resource) noexcept;
+        void release(MeshGPUDynamicVertexResource& resource) noexcept;
+        void eraseDynamicForDataId(data::DataId id) noexcept;
         SDL_GPUDevice* device_{};
         std::unordered_map<data::DataId, MeshGPUResource> resources_;
+        std::unordered_map<std::uint64_t, MeshGPUDynamicVertexResource> dynamicVertices_;
     };
 }

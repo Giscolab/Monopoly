@@ -145,6 +145,33 @@ namespace
                 again->front().vertexBuffer == scene->front().vertexBuffer &&
                 again->front().gpuTexture == scene->front().gpuTexture,
                 "rebuilding a frame reuses immutable GPU mesh and texture resources");
+
+            auto animated = first;
+            auto evaluated = std::make_shared<data::MeshRenderData>(*first.asset->renderData);
+            evaluated->vertices[0].position[0] = -0.5F;
+            evaluated->bounds.minimum[0] = -0.5F;
+            animated.renderData = evaluated;
+            expect(slot.sync({animated, second}).has_value(),
+                "CPU World3D slot accepts per-node evaluated MIMe render data");
+            const auto animatedScene = engine::buildWorld3DGPUScene(slot, cache);
+            expect(animatedScene && animatedScene->size() == 1 &&
+                cache.dynamicSize() == 1 &&
+                animatedScene->front().vertexBuffer != scene->front().vertexBuffer &&
+                animatedScene->front().indexBuffer == scene->front().indexBuffer &&
+                animatedScene->front().gpuTexture == scene->front().gpuTexture,
+                "animated World3D scene swaps only the per-node vertex buffer and reuses static topology/texture");
+            const auto animatedAgain = engine::buildWorld3DGPUScene(slot, cache);
+            expect(animatedAgain && animatedScene &&
+                animatedAgain->front().vertexBuffer == animatedScene->front().vertexBuffer &&
+                cache.dynamicSize() == 1,
+                "unchanged animated frame reuses its sequence-node dynamic vertex resource");
+
+            expect(slot.sync({first, second}).has_value(),
+                "sequence node can return from MIMe evaluation to its static base render data");
+            const auto staticAgain = engine::buildWorld3DGPUScene(slot, cache);
+            expect(staticAgain && staticAgain->front().vertexBuffer == scene->front().vertexBuffer &&
+                cache.dynamicSize() == 0,
+                "returning to base pose prunes dynamic vertices and restores cached static vertex buffer");
             cache.clear();
         }
         SDL_DestroyGPUDevice(device);

@@ -98,6 +98,28 @@ namespace monopoly::data
         std::uint8_t v{};
     };
 
+    struct HmdMimeDiffBlock
+    {
+        std::size_t offset{};
+        std::uint32_t startIndex{};
+        std::vector<HmdShortVector> diffs;
+    };
+
+    // One entry corresponds to legacy pose index 1 + vector index; pose 0
+    // is always the undeformed base mesh. Vertex/normal blocks pair by
+    // global ordinal, matching hmdload.cpp AddVertex/NormalDiffBlock.
+    struct HmdMimePose
+    {
+        std::optional<HmdMimeDiffBlock> vertex;
+        std::optional<HmdMimeDiffBlock> normal;
+    };
+
+    struct HmdMimeLimits
+    {
+        std::size_t maximumDiffBlocks{65'536};
+        std::size_t maximumVectors{1'000'000};
+    };
+
     struct HmdTriangle
     {
         std::array<std::uint32_t, 3> colours{};
@@ -157,6 +179,12 @@ namespace monopoly::data
         // Category-2 GsUIMG1 images as consumed by NewMesh.cpp::ProcessHMDImage.
         // Header fields are IMAGE TOP and CLUT TOP word-offset bases; image
         // records remain immutable disk data and are converted without GDI.
+        // Decodes only the vertex/normal MIMe types used by Monopoly
+        // (GsVtxMIMe/GsNrmMIMe). Primitive chains are consumed tail-first
+        // like HMD_MapUnit; reset/joint MIMe remain intentionally opaque.
+        [[nodiscard]] std::expected<std::vector<HmdMimePose>, MeshDataError>
+            mimePoses(HmdMimeLimits limits = {}) const;
+
         [[nodiscard]] std::expected<std::vector<HmdTextureImage>, MeshDataError>
             textureImages() const;
 

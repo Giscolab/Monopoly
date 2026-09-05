@@ -100,6 +100,55 @@ namespace
         setWord(data, 51, 0x03E0001F); setWord(data, 52, 0x7FFF7C00);
         return data;
     }
+    DataBytes animatedTriangle()
+    {
+        // One flat triangle plus one vertex and one normal MIMe diff block.
+        // This follows the USE_OLD_FRAME hmdload.cpp layout used by Monopoly.
+        DataBytes data(52U * 4U);
+        setWord(data, 0, 0x01020304); setWord(data, 1, 0);
+        setWord(data, 2, 5); setWord(data, 3, 1); setWord(data, 4, 11);
+        setWord(data, 5, 1); setWord(data, 6, 4);
+        setWord(data, 7, 0x80000017); // polygons at word 23
+        setWord(data, 8, 0x8000001A); // vertices at word 26
+        setWord(data, 9, 0x80000020); // normals at word 32
+        setWord(data, 10, 0x80000022); // MIMe block base at word 34
+
+        setWord(data, 11, 0xFFFFFFFF); setWord(data, 12, 6);
+        setWord(data, 13, 0x80000003); // triangle + VtxMIMe + NrmMIMe
+        setWord(data, 14, 0x00000008); setWord(data, 15, 0x80010002);
+        setWord(data, 16, 0); // polygon offset relative to polygon base
+        setWord(data, 17, 0x04010020); setWord(data, 18, 0x80010002);
+        setWord(data, 19, 0); // vertex current block at MIMe base + 0
+        setWord(data, 20, 0x04010021); setWord(data, 21, 0x80010002);
+        setWord(data, 22, 3); // normal current block at MIMe base + 3
+
+        setWord(data, 23, 0x00563412);
+        setWord(data, 24, 0);
+        setWord(data, 25, 0x00020001);
+        setWord(data, 26, 0xFFEC000A); setWord(data, 27, 30);
+        setWord(data, 28, 0x00280014); setWord(data, 29, 60);
+        setWord(data, 30, 0x003C001E); setWord(data, 31, 90);
+        setWord(data, 32, 0xF8001000); setWord(data, 33, 1024);
+
+        setWord(data, 34, 0x00010000); // one vertex diff block
+        setWord(data, 35, 0);
+        setWord(data, 36, 6);          // vertex diff at word 40
+        setWord(data, 37, 0x00000001); // one normal diff block
+        setWord(data, 38, 0);
+        setWord(data, 39, 14);         // normal diff at word 48
+
+        setWord(data, 40, 0);          // affects all three HMD vertices
+        setWord(data, 41, 0x00030000);
+        setWord(data, 42, 0xFFFA0005); setWord(data, 43, 7);
+        setWord(data, 44, 0); setWord(data, 45, 0);
+        setWord(data, 46, 0x0006FFFB); setWord(data, 47, 0x0000FFF9);
+
+        setWord(data, 48, 0);          // affects HMD normal zero
+        setWord(data, 49, 0x00010000);
+        setWord(data, 50, 0xFFFD0002); setWord(data, 51, 4);
+        return data;
+    }
+
     std::shared_ptr<const LegacyMeshData> parse(DataBytes bytes)
     {
         auto mesh = LegacyMeshData::parse(
@@ -177,6 +226,63 @@ namespace
             render.batches.size() == 1 && render.batches[0].firstIndex == 0 &&
             render.batches[0].indexCount == 3 && !render.batches[0].texture,
             "renderer-independent data flattens MESHX groups into an indexed batch");
+    }
+
+    void testMimePoseEvaluation()
+    {
+        auto source = parse(animatedTriangle());
+        auto built = MeshXRuntime::build(source);
+        expect(built && built->poseCount() == 2,
+            "MESHX exposes implicit base pose plus one decoded MIMe pose");
+        if (!built) return;
+
+        auto base = built->evaluatePose(0, 0, 0.75F);
+        expect(base && base->vertices.size() == 3 &&
+            near(base->vertices[0].position[0], 10.0F) &&
+            near(base->vertices[0].normal[0], 1.0F),
+            "same-pose shortcut keeps undeformed pose zero regardless of amount");
+
+        auto pose = built->evaluatePose(1, 1, -4.0F);
+        expect(pose && near(pose->vertices[0].position[0], 15.0F) &&
+            near(pose->vertices[0].position[1], 26.0F) &&
+            near(pose->vertices[0].position[2], 37.0F) &&
+            near(pose->vertices[2].position[0], 25.0F) &&
+            near(pose->vertices[2].position[1], -66.0F) &&
+            near(pose->vertices[2].position[2], 83.0F),
+            "vertex MIMe pose is base plus signed delta with historical Y inversion");
+        expect(pose && near(pose->vertices[0].normal[0], 3.0F) &&
+            near(pose->vertices[0].normal[1], 3.5F) &&
+            near(pose->vertices[0].normal[2], 4.25F),
+            "USE_OLD_FRAME normal MIMe adds raw SVECTOR deltas after base normal conversion");
+        expect(pose && near(pose->vertices[1].normal[0], 3.0F) &&
+            near(pose->vertices[2].normal[2], 4.25F),
+            "shared source normal receives the same normal diff for all deduplicated vertices");
+
+        auto halfway = built->evaluatePose(0, 1, 0.5F);
+        expect(halfway && near(halfway->vertices[0].position[0], 12.5F) &&
+            near(halfway->vertices[0].position[1], 23.0F) &&
+            near(halfway->vertices[0].normal[0], 2.0F) &&
+            near(halfway->vertices[0].normal[1], 2.0F),
+            "MIMe interpolation uses poseA + (poseB-poseA)*amount for position and normal");
+        expect(halfway && near(halfway->bounds.minimum[0], 12.5F) &&
+            near(halfway->bounds.maximum[0], 27.5F) &&
+            near(halfway->bounds.minimum[1], -63.0F) &&
+            near(halfway->bounds.maximum[1], 23.0F),
+            "MIMe bounds interpolate between pose bounding boxes like hmdload.cpp");
+
+        auto extrapolated = built->evaluatePose(0, 1, 1.5F);
+        expect(extrapolated && near(extrapolated->vertices[0].position[0], 17.5F) &&
+            near(extrapolated->vertices[0].position[1], 29.0F),
+            "MIMe interpolation amount remains intentionally unclamped");
+        expect(!built->evaluatePose(-1, 0, 0.0F) &&
+            !built->evaluatePose(0, 2, 0.0F),
+            "invalid MIMe pose indices fail explicitly instead of inventing retained state");
+
+        auto render = makeMeshRenderData(*built, 0, 1, 0.5F);
+        expect(render && render->vertices.size() == 3 && render->indices.size() == 3 &&
+            render->batches.size() == 1 &&
+            near(render->vertices[0].position[0], 12.5F),
+            "pose-aware renderer data preserves topology while replacing only evaluated vertices");
     }
 
     void testResourceScopedCache()
@@ -276,6 +382,7 @@ namespace
 int main()
 {
     testUntexturedMeshAndRenderData();
+    testMimePoseEvaluation();
     testResourceScopedCache();
     testEmbeddedTextureResolution();
     testTextureResolutionAndHistoricalDrop();
