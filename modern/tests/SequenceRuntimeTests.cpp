@@ -620,6 +620,71 @@ namespace
             "GetChildMeshWorldMatrix observes the first mesh after parent transform propagation");
     }
 
+    void testForceRedrawRuntimeContract()
+    {
+        Fixture fixture;
+        const auto simpleId = packDataId(2, 0);
+        const std::array simpleItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 20, 2, 0, true)}};
+        DataBankRegistry simpleRegistry;
+        (void)archive(fixture.root / "force-redraw-simple.dat", simpleItems, simpleRegistry);
+        SequenceRuntime simple;
+        const auto root = simple.start(program(simpleRegistry), 41).value();
+        expect(simple.update(0).has_value() && simple.inspect(root)->needsRedraw,
+            "new sequence requests redraw on its first evaluated frame");
+        expect(simple.update(0).has_value() && !simple.inspect(root)->needsRedraw,
+            "redraw flag is cleared at the beginning of the next update cycle");
+        expect(simple.forceRedrawMatching(simpleId, 41, false) == 1 &&
+            simple.update(0).has_value() && simple.inspect(root)->needsRedraw,
+            "ForceRedraw reevaluates and publishes redraw for the current frame");
+        expect(simple.update(0).has_value() && !simple.inspect(root)->needsRedraw,
+            "explicit ForceRedraw is transient and does not stick across frames");
+        expect(simple.forceRedrawMatching(packDataId(2, 99), 41, false) == 0,
+            "ForceRedraw accepts an absent target with zero matches");
+
+        DataBytes rootContents;
+        append(rootContents, dimensionality(3));
+        append(rootContents, indirect(packDataId(2, 1), true));
+        append(rootContents, indirect(packDataId(2, 2), true));
+        const std::array treeItems{
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 20, 2, 0, true, rootContents)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                mesh(packDataId(77, 1), true)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                mesh(packDataId(77, 2), true)}};
+        DataBankRegistry treeRegistry;
+        (void)archive(fixture.root / "force-redraw-tree.dat", treeItems, treeRegistry);
+        SequenceRuntime tree;
+        const auto treeRoot = tree.start(program(treeRegistry), 90).value();
+        expect(tree.update(0).has_value() && tree.update(0).has_value(),
+            "ForceRedraw tree fixture reaches a settled no-redraw frame");
+        const auto before = tree.inspect(treeRoot);
+        expect(before && before->children.size() == 2 && !before->needsRedraw &&
+            !tree.inspect(before->children[0])->needsRedraw &&
+            !tree.inspect(before->children[1])->needsRedraw,
+            "settled tree starts with redraw flags cleared");
+        expect(tree.forceRedrawMatching(packDataId(2, 1), 0, false) == 0,
+            "top-level ForceRedraw does not target an offset-zero nested external sequence");
+        expect(tree.forceRedrawMatching(packDataId(2, 1), 0, true) == 1 &&
+            tree.update(0).has_value(),
+            "whole-tree ForceRedraw finds the nested external sequence");
+        const auto after = tree.inspect(treeRoot);
+        const auto firstChild = after ? tree.inspect(after->children[0]) : std::nullopt;
+        const auto secondChild = after ? tree.inspect(after->children[1]) : std::nullopt;
+        const bool targetFirst = firstChild && firstChild->dataId == packDataId(2, 1);
+        const auto target = targetFirst ? firstChild : secondChild;
+        const auto sibling = targetFirst ? secondChild : firstChild;
+        expect(after && after->needsRedraw && target && target->needsRedraw &&
+            sibling && !sibling->needsRedraw,
+            "ForceRedraw propagates redraw from the target to ancestors but not siblings or descendants");
+
+        const auto preserved = tree.inspect(treeRoot)->needsRedraw;
+        const auto backwards = tree.update(-1);
+        expect(!backwards && tree.inspect(treeRoot)->needsRedraw == preserved,
+            "backwards-clock failure preserves current redraw state transactionally");
+    }
+
     void testCommandsAndFailureLimits()
     {
         Fixture fixture;
@@ -813,6 +878,7 @@ int main()
         testCameraRuntimeAndFieldOfViewTweeker();
         testGetInfoContract();
         testGetChildMeshWorldMatrixContract();
+        testForceRedrawRuntimeContract();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
         testRawHmdStartContract();

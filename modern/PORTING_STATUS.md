@@ -71,7 +71,7 @@ effectivement present sous `modern/`.
 | `Source/artlib/L_Chunk.*` | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | lecteur consomme : header 24-bit + ID 8-bit, descend/ascend/seek/map/read, limite 8 niveaux | `LegacyDataArchive`, futur `L_Seqncr` | Contrat read-only et ownership `ReadFromDataID` portes sans bitfield ABI et testes sur fixtures, y compris le franchissement historique des siblings ID 0/128 lors d'une recherche precise. La validation d'un CNK retail reste bloquee separement; l'editeur/writer non consomme n'est pas dans ce perimetre. |
 | `Source/artlib/L_Grafix.*`, `L_Rend2D.*`, `L_Sprite.*` | `Display`, futur renderer UI SDL_GPU | `PORTED_PARTIAL` | composition 2D, clipping, priorites, surfaces | SDL_GPU, assets, transformation 800x600 | Seul le cycle d'etat existe; rendu des objets/sprites/fonts a construire. |
 | `Source/artlib/L_Rend3D.*` | `GPUFrame`, `SequenceWorld3DSlot`, `World3DGPUScene`, `World3DProjection`, `World3DRenderer` | `PORTED_PARTIAL` | slot World3D 1, viewport, camera/projection, bounds/culling, draw indexed et meshes animes | SDL_GPU, `SequenceRenderData`, PC3D moderne | Le chemin sequence -> slot 1 -> scene GPU -> renderer -> GPUFrame est actif. Bounds, projection ecran, culling, textures HMD et vertex buffers MIMe par node sont testes sur D3D12 reel. Camera 3D/FOV/SetCamera sont raccordes. La visibility 3D historique est maintenant auditee : `SequenceMoved()` retourne toujours TRUE pour un mesh (commentaire source inclus), donc le culling moderne reste strictement renderer-only et ne pilote pas `scrollingWorld`. Restent certains contrats de scene et primitives HMD non consommees. |
-| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice et intention 3D | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot` | Grouping/indirect/tweeker, feuilles mesh 3D et records camera 3D sont executes; Start/Stop/SetEndingAction, MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont raccordes. `GetInfo` expose le sous-ensemble effectivement lu par Monopoly (clock/endTime/matrice monde 3D) avec la recherche `FindNextSequence`, et `GetChildMeshWorldMatrix` parcourt uniquement le sous-arbre du premier root selectionne. Restent surtout ForceRedraw, labels generiques, bitmap/model/sound, callbacks et chains selon callers reels. |
+| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice et intention 3D | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot` | Grouping/indirect/tweeker, feuilles mesh 3D et records camera 3D sont executes; Start/Stop/SetEndingAction, MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont raccordes. `GetInfo` expose le sous-ensemble effectivement lu par Monopoly (clock/endTime/matrice monde 3D) avec la recherche `FindNextSequence`, et `GetChildMeshWorldMatrix` parcourt uniquement le sous-arbre du premier root selectionne. ForceRedraw est maintenant porte avec son cycle transitoire de redraw et la reevaluation cible/ancetres. Restent surtout labels generiques, bitmap/model/sound, callbacks et chains selon callers reels. |
 | `Source/artlib/L_Fonts.*`, `L_Print.*` | Aucun | `NOT_STARTED` | Arial 10, mesure/rendu de texte | font rasterizer portable, LANG | Choisir un backend portable et conserver metriques/layout observables. |
 | `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer` partiel | `REPLACED_PORTABLE` | input clavier/souris | SDL3, `LogicalViewport` | Souris reconvertie vers 800x600 et bandes noires rejetees; rendu du pointeur et certains types d'evenements restent partiels. |
 | `Source/artlib/L_Sound.*`, `L_Midi.*` | Aucun | `NOT_STARTED` | WAV, musique, mixage, voice | audio portable, data | Inventorier les appels Monopoly et remplacer DirectSound/MIDI legacy. |
@@ -103,7 +103,7 @@ effectivement present sous `modern/`.
 | `SequenceClock` | `SequenceClock` | `PORTED_COMPLETE` | Cadence, premiere evaluation, drop/catch-up enfant, pause/reprise, stop, seek, hold cadence 255 et boucle naturelle a zero sont testes pour les types actuellement executables. |
 | `SequenceChildSchedule` | `SequenceChildSchedule` | `PORTED_COMPLETE` | Selection ouverte a gauche/fermee a droite, ordre disque, refs DATA relatives et rewind; description partagee immutable et curseur runtime independant. |
 | Arbre runtime et execution | `SequenceProgram`, `SequenceRuntime` | `PORTED_PARTIAL` | DAG descriptif borne puis foret mutable a ownership unique; lifecycle, loops, stop/hold/seek, cycles/profondeur/budgets et snapshots testes. Grouping/indirect/tweeker, feuilles mesh 3D et cameras 3D sont executes. Les cameras exposent matrice monde/FOV/near/far et un ownership de label source-compatible; les meshes exposent `contentsDataId`, world transform et `meshChoice`. Les queries immuables `GetInfo` (clock/endTime/matrice 3D optionnelle) et `GetChildMeshWorldMatrix` reproduisent le premier match et les bornes de sous-arbre du source. |
-| Commandes `L_Seqncr` | `SequenceCommandQueue` | `PORTED_PARTIAL` | FIFO proprietaire 500 commandes, nesting Collect/Execute, Start, Stop, SetEndingAction, MoveTheWorks, MoveXY, MoveRySTxz et SetCamera, priorite 16 bits, doublons et recherche top-level/whole-tree portes. SetCamera conserve les cinq slots de `C_ArtLib.h` et ses valeurs brutes; le slot World3D 1 resout le mode direct ou camera labellisee. Les callers Monopoly actifs ne donnent aucun chain ID; ForceRedraw et chains restent a porter selon leurs effets reels. |
+| Commandes `L_Seqncr` | `SequenceCommandQueue` | `PORTED_PARTIAL` | FIFO proprietaire 500 commandes, nesting Collect/Execute, Start, Stop, SetEndingAction, MoveTheWorks, MoveXY, MoveRySTxz, SetCamera et ForceRedraw, priorite 16 bits, doublons et recherche top-level/whole-tree portes. ForceRedraw marque tous les matches, force la reevaluation cible/ancetres et expose `needsRedraw` pour le frame courant avant remise a zero au cycle suivant. Aucun redraw visuel 2D fictif n est ajoute tant que ce renderer n existe pas. Les callers Monopoly actifs ne donnent aucun chain ID; chains restent differees. |
 | Transformations / tweekers | `SequenceTransforms`, etat `SequenceRuntime` | `PORTED_PARTIAL` | Matrices row-vector 2D/3D, offset/matrix/OSRT, composition parentale, commandes Move*, identity/constant/linear et ordre tweeker-avant-position portes. `3D_MESH_CHOICE` interpole la proportion sans clamp; `CAMERA_FIELD_OF_VIEW` constant/linear modifie le FOV brut du parent camera avec defaut 3D pi/4. Restent son et callbacks; `scrollingWorld` demeure un contrat d horloge distinct et non simule. |
 | MESHX runtime | `MeshXRuntime`, `MeshRuntimeCache` | `PORTED_PARTIAL` | Le chemin Monopoly `USE_OLD_FRAME` est reproduit pour le sous-ensemble HMD porte : inversion Y, normales de base /4096, deduplication, groupes materiau/texture, pose 0 de base puis poses MIMe `base + delta`, interpolation position/normale non clampee, UV de A et bounds interpoles. Le comportement historique ajoute les diff normals SVECTOR bruts apres conversion de la normale de base; ce contrat est teste. Autres primitives et donnees retail restent bloquees. |
 | Render data de sequence | `MeshRenderData`, `SequenceRenderData` | `PORTED_PARTIAL` | Les feuilles mesh actives publient DataID/node/priority/clock/world matrix, `meshChoice`, asset partage et render data de pose evaluee. La topologie/index/texture reste celle de l asset; une pose invalide produit une erreur explicite. Les ressources SDL_GPU sont creees dans la couche GPU, pas ici. |
@@ -248,8 +248,10 @@ callers Monopoly ne montre aucun chain ID actif; les listes waiting/dechained ne
 sont donc pas inventees. Les commandes MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont portees.
 L ownership des labels camera suit `LE_SEQNCR_LabelArray`: le dernier demarre prend
 le label et sa suppression ne restaure pas un overlap plus ancien. Les labels
-generiques, callbacks, ForceRedraw et chains restent partiels. `GetInfo` et
+generiques, callbacks et chains restent partiels. `GetInfo` et
 `GetChildMeshWorldMatrix` couvrent maintenant les champs/parcours effectivement lus par Monopoly.
+`ForceRedraw` est porte dans la FIFO et le runtime avec un redraw transitoire
+source-compatible et propagation vers les ancetres pendant l update.
 
 `SequenceTransforms` porte les conventions row-vector 2D/3D de `L_Matrix.cpp`,
 les six attributs offset/matrix/OSRT et la composition local puis parent. Les
@@ -278,7 +280,7 @@ zlib 1.3.2 :
   `MonopolyGPU3DCore` ;
 - suite complete depuis ce build neuf : **34/34 suites passees**, zero echec ;
 - trace conservee dans le build ignore sous
-  `modern/build-phase-c/ctest-full-20260906-sequence-info.log` ;
+  `modern/build-phase-c/ctest-full-20260906-force-redraw.log` ;
 - les suites `MeshGPUResources`, `World3DGPUScene` et `World3DRenderer` utilisent
   un vrai device SDL_GPU **Direct3D 12**. Les readbacks prouvent le triangle
   indexe, l'echantillonnage d'une texture HMD RGBA8 et le deplacement visible
@@ -307,12 +309,11 @@ indisponible.
 
 ## Prochaines priorites
 
-1. Porter `ForceRedraw` au niveau sequencer/commande avec sa semantique exacte
-   (`needsRedraw`, reevaluation de la cible et des ancetres), sans inventer un
-   redraw 2D visuel tant que le renderer 2D moderne n existe pas.
-2. Utiliser les queries `GetInfo` et `GetChildMeshWorldMatrix` lors du port des
-   chemins `UDPieces`/`UDIBar`, puis raccorder les transitions camera des ecrans
-   au fur et a mesure de leurs callers UI.
+1. Utiliser `GetInfo`, `GetChildMeshWorldMatrix` et `ForceRedraw` lors du port
+   des chemins `UDPieces`/`UDIBar`/`UDAuct`, sans inventer de renderer 2D avant
+   le port de ses objets/sprites.
+2. Raccorder progressivement les transitions camera des ecrans puis poursuivre
+   les consommateurs UI qui reposent deja sur le sequenceur moderne.
 3. Auditer les autres types HMD effectivement atteignables sous `USE_OLD_FRAME`;
    ne porter qu un type prouve par caller/source et laisser reset/joint MIMe ou
    primitives non consommees explicitement non supportes.

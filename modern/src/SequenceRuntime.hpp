@@ -111,6 +111,7 @@ namespace monopoly::sequence
         std::int32_t endTime{};
         std::uint8_t timeMultiple{};
         bool paused{};
+        bool needsRedraw{};
         std::uint8_t dimensionality{};
         std::optional<data::DataId> contentsDataId;
         bool explicitlyPositioned{};
@@ -181,6 +182,8 @@ namespace monopoly::sequence
         [[nodiscard]] std::size_t moveMatching(data::DataId id,
             std::uint16_t priority, const SequenceTransform& transform,
             bool wholeTree = false);
+        [[nodiscard]] std::size_t forceRedrawMatching(data::DataId id,
+            std::uint16_t priority, bool wholeTree = false);
 
         [[nodiscard]] std::optional<SequenceNodeView> inspect(SequenceNodeId node) const;
         // Source-compatible LE_SEQNCR_GetInfo subset used by Monopoly: first
@@ -223,6 +226,7 @@ namespace monopoly::sequence
         void clearForest();
         void forceAncestors(Node& node);
         void forceDescendants(Node& node);
+        void clearRedrawFlags();
         void move(Node& node, const SequenceTransform& transform);
         [[nodiscard]] std::expected<void, RuntimeError> birthChildren(Node& node,
             std::optional<std::int32_t> previous);
