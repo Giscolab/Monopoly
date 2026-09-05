@@ -137,6 +137,13 @@ namespace monopoly::engine
         result.camera = camera;
         result.view = makeView(camera);
         result.projection = makeProjection(camera);
+        result.rasterProjection = result.projection;
+        // PC3D/view.cpp encoded aspect preservation in D3DVIEWPORT2:
+        // dvClipHeight = 2 * (height / width). SDL_GPU has a standard
+        // [-1,1] clip volume, so fold the inverse clip aspect into Y here.
+        const float rasterAspect = static_cast<float>(viewport.right - viewport.left) /
+            static_cast<float>(viewport.bottom - viewport.top);
+        result.rasterProjection.values[5] *= rasterAspect;
         result.viewportMatrix = makeViewport(viewport);
         result.cameraToScreen = sequence::multiply(result.projection, result.viewportMatrix);
         return result;

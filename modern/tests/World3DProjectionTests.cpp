@@ -43,6 +43,9 @@ namespace
             near(state->projection.values[10], 100.0F / 99.0F) &&
             near(state->projection.values[11], 1.0F),
             "projection matches PC3D Matrix::ProjectionMatrix convention");
+        expect(near(state->rasterProjection.values[0], 1.0F) &&
+            near(state->rasterProjection.values[5], 800.0F / 450.0F),
+            "portable raster projection folds PC3D D3DVIEWPORT2 clip aspect into Y");
         expect(near(state->viewportMatrix.values[0], 400.0F) &&
             near(state->viewportMatrix.values[5], -400.0F) &&
             near(state->viewportMatrix.values[12], 400.0F) &&

@@ -122,3 +122,155 @@ namespace
         region.w = 64;
         region.h = 64;
         region.d = 1;
+        SDL_GPUTextureTransferInfo destination{};
+        destination.transfer_buffer = transfer;
+        destination.pixels_per_row = 64U;
+        destination.rows_per_layer = 64U;
+        SDL_DownloadFromGPUTexture(copy, &region, &destination);
+        SDL_EndGPUCopyPass(copy);
+
+        SDL_GPUFence* fence =
+            SDL_SubmitGPUCommandBufferAndAcquireFence(commandBuffer);
+        if (!fence)
+        {
+            SDL_ReleaseGPUTransferBuffer(device, transfer);
+            return false;
+        }
+        SDL_GPUFence* fences[]{fence};
+        const bool waited = SDL_WaitForGPUFences(device, true, fences, 1U);
+        if (!waited)
+        {
+            SDL_ReleaseGPUFence(device, fence);
+            SDL_ReleaseGPUTransferBuffer(device, transfer);
+            return false;
+        }
+        void* mapped = SDL_MapGPUTransferBuffer(device, transfer, false);
+        if (!mapped)
+        {
+            SDL_ReleaseGPUFence(device, fence);
+            SDL_ReleaseGPUTransferBuffer(device, transfer);
+            return false;
+        }
+        SDL_memcpy(pixels.data(), mapped, pixels.size());
+        SDL_UnmapGPUTransferBuffer(device, transfer);
+        SDL_ReleaseGPUFence(device, fence);
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        return true;
+    }
+
+    void testValidationWithoutGPU()
+    {
+        const auto missing = engine::World3DRenderer::load(
+            nullptr, std::filesystem::path{MONOPOLY_SHADER_DIR},
+            SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
+        expect(!missing &&
+            missing.error().code == engine::World3DRendererErrorCode::MissingDevice,
+            "renderer rejects a missing SDL_GPU device before asset loading");
+    }
+    void testRealRendererWhenAvailable()
+    {
+        if (!SDL_Init(SDL_INIT_VIDEO))
+        {
+            std::cout << "[SKIP] SDL video unavailable: " << SDL_GetError() << '\n';
+            return;
+        }
+
+        SDL_GPUDevice* device = SDL_CreateGPUDevice(
+            SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_SPIRV |
+            SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_METALLIB,
+            false, nullptr);
+        if (!device)
+        {
+            std::cout << "[SKIP] SDL_GPU unavailable: " << SDL_GetError() << '\n';
+            SDL_Quit();
+            return;
+        }
+
+        SDL_GPUTexture* target = createColorTarget(device);
+        expect(target != nullptr, "renderer test creates a real GPU color target");
+        if (!target)
+        {
+            SDL_DestroyGPUDevice(device);
+            SDL_Quit();
+            return;
+        }
+        auto renderer = engine::World3DRenderer::load(
+            device, std::filesystem::path{MONOPOLY_SHADER_DIR},
+            SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
+        expect(renderer.has_value(), "renderer loads backend-compatible generated shaders");
+        if (!renderer)
+        {
+            std::cout << "[INFO] pipeline load error: " << renderer.error().detail << '\n';
+            SDL_ReleaseGPUTexture(device, target);
+            SDL_DestroyGPUDevice(device);
+            SDL_Quit();
+            return;
+        }
+
+        SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(device);
+        expect(commandBuffer != nullptr, "renderer test acquires a real GPU command buffer");
+        if (!commandBuffer)
+        {
+            renderer->reset();
+            SDL_ReleaseGPUTexture(device, target);
+            SDL_DestroyGPUDevice(device);
+            SDL_Quit();
+            return;
+        }
+
+        expect(clearTarget(commandBuffer, target),
+            "renderer test establishes a known black color target");
+        const auto slot = makeSlot(false);
+        SDL_GPUViewport viewport{0, 0, 64, 64, 0, 1};
+        const auto stats = renderer->render(
+            commandBuffer, target, 64U, 64U, viewport, slot);
+        expect(stats && stats->objects == 1U && stats->batches == 1U &&
+            stats->triangles == 1U,
+            "renderer emits one indexed triangle from the visible sequence mesh");
+
+        std::array<std::uint8_t, 64U * 64U * 4U> pixels{};
+        const bool downloaded = stats &&
+            downloadTarget(device, commandBuffer, target, pixels);
+        expect(downloaded, "renderer framebuffer can be read back after GPU execution");
+
+        std::size_t redPixels{};
+        if (downloaded)
+        {
+            for (std::size_t i = 0; i + 3U < pixels.size(); i += 4U)
+            {
+                if (pixels[i] > 80U && pixels[i + 1U] < 24U &&
+                    pixels[i + 2U] < 24U && pixels[i + 3U] > 200U)
+                    ++redPixels;
+            }
+        }
+        expect(redPixels > 0U,
+            "real SDL_GPU draw changes framebuffer pixels with legacy ambient material color");
+        SDL_GPUCommandBuffer* unsupportedCommand =
+            SDL_AcquireGPUCommandBuffer(device);
+        expect(unsupportedCommand != nullptr,
+            "renderer can acquire a second command buffer for rejection testing");
+        if (unsupportedCommand)
+        {
+            const auto textured = makeSlot(true);
+            const auto rejected = renderer->render(
+                unsupportedCommand, target, 64U, 64U, viewport, textured);
+            expect(!rejected && rejected.error().code ==
+                engine::World3DRendererErrorCode::TexturedBatchUnsupported,
+                "textured HMD batches remain explicit until legacy texture pages are ported");
+            (void)SDL_CancelGPUCommandBuffer(unsupportedCommand);
+        }
+
+        renderer->reset();
+        SDL_ReleaseGPUTexture(device, target);
+        SDL_DestroyGPUDevice(device);
+        SDL_Quit();
+    }
+}
+
+int main()
+{
+    testValidationWithoutGPU();
+    testRealRendererWhenAvailable();
+    std::cout << "World3D renderer failures: " << failures << '\n';
+    return failures ? 1 : 0;
+}
