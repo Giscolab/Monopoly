@@ -71,6 +71,12 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<void, ClockError> setPaused(
             bool paused, std::int32_t parentClock);
 
+        // GoBackwardsInTime: explicit seek uses modulo for loops, unlike a
+        // natural end. Caller destroys/recreates children and recursively
+        // seeks them to newTime-parentStartTime, even with keepFrames.
+        [[nodiscard]] ClockUpdate seek(std::int32_t newTime, std::int32_t parentClock);
+        [[nodiscard]] std::expected<void, ClockError> setEndingAction(std::uint8_t action);
+
         [[nodiscard]] std::int32_t clock() const noexcept { return clock_; }
         [[nodiscard]] std::int32_t endTime() const noexcept { return endTime_; }
         [[nodiscard]] std::uint8_t timeMultiple() const noexcept { return timeMultiple_; }

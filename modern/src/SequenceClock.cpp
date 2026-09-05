@@ -123,4 +123,33 @@ namespace monopoly::sequence
         paused_ = paused;
         return {};
     }
+
+    ClockUpdate SequenceClock::seek(std::int32_t newTime, std::int32_t parentClock)
+    {
+        ClockUpdate result{ !stopped_, clock_, clock_, false, false, false, stopped_ };
+        if (stopped_) return result;
+        if (newTime < 0 || (newTime >= endTime_ && endingAction_ == 1))
+        {
+            stopped_ = true;
+            result.stopped = true;
+            return result;
+        }
+        lastParentClock_ = parentClock;
+        if (endingAction_ == 3) newTime %= endTime_;
+        else if (endingAction_ == 2 && newTime > endTime_) newTime = endTime_;
+        clock_ = newTime;
+        result.clock = clock_;
+        result.restartChildren = true;
+        return result;
+    }
+
+    std::expected<void, ClockError> SequenceClock::setEndingAction(std::uint8_t action)
+    {
+        // Public LE_SEQNCR_SetEndingAction accepts 1..3, not suicide zero.
+        if (action == 0 || action > 3)
+            return std::unexpected(ClockError::InvalidEndingAction);
+        endingAction_ = action;
+        // In particular, retain cadence 255 after a held end.
+        return {};
+    }
 }

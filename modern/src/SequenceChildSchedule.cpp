@@ -5,8 +5,8 @@
 namespace monopoly::sequence
 {
     SequenceChildSchedule::SequenceChildSchedule(
-        data::LegacyChunkReader reader, data::DataId id)
-        : reader_(std::move(reader)), containingDataId_(id) {}
+        std::shared_ptr<const Description> description)
+        : description_(std::move(description)) {}
 
     std::expected<SequenceChildSchedule, ChildScheduleError>
     SequenceChildSchedule::read(data::SharedDataBytes bytes,
@@ -20,7 +20,7 @@ namespace monopoly::sequence
     SequenceChildSchedule::readChildren(data::LegacyChunkReader reader,
         data::DataId containingDataId, std::size_t maximumRecords)
     {
-        SequenceChildSchedule result(reader, containingDataId);
+        auto description = std::make_shared<Description>(Description{reader, containingDataId, {}});
         while (reader.remaining() != 0)
         {
             auto probe = reader;
@@ -29,7 +29,7 @@ namespace monopoly::sequence
             // L_Seqncr.cpp:5300 tests 1 <= ID < SEQ_MAX (11).
             if (chunk->id >= 1 && chunk->id < 11)
             {
-                if (result.records_.size() >= maximumRecords)
+                if (description->records.size() >= maximumRecords)
                     return std::unexpected(ChildScheduleError{ data::SequenceError{
                         data::SequenceErrorCode::RecordLimitExceeded,
                         chunk->headerOffset, "child sequence record budget exceeded",
@@ -37,7 +37,7 @@ namespace monopoly::sequence
                 auto record = data::readLegacySequenceRecord(reader);
                 if (!record)
                     return std::unexpected(ChildScheduleError{ record.error() });
-                result.records_.push_back(std::move(*record));
+                description->records.push_back(std::move(*record));
                 auto ascended = reader.ascend();
                 if (!ascended)
                     return std::unexpected(ChildScheduleError{ ascended.error() });
@@ -50,13 +50,13 @@ namespace monopoly::sequence
                     return std::unexpected(ChildScheduleError{ skipped.error() });
             }
         }
-        return result;
+        return SequenceChildSchedule(std::move(description));
     }
 
     std::span<const data::LegacySequenceRecord>
-    SequenceChildSchedule::records() const noexcept { return records_; }
+    SequenceChildSchedule::records() const noexcept { return description_->records; }
     data::DataId SequenceChildSchedule::containingDataId() const noexcept
-    { return containingDataId_; }
+    { return description_->containingDataId; }
     std::size_t SequenceChildSchedule::nextIndex() const noexcept { return nextIndex_; }
 
     std::expected<std::vector<std::size_t>, data::SequenceError>
@@ -65,14 +65,14 @@ namespace monopoly::sequence
     {
         if (previous && current < *previous)
             return std::unexpected(data::SequenceError{
-                data::SequenceErrorCode::InvalidClockRange, reader_.currentOffset(),
+                data::SequenceErrorCode::InvalidClockRange, description_->reader.currentOffset(),
                 "child scan cannot run backwards; rewind and rescan from minus infinity",
                 std::nullopt });
         std::vector<std::size_t> selected;
         auto next = nextIndex_;
-        for (; next < records_.size(); ++next)
+        for (; next < description_->records.size(); ++next)
         {
-            const auto& header = records_[next].header;
+            const auto& header = description_->records[next].header;
             if (header.parentStartTime > current) break;
             const auto end = static_cast<std::int64_t>(header.parentStartTime) +
                 header.endTime;
@@ -89,12 +89,12 @@ namespace monopoly::sequence
     std::expected<data::LegacyChunkReader, data::ChunkError>
     SequenceChildSchedule::readerForChild(std::size_t index) const
     {
-        if (index >= records_.size())
+        if (index >= description_->records.size())
             return std::unexpected(data::ChunkError{
-                data::ChunkErrorCode::PositionOutOfRange, reader_.currentOffset(),
+                data::ChunkErrorCode::PositionOutOfRange, description_->reader.currentOffset(),
                 "child record index is out of range" });
-        auto reader = reader_;
-        const auto seek = reader.seek(records_[index].chunk.headerOffset);
+        auto reader = description_->reader;
+        const auto seek = reader.seek(description_->records[index].chunk.headerOffset);
         if (!seek) return std::unexpected(seek.error());
         return reader;
     }
