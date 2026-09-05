@@ -107,3 +107,69 @@ namespace monopoly::pieces
         return pose;
     }
 }
+
+namespace monopoly::pieces
+{
+    namespace
+    {
+        constexpr float HouseXLength = 9.0F;
+        constexpr float PropertyXWidth = 38.0F;
+        constexpr float PropertyZHeight = 64.5F;
+        constexpr float SwatchZHeight = 12.5F;
+        constexpr float HouseSpacing =
+            (PropertyXWidth - (4.0F * HouseXLength)) / 5.0F;
+        constexpr float BuildingZOffset = PropertyZHeight - (SwatchZHeight / 2.0F);
+        constexpr float HotelXOffset = PropertyXWidth / 2.0F;
+        constexpr std::array<float, 4> HouseXOffsets{{
+            HouseSpacing + (HouseXLength * 0.5F),
+            (HouseSpacing * 2.0F) + (HouseXLength * 1.5F),
+            (HouseSpacing * 3.0F) + (HouseXLength * 2.5F),
+            (HouseSpacing * 4.0F) + (HouseXLength * 3.5F)}};
+
+        std::optional<BuildingPose> buildingPosition(
+            std::uint8_t boardSquare, float xOffset) noexcept
+        {
+            if (boardSquare >= BoardSquareCountWithSpecials) return std::nullopt;
+            const auto square = boardSquare == InJail ? JustVisiting : boardSquare;
+            const auto& point = boardgeometry::locations3D()[square];
+            BuildingPose pose{};
+            if (square < JustVisiting)
+            {
+                pose.x = point.x + BuildingZOffset;
+                pose.z = point.z - xOffset;
+                pose.yaw = 0.0F;
+            }
+            else if (square < FreeParking)
+            {
+                pose.x = point.x - xOffset;
+                pose.z = point.z - BuildingZOffset;
+                pose.yaw = std::numbers::pi_v<float> / 2.0F;
+            }
+            else if (square < GoToJail)
+            {
+                pose.x = point.x - BuildingZOffset;
+                pose.z = point.z + xOffset;
+                pose.yaw = std::numbers::pi_v<float>;
+            }
+            else
+            {
+                pose.x = point.x + xOffset;
+                pose.z = point.z + BuildingZOffset;
+                pose.yaw = -std::numbers::pi_v<float> / 2.0F;
+            }
+            return pose;
+        }
+    }
+
+    std::optional<BuildingPose> hotelPosition(std::uint8_t boardSquare) noexcept
+    {
+        return buildingPosition(boardSquare, HotelXOffset);
+    }
+
+    std::optional<BuildingPose> housePosition(
+        std::uint8_t boardSquare, std::uint8_t house) noexcept
+    {
+        if (house >= HouseXOffsets.size()) return std::nullopt;
+        return buildingPosition(boardSquare, HouseXOffsets[house]);
+    }
+}
