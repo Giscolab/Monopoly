@@ -113,7 +113,13 @@ add_library(
     src/LegacyDataArchive.cpp
     src/LegacyDataArchiveBuilder.cpp
     src/LegacyChunk.cpp
+    src/LegacySequence.cpp
+    src/SequenceClock.cpp
+    src/SequenceChildSchedule.cpp
+    src/LegacyMeshData.cpp
     src/LanguageResources.cpp
+    src/ResourcePaths.cpp
+    src/ResourceRuntime.cpp
     src/LegacyManifest.cpp
     src/LegacyBitmap.cpp
     src/TextureCatalog.cpp
@@ -345,14 +351,18 @@ if(BUILD_TESTING)
 
 endif()
 
-add_custom_command(
-    TARGET MonopolyModern
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_RUNTIME_DLLS:MonopolyModern>
-        $<TARGET_FILE_DIR:MonopolyModern>
-    COMMAND_EXPAND_LISTS
-)
+# TARGET_RUNTIME_DLLS is empty on non-DLL platforms and with static SDL.
+# Do not invoke copy_if_different with only a destination in those builds.
+if(WIN32 AND SDL_SHARED)
+    add_custom_command(
+        TARGET MonopolyModern
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:MonopolyModern>
+            $<TARGET_FILE_DIR:MonopolyModern>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
 
 
 target_sources(
@@ -509,6 +519,73 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.LanguageResources
         COMMAND MonopolyLanguageResourcesTests
+    )
+
+    foreach(RESOURCE_SUITE IN ITEMS ResourcePaths ResourceRuntime LegacySequence LegacyMeshData SequenceClock SequenceChildSchedule)
+        add_executable(
+            Monopoly${RESOURCE_SUITE}Tests
+            tests/${RESOURCE_SUITE}Tests.cpp
+        )
+        target_link_libraries(
+            Monopoly${RESOURCE_SUITE}Tests PRIVATE MonopolyDataCore
+        )
+        if(MSVC)
+            target_compile_options(
+                Monopoly${RESOURCE_SUITE}Tests PRIVATE /W4 /permissive-
+            )
+        endif()
+        add_test(
+            NAME Monopoly.${RESOURCE_SUITE}
+            COMMAND Monopoly${RESOURCE_SUITE}Tests
+        )
+    endforeach()
+
+    add_executable(
+        MonopolyResourceLifecycleTests
+        tests/ResourceLifecycleTests.cpp
+        src/Game.cpp
+        src/ExtendedInitialization.cpp
+        src/Timers.cpp
+        src/UIMessages.cpp
+    )
+    target_link_libraries(
+        MonopolyResourceLifecycleTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyResourceLifecycleTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.ResourceLifecycle
+        COMMAND MonopolyResourceLifecycleTests
+    )
+
+    add_executable(
+        MonopolyResourceConfigurationTests
+        tests/ResourceConfigurationTests.cpp
+        src/UDUtils.cpp
+    )
+    target_link_libraries(
+        MonopolyResourceConfigurationTests PRIVATE MonopolyDataCore SDL3::SDL3
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyResourceConfigurationTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(
+            TARGET MonopolyResourceConfigurationTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:MonopolyResourceConfigurationTests>
+                $<TARGET_FILE_DIR:MonopolyResourceConfigurationTests>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+    add_test(
+        NAME Monopoly.ResourceConfiguration
+        COMMAND MonopolyResourceConfigurationTests
     )
 
 endif()

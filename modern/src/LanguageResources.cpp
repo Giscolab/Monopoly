@@ -367,43 +367,72 @@ namespace monopoly::data
                 "language ID must be in the source-defined range 1..10"));
         }
 
-        auto text = LegacyDataArchive::open(
-            legacyRoot / std::filesystem::path(definitions->text.legacyPath),
-            legacyGroupValue(definitions->text.group),
-            options);
+        DataBankRegistry staged;
+        for (const auto* definition :
+            { &definitions->text, &definitions->graphics, &definitions->dialog })
+        {
+            auto mounted = staged.mount(
+                legacyRoot / std::filesystem::path(definition->legacyPath),
+                legacyGroupValue(definition->group), options);
+            if (!mounted)
+            {
+                return std::unexpected(mounted.error());
+            }
+        }
+        return select(staged, language);
+    }
+
+
+    std::expected<void, DataError> LanguageService::select(
+        const DataBankRegistry& registry,
+        LanguageId language)
+    {
+        const auto* definitions = findLanguageBankTriplet(language);
+        if (definitions == nullptr)
+        {
+            return std::unexpected(textError(
+                DataErrorCode::InvalidLanguage,
+                "language ID must be in the source-defined range 1..10"));
+        }
+
+        auto text = registry.archive(
+            legacyGroupValue(definitions->text.group));
 
         if (!text)
         {
             return std::unexpected(text.error());
         }
 
-        auto media = LegacyDataArchive::open(
-            legacyRoot /
-                std::filesystem::path(definitions->graphics.legacyPath),
-            legacyGroupValue(definitions->graphics.group),
-            options);
+        auto media = registry.archive(
+            legacyGroupValue(definitions->graphics.group));
 
         if (!media)
         {
             return std::unexpected(media.error());
         }
 
-        auto dialog = LegacyDataArchive::open(
-            legacyRoot /
-                std::filesystem::path(definitions->dialog.legacyPath),
-            legacyGroupValue(definitions->dialog.group),
-            options);
+        auto dialog = registry.archive(
+            legacyGroupValue(definitions->dialog.group));
 
         if (!dialog)
         {
             return std::unexpected(dialog.error());
         }
 
+        if (!(*media)->isOpen() || !(*dialog)->isOpen())
+        {
+            return std::unexpected(textError(
+                DataErrorCode::ArchiveClosed,
+                "language media or dialog archive is closed"));
+        }
+
         auto catalog = LanguageCatalog::open(language, *text);
 
         if (!catalog)
         {
-            return std::unexpected(catalog.error());
+            auto error = catalog.error();
+            error.path = (*text)->path();
+            return std::unexpected(std::move(error));
         }
 
         auto staged = std::make_shared<LanguageSnapshot>(LanguageSnapshot
