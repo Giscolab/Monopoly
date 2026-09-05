@@ -78,7 +78,12 @@ namespace monopoly::data
         DuplicateIndexKey,
         IndexedItemNotFound,
         TypeMismatch,
-        InvalidUtf16
+        InvalidUtf16,
+        InvalidBoardEdition,
+        ResourcePathInvalid,
+        ResourceNotFound,
+        ResourcePathAmbiguous,
+        ResourcePathFailed
     };
 
 

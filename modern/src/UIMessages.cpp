@@ -66,4 +66,15 @@ namespace monopoly::uimsg
     {
         return eventQueue.size();
     }
+
+
+    std::size_t discardTimerEvents(std::size_t timerIndex)
+    {
+        return std::erase_if(eventQueue, [timerIndex](const Message& message)
+        {
+            return message.type == Type::TimerReachedZero &&
+                message.numberA >= 0 &&
+                static_cast<std::uint64_t>(message.numberA) == timerIndex;
+        });
+    }
 }

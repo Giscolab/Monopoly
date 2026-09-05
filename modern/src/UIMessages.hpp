@@ -39,6 +39,10 @@ namespace monopoly::uimsg
     bool send(const Message& message);
     bool receive(Message& message);
 
+    // Retire les expirations deja en file lors de l'arret d'un timer de jeu.
+    // Les autres timers et entrees conservent strictement leur ordre FIFO.
+    std::size_t discardTimerEvents(std::size_t timerIndex);
+
     std::size_t size();
 }
 

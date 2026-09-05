@@ -1,6 +1,5 @@
 #include "ExtendedInitialization.hpp"
 
-#include "DataBanks.hpp"
 #include "Display.hpp"
 #include "PlayerSelection.hpp"
 #include "Messaging.hpp"
@@ -9,26 +8,53 @@
 #include "Timers.hpp"
 #include "TimeStep.hpp"
 #include "UserInterface.hpp"
+#include "UDUtils.hpp"
+#include "UIMessages.hpp"
+
+#include <iostream>
 
 namespace monopoly::startup
 {
+    namespace
+    {
+        data::ResourceRuntime resourceRuntime;
+
+        void stopGameTimer()
+        {
+            (void)timers::configure(0, 0, 0, false, 0);
+            (void)uimsg::discardTimerEvents(0);
+        }
+    }
+
+
     bool mainExtendedInitialization()
     {
-        // ====================================================
-        // MainExtendedInitialization() original :
-        //
-        // 1. LE_DATA_InitDatafile(dat_main)
-        // 2. LE_DATA_InitDatafile(dat_pat)
-        // 3. LE_DATA_InitDatafile(dat_bord)   [USA_VERSION=1]
-        // 4. LE_DATA_InitDatafile(dat_brd2)
-        // 5. LE_DATA_InitDatafile(dat_3d)
-        //
-        // Pour l'instant nous conservons leur identité dans
-        // DataBanks. Le format DAT sera remplacé proprement,
-        // pas simulé avec des fichiers inexistants.
-        // ====================================================
+        const auto* paths = udutils::resourcePaths();
+        if (paths == nullptr)
+        {
+            std::cerr << "Resource paths have not been initialized.\n";
+            return false;
+        }
+        return mainExtendedInitialization(*paths);
+    }
 
-        (void)data::legacyBanks();
+
+    bool mainExtendedInitialization(
+        const data::ResourcePaths& paths, data::ResourceContext context)
+    {
+        // Userifce.cpp : DATA core puis LANG, obligatoirement avant MESS.
+        // Le port signale aussi les erreurs core auparavant ignorees.
+        auto initialized = resourceRuntime.initialize(paths, context);
+        if (!initialized)
+        {
+            const auto& error = initialized.error();
+            const auto utf8Path = error.path.u8string();
+            std::cerr << "Legacy resources initialization failed ["
+                << data::dataErrorCodeName(error.code) << "] "
+                << std::string(utf8Path.begin(), utf8Path.end())
+                << ": " << error.detail << '\n';
+            return false;
+        }
 
         // Le miroir UI global et le marqueur de première notification sont
         // réarmés à chaque démarrage moderne.
@@ -36,8 +62,6 @@ namespace monopoly::startup
 
         // ====================================================
         // Prochaines étapes originales, encore à porter :
-        //
-        // LANG_InitializeSystem()
         //
         // LE_FONTS_SetFont()
         // LE_FONTS_SetSize(10)
@@ -62,6 +86,7 @@ namespace monopoly::startup
         // MESS_InitializeSystem();
         if (!messaging::initialize())
         {
+            stopGameTimer();
             return false;
         }
 
@@ -74,6 +99,7 @@ namespace monopoly::startup
                 true,   // send UI message
                 1))     // actif immédiatement
         {
+            stopGameTimer();
             messaging::shutdown();
             return false;
         }
@@ -88,6 +114,7 @@ namespace monopoly::startup
         // DISPLAY_initialize();
         if (!display::initialize())
         {
+            stopGameTimer();
             messaging::shutdown();
             return false;
         }
@@ -96,6 +123,7 @@ namespace monopoly::startup
         if (!rules::initialize())
         {
             display::shutdown();
+            stopGameTimer();
             messaging::shutdown();
             return false;
         }
@@ -142,6 +170,7 @@ namespace monopoly::startup
 
     void mainExtendedShutdown()
     {
+        stopGameTimer();
         // GameShutdown() original commence par DISPLAY_destroy(), avant de
         // detruire les ressources auxquelles les modules UD font reference.
         display::shutdown();
@@ -150,6 +179,18 @@ namespace monopoly::startup
         messaging::shutdown();
         userinterface::resetTimeStep();
         runtime::reset();
+    }
+
+
+    std::shared_ptr<const data::ResourceSnapshot> resources() noexcept
+    {
+        return resourceRuntime.snapshot();
+    }
+
+
+    void releaseResources() noexcept
+    {
+        resourceRuntime.shutdown();
     }
 }
 

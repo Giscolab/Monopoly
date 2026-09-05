@@ -139,6 +139,11 @@ namespace monopoly::data
             return "IndexedItemNotFound";
         case DataErrorCode::TypeMismatch: return "TypeMismatch";
         case DataErrorCode::InvalidUtf16: return "InvalidUtf16";
+        case DataErrorCode::InvalidBoardEdition: return "InvalidBoardEdition";
+        case DataErrorCode::ResourcePathInvalid: return "ResourcePathInvalid";
+        case DataErrorCode::ResourceNotFound: return "ResourceNotFound";
+        case DataErrorCode::ResourcePathAmbiguous: return "ResourcePathAmbiguous";
+        case DataErrorCode::ResourcePathFailed: return "ResourcePathFailed";
         }
 
         return "InvalidDataErrorCode";

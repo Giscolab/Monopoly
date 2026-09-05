@@ -15,6 +15,12 @@ namespace monopoly::game
     namespace
     {
         std::uint64_t nextActionTick = 0;
+
+        void stopSecondaryTimer()
+        {
+            (void)timers::configure(1, 0, 0, false, 0);
+            (void)uimsg::discardTimerEvents(1);
+        }
     }
 
 
@@ -46,6 +52,7 @@ namespace monopoly::game
         // LE_Timers[1] = 0;
         if (!timers::configure(1, 1, 3, true, 0))
         {
+            stopSecondaryTimer();
             mouse::shutdown();
             engine::shutdownRenderSlots();
             return false;
@@ -56,8 +63,10 @@ namespace monopoly::game
         //     return FALSE;
         if (!startup::mainExtendedInitialization())
         {
+            stopSecondaryTimer();
             mouse::shutdown();
             engine::shutdownRenderSlots();
+            startup::releaseResources();
             return false;
         }
 
@@ -111,11 +120,13 @@ namespace monopoly::game
     void shutdown()
     {
         startup::mainExtendedShutdown();
+        stopSecondaryTimer();
 
         nextActionTick = 0;
 
         mouse::shutdown();
         engine::shutdownRenderSlots();
+        startup::releaseResources();
     }
 }
 

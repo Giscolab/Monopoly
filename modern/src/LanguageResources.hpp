@@ -86,6 +86,14 @@ namespace monopoly::data
             LanguageId language,
             ArchiveOpenOptions options = {});
 
+        // Utilise les memes instances que le registre du lifecycle. Les
+        // groupes 9/5/10 doivent deja etre montes pour la langue choisie.
+        // Le caller doit conserver le registre sans unmount/clear tant que
+        // ce snapshot est consomme; ResourceRuntime publie cet ensemble.
+        [[nodiscard]] std::expected<void, DataError> select(
+            const DataBankRegistry& registry,
+            LanguageId language);
+
         [[nodiscard]] std::shared_ptr<const LanguageSnapshot>
         snapshot() const noexcept;
 
