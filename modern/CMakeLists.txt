@@ -158,6 +158,9 @@ add_library(
     STATIC
     src/MeshGPUResources.cpp
     src/World3DGPUScene.cpp
+    src/World3DShaderAssets.cpp
+    src/World3DPipeline.cpp
+    src/World3DRenderer.cpp
 )
 
 target_include_directories(
