@@ -14,7 +14,7 @@
 
 namespace monopoly::sequence
 {
-    enum class SequenceCommandKind { Start, Stop, SetEndingAction };
+    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction };
     enum class CommandQueueError { QueueFull, InvalidProgram, InvalidEndingAction, NestingOverflow };
 
     struct StartSequenceCommand
@@ -36,9 +36,26 @@ namespace monopoly::sequence
         std::uint8_t action{};
         bool wholeTree{};
     };
+    struct MoveSequenceCommand
+    {
+        data::DataId dataId{};
+        std::uint16_t priority{};
+        SequenceTransform transform;
+        bool wholeTree{};
+    };
 
     using SequenceCommand = std::variant<StartSequenceCommand,
-        StopSequenceCommand, SetSequenceEndingActionCommand>;
+        StopSequenceCommand, MoveSequenceCommand,
+        SetSequenceEndingActionCommand>;
+
+    [[nodiscard]] MoveSequenceCommand makeMoveTheWorks(data::DataId dataId,
+        std::uint16_t priority, SequenceTransform transform,
+        bool wholeTree = false) noexcept;
+    [[nodiscard]] MoveSequenceCommand makeMoveXY(data::DataId dataId,
+        std::uint16_t priority, std::int32_t x, std::int32_t y) noexcept;
+    [[nodiscard]] MoveSequenceCommand makeMoveRySTxz(data::DataId dataId,
+        std::uint16_t priority, float yaw, float scale,
+        float x, float z) noexcept;
 
     struct SequenceCommandOutcome
     {
@@ -63,6 +80,8 @@ namespace monopoly::sequence
             StartSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             StopSequenceCommand command);
+        [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
+            MoveSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             SetSequenceEndingActionCommand command);
 

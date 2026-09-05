@@ -39,6 +39,9 @@ namespace monopoly::sequence
         data::LegacySequenceRecord record;
         SequenceChildSchedule children;
         data::LegacySequenceAttributes attributes;
+        // Resolved exactly as LI_SEQNCR_StartUpSequence does for 3D mesh
+        // records. Empty for records which do not expose renderable content.
+        std::optional<data::DataId> contentsDataId;
         // One program index for each record in the schedule, in DISK order.
         std::vector<std::size_t> childDescriptions;
     };
@@ -90,12 +93,22 @@ namespace monopoly::sequence
         std::uint8_t timeMultiple{};
         bool paused{};
         std::uint8_t dimensionality{};
+        std::optional<data::DataId> contentsDataId;
         bool explicitlyPositioned{};
         SequenceTransform localTransform;
         bool tweekerTransformApplied{};
         SequenceTransform tweekerTransform;
         SequenceTransform worldTransform;
         std::vector<SequenceNodeId> children; // runtime priority order
+    };
+
+    struct SequenceMeshInstanceView
+    {
+        SequenceNodeId node{};
+        data::DataId contentsDataId{};
+        std::uint16_t priority{};
+        std::int32_t clock{};
+        Matrix3D worldTransform{};
     };
     struct RuntimeLimits
     {
@@ -135,8 +148,14 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<std::size_t, RuntimeError> setEndingActionMatching(
             data::DataId id, std::uint16_t priority, std::uint8_t action,
             bool wholeTree = false);
+        [[nodiscard]] std::size_t moveMatching(data::DataId id,
+            std::uint16_t priority, const SequenceTransform& transform,
+            bool wholeTree = false);
 
         [[nodiscard]] std::optional<SequenceNodeView> inspect(SequenceNodeId node) const;
+        // Active 3D mesh leaves in runtime traversal order. This is CPU render
+        // intent only: no HMD decoding, GPU resource or render-slot ownership.
+        [[nodiscard]] std::vector<SequenceMeshInstanceView> meshInstances() const;
         [[nodiscard]] std::vector<SequenceNodeId> roots() const;
         [[nodiscard]] std::size_t liveNodeCount() const noexcept;
         // Diagnostic lifecycle trace for the last operation, not ArtLib label
@@ -157,6 +176,8 @@ namespace monopoly::sequence
         void erase(Node& node);
         void clearForest();
         void forceAncestors(Node& node);
+        void forceDescendants(Node& node);
+        void move(Node& node, const SequenceTransform& transform);
         [[nodiscard]] std::expected<void, RuntimeError> birthChildren(Node& node,
             std::optional<std::int32_t> previous);
         [[nodiscard]] std::expected<void, RuntimeError> rebuildChildren(Node& node);

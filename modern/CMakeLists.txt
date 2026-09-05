@@ -120,6 +120,9 @@ add_library(
     src/SequenceCommands.cpp
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
+    src/MeshRuntime.cpp
+    src/SequenceRenderData.cpp
+    src/SequenceWorld3DSlot.cpp
     src/LanguageResources.cpp
     src/ResourcePaths.cpp
     src/ResourceRuntime.cpp
@@ -524,7 +527,7 @@ if(BUILD_TESTING)
         COMMAND MonopolyLanguageResourcesTests
     )
 
-    foreach(RESOURCE_SUITE IN ITEMS ResourcePaths ResourceRuntime LegacySequence LegacyMeshData SequenceClock SequenceChildSchedule SequenceRuntime SequenceCommands SequenceTransforms)
+    foreach(RESOURCE_SUITE IN ITEMS ResourcePaths ResourceRuntime LegacySequence LegacyMeshData MeshRuntime SequenceClock SequenceChildSchedule SequenceRuntime SequenceCommands SequenceTransforms SequenceRenderData SequenceWorld3DSlot)
         add_executable(
             Monopoly${RESOURCE_SUITE}Tests
             tests/${RESOURCE_SUITE}Tests.cpp

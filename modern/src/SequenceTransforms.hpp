@@ -35,6 +35,14 @@ namespace monopoly::sequence
     [[nodiscard]] Matrix2D translate2D(std::int32_t x, std::int32_t y) noexcept;
     [[nodiscard]] Matrix3D translate3D(float x, float y, float z) noexcept;
 
+    // Portable equivalents of the matrices built by the public legacy
+    // MoveXY and MoveRySTxz helpers. A monostate represents MoveXY's null
+    // matrix, which resets the target rather than applying a zero delta.
+    [[nodiscard]] SequenceTransform moveXYTransform(
+        std::int32_t x, std::int32_t y) noexcept;
+    [[nodiscard]] Matrix3D moveRySTxzTransform(
+        float yaw, float scale, float x, float z) noexcept;
+
     // StartupSequence dimensionality scan followed by the first applicable
     // positioning subchunk. Unknown/unimplemented attributes are rejected by
     // SequenceProgram before this runtime conversion is called.

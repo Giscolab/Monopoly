@@ -1,6 +1,7 @@
 #include "SequenceRuntime.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <map>
@@ -77,10 +78,11 @@ namespace monopoly::sequence
             auto record = data::readLegacySequenceRecord(*reader);
             if (!record) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, record.error()));
-            if (record->chunk.id != 1 && record->chunk.id != 2 && record->chunk.id != 10)
+            if (record->chunk.id != 1 && record->chunk.id != 2 &&
+                record->chunk.id != 9 && record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect and tweeker records only"));
+                    "runtime currently executes grouping, indirect, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -100,9 +102,13 @@ namespace monopoly::sequence
                 return std::unexpected(error(RuntimeErrorCode::ReferenceLimit,
                     currentId, currentOffset, "description reference budget exceeded"));
             references += schedule->records().size();
+            std::optional<data::DataId> contentsDataId;
+            if (const auto* mesh = std::get_if<data::SequenceMeshData>(&record->data))
+                contentsDataId = data::resolveSequenceDataId(record->header,
+                    mesh->modelDataId, currentId);
             const auto index = program->descriptions_.size();
             program->descriptions_.push_back({currentId, *record, *schedule,
-                std::move(*attributes), {}});
+                std::move(*attributes), contentsDataId, {}});
             visited.emplace(key, Entry{index, true, 1});
             std::size_t height = 1;
             for (const auto& child : schedule->records())
@@ -262,6 +268,60 @@ namespace monopoly::sequence
     }
     void SequenceRuntime::forceAncestors(Node& node)
     { for (auto* current = &node; current; current = current->parent) current->reevaluate = true; }
+    void SequenceRuntime::forceDescendants(Node& node)
+    {
+        node.reevaluate = true;
+        for (auto& child : node.children) forceDescendants(*child);
+    }
+    void SequenceRuntime::move(Node& node, const SequenceTransform& transform)
+    {
+        bool changed = true;
+        if (node.dimensionality == 2)
+        {
+            if (const auto* matrix = std::get_if<Matrix2D>(&transform))
+            {
+                const auto& current = std::get<Matrix2D>(node.localTransform);
+                changed = std::memcmp(current.values.data(), matrix->values.data(),
+                    sizeof(current.values)) != 0;
+                if (changed)
+                {
+                    node.localTransform = *matrix;
+                    node.explicitlyPositioned = true;
+                }
+            }
+            else
+            {
+                node.localTransform = identity2D();
+                node.explicitlyPositioned = false;
+            }
+        }
+        else if (node.dimensionality == 3)
+        {
+            if (const auto* matrix = std::get_if<Matrix3D>(&transform))
+            {
+                const auto& current = std::get<Matrix3D>(node.localTransform);
+                changed = std::memcmp(current.values.data(), matrix->values.data(),
+                    sizeof(current.values)) != 0;
+                if (changed)
+                {
+                    node.localTransform = *matrix;
+                    node.explicitlyPositioned = true;
+                }
+            }
+            else
+            {
+                node.localTransform = identity3D();
+                node.explicitlyPositioned = false;
+            }
+        }
+        if (!changed) return;
+
+        // MarkAsNeedingPositionRecalc marks this sequence and its ancestors;
+        // descendants are then reevaluated by the recursive update. Preserve
+        // that observable effect even when a descendant cadence would gate it.
+        forceAncestors(node);
+        forceDescendants(node);
+    }
     std::expected<void, RuntimeError> SequenceRuntime::stop(SequenceNodeId id)
     {
         events_.clear();
@@ -475,6 +535,17 @@ namespace monopoly::sequence
         }
         return matches.size();
     }
+    std::size_t SequenceRuntime::moveMatching(data::DataId id,
+        std::uint16_t priority, const SequenceTransform& transform, bool wholeTree)
+    {
+        events_.clear();
+        const auto matches = matching(id, priority, wholeTree);
+        for (const auto match : matches)
+            if (auto* node = find(match)) move(*node, transform);
+        // FindNextSequence counts a target even when MoveSequence's exact
+        // matrix comparison makes the individual mutation a no-op.
+        return matches.size();
+    }
     std::optional<SequenceNodeView> SequenceRuntime::inspect(SequenceNodeId id) const
     {
         const auto* node = find(id);
@@ -482,12 +553,34 @@ namespace monopoly::sequence
         SequenceNodeView view{node->id, node->parent ? node->parent->id : 0,
             node->definition().dataId, node->definition().record.chunk.headerOffset, node->priority,
             node->clock.clock(), node->clock.endTime(), node->clock.timeMultiple(), node->clock.paused(),
-            node->dimensionality, node->explicitlyPositioned,
+            node->dimensionality, node->definition().contentsDataId, node->explicitlyPositioned,
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }
+    std::vector<SequenceMeshInstanceView> SequenceRuntime::meshInstances() const
+    {
+        std::vector<SequenceMeshInstanceView> result;
+        const auto visit = [&](const auto& self, const Nodes& nodes) -> void {
+            for (const auto& node : nodes)
+            {
+                const auto& definition = node->definition();
+                if (definition.record.chunk.id == 9 && definition.contentsDataId &&
+                    node->dimensionality == 3 &&
+                    std::holds_alternative<Matrix3D>(node->worldTransform))
+                {
+                    result.push_back({node->id, *definition.contentsDataId,
+                        node->priority, node->clock.clock(),
+                        std::get<Matrix3D>(node->worldTransform)});
+                }
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
+        return result;
+    }
+
     std::vector<SequenceNodeId> SequenceRuntime::roots() const
     {
         std::vector<SequenceNodeId> result;

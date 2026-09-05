@@ -112,6 +112,22 @@ namespace monopoly::sequence
     Matrix3D translate3D(float x, float y, float z) noexcept
     { auto value = identity3D(); value.values[12] = x; value.values[13] = y; value.values[14] = z; return value; }
 
+    SequenceTransform moveXYTransform(std::int32_t x, std::int32_t y) noexcept
+    {
+        if (x == 0 && y == 0) return std::monostate{};
+        return translate2D(x, y);
+    }
+
+    Matrix3D moveRySTxzTransform(float yaw, float scale,
+        float x, float z) noexcept
+    {
+        auto result = scale3D(scale, scale, scale);
+        if (yaw != 0.0F) result = multiply(result, rotateY(yaw));
+        if (x != 0.0F || z != 0.0F)
+            result = multiply(result, translate3D(x, 0.0F, z));
+        return result;
+    }
+
     InitialSequenceTransform initialSequenceTransform(
         const data::LegacySequenceRecord& record,
         const data::LegacySequenceAttributes& attributes,
