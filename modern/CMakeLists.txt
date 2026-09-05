@@ -122,6 +122,7 @@ add_library(
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
     src/SequenceRenderData.cpp
+    src/World3DProjection.cpp
     src/SequenceWorld3DSlot.cpp
     src/LanguageResources.cpp
     src/ResourcePaths.cpp
@@ -149,6 +150,32 @@ if(MSVC)
         PRIVATE
         /W4
         /permissive-
+    )
+endif()
+
+add_library(
+    MonopolyGPU3DCore
+    STATIC
+    src/MeshGPUResources.cpp
+    src/World3DGPUScene.cpp
+)
+
+target_include_directories(
+    MonopolyGPU3DCore
+    PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(
+    MonopolyGPU3DCore
+    PUBLIC
+    MonopolyDataCore
+    SDL3::SDL3
+)
+
+if(MSVC)
+    target_compile_options(
+        MonopolyGPU3DCore PRIVATE /W4 /permissive-
     )
 endif()
 
@@ -285,6 +312,7 @@ target_link_libraries(
     PRIVATE
     SDL3::SDL3
     MonopolyDataCore
+    MonopolyGPU3DCore
 )
 
 if(MSVC)
@@ -527,7 +555,7 @@ if(BUILD_TESTING)
         COMMAND MonopolyLanguageResourcesTests
     )
 
-    foreach(RESOURCE_SUITE IN ITEMS ResourcePaths ResourceRuntime LegacySequence LegacyMeshData MeshRuntime SequenceClock SequenceChildSchedule SequenceRuntime SequenceCommands SequenceTransforms SequenceRenderData SequenceWorld3DSlot)
+    foreach(RESOURCE_SUITE IN ITEMS ResourcePaths ResourceRuntime LegacySequence LegacyMeshData MeshRuntime SequenceClock SequenceChildSchedule SequenceRuntime SequenceCommands SequenceTransforms SequenceRenderData World3DProjection SequenceWorld3DSlot)
         add_executable(
             Monopoly${RESOURCE_SUITE}Tests
             tests/${RESOURCE_SUITE}Tests.cpp
@@ -672,6 +700,62 @@ target_sources(
     src/GPUFrame.cpp
     src/LogicalViewport.cpp
 )
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyMeshGPUResourcesTests
+        tests/MeshGPUResourcesTests.cpp
+    )
+    target_link_libraries(
+        MonopolyMeshGPUResourcesTests
+        PRIVATE MonopolyGPU3DCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyMeshGPUResourcesTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(
+            TARGET MonopolyMeshGPUResourcesTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:MonopolyMeshGPUResourcesTests>
+                $<TARGET_FILE_DIR:MonopolyMeshGPUResourcesTests>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+    add_test(
+        NAME Monopoly.MeshGPUResources
+        COMMAND MonopolyMeshGPUResourcesTests
+    )
+
+    add_executable(
+        MonopolyWorld3DGPUSceneTests
+        tests/World3DGPUSceneTests.cpp
+    )
+    target_link_libraries(
+        MonopolyWorld3DGPUSceneTests
+        PRIVATE MonopolyGPU3DCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyWorld3DGPUSceneTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(
+            TARGET MonopolyWorld3DGPUSceneTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:MonopolyWorld3DGPUSceneTests>
+                $<TARGET_FILE_DIR:MonopolyWorld3DGPUSceneTests>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+    add_test(
+        NAME Monopoly.World3DGPUScene
+        COMMAND MonopolyWorld3DGPUSceneTests
+    )
+endif()
 
 # ============================================================
 # Logical 800x600 viewport, resizing and letterbox contract

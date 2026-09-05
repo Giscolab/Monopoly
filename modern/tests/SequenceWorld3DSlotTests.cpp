@@ -9,6 +9,7 @@ namespace
 {
     using namespace monopoly;
     int failures{};
+
     void expect(bool value, std::string_view text)
     {
         std::cout << (value ? "[PASS] " : "[FAIL] ") << text << '\n';
@@ -17,8 +18,10 @@ namespace
 
     std::shared_ptr<const data::MeshRuntimeAsset> asset(data::DataId id)
     {
+        auto render = std::make_shared<data::MeshRenderData>();
+        render->bounds = {{-1.0F, -1.0F, 10.0F}, {1.0F, 1.0F, 12.0F}};
         return std::make_shared<const data::MeshRuntimeAsset>(
-            data::MeshRuntimeAsset{id, {}, {}});
+            data::MeshRuntimeAsset{id, {}, std::move(render)});
     }
 
     sequence::SequenceMeshRenderItem item(sequence::SequenceNodeId node,
@@ -28,6 +31,7 @@ namespace
         matrix.values[12] = x;
         return {node, id, 7, 3, matrix, asset(id)};
     }
+
     void testLifecycleAndStableIdentity()
     {
         engine::SequenceWorld3DSlot slot;
@@ -50,6 +54,42 @@ namespace
             slot.find(10)->worldTransform.values[12] == 5.0F,
             "SequenceMoved equivalent updates matrix without recreating the node");
     }
+
+    void testProjectionVisibilityLifecycle()
+    {
+        engine::SequenceWorld3DSlot slot;
+        auto first = item(10, data::packDataId(8, 1));
+        auto second = item(20, data::packDataId(8, 2));
+        expect(slot.sync({first, second}).has_value(),
+            "objects can exist before a 3D view is configured");
+        engine::World3DCamera camera;
+        camera.location = {0.0F, 0.0F, 0.0F};
+        camera.fieldOfView = 1.5707963267948966F;
+        camera.nearPlane = 1.0F;
+        camera.farPlane = 100.0F;
+        const auto configured = slot.configureView({0, 0, 800, 450}, camera);
+        expect(configured && *configured == 2 && slot.view().has_value(),
+            "camera or viewport change recomputes every existing 3D object");
+        expect(slot.find(10)->screenBounds == engine::World3DRect{359, 184, 441, 266} &&
+            slot.visibleOrder() == std::vector<sequence::SequenceNodeId>{10, 20},
+            "slot stores source-style clipped screen bounds in traversal order");
+
+        first.worldTransform.values[12] = 1000.0F;
+        const auto moved = slot.sync({first, second});
+        expect(moved && moved->moved == 1 && !slot.find(10)->screenBounds &&
+            slot.visibleOrder() == std::vector<sequence::SequenceNodeId>{20},
+            "SequenceMoved refreshes visibility without touching unchanged objects");
+
+        const auto oldView = slot.view()->viewport;
+        const auto invalid = slot.configureView({0, 0, 0, 450}, camera);
+        expect(!invalid && slot.view() && slot.view()->viewport == oldView &&
+            slot.find(20)->screenBounds,
+            "invalid view configuration is transactional and preserves published bounds");
+        slot.clearView();
+        expect(!slot.view() && slot.visibleOrder().empty() && slot.size() == 2,
+            "view shutdown removes projected state without destroying sequence ownership");
+    }
+
     void testRemovalAndTransactionalDuplicateFailure()
     {
         engine::SequenceWorld3DSlot slot;
@@ -79,6 +119,7 @@ namespace
 int main()
 {
     testLifecycleAndStableIdentity();
+    testProjectionVisibilityLifecycle();
     testRemovalAndTransactionalDuplicateFailure();
     std::cout << "Sequence World3D slot failures: " << failures << '\n';
     return failures == 0 ? 0 : 1;
