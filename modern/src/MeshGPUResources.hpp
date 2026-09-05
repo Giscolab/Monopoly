@@ -38,8 +38,11 @@ namespace monopoly::engine
         SizeOverflow,
         InvalidIndex,
         InvalidBatchRange,
+        MissingTexturePixels,
+        InvalidTexturePixels,
         VertexBufferCreationFailed,
         IndexBufferCreationFailed,
+        TextureCreationFailed,
         TransferBufferCreationFailed,
         TransferMapFailed,
         CommandBufferCreationFailed,
@@ -56,6 +59,15 @@ namespace monopoly::engine
     [[nodiscard]] std::expected<MeshGPUUploadPlan, MeshGPUError>
         makeMeshGPUUploadPlan(const data::MeshRenderData& renderData);
 
+    struct MeshGPUTextureResource
+    {
+        std::uint64_t key{};
+        SDL_GPUTexture* texture{};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::shared_ptr<const data::HmdTextureImage> source;
+    };
+
     struct MeshGPUResource
     {
         data::DataId dataId{};
@@ -63,12 +75,20 @@ namespace monopoly::engine
         SDL_GPUBuffer* indexBuffer{};
         std::uint32_t vertexCount{};
         std::uint32_t indexCount{};
+        std::unordered_map<std::uint64_t, MeshGPUTextureResource> textures;
         std::shared_ptr<const data::MeshRuntimeAsset> source;
+
+        [[nodiscard]] SDL_GPUTexture* texture(std::uint64_t key) const noexcept
+        {
+            const auto found = textures.find(key);
+            return found == textures.end() ? nullptr : found->second.texture;
+        }
     };
 
-    // SDL_GPU upload cache. It owns GPU buffers exclusively and must be
-    // cleared/destroyed before its SDL_GPUDevice. Replacing the same DataId
-    // with a different immutable CPU asset uploads first, then swaps.
+    // SDL_GPU upload cache. It owns GPU buffers and HMD-derived RGBA textures
+    // exclusively and must be cleared/destroyed before its SDL_GPUDevice.
+    // Replacing the same DataId with a different immutable CPU asset uploads
+    // the whole replacement first, then swaps ownership transactionally.
     class MeshGPUCache final
     {
     public:

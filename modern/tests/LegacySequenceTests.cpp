@@ -251,6 +251,38 @@ namespace
             "physical chunk bounds are enforced by LegacyChunkReader");
     }
 
+    void testMeshChoiceAttribute()
+    {
+        const DataBytes meshChoicePayload{
+            std::byte{0xFE}, std::byte{0xFF}, // meshIndexA = -2
+            std::byte{0x07}, std::byte{0x00}, // meshIndexB = 7
+            std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xBF} // -0.5f
+        };
+        DataBytes payload = CommonHeader;
+        const auto attribute = chunk(139, meshChoicePayload);
+        payload.insert(payload.end(), attribute.begin(), attribute.end());
+        const auto bytes = chunk(1, payload);
+        LegacyChunkReader reader(bytes);
+        expect(readLegacySequenceRecord(reader).has_value(),
+            "grouping fixture positions reader before private mesh-choice attribute");
+        const auto attributes = readLegacySequenceAttributes(reader);
+        const auto* choice = attributes && attributes->values.size() == 1 ?
+            std::get_if<Sequence3DMeshChoiceAttribute>(&attributes->values.front()) : nullptr;
+        expect(choice && choice->meshIndexA == -2 && choice->meshIndexB == 7 &&
+            choice->meshProportion == -0.5F,
+            "private chunk 139 decodes signed pose indices and unclamped float proportion");
+
+        DataBytes shortPayload(meshChoicePayload.begin(), meshChoicePayload.end() - 1);
+        DataBytes shortParent = CommonHeader;
+        const auto shortAttribute = chunk(139, shortPayload);
+        shortParent.insert(shortParent.end(), shortAttribute.begin(), shortAttribute.end());
+        const auto shortBytes = chunk(1, shortParent);
+        LegacyChunkReader shortReader(shortBytes);
+        (void)readLegacySequenceRecord(shortReader);
+        const auto truncated = readLegacySequenceAttributes(shortReader);
+        expect(!truncated && truncated.error().code == SequenceErrorCode::AttributeTruncated,
+            "seven-byte mesh-choice payload is rejected before reading its float");
+    }
     void testDataIdResolution()
     {
         auto header = *decodeLegacySequenceHeader(CommonHeader);
@@ -271,6 +303,7 @@ int main()
     testPackedHeader();
     testFixedRecords();
     testTraversalOwnershipAndErrors();
+    testMeshChoiceAttribute();
     testDataIdResolution();
     return failures == 0 ? 0 : 1;
 }

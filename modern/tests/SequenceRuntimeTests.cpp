@@ -66,6 +66,27 @@ namespace
         return chunk(9, payload);
     }
 
+    DataBytes meshChoice(std::int16_t a, std::int16_t b,
+        std::uint32_t proportionBits)
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint16_t>(a) |
+            (static_cast<std::uint32_t>(static_cast<std::uint16_t>(b)) << 16U));
+        word(payload, proportionBits);
+        return chunk(139, payload);
+    }
+    DataBytes tweeker(std::uint8_t interpolation, std::int32_t end,
+        const DataBytes& attributes)
+    {
+        DataBytes payload;
+        word(payload, 0U);
+        word(payload, (4U << 24U) |
+            (static_cast<std::uint32_t>(end) & 0x00FF'FFFFU));
+        word(payload, 2U);
+        payload.push_back(static_cast<std::byte>(interpolation));
+        append(payload, attributes);
+        return chunk(10, payload);
+    }
     struct Fixture
     {
         std::filesystem::path root;
@@ -321,6 +342,52 @@ namespace
             "absolute 3D mesh contents DataID is preserved verbatim");
     }
 
+    void testMeshChoiceRuntimeAndTweeker()
+    {
+        Fixture fixture;
+        const auto target = packDataId(2, 99);
+        DataBytes linearAttributes;
+        append(linearAttributes, meshChoice(1, 2, 0x3E800000U)); // 0.25
+        DataBytes keys;
+        append(keys, meshChoice(3, 4, 0xBF000000U)); // -0.5
+        append(keys, meshChoice(9, 10, 0x3FC00000U)); // 1.5
+        append(linearAttributes, tweeker(2, 8, keys));
+        const std::array linearItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            mesh(target, true, 0, linearAttributes)}};
+        DataBankRegistry linearRegistry;
+        (void)archive(fixture.root / "mesh-choice-linear.dat", linearItems, linearRegistry);
+        SequenceRuntime linear;
+        const auto root = linear.start(program(linearRegistry), 17).value();
+        auto view = linear.inspect(root);
+        expect(view && view->meshChoice == SequenceMeshChoice3D{1, 2, 0.25F},
+            "3D mesh starts with chunk-139 pose choice before its tweeker runs");
+        expect(linear.update(0).has_value() &&
+            linear.inspect(root)->meshChoice == SequenceMeshChoice3D{3, 4, -0.5F},
+            "linear mesh-choice tweeker starts from its first pose pair and proportion");
+        expect(linear.update(4).has_value() &&
+            linear.inspect(root)->meshChoice == SequenceMeshChoice3D{3, 4, 0.5F},
+            "linear mesh-choice keeps first A/B indices and interpolates only proportion");
+        const auto instances = linear.meshInstances();
+        expect(instances.size() == 1 &&
+            instances.front().meshChoice == SequenceMeshChoice3D{3, 4, 0.5F},
+            "current mesh-choice state reaches renderer-independent 3D mesh intent");
+
+        DataBytes identityAttributes;
+        append(identityAttributes, meshChoice(5, 6, 0x3F400000U)); // 0.75
+        DataBytes identityKey;
+        append(identityKey, meshChoice(9, 10, 0xBF000000U));
+        append(identityAttributes, tweeker(0, 8, identityKey));
+        const std::array identityItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            mesh(target, true, 0, identityAttributes)}};
+        DataBankRegistry identityRegistry;
+        (void)archive(fixture.root / "mesh-choice-identity.dat", identityItems, identityRegistry, 3);
+        auto identityProgram = SequenceProgram::load(identityRegistry, packDataId(3, 0)).value();
+        SequenceRuntime identity;
+        const auto identityRoot = identity.start(identityProgram).value();
+        expect(identity.update(0).has_value() &&
+            identity.inspect(identityRoot)->meshChoice == SequenceMeshChoice3D{5, 6, 0.75F},
+            "identity tweeker resets transforms only and leaves non-transform mesh choice untouched");
+    }
     void testCommandsAndFailureLimits()
     {
         Fixture fixture;
@@ -510,6 +577,7 @@ int main()
         testEndCrossingHoldAndLoop();
         testPauseAndSeek();
         testMeshLeafRuntimeIntent();
+        testMeshChoiceRuntimeAndTweeker();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
         testRawHmdStartContract();

@@ -24,7 +24,9 @@ namespace monopoly::engine
         InvalidTargetSize,
         PipelineLoadFailed,
         SceneBuildFailed,
-        TexturedBatchUnsupported,
+        SamplerCreationFailed,
+        FallbackTextureCreationFailed,
+        FallbackTextureUploadFailed,
         DepthTargetCreationFailed,
         RenderPassCreationFailed
     };
@@ -79,10 +81,13 @@ namespace monopoly::engine
         [[nodiscard]] bool ensureDepthTarget(
             std::uint32_t width, std::uint32_t height) noexcept;
         void releaseDepthTarget() noexcept;
+        void releaseSamplingResources() noexcept;
 
         SDL_GPUDevice* device_{};
         World3DPipeline pipeline_;
         std::unique_ptr<MeshGPUCache> meshCache_;
+        SDL_GPUSampler* textureSampler_{};
+        SDL_GPUTexture* whiteTexture_{};
         SDL_GPUTexture* depthTarget_{};
         std::uint32_t depthWidth_{};
         std::uint32_t depthHeight_{};

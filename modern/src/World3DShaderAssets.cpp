@@ -29,14 +29,16 @@ namespace monopoly::engine
             const auto formats = SDL_GetGPUShaderFormats(device);
             if (formats & SDL_GPU_SHADERFORMAT_DXIL)
                 return ShaderAssetChoice{SDL_GPU_SHADERFORMAT_DXIL, ".dxil", "main", false};
-            if (formats & SDL_GPU_SHADERFORMAT_SPIRV)
-                return ShaderAssetChoice{SDL_GPU_SHADERFORMAT_SPIRV, ".spv", "main", false};
             if (formats & SDL_GPU_SHADERFORMAT_MSL)
                 return ShaderAssetChoice{SDL_GPU_SHADERFORMAT_MSL, ".msl", "main0", true};
+            if (formats & SDL_GPU_SHADERFORMAT_SPIRV)
+                return std::unexpected(World3DShaderError{
+                    World3DShaderErrorCode::UnsupportedFormat, {},
+                    "SPIR-V World3D texture shader has not been regenerated; refusing the stale untextured asset"});
 
             return std::unexpected(World3DShaderError{
                 World3DShaderErrorCode::UnsupportedFormat, {},
-                "device exposes no generated World3D shader format"});
+                "device exposes no current generated World3D shader format"});
         }
 
         std::expected<std::vector<Uint8>, World3DShaderError>
@@ -75,6 +77,7 @@ namespace monopoly::engine
             info.format = choice.format;
             info.stage = stage;
             info.num_uniform_buffers = 1;
+            info.num_samplers = stage == SDL_GPU_SHADERSTAGE_FRAGMENT ? 1U : 0U;
 
             SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
             if (!shader)

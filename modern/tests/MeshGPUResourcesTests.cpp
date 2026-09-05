@@ -17,17 +17,46 @@ namespace
         if (!condition) ++failures;
     }
 
-    std::shared_ptr<const data::MeshRuntimeAsset> asset(data::DataId id, float x = 1.0F)
+    std::shared_ptr<const data::MeshRuntimeAsset> asset(
+        data::DataId id, float x = 1.0F, bool textured = false,
+        bool includePixels = true)
     {
         auto render = std::make_shared<data::MeshRenderData>();
         render->vertices = {
             {{{x, 2.0F, 3.0F}}, {{0.0F, 1.0F, 0.0F}}, {{0.0F, 0.0F}}},
             {{{4.0F, 5.0F, 6.0F}}, {{0.0F, 1.0F, 0.0F}}, {{1.0F, 0.0F}}},
             {{{7.0F, 8.0F, 9.0F}}, {{0.0F, 1.0F, 0.0F}}, {{0.0F, 1.0F}}}};
-        render->indices = {0, 1, 2};
-        render->batches.push_back({0, 3, {}, std::nullopt});
-        return std::make_shared<const data::MeshRuntimeAsset>(
-            data::MeshRuntimeAsset{id, {}, std::move(render)});
+        render->indices = {0U, 1U, 2U};
+
+        data::MeshRenderBatch batch;
+        batch.firstIndex = 0U;
+        batch.indexCount = 3U;
+        if (textured)
+        {
+            data::MeshTextureRegion region;
+            region.key = 77U;
+            region.page = 0x80U;
+            region.width = 2U;
+            region.height = 2U;
+            if (includePixels)
+            {
+                auto image = std::make_shared<data::HmdTextureImage>();
+                image->texturePage = region.page;
+                image->width = 2U;
+                image->height = 2U;
+                image->rgba = {
+                    255U, 0U, 0U, 255U,  0U, 255U, 0U, 255U,
+                    0U, 0U, 255U, 255U,  255U, 255U, 255U, 255U};
+                region.sourceImage = std::move(image);
+            }
+            batch.texture = std::move(region);
+        }
+        render->batches.push_back(std::move(batch));
+
+        auto result = std::make_shared<data::MeshRuntimeAsset>();
+        result->dataId = id;
+        result->renderData = std::move(render);
+        return result;
     }
 
     void testUploadPlanContract()
@@ -108,9 +137,28 @@ namespace
             const auto replaced = cache.resolve(replacement);
             expect(replaced && (*replaced)->source == replacement && cache.size() == 1,
                 "same DataId with different immutable CPU identity replaces GPU buffers transactionally");
+
+            const auto missingPixels = cache.resolve(
+                asset(data::packDataId(8, 7), 1.0F, true, false));
+            expect(!missingPixels && missingPixels.error().code ==
+                engine::MeshGPUErrorCode::MissingTexturePixels && cache.size() == 1,
+                "textured GPU upload refuses a logical region without immutable RGBA pixels");
+
+            auto textured = asset(data::packDataId(8, 7), 1.0F, true, true);
+            const auto uploadedTexture = cache.resolve(textured);
+            expect(uploadedTexture && (*uploadedTexture)->textures.size() == 1U &&
+                (*uploadedTexture)->texture(77U) != nullptr,
+                "SDL_GPU uploads decoded HMD RGBA8 into a real sampled texture");
+            expect(uploadedTexture &&
+                (*uploadedTexture)->textures.at(77U).source ==
+                    textured->renderData->batches[0].texture->sourceImage,
+                "GPU texture resource retains immutable decoded HMD image ownership");
+
             cache.erase(data::packDataId(8, 6));
-            expect(cache.size() == 0 && !cache.find(data::packDataId(8, 6)),
-                "GPU cache eviction releases ownership before device shutdown");
+            cache.erase(data::packDataId(8, 7));
+            expect(cache.size() == 0 && !cache.find(data::packDataId(8, 6)) &&
+                !cache.find(data::packDataId(8, 7)),
+                "GPU cache eviction releases mesh and texture ownership before device shutdown");
         }
         SDL_DestroyGPUDevice(device);
         SDL_Quit();

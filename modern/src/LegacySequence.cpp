@@ -17,6 +17,15 @@ namespace monopoly::data
                 (std::to_integer<std::uint32_t>(bytes[offset + 3]) << 24U);
         }
 
+        std::int16_t readI16(std::span<const std::byte> bytes,
+            std::size_t offset) noexcept
+        {
+            const auto value = static_cast<std::uint16_t>(
+                std::to_integer<std::uint8_t>(bytes[offset]) |
+                (std::to_integer<std::uint8_t>(bytes[offset + 1]) << 8U));
+            return static_cast<std::int16_t>(value);
+        }
+
         std::int32_t signed24(std::uint32_t word) noexcept
         {
             const auto value = static_cast<std::int32_t>(word & 0x00FF'FFFFU);
@@ -78,7 +87,7 @@ namespace monopoly::data
                 return std::unexpected(SequenceError{SequenceErrorCode::ChunkFailure,
                     part.error().offset, "cannot enter sequence attribute", part.error()});
             if (part->id >= 1 && part->id < 11)
-                break; // first child sequence; attributes have ended
+                break;
             if (result.values.size() >= maximumAttributes)
                 return std::unexpected(SequenceError{SequenceErrorCode::AttributeLimitExceeded,
                     part->headerOffset, "sequence attribute count exceeds configured limit", {}});
@@ -93,6 +102,7 @@ namespace monopoly::data
             case 133: required = 12; break;
             case 134: required = 64; break;
             case 135: required = 48; break;
+            case 139: required = 8; break;
             default:
                 result.values.push_back(SequenceUnsupportedAttribute{*part});
                 (void)candidate.ascend();
@@ -158,12 +168,15 @@ namespace monopoly::data
                     readF32(*bytes, 24), readF32(*bytes, 28), readF32(*bytes, 32),
                     readF32(*bytes, 36), readF32(*bytes, 40), readF32(*bytes, 44)});
                 break;
+            case 139:
+                result.values.push_back(Sequence3DMeshChoiceAttribute{*part,
+                    readI16(*bytes, 0), readI16(*bytes, 2), readF32(*bytes, 4)});
+                break;
             }
             (void)candidate.ascend();
         }
         return result;
     }
-
     std::expected<LegacySequenceHeader, SequenceError>
     decodeLegacySequenceHeader(std::span<const std::byte> bytes)
     {

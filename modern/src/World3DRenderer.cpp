@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <utility>
 
 namespace monopoly::engine
@@ -36,6 +37,106 @@ namespace monopoly::engine
                 viewport.min_depth >= 0.0F && viewport.max_depth <= 1.0F &&
                 viewport.min_depth <= viewport.max_depth;
         }
+
+        World3DRendererError rendererError(
+            World3DRendererErrorCode code, const char* fallback)
+        {
+            World3DRendererError result;
+            result.code = code;
+            const char* sdl = SDL_GetError();
+            result.detail = sdl != nullptr && *sdl != '\0' ? sdl : fallback;
+            return result;
+        }
+
+        std::expected<SDL_GPUTexture*, World3DRendererError>
+        createWhiteTexture(SDL_GPUDevice* device)
+        {
+            SDL_GPUTextureCreateInfo textureInfo{};
+            textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
+            textureInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            textureInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            textureInfo.width = 1U;
+            textureInfo.height = 1U;
+            textureInfo.layer_count_or_depth = 1U;
+            textureInfo.num_levels = 1U;
+            textureInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+            SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &textureInfo);
+            if (texture == nullptr)
+                return std::unexpected(rendererError(
+                    World3DRendererErrorCode::FallbackTextureCreationFailed,
+                    "could not create 1x1 white World3D fallback texture"));
+
+            // 256-byte row pitch keeps the upload on SDL's direct D3D12 path.
+            SDL_GPUTransferBufferCreateInfo transferInfo{};
+            transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            transferInfo.size = 256U;
+            SDL_GPUTransferBuffer* transfer =
+                SDL_CreateGPUTransferBuffer(device, &transferInfo);
+            if (transfer == nullptr)
+            {
+                SDL_ReleaseGPUTexture(device, texture);
+                return std::unexpected(rendererError(
+                    World3DRendererErrorCode::FallbackTextureUploadFailed,
+                    "could not create fallback texture upload buffer"));
+            }
+
+            void* mapped = SDL_MapGPUTransferBuffer(device, transfer, false);
+            if (mapped == nullptr)
+            {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                SDL_ReleaseGPUTexture(device, texture);
+                return std::unexpected(rendererError(
+                    World3DRendererErrorCode::FallbackTextureUploadFailed,
+                    "could not map fallback texture upload buffer"));
+            }
+            std::memset(mapped, 0, 256U);
+            auto* pixel = static_cast<std::uint8_t*>(mapped);
+            pixel[0] = pixel[1] = pixel[2] = pixel[3] = 255U;
+            SDL_UnmapGPUTransferBuffer(device, transfer);
+
+            SDL_GPUCommandBuffer* command = SDL_AcquireGPUCommandBuffer(device);
+            if (command == nullptr)
+            {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                SDL_ReleaseGPUTexture(device, texture);
+                return std::unexpected(rendererError(
+                    World3DRendererErrorCode::FallbackTextureUploadFailed,
+                    "could not acquire fallback texture upload command buffer"));
+            }
+            SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(command);
+            if (copy == nullptr)
+            {
+                SDL_CancelGPUCommandBuffer(command);
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                SDL_ReleaseGPUTexture(device, texture);
+                return std::unexpected(rendererError(
+                    World3DRendererErrorCode::FallbackTextureUploadFailed,
+                    "could not begin fallback texture upload copy pass"));
+            }
+
+            SDL_GPUTextureTransferInfo source{};
+            source.transfer_buffer = transfer;
+            source.pixels_per_row = 64U;
+            source.rows_per_layer = 1U;
+            SDL_GPUTextureRegion destination{};
+            destination.texture = texture;
+            destination.w = 1U;
+            destination.h = 1U;
+            destination.d = 1U;
+            SDL_UploadToGPUTexture(copy, &source, &destination, false);
+            SDL_EndGPUCopyPass(copy);
+
+            if (!SDL_SubmitGPUCommandBuffer(command))
+            {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                SDL_ReleaseGPUTexture(device, texture);
+                return std::unexpected(rendererError(
+                    World3DRendererErrorCode::FallbackTextureUploadFailed,
+                    "could not submit fallback texture upload"));
+            }
+            SDL_ReleaseGPUTransferBuffer(device, transfer);
+            return texture;
+        }
     }
 
     World3DRenderer::~World3DRenderer()
@@ -55,11 +156,14 @@ namespace monopoly::engine
         device_ = std::exchange(other.device_, nullptr);
         pipeline_ = std::move(other.pipeline_);
         meshCache_ = std::move(other.meshCache_);
+        textureSampler_ = std::exchange(other.textureSampler_, nullptr);
+        whiteTexture_ = std::exchange(other.whiteTexture_, nullptr);
         depthTarget_ = std::exchange(other.depthTarget_, nullptr);
         depthWidth_ = std::exchange(other.depthWidth_, 0U);
         depthHeight_ = std::exchange(other.depthHeight_, 0U);
         return *this;
     }
+
     void World3DRenderer::releaseDepthTarget() noexcept
     {
         if (device_ && depthTarget_)
@@ -69,11 +173,22 @@ namespace monopoly::engine
         depthHeight_ = 0U;
     }
 
+    void World3DRenderer::releaseSamplingResources() noexcept
+    {
+        if (device_ && whiteTexture_)
+            SDL_ReleaseGPUTexture(device_, whiteTexture_);
+        if (device_ && textureSampler_)
+            SDL_ReleaseGPUSampler(device_, textureSampler_);
+        whiteTexture_ = nullptr;
+        textureSampler_ = nullptr;
+    }
+
     void World3DRenderer::reset() noexcept
     {
         releaseDepthTarget();
         if (meshCache_) meshCache_->clear();
         meshCache_.reset();
+        releaseSamplingResources();
         pipeline_.reset();
         device_ = nullptr;
     }
@@ -119,12 +234,37 @@ namespace monopoly::engine
                 World3DRendererErrorCode::PipelineLoadFailed,
                 pipeline.error().detail, pipeline.error(), {}});
 
+        auto whiteTexture = createWhiteTexture(device);
+        if (!whiteTexture) return std::unexpected(whiteTexture.error());
+
+        SDL_GPUSamplerCreateInfo samplerInfo{};
+        // Source/PC3D/pc3d.cpp: retail filters are POINT/POINT/NONE.
+        samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
+        samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
+        samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        samplerInfo.min_lod = 0.0F;
+        samplerInfo.max_lod = 0.0F;
+        SDL_GPUSampler* sampler = SDL_CreateGPUSampler(device, &samplerInfo);
+        if (sampler == nullptr)
+        {
+            SDL_ReleaseGPUTexture(device, *whiteTexture);
+            return std::unexpected(rendererError(
+                World3DRendererErrorCode::SamplerCreationFailed,
+                "could not create retail-compatible World3D point sampler"));
+        }
+
         World3DRenderer result;
         result.device_ = device;
         result.pipeline_ = std::move(*pipeline);
         result.meshCache_ = std::make_unique<MeshGPUCache>(device);
+        result.whiteTexture_ = *whiteTexture;
+        result.textureSampler_ = sampler;
         return result;
     }
+
     std::expected<World3DRenderStats, World3DRendererError>
     World3DRenderer::render(
         SDL_GPUCommandBuffer* commandBuffer,
@@ -157,15 +297,6 @@ namespace monopoly::engine
             return std::unexpected(World3DRendererError{
                 World3DRendererErrorCode::SceneBuildFailed,
                 batches.error().detail, {}, batches.error()});
-
-        for (const auto& batch : *batches)
-        {
-            if (batch.texture)
-                return std::unexpected(World3DRendererError{
-                    World3DRendererErrorCode::TexturedBatchUnsupported,
-                    "legacy HMD texture page has not yet crossed the SDL_GPU boundary",
-                    {}, {}});
-        }
 
         if (!ensureDepthTarget(targetWidth, targetHeight))
             return std::unexpected(World3DRendererError{
@@ -209,8 +340,7 @@ namespace monopoly::engine
                 worldView, projection.rasterProjection);
 
             VertexUniforms vertexUniforms;
-            vertexUniforms.worldViewProjection =
-                worldViewProjection.values;
+            vertexUniforms.worldViewProjection = worldViewProjection.values;
 
             FragmentUniforms fragmentUniforms;
             fragmentUniforms.materialDiffuse = batch.material.diffuse;
@@ -220,13 +350,16 @@ namespace monopoly::engine
             SDL_PushGPUFragmentUniformData(commandBuffer, 0U,
                 &fragmentUniforms, static_cast<Uint32>(sizeof(fragmentUniforms)));
 
-            const SDL_GPUBufferBinding vertexBinding{
-                batch.vertexBuffer, 0U};
-            const SDL_GPUBufferBinding indexBinding{
-                batch.indexBuffer, 0U};
+            const SDL_GPUBufferBinding vertexBinding{batch.vertexBuffer, 0U};
+            const SDL_GPUBufferBinding indexBinding{batch.indexBuffer, 0U};
             SDL_BindGPUVertexBuffers(pass, 0U, &vertexBinding, 1U);
             SDL_BindGPUIndexBuffer(pass, &indexBinding,
                 SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+            const SDL_GPUTextureSamplerBinding textureBinding{
+                batch.gpuTexture != nullptr ? batch.gpuTexture : whiteTexture_,
+                textureSampler_};
+            SDL_BindGPUFragmentSamplers(pass, 0U, &textureBinding, 1U);
 
             SDL_DrawGPUIndexedPrimitives(pass,
                 batch.indexCount, 1U, batch.firstIndex, 0, 0U);
