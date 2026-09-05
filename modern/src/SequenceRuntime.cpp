@@ -34,6 +34,49 @@ namespace monopoly::sequence
                 return multiply(std::get<Matrix3D>(tweeker), std::get<Matrix3D>(local));
             return local;
         }
+        SequenceMeshChoice3D initialMeshChoice(
+            const data::LegacySequenceAttributes& attributes,
+            std::uint8_t dimensionality) noexcept
+        {
+            SequenceMeshChoice3D result{};
+            if (dimensionality != 3) return result;
+            for (const auto& attribute : attributes.values)
+                if (const auto* choice =
+                    std::get_if<data::Sequence3DMeshChoiceAttribute>(&attribute))
+                    result = {choice->meshIndexA, choice->meshIndexB,
+                        choice->meshProportion};
+            return result;
+        }
+
+        std::expected<std::optional<SequenceMeshChoice3D>, TweekerTransformError>
+        evaluateTweekerMeshChoice(const data::LegacySequenceAttributes& attributes,
+            std::uint8_t interpolationType, std::int32_t clock,
+            std::int32_t endTime, std::uint8_t parentDimensionality) noexcept
+        {
+            if (interpolationType == 0) return std::nullopt;
+            const data::Sequence3DMeshChoiceAttribute* first{};
+            const data::Sequence3DMeshChoiceAttribute* second{};
+            for (const auto& attribute : attributes.values)
+                if (const auto* choice =
+                    std::get_if<data::Sequence3DMeshChoiceAttribute>(&attribute))
+                {
+                    if (!first) first = choice;
+                    else { second = choice; break; }
+                }
+            if (!first) return std::nullopt;
+            if (parentDimensionality != 3)
+                return std::unexpected(TweekerTransformError::DimensionalityMismatch);
+            SequenceMeshChoice3D result{
+                first->meshIndexA, first->meshIndexB, first->meshProportion};
+            if (interpolationType == 2 && second && endTime < 1'234'567'890)
+            {
+                const float proportion = static_cast<float>(clock) /
+                    static_cast<float>(endTime);
+                result.meshProportion = first->meshProportion + proportion *
+                    (second->meshProportion - first->meshProportion);
+            }
+            return result;
+        }
     }
 
     std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
@@ -194,6 +237,7 @@ namespace monopoly::sequence
         bool tweekerTransformApplied{};
         SequenceTransform tweekerTransform;
         SequenceTransform worldTransform;
+        SequenceMeshChoice3D meshChoice{};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -244,6 +288,7 @@ namespace monopoly::sequence
             description, priority, *clock, def.children, {}, true,
             initial.dimensionality, initial.explicitlyPositioned,
             initial.local, false, tweeker, world});
+        node->meshChoice = initialMeshChoice(def.attributes, initial.dimensionality);
         ++liveNodes_; ++births_;
         emit(SequenceEventKind::Created, *node);
         return node;
@@ -499,9 +544,21 @@ namespace monopoly::sequence
                 evaluated.error() == TweekerTransformError::InvalidInterpolation ?
                     "tweeker interpolation type is not implemented" :
                     "tweeker transform dimensionality does not match its parent"));
-        if (!evaluated->changed) return {};
-        node.parent->tweekerTransformApplied = !evaluated->identity;
-        node.parent->tweekerTransform = evaluated->transform;
+
+        const auto meshChoice = evaluateTweekerMeshChoice(node.definition().attributes,
+            tweeker.interpolationType, node.clock.clock(), node.clock.endTime(),
+            node.parent->dimensionality);
+        if (!meshChoice)
+            return std::unexpected(error(RuntimeErrorCode::TweekerFailure,
+                node.definition().dataId, node.definition().record.chunk.headerOffset,
+                "3D mesh-choice tweeker dimensionality does not match its parent"));
+        if (evaluated->changed)
+        {
+            node.parent->tweekerTransformApplied = !evaluated->identity;
+            node.parent->tweekerTransform = evaluated->transform;
+        }
+        if (*meshChoice)
+            node.parent->meshChoice = **meshChoice;
         return {};
     }
     std::expected<void, RuntimeError> SequenceRuntime::update(std::int32_t parentClock)
@@ -588,6 +645,7 @@ namespace monopoly::sequence
             node->dimensionality, node->definition().contentsDataId, node->explicitlyPositioned,
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
+        view.meshChoice = node->meshChoice;
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }
@@ -604,7 +662,7 @@ namespace monopoly::sequence
                 {
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
-                        std::get<Matrix3D>(node->worldTransform)});
+                        std::get<Matrix3D>(node->worldTransform), node->meshChoice});
                 }
                 self(self, node->children);
             }

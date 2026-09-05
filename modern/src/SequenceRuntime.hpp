@@ -81,6 +81,13 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
     };
+    struct SequenceMeshChoice3D
+    {
+        std::int16_t meshIndexA{};
+        std::int16_t meshIndexB{};
+        float meshProportion{};
+        auto operator<=>(const SequenceMeshChoice3D&) const = default;
+    };
     struct SequenceNodeView
     {
         SequenceNodeId node{};
@@ -100,6 +107,7 @@ namespace monopoly::sequence
         SequenceTransform tweekerTransform;
         SequenceTransform worldTransform;
         std::vector<SequenceNodeId> children; // runtime priority order
+        SequenceMeshChoice3D meshChoice{};
     };
 
     struct SequenceMeshInstanceView
@@ -109,6 +117,7 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
         Matrix3D worldTransform{};
+        SequenceMeshChoice3D meshChoice{};
     };
     struct RuntimeLimits
     {

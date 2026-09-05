@@ -4,17 +4,23 @@ cbuffer MaterialUniforms : register(b0, space3)
     float4 sceneAmbient;
 };
 
-struct FragmentInput
+Texture2D legacyTexture : register(t0, space2);
+SamplerState legacySampler : register(s0, space2);
+
+struct PixelInput
 {
     float4 position : SV_Position;
-    float3 normal   : TEXCOORD0;
-    float2 uv       : TEXCOORD1;
+    float3 normal : TEXCOORD0;
+    float2 uv : TEXCOORD1;
 };
 
-float4 main(FragmentInput input) : SV_Target0
+float4 main(PixelInput input) : SV_Target0
 {
-    // Source-faithful first lighting boundary: DISPLAY_UDBOARD_Initialize
-    // installs mAmbientHalf = (0.53, 0.53, 0.53). Directional and spot
-    // lights remain separate runtime work and are not fabricated here.
-    return float4(materialDiffuse.rgb * sceneAmbient.rgb, materialDiffuse.a);
+    // The retail D3D7 path does not override stage-0 COLOROP after device
+    // initialization. Preserve the standard texture*diffuse modulation and
+    // the ambient factor already carried by the modern renderer.
+    const float4 texel = legacyTexture.Sample(legacySampler, input.uv);
+    return float4(
+        texel.rgb * materialDiffuse.rgb * sceneAmbient.rgb,
+        texel.a * materialDiffuse.a);
 }

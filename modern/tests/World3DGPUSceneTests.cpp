@@ -17,28 +17,62 @@ namespace
         if (!condition) ++failures;
     }
 
-    std::shared_ptr<const data::MeshRuntimeAsset> makeAsset(data::DataId id)
+    std::shared_ptr<const data::MeshRuntimeAsset> makeAsset(
+        data::DataId id, bool textured = false)
     {
         auto render = std::make_shared<data::MeshRenderData>();
         render->vertices = {
             {{{-1, -1, 10}}, {{0, 0, 1}}, {{0, 0}}},
             {{{ 1, -1, 10}}, {{0, 0, 1}}, {{1, 0}}},
             {{{ 0,  1, 10}}, {{0, 0, 1}}, {{0, 1}}}};
-        render->indices = {0, 1, 2};
+        render->indices = {0U, 1U, 2U};
+
         data::MeshMaterial material;
-        material.rawDiffuse = 0x00112233;
-        render->batches.push_back({0, 3, material, std::nullopt});
+        material.rawDiffuse = 0x00112233U;
+        data::MeshRenderBatch batch;
+        batch.firstIndex = 0U;
+        batch.indexCount = 3U;
+        batch.material = material;
+        if (textured)
+        {
+            auto image = std::make_shared<data::HmdTextureImage>();
+            image->texturePage = 0x80U;
+            image->width = 2U;
+            image->height = 2U;
+            image->rgba = {
+                255U, 255U, 255U, 255U, 255U, 255U, 255U, 255U,
+                255U, 255U, 255U, 255U, 255U, 255U, 255U, 255U};
+            data::MeshTextureRegion region;
+            region.key = 42U;
+            region.page = image->texturePage;
+            region.width = image->width;
+            region.height = image->height;
+            region.sourceImage = std::move(image);
+            batch.texture = std::move(region);
+        }
+        render->batches.push_back(std::move(batch));
         render->bounds = {{-1, -1, 10}, {1, 1, 10}};
-        return std::make_shared<const data::MeshRuntimeAsset>(
-            data::MeshRuntimeAsset{id, {}, std::move(render)});
+
+        auto result = std::make_shared<data::MeshRuntimeAsset>();
+        result->dataId = id;
+        result->renderData = std::move(render);
+        return result;
     }
 
     sequence::SequenceMeshRenderItem makeItem(
-        sequence::SequenceNodeId node, data::DataId id, float x = 0.0F)
+        sequence::SequenceNodeId node, data::DataId id,
+        float x = 0.0F, bool textured = false)
     {
         auto matrix = sequence::identity3D();
         matrix.values[12] = x;
-        return {node, id, 9, 12, matrix, makeAsset(id)};
+        sequence::SequenceMeshRenderItem result;
+        result.node = node;
+        result.contentsDataId = id;
+        result.priority = 9;
+        result.clock = 12;
+        result.worldTransform = matrix;
+        result.asset = makeAsset(id, textured);
+        return result;
     }
 
     void testMissingDeviceFailureIsTransactional()
@@ -80,10 +114,10 @@ namespace
 
         {
             engine::SequenceWorld3DSlot slot;
-            auto first = makeItem(10, data::packDataId(8, 2));
-            auto second = makeItem(20, data::packDataId(8, 3), 1000.0F);
+            auto first = makeItem(10, data::packDataId(8, 2), 0.0F, true);
+            auto second = makeItem(20, data::packDataId(8, 3), 1000.0F, false);
             expect(slot.sync({first, second}).has_value(),
-                "GPU scene test publishes visible and offscreen sequence meshes");
+                "GPU scene test publishes visible textured and offscreen sequence meshes");
             auto camera = engine::World3DCamera{};
             camera.location = {0, 0, 0};
             camera.fieldOfView = 1.5707963267948966F;
@@ -102,13 +136,15 @@ namespace
                     batch.vertexBuffer && batch.indexBuffer &&
                     batch.firstIndex == 0 && batch.indexCount == 3,
                     "GPU draw batch preserves sequence identity, ordering and indexed geometry");
-                expect(batch.material.rawDiffuse == 0x00112233 && !batch.texture,
-                    "GPU draw boundary preserves material metadata without inventing texture resources");
+                expect(batch.material.rawDiffuse == 0x00112233U && batch.texture &&
+                    batch.texture->key == 42U && batch.gpuTexture != nullptr,
+                    "GPU draw boundary exposes the uploaded HMD texture handle with material metadata");
             }
             const auto again = engine::buildWorld3DGPUScene(slot, cache);
-            expect(again && cache.size() == 1 && again->front().vertexBuffer ==
-                scene->front().vertexBuffer,
-                "rebuilding a frame reuses immutable GPU mesh buffers");
+            expect(again && cache.size() == 1 &&
+                again->front().vertexBuffer == scene->front().vertexBuffer &&
+                again->front().gpuTexture == scene->front().gpuTexture,
+                "rebuilding a frame reuses immutable GPU mesh and texture resources");
             cache.clear();
         }
         SDL_DestroyGPUDevice(device);

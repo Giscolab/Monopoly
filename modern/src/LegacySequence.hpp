@@ -120,6 +120,8 @@ namespace monopoly::data
         float roll{}, pitch{}, yaw{};
         float scaleX{}, scaleY{}, scaleZ{};
     };
+    struct Sequence3DMeshChoiceAttribute
+    { ChunkInfo chunk; std::int16_t meshIndexA{}, meshIndexB{}; float meshProportion{}; };
     struct SequenceUnsupportedAttribute { ChunkInfo chunk; };
 
     using LegacySequenceAttribute = std::variant<
@@ -130,6 +132,7 @@ namespace monopoly::data
         Sequence3DOffsetAttribute,
         Sequence3DMatrixAttribute,
         Sequence3DOriginScaleRotateOffsetAttribute,
+        Sequence3DMeshChoiceAttribute,
         SequenceUnsupportedAttribute>;
 
     struct LegacySequenceAttributes

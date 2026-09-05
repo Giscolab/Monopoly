@@ -27,6 +27,17 @@ namespace monopoly::engine
                     return std::unexpected(MeshGPUError{
                         MeshGPUErrorCode::SizeOverflow,
                         "GPU draw batch exceeds 32-bit indexed draw range"});
+
+                SDL_GPUTexture* gpuTexture = nullptr;
+                if (batch.texture)
+                {
+                    gpuTexture = (*gpu)->texture(batch.texture->key);
+                    if (gpuTexture == nullptr)
+                        return std::unexpected(MeshGPUError{
+                            MeshGPUErrorCode::MissingTexturePixels,
+                            "textured HMD batch has no uploaded SDL_GPU texture"});
+                }
+
                 result.push_back({
                     object->node,
                     object->contentsDataId,
@@ -36,6 +47,7 @@ namespace monopoly::engine
                     *object->screenBounds,
                     (*gpu)->vertexBuffer,
                     (*gpu)->indexBuffer,
+                    gpuTexture,
                     static_cast<std::uint32_t>(batch.firstIndex),
                     static_cast<std::uint32_t>(batch.indexCount),
                     batch.material,

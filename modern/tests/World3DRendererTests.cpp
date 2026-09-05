@@ -46,23 +46,54 @@ namespace
     {
         auto render = std::make_shared<data::MeshRenderData>();
         render->vertices = {
-            {{{-2.0F, -2.0F, 10.0F}}, {{0, 0, 1}}, {{0, 0}}},
-            {{{ 2.0F, -2.0F, 10.0F}}, {{0, 0, 1}}, {{1, 0}}},
-            {{{ 0.0F,  2.0F, 10.0F}}, {{0, 0, 1}}, {{0, 1}}}};
-        render->indices = {0, 1, 2};
+            {{{-2.0F, -2.0F, 10.0F}}, {{0, 0, 1}}, {{0.0F, 0.0F}}},
+            {{{ 2.0F, -2.0F, 10.0F}}, {{0, 0, 1}}, {{1.0F, 0.0F}}},
+            {{{ 0.0F,  2.0F, 10.0F}}, {{0, 0, 1}}, {{0.0F, 1.0F}}}};
+        render->indices = {0U, 1U, 2U};
+
         data::MeshMaterial material;
-        material.rawDiffuse = 0x000000FFU;
-        material.diffuse = {1.0F, 0.0F, 0.0F, 1.0F};
+        material.rawDiffuse = textured ? 0x00FFFFFFU : 0x000000FFU;
+        material.diffuse = textured ?
+            std::array<float, 4>{1.0F, 1.0F, 1.0F, 1.0F} :
+            std::array<float, 4>{1.0F, 0.0F, 0.0F, 1.0F};
 
         std::optional<data::MeshTextureRegion> texture;
         if (textured)
-            texture = data::MeshTextureRegion{1U, 0U, 0, 0, 16U, 16U};
-        render->batches.push_back({0, 3, material, texture});
-        render->bounds = {{-2.0F, -2.0F, 10.0F}, {2.0F, 2.0F, 10.0F}};
-        return std::make_shared<const data::MeshRuntimeAsset>(
-            data::MeshRuntimeAsset{id, {}, std::move(render)});
-    }
+        {
+            auto image = std::make_shared<data::HmdTextureImage>();
+            image->texturePage = 0U;
+            image->logicalX = 0;
+            image->logicalY = 0;
+            image->width = 2U;
+            image->height = 2U;
+            image->rgba = {
+                0U, 255U, 0U, 255U,  0U, 255U, 0U, 255U,
+                0U, 255U, 0U, 255U,  0U, 255U, 0U, 255U};
 
+            data::MeshTextureRegion region;
+            region.key = 1U;
+            region.page = 0U;
+            region.x = 0;
+            region.y = 0;
+            region.width = image->width;
+            region.height = image->height;
+            region.sourceImage = std::move(image);
+            texture = std::move(region);
+        }
+
+        data::MeshRenderBatch batch;
+        batch.firstIndex = 0U;
+        batch.indexCount = 3U;
+        batch.material = material;
+        batch.texture = std::move(texture);
+        render->batches.push_back(std::move(batch));
+        render->bounds = {{-2.0F, -2.0F, 10.0F}, {2.0F, 2.0F, 10.0F}};
+
+        auto asset = std::make_shared<data::MeshRuntimeAsset>();
+        asset->dataId = id;
+        asset->renderData = std::move(render);
+        return asset;
+    }
     engine::SequenceWorld3DSlot makeSlot(bool textured = false)
     {
         engine::SequenceWorld3DSlot slot;
@@ -345,21 +376,39 @@ namespace
                 playback.update(3).has_value() && playback.world().size() == 0,
                 "board stop removes HMD_boardmed from the World3D slot");
         }
-        SDL_GPUCommandBuffer* unsupportedCommand =
+        SDL_GPUCommandBuffer* texturedCommand =
             SDL_AcquireGPUCommandBuffer(device);
-        expect(unsupportedCommand != nullptr,
-            "renderer can acquire a second command buffer for rejection testing");
-        if (unsupportedCommand)
+        expect(texturedCommand != nullptr,
+            "renderer acquires a command buffer for embedded HMD texture sampling");
+        if (texturedCommand)
         {
+            expect(clearTarget(texturedCommand, target),
+                "textured renderer test starts from a black color target");
             const auto textured = makeSlot(true);
-            const auto rejected = renderer->render(
-                unsupportedCommand, target, 64U, 64U, viewport, textured);
-            expect(!rejected && rejected.error().code ==
-                engine::World3DRendererErrorCode::TexturedBatchUnsupported,
-                "textured HMD batches remain explicit until legacy texture pages are ported");
-            (void)SDL_CancelGPUCommandBuffer(unsupportedCommand);
-        }
+            const auto texturedStats = renderer->render(
+                texturedCommand, target, 64U, 64U, viewport, textured);
+            if (!texturedStats)
+                std::cout << "[GPU] textured render error: "
+                    << texturedStats.error().detail << '\n';
+            expect(texturedStats && texturedStats->objects == 1U &&
+                texturedStats->batches == 1U && texturedStats->triangles == 1U,
+                "renderer submits one indexed batch with an uploaded HMD texture");
 
+            pixels.fill(0);
+            const bool texturedRead = texturedStats &&
+                downloadTarget(device, texturedCommand, target, pixels);
+            if (!texturedStats) (void)SDL_CancelGPUCommandBuffer(texturedCommand);
+            std::size_t greenPixels{};
+            if (texturedRead)
+            {
+                for (std::size_t i = 0; i + 3U < pixels.size(); i += 4U)
+                    if (pixels[i] < 24U && pixels[i + 1U] > 80U &&
+                        pixels[i + 2U] < 24U && pixels[i + 3U] > 200U)
+                        ++greenPixels;
+            }
+            expect(texturedRead && greenPixels > 0U,
+                "real SDL_GPU sampling reads embedded RGBA8 HMD pixels into the framebuffer");
+        }
         std::cout << "[GPU] releasing renderer and target\n";
         renderer->reset();
         SDL_ReleaseGPUTexture(device, target);
