@@ -206,7 +206,7 @@ namespace monopoly::engine
             const auto worldView = sequence::multiply(
                 batch.worldTransform, projection.view);
             const auto worldViewProjection = sequence::multiply(
-                worldView, projection.projection);
+                worldView, projection.rasterProjection);
 
             VertexUniforms vertexUniforms;
             vertexUniforms.worldViewProjection =

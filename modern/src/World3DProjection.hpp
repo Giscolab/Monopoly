@@ -55,6 +55,9 @@ namespace monopoly::engine
         World3DCamera camera{};
         sequence::Matrix3D view{};
         sequence::Matrix3D projection{};
+        // Portable raster equivalent of D3DVIEWPORT2 clip-aspect handling.
+        // The historical projection matrix itself stays untouched above.
+        sequence::Matrix3D rasterProjection{};
         sequence::Matrix3D viewportMatrix{};
         sequence::Matrix3D cameraToScreen{};
     };

@@ -758,6 +758,37 @@ if(BUILD_TESTING)
         NAME Monopoly.World3DGPUScene
         COMMAND MonopolyWorld3DGPUSceneTests
     )
+
+    add_executable(
+        MonopolyWorld3DRendererTests
+        tests/World3DRendererTests.cpp
+    )
+    target_link_libraries(
+        MonopolyWorld3DRendererTests
+        PRIVATE MonopolyGPU3DCore
+    )
+    target_compile_definitions(
+        MonopolyWorld3DRendererTests PRIVATE
+        MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders/generated"
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyWorld3DRendererTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(
+            TARGET MonopolyWorld3DRendererTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:MonopolyWorld3DRendererTests>
+                $<TARGET_FILE_DIR:MonopolyWorld3DRendererTests>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+    add_test(
+        NAME Monopoly.World3DRenderer
+        COMMAND MonopolyWorld3DRendererTests
+    )
 endif()
 
 # ============================================================
