@@ -65,6 +65,12 @@ namespace monopoly::sequence
     }
 
     std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        ForceRedrawSequenceCommand command)
+    {
+        return enqueueValidated(command);
+    }
+
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
         SetCameraCommand command)
     {
         // Monopoly's C_ArtLib.h sets CE_ARTLIB_RendMaxRenderSlots to five.
@@ -145,6 +151,13 @@ namespace monopoly::sequence
                     outcomes_.push_back(SequenceCommandOutcome{SequenceCommandKind::SetEndingAction,
                         {}, result ? *result : 0U,
                         result ? std::nullopt : std::optional<RuntimeError>(result.error())});
+                }
+                else if constexpr (std::is_same_v<Command, ForceRedrawSequenceCommand>)
+                {
+                    const auto count = runtime_.forceRedrawMatching(
+                        value.dataId, value.priority, value.wholeTree);
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::ForceRedraw, {}, count, {}});
                 }
                 else
                 {

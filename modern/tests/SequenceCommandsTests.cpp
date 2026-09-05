@@ -337,6 +337,50 @@ namespace
             "SetCamera rejects slot five because Monopoly configures only slots zero through four");
     }
 
+    void testForceRedrawFifo()
+    {
+        Fixture fixture;
+        const std::array items{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 20, 2, 0)}};
+        auto program = makeProgram(fixture.root / "force-redraw.dat", items);
+        const auto dataId = packDataId(2, 0);
+        SequenceRuntime runtime;
+        SequenceCommandQueue commands(runtime);
+
+        (void)commands.enqueue(StartSequenceCommand{program, 333});
+        (void)commands.enqueue(StartSequenceCommand{program, 333});
+        expect(commands.updateCycle(0).has_value() && runtime.matching(dataId, 333).size() == 2,
+            "ForceRedraw fixture starts duplicate top-level sequences");
+        expect(commands.updateCycle(0).has_value(),
+            "second command cycle clears startup redraw state");
+        const auto duplicates = runtime.matching(dataId, 333);
+        expect(duplicates.size() == 2 && !runtime.inspect(duplicates[0])->needsRedraw &&
+            !runtime.inspect(duplicates[1])->needsRedraw,
+            "duplicate targets are settled before explicit ForceRedraw");
+
+        expect(commands.collect() == 1, "ForceRedraw can be held by CollectCommands");
+        expect(commands.enqueue(ForceRedrawSequenceCommand{dataId, 333, false}).has_value(),
+            "ForceRedraw command enters the historical FIFO");
+        expect(commands.updateCycle(0).has_value() && commands.pendingCount() == 1 &&
+            !runtime.inspect(duplicates[0])->needsRedraw && !runtime.inspect(duplicates[1])->needsRedraw,
+            "collected ForceRedraw remains pending while ordinary runtime cycles continue");
+        expect(commands.execute() == 0 && commands.pendingCount() == 0 &&
+            commands.outcomes().size() == 1 &&
+            commands.outcomes()[0].kind == SequenceCommandKind::ForceRedraw &&
+            commands.outcomes()[0].matched == 2 &&
+            runtime.inspect(duplicates[0])->needsRedraw && runtime.inspect(duplicates[1])->needsRedraw,
+            "ExecuteCommands applies ForceRedraw to every matching duplicate in one zero-time cycle");
+
+        expect(commands.updateCycle(0).has_value() &&
+            !runtime.inspect(duplicates[0])->needsRedraw && !runtime.inspect(duplicates[1])->needsRedraw,
+            "ForceRedraw result is cleared at the following update cycle");
+        expect(commands.enqueue(ForceRedrawSequenceCommand{packDataId(2, 99), 333, false}).has_value() &&
+            commands.updateCycle(0).has_value() && commands.outcomes().size() == 1 &&
+            commands.outcomes()[0].kind == SequenceCommandKind::ForceRedraw &&
+            commands.outcomes()[0].matched == 0 && !commands.outcomes()[0].error,
+            "missing ForceRedraw target is a submitted command with zero matches, not a runtime error");
+    }
+
     void testMoveRySTxzSeekLoopAndChildRecreation()
     {
         Fixture fixture;
@@ -429,6 +473,7 @@ int main()
     testCapacityNegativeNestingAndErrors();
     testMoveXYReplacementAndRecursiveWorldPropagation();
     testSetCameraFifoState();
+    testForceRedrawFifo();
     testMoveRySTxzSeekLoopAndChildRecreation();
     std::cout << (failures ? "Sequence command tests FAILED\n" :
         "Sequence command tests passed\n");

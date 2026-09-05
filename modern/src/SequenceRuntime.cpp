@@ -275,6 +275,8 @@ namespace monopoly::sequence
         SequenceChildSchedule schedule;
         Nodes children;
         bool reevaluate{true};
+        bool redrawRequested{true};
+        bool needsRedraw{};
         std::uint8_t dimensionality{};
         bool explicitlyPositioned{};
         SequenceTransform localTransform;
@@ -330,7 +332,7 @@ namespace monopoly::sequence
             parent ? parent->worldTransform : SequenceTransform(std::monostate{}),
             parent ? parent->dimensionality : 0);
         auto node = std::make_unique<Node>(Node{nextId_++, parent, std::move(program),
-            description, priority, *clock, def.children, {}, true,
+            description, priority, *clock, def.children, {}, true, true, false,
             initial.dimensionality, initial.explicitlyPositioned,
             initial.local, false, tweeker, world});
         node->meshChoice = initialMeshChoice(def.attributes, initial.dimensionality);
@@ -403,7 +405,19 @@ namespace monopoly::sequence
     void SequenceRuntime::forceDescendants(Node& node)
     {
         node.reevaluate = true;
+        node.redrawRequested = true;
         for (auto& child : node.children) forceDescendants(*child);
+    }
+    void SequenceRuntime::clearRedrawFlags()
+    {
+        const auto visit = [&](const auto& self, Nodes& nodes) -> void {
+            for (auto& node : nodes)
+            {
+                node->needsRedraw = false;
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
     }
     void SequenceRuntime::move(Node& node, const SequenceTransform& transform)
     {
@@ -543,6 +557,8 @@ namespace monopoly::sequence
     }
     std::expected<bool, RuntimeError> SequenceRuntime::updateNode(Node& node, std::int32_t parentClock)
     {
+        node.needsRedraw = node.redrawRequested;
+        node.redrawRequested = false;
         const auto tick = node.clock.update(parentClock, node.reevaluate);
         if (!tick) return std::unexpected(caused(RuntimeErrorCode::ClockFailure,
             node.definition().dataId, node.definition().record.chunk.headerOffset, tick.error()));
@@ -579,7 +595,11 @@ namespace monopoly::sequence
             const auto alive = updateNode(**iterator, node.clock.clock());
             if (!alive) return std::unexpected(alive.error());
             if (!*alive) { destroy(*iterator); iterator = node.children.erase(iterator); }
-            else ++iterator;
+            else
+            {
+                if ((*iterator)->needsRedraw) node.needsRedraw = true;
+                ++iterator;
+            }
         }
         node.reevaluate = false;
         return true;
@@ -630,6 +650,7 @@ namespace monopoly::sequence
         events_.clear(); births_ = 0;
         if (clockStarted_ && parentClock < parentClock_)
             return std::unexpected(caused(RuntimeErrorCode::ClockFailure, 0, 0, ClockError::ParentClockWentBackwards));
+        clearRedrawFlags();
         parentClock_ = parentClock; clockStarted_ = true;
         for (auto iterator = roots_.begin(); iterator != roots_.end();)
         {
@@ -699,6 +720,20 @@ namespace monopoly::sequence
         // matrix comparison makes the individual mutation a no-op.
         return matches.size();
     }
+    std::size_t SequenceRuntime::forceRedrawMatching(data::DataId id,
+        std::uint16_t priority, bool wholeTree)
+    {
+        events_.clear();
+        const auto matches = matching(id, priority, wholeTree);
+        for (const auto match : matches)
+            if (auto* node = find(match))
+            {
+                node->redrawRequested = true;
+                forceAncestors(*node);
+            }
+        return matches.size();
+    }
+
     std::optional<SequenceNodeView> SequenceRuntime::inspect(SequenceNodeId id) const
     {
         const auto* node = find(id);
@@ -706,7 +741,7 @@ namespace monopoly::sequence
         SequenceNodeView view{node->id, node->parent ? node->parent->id : 0,
             node->definition().dataId, node->definition().record.chunk.headerOffset, node->priority,
             node->clock.clock(), node->clock.endTime(), node->clock.timeMultiple(), node->clock.paused(),
-            node->dimensionality, node->definition().contentsDataId, node->explicitlyPositioned,
+            node->needsRedraw, node->dimensionality, node->definition().contentsDataId, node->explicitlyPositioned,
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
         view.meshChoice = node->meshChoice;

@@ -15,7 +15,7 @@
 
 namespace monopoly::sequence
 {
-    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, SetCamera };
+    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, ForceRedraw, SetCamera };
     enum class CommandQueueError { QueueFull, InvalidProgram, InvalidEndingAction, InvalidRenderSlot, NestingOverflow };
 
     struct StartSequenceCommand
@@ -44,6 +44,12 @@ namespace monopoly::sequence
         SequenceTransform transform;
         bool wholeTree{};
     };
+    struct ForceRedrawSequenceCommand
+    {
+        data::DataId dataId{};
+        std::uint16_t priority{};
+        bool wholeTree{};
+    };
     inline constexpr std::uint8_t MonopolyRenderSlotCount = 5;
     struct SetCameraCommand
     {
@@ -59,7 +65,7 @@ namespace monopoly::sequence
 
     using SequenceCommand = std::variant<StartSequenceCommand,
         StopSequenceCommand, MoveSequenceCommand,
-        SetSequenceEndingActionCommand, SetCameraCommand>;
+        SetSequenceEndingActionCommand, ForceRedrawSequenceCommand, SetCameraCommand>;
 
     [[nodiscard]] MoveSequenceCommand makeMoveTheWorks(data::DataId dataId,
         std::uint16_t priority, SequenceTransform transform,
@@ -97,6 +103,8 @@ namespace monopoly::sequence
             MoveSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             SetSequenceEndingActionCommand command);
+        [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
+            ForceRedrawSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             SetCameraCommand command);
 
