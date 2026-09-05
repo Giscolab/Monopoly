@@ -64,6 +64,24 @@ namespace monopoly::sequence
         return enqueueValidated(command);
     }
 
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        SetCameraCommand command)
+    {
+        // Monopoly's C_ArtLib.h sets CE_ARTLIB_RendMaxRenderSlots to five.
+        // Preserve raw camera values here; the historical queue did not
+        // validate vectors/FOV/planes before dispatching to the render slot.
+        if (command.renderSlot >= MonopolyRenderSlotCount)
+            return std::unexpected(CommandQueueError::InvalidRenderSlot);
+        return enqueueValidated(command);
+    }
+
+    const SetCameraCommand* SequenceCommandQueue::cameraState(
+        std::uint8_t renderSlot) const noexcept
+    {
+        if (renderSlot >= cameraStates_.size() || !cameraStates_[renderSlot]) return nullptr;
+        return &*cameraStates_[renderSlot];
+    }
+
     std::expected<int, CommandQueueError> SequenceCommandQueue::collect()
     {
         if (nestingLevel_ == std::numeric_limits<int>::max())
@@ -120,13 +138,19 @@ namespace monopoly::sequence
                     outcomes_.push_back(SequenceCommandOutcome{
                         SequenceCommandKind::Move, {}, count, {}});
                 }
-                else
+                else if constexpr (std::is_same_v<Command, SetSequenceEndingActionCommand>)
                 {
                     const auto result = runtime_.setEndingActionMatching(
                         value.dataId, value.priority, value.action, value.wholeTree);
                     outcomes_.push_back(SequenceCommandOutcome{SequenceCommandKind::SetEndingAction,
                         {}, result ? *result : 0U,
                         result ? std::nullopt : std::optional<RuntimeError>(result.error())});
+                }
+                else
+                {
+                    cameraStates_[value.renderSlot] = value;
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::SetCamera, {}, 1U, {}});
                 }
             }, std::move(command));
         }

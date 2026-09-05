@@ -27,6 +27,7 @@ namespace monopoly::engine
         std::unique_ptr<SequencePlayback> playback;
         std::optional<World3DRenderer> worldRenderer;
         std::optional<data::DataId> activeBoardSequence;
+        std::optional<World3DCamera> activeWorldCamera;
 
         [[nodiscard]] sequence::Matrix3D boardStartupScale() noexcept
         {
@@ -187,7 +188,18 @@ namespace monopoly::engine
             if (viewport.empty()) session->world().clearView();
             else
             {
-                const auto configured = session->world().configureView(viewport, displayState.worldCamera);
+                World3DCamera camera = displayState.worldCamera;
+                if (const auto* command = session->commands().cameraState(
+                        static_cast<std::uint8_t>(RenderSlot::World3D)))
+                {
+                    if (!activeWorldCamera) activeWorldCamera = camera;
+                    if (const auto resolved = resolveWorld3DCamera(
+                            *command, session->runtime()))
+                        activeWorldCamera = *resolved;
+                    camera = *activeWorldCamera;
+                }
+                else activeWorldCamera = camera;
+                const auto configured = session->world().configureView(viewport, camera);
                 if (!configured) return SDL_SetError("Invalid DISPLAY World3D camera/viewport");
                 if (!worldRenderer)
                 {
@@ -208,6 +220,7 @@ namespace monopoly::engine
     {
         playback.reset();
         activeBoardSequence.reset();
+        activeWorldCamera.reset();
         worldRenderer.reset(); // GPU objects must be released before the device.
         legacyassets::shutdown();
 

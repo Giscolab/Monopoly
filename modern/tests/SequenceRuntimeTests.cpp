@@ -66,6 +66,32 @@ namespace
         return chunk(9, payload);
     }
 
+    DataBytes dimensionality(std::uint8_t value)
+    { return chunk(129, DataBytes{static_cast<std::byte>(value)}); }
+    DataBytes offset3D(std::uint32_t xBits, std::uint32_t yBits, std::uint32_t zBits)
+    {
+        DataBytes payload;
+        word(payload, xBits); word(payload, yBits); word(payload, zBits);
+        return chunk(133, payload);
+    }
+    DataBytes cameraFov(std::uint32_t valueBits)
+    {
+        DataBytes payload; word(payload, valueBits); return chunk(144, payload);
+    }
+    DataBytes camera(std::uint32_t nearBits, std::uint32_t farBits,
+        std::uint8_t label, const DataBytes& attributes = {})
+    {
+        DataBytes payload;
+        word(payload, 0U);
+        word(payload, 4U << 24U);
+        word(payload, 2U); // Hold.
+        word(payload, nearBits);
+        word(payload, farBits);
+        payload.push_back(static_cast<std::byte>(label));
+        append(payload, attributes);
+        return chunk(7, payload);
+    }
+
     DataBytes meshChoice(std::int16_t a, std::int16_t b,
         std::uint32_t proportionBits)
     {
@@ -388,6 +414,82 @@ namespace
             identity.inspect(identityRoot)->meshChoice == SequenceMeshChoice3D{5, 6, 0.75F},
             "identity tweeker resets transforms only and leaves non-transform mesh choice untouched");
     }
+    void testCameraRuntimeAndFieldOfViewTweeker()
+    {
+        Fixture fixture;
+        DataBytes attributes;
+        append(attributes, dimensionality(3));
+        append(attributes, offset3D(0x4120'0000U, 0x41A0'0000U, 0x41F0'0000U)); // 10,20,30
+        append(attributes, cameraFov(0x3F00'0000U)); // 0.5
+        DataBytes keys;
+        append(keys, cameraFov(0x3E80'0000U)); // 0.25
+        append(keys, cameraFov(0x3F80'0000U)); // 1.0
+        append(attributes, tweeker(2, 8, keys));
+        const std::array items{ArchiveBuildItem{LegacyDataType::Chunky,
+            camera(0x4000'0000U, 0x4480'0000U, 5, attributes)}}; // near 2, far 1024
+        DataBankRegistry registry;
+        (void)archive(fixture.root / "camera-linear.dat", items, registry);
+        auto executable = program(registry);
+        SequenceRuntime runtime;
+        const auto root = runtime.start(executable, 23).value();
+        auto cameras = runtime.cameraInstances();
+        expect(cameras.size() == 1 && cameras.front().node == root &&
+            cameras.front().label == 5 && cameras.front().priority == 23 &&
+            cameras.front().fieldOfView == 0.5F && cameras.front().nearPlane == 2.0F &&
+            cameras.front().farPlane == 1024.0F &&
+            cameras.front().worldTransform.values[12] == 10.0F &&
+            cameras.front().worldTransform.values[13] == 20.0F &&
+            cameras.front().worldTransform.values[14] == 30.0F,
+            "3D camera runtime exports label, clip planes, FOV and sequence-to-world transform");
+        expect(runtime.update(0).has_value() &&
+            runtime.cameraInstances().front().fieldOfView == 0.25F,
+            "camera FOV tweeker applies its first key at sequence time zero");
+        expect(runtime.update(4).has_value() &&
+            runtime.cameraInstances().front().fieldOfView == 0.625F,
+            "linear camera FOV tweeker interpolates the raw ArtLib float at mid-time");
+
+        DataBytes defaults;
+        append(defaults, dimensionality(3));
+        const std::array defaultItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            camera(0x3F80'0000U, 0x459C'4000U, 9, defaults)}};
+        DataBankRegistry defaultRegistry;
+        (void)archive(fixture.root / "camera-default.dat", defaultItems, defaultRegistry, 3);
+        SequenceRuntime defaultRuntime;
+        const auto defaultRoot = defaultRuntime.start(
+            SequenceProgram::load(defaultRegistry, packDataId(3, 0)).value()).value();
+        const auto defaultCameras = defaultRuntime.cameraInstances();
+        expect(defaultCameras.size() == 1 && defaultCameras.front().node == defaultRoot &&
+            defaultCameras.front().fieldOfView == 0.7853981633974F,
+            "3D camera without chunk 144 keeps the historical pi-over-four FOV default");
+
+        SequenceRuntime labels;
+        const auto firstOwner = labels.start(
+            SequenceProgram::load(defaultRegistry, packDataId(3, 0)).value(), 1).value();
+        const auto secondOwner = labels.start(
+            SequenceProgram::load(defaultRegistry, packDataId(3, 0)).value(), 2).value();
+        expect(labels.cameraForLabel(9) && labels.cameraForLabel(9)->node == secondOwner,
+            "most recently started camera takes ownership of an existing historical label");
+        expect(labels.stop(secondOwner).has_value() && labels.inspect(firstOwner) &&
+            !labels.cameraForLabel(9),
+            "deleting the current label owner clears the label without restoring an older overlap");
+
+        DataBytes wrongKeys;
+        append(wrongKeys, cameraFov(0x3F00'0000U));
+        DataBytes wrongChildren;
+        append(wrongChildren, tweeker(1, 8, wrongKeys));
+        const std::array wrongItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 0, 2, 0, true, wrongChildren)}};
+        DataBankRegistry wrongRegistry;
+        (void)archive(fixture.root / "camera-wrong-parent.dat", wrongItems, wrongRegistry, 4);
+        SequenceRuntime wrong;
+        const auto wrongRoot = wrong.start(
+            SequenceProgram::load(wrongRegistry, packDataId(4, 0)).value()).value();
+        const auto wrongUpdate = wrong.update(0);
+        expect(!wrongUpdate && wrongUpdate.error().code == RuntimeErrorCode::TweekerFailure &&
+            !wrong.inspect(wrongRoot),
+            "camera FOV tweeker under a non-camera parent fails and tears down the staged forest");
+    }
+
     void testCommandsAndFailureLimits()
     {
         Fixture fixture;
@@ -578,6 +680,7 @@ int main()
         testPauseAndSeek();
         testMeshLeafRuntimeIntent();
         testMeshChoiceRuntimeAndTweeker();
+        testCameraRuntimeAndFieldOfViewTweeker();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
         testRawHmdStartContract();

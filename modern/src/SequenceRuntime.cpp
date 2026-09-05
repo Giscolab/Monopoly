@@ -48,6 +48,50 @@ namespace monopoly::sequence
             return result;
         }
 
+        float initialCameraFieldOfView(const data::LegacySequenceRecord& record,
+            const data::LegacySequenceAttributes& attributes,
+            std::uint8_t dimensionality) noexcept
+        {
+            if (!std::holds_alternative<data::SequenceCameraData>(record.data)) return 0.0F;
+            float result = dimensionality == 3 ? 0.7853981633974F : 1.0F;
+            for (const auto& attribute : attributes.values)
+                if (const auto* field =
+                    std::get_if<data::SequenceCameraFieldOfViewAttribute>(&attribute))
+                    result = field->fieldOfView;
+            return result;
+        }
+
+        std::expected<std::optional<float>, TweekerTransformError>
+        evaluateTweekerCameraFieldOfView(
+            const data::LegacySequenceAttributes& attributes,
+            std::uint8_t interpolationType, std::int32_t clock,
+            std::int32_t endTime, bool parentIsCamera) noexcept
+        {
+            if (interpolationType > 2)
+                return std::unexpected(TweekerTransformError::InvalidInterpolation);
+            if (interpolationType == 0) return std::nullopt;
+            const data::SequenceCameraFieldOfViewAttribute* first{};
+            const data::SequenceCameraFieldOfViewAttribute* second{};
+            for (const auto& attribute : attributes.values)
+                if (const auto* field =
+                    std::get_if<data::SequenceCameraFieldOfViewAttribute>(&attribute))
+                {
+                    if (!first) first = field;
+                    else { second = field; break; }
+                }
+            if (!first) return std::nullopt;
+            if (!parentIsCamera)
+                return std::unexpected(TweekerTransformError::DimensionalityMismatch);
+            float result = first->fieldOfView;
+            if (interpolationType == 2 && second && endTime < 1'234'567'890)
+            {
+                const float proportion = static_cast<float>(clock) /
+                    static_cast<float>(endTime);
+                result += proportion * (second->fieldOfView - result);
+            }
+            return result;
+        }
+
         std::expected<std::optional<SequenceMeshChoice3D>, TweekerTransformError>
         evaluateTweekerMeshChoice(const data::LegacySequenceAttributes& attributes,
             std::uint8_t interpolationType, std::int32_t clock,
@@ -154,10 +198,10 @@ namespace monopoly::sequence
             if (!record) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, record.error()));
             if (record->chunk.id != 1 && record->chunk.id != 2 &&
-                record->chunk.id != 9 && record->chunk.id != 10)
+                record->chunk.id != 7 && record->chunk.id != 9 && record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect, 3D mesh and tweeker records only"));
+                    "runtime currently executes grouping, indirect, camera, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -238,6 +282,7 @@ namespace monopoly::sequence
         SequenceTransform tweekerTransform;
         SequenceTransform worldTransform;
         SequenceMeshChoice3D meshChoice{};
+        float cameraFieldOfView{};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -289,6 +334,11 @@ namespace monopoly::sequence
             initial.dimensionality, initial.explicitlyPositioned,
             initial.local, false, tweeker, world});
         node->meshChoice = initialMeshChoice(def.attributes, initial.dimensionality);
+        node->cameraFieldOfView = initialCameraFieldOfView(
+            def.record, def.attributes, initial.dimensionality);
+        if (const auto* camera = std::get_if<data::SequenceCameraData>(&def.record.data);
+            camera && camera->cameraLabel != 0)
+            cameraLabelOwners_[camera->cameraLabel] = node->id;
         ++liveNodes_; ++births_;
         emit(SequenceEventKind::Created, *node);
         return node;
@@ -313,6 +363,11 @@ namespace monopoly::sequence
     void SequenceRuntime::destroy(std::unique_ptr<Node>& node)
     {
         destroyChildren(*node);
+        if (const auto* camera = std::get_if<data::SequenceCameraData>(
+                &node->definition().record.data);
+            camera && camera->cameraLabel != 0 &&
+            cameraLabelOwners_[camera->cameraLabel] == node->id)
+            cameraLabelOwners_[camera->cameraLabel] = 0;
         emit(SequenceEventKind::Destroyed, *node);
         --liveNodes_;
         node.reset();
@@ -559,6 +614,15 @@ namespace monopoly::sequence
         }
         if (*meshChoice)
             node.parent->meshChoice = **meshChoice;
+        const auto cameraFov = evaluateTweekerCameraFieldOfView(
+            node.definition().attributes, tweeker.interpolationType,
+            node.clock.clock(), node.clock.endTime(),
+            node.parent->definition().record.chunk.id == 7);
+        if (!cameraFov)
+            return std::unexpected(error(RuntimeErrorCode::TweekerFailure,
+                node.definition().dataId, node.definition().record.chunk.headerOffset,
+                "camera field-of-view tweeker must target a camera sequence"));
+        if (*cameraFov) node.parent->cameraFieldOfView = **cameraFov;
         return {};
     }
     std::expected<void, RuntimeError> SequenceRuntime::update(std::int32_t parentClock)
@@ -669,6 +733,48 @@ namespace monopoly::sequence
         };
         visit(visit, roots_);
         return result;
+    }
+
+    std::vector<SequenceCamera3DView> SequenceRuntime::cameraInstances() const
+    {
+        std::vector<SequenceCamera3DView> result;
+        const auto visit = [&](const auto& self, const Nodes& nodes) -> void {
+            for (const auto& node : nodes)
+            {
+                const auto& definition = node->definition();
+                if (definition.record.chunk.id == 7 && node->dimensionality == 3 &&
+                    std::holds_alternative<Matrix3D>(node->worldTransform))
+                {
+                    const auto& camera = std::get<data::SequenceCameraData>(
+                        definition.record.data);
+                    result.push_back({node->id, camera.cameraLabel, node->priority,
+                        node->clock.clock(), std::get<Matrix3D>(node->worldTransform),
+                        node->cameraFieldOfView, camera.nearClipPlaneDistance,
+                        camera.farClipPlaneDistance});
+                }
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
+        return result;
+    }
+
+    std::optional<SequenceCamera3DView> SequenceRuntime::cameraForLabel(
+        std::uint8_t label) const
+    {
+        if (label == 0) return std::nullopt;
+        const auto owner = cameraLabelOwners_[label];
+        const auto* node = owner != 0 ? find(owner) : nullptr;
+        if (!node || node->definition().record.chunk.id != 7 ||
+            node->dimensionality != 3 ||
+            !std::holds_alternative<Matrix3D>(node->worldTransform))
+            return std::nullopt;
+        const auto& camera = std::get<data::SequenceCameraData>(
+            node->definition().record.data);
+        return SequenceCamera3DView{node->id, camera.cameraLabel, node->priority,
+            node->clock.clock(), std::get<Matrix3D>(node->worldTransform),
+            node->cameraFieldOfView, camera.nearClipPlaneDistance,
+            camera.farClipPlaneDistance};
     }
 
     std::vector<SequenceNodeId> SequenceRuntime::roots() const

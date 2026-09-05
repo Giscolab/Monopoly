@@ -2,6 +2,7 @@
 
 #include "SequenceRuntime.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -14,8 +15,8 @@
 
 namespace monopoly::sequence
 {
-    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction };
-    enum class CommandQueueError { QueueFull, InvalidProgram, InvalidEndingAction, NestingOverflow };
+    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, SetCamera };
+    enum class CommandQueueError { QueueFull, InvalidProgram, InvalidEndingAction, InvalidRenderSlot, NestingOverflow };
 
     struct StartSequenceCommand
     {
@@ -43,10 +44,22 @@ namespace monopoly::sequence
         SequenceTransform transform;
         bool wholeTree{};
     };
+    inline constexpr std::uint8_t MonopolyRenderSlotCount = 5;
+    struct SetCameraCommand
+    {
+        std::uint8_t renderSlot{};
+        std::uint8_t cameraNumber{};
+        std::array<float, 3> position{};
+        std::array<float, 3> forwards{0.0F, 0.0F, 1.0F};
+        std::array<float, 3> up{0.0F, 1.0F, 0.0F};
+        float fieldOfView{0.7853981633974483F};
+        float nearPlane{1.0F};
+        float farPlane{5000.0F};
+    };
 
     using SequenceCommand = std::variant<StartSequenceCommand,
         StopSequenceCommand, MoveSequenceCommand,
-        SetSequenceEndingActionCommand>;
+        SetSequenceEndingActionCommand, SetCameraCommand>;
 
     [[nodiscard]] MoveSequenceCommand makeMoveTheWorks(data::DataId dataId,
         std::uint16_t priority, SequenceTransform transform,
@@ -84,7 +97,11 @@ namespace monopoly::sequence
             MoveSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             SetSequenceEndingActionCommand command);
+        [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
+            SetCameraCommand command);
 
+        [[nodiscard]] const SetCameraCommand* cameraState(
+            std::uint8_t renderSlot) const noexcept;
         [[nodiscard]] std::expected<int, CommandQueueError> collect();
         // Exactly zero drains immediately by running a zero-time update cycle.
         // Like the source, unmatched extra Execute calls make the level negative.
@@ -107,6 +124,7 @@ namespace monopoly::sequence
         std::deque<SequenceCommand> pending_;
         std::vector<SequenceCommandOutcome> outcomes_;
         std::optional<RuntimeError> cycleError_;
+        std::array<std::optional<SetCameraCommand>, MonopolyRenderSlotCount> cameraStates_{};
         int nestingLevel_{};
         std::int32_t parentClock_{};
     };

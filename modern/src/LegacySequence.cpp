@@ -49,6 +49,7 @@ namespace monopoly::data
             case 3: return 16; // Bitmap
             case 4: return 24; // Model (geometry, texture table, joints)
             case 5: return 16; // Sound
+            case 7: return 21; // Camera: header + near/far + packed label
             case 9: return 16; // Mesh
             case 10: return 13; // Tweeker (common header + interpolation ID)
             default: return 0;
@@ -103,6 +104,7 @@ namespace monopoly::data
             case 134: required = 64; break;
             case 135: required = 48; break;
             case 139: required = 8; break;
+            case 144: required = 4; break;
             default:
                 result.values.push_back(SequenceUnsupportedAttribute{*part});
                 (void)candidate.ascend();
@@ -171,6 +173,10 @@ namespace monopoly::data
             case 139:
                 result.values.push_back(Sequence3DMeshChoiceAttribute{*part,
                     readI16(*bytes, 0), readI16(*bytes, 2), readF32(*bytes, 4)});
+                break;
+            case 144:
+                result.values.push_back(SequenceCameraFieldOfViewAttribute{*part,
+                    readF32(*bytes, 0)});
                 break;
             }
             (void)candidate.ascend();
@@ -268,6 +274,10 @@ namespace monopoly::data
             break;
         case 5:
             record.data = SequenceSoundData{ readU32(*mapped, 12) };
+            break;
+        case 7:
+            record.data = SequenceCameraData{readF32(*mapped, 12),
+                readF32(*mapped, 16), std::to_integer<std::uint8_t>((*mapped)[20])};
             break;
         case 9:
             record.data = SequenceMeshData{ readU32(*mapped, 12) };

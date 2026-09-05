@@ -120,12 +120,18 @@ namespace
 
     void testFixedRecords()
     {
-        for (const auto id : std::array<std::uint8_t, 7>{ 1, 2, 3, 4, 5, 9, 10 })
+        for (const auto id : std::array<std::uint8_t, 8>{ 1, 2, 3, 4, 5, 7, 9, 10 })
         {
             DataBytes payload = CommonHeader;
             if (id == 10)
             {
                 payload.push_back(std::byte{2});
+            }
+            else if (id == 7)
+            {
+                appendU32(payload, 0x4000'0000U); // near = 2.0f
+                appendU32(payload, 0x4480'0000U); // far = 1024.0f
+                payload.push_back(std::byte{7});
             }
             else if (id != 1)
             {
@@ -176,6 +182,14 @@ namespace
                 expect(std::get<SequenceSoundData>(record->data).soundDataId ==
                     0x1234'BCDEU, "sound DataID is decoded little-endian");
                 break;
+            case 7:
+            {
+                const auto& camera = std::get<SequenceCameraData>(record->data);
+                expect(camera.nearClipPlaneDistance == 2.0F &&
+                    camera.farClipPlaneDistance == 1024.0F && camera.cameraLabel == 7,
+                    "camera near/far planes and packed label decode from the 21-byte record");
+                break;
+            }
             case 9:
                 expect(std::get<SequenceMeshData>(record->data).modelDataId ==
                     0x1234'BCDEU, "MESHX sequence retains its model DataID");
@@ -230,7 +244,7 @@ namespace
             reader.currentOffset() == position && reader.level() == 1,
             "end-of-parent error is preserved without changing traversal state");
 
-        for (const auto id : std::array<std::uint8_t, 5>{ 6, 7, 8, 20, 129 })
+        for (const auto id : std::array<std::uint8_t, 4>{ 6, 8, 20, 129 })
         {
             const auto unsupportedBytes = chunk(id, CommonHeader);
             LegacyChunkReader unsupportedReader(unsupportedBytes);
@@ -283,6 +297,42 @@ namespace
         expect(!truncated && truncated.error().code == SequenceErrorCode::AttributeTruncated,
             "seven-byte mesh-choice payload is rejected before reading its float");
     }
+    void testCameraFieldOfViewAttribute()
+    {
+        DataBytes cameraPayload = CommonHeader;
+        appendU32(cameraPayload, 0x3F80'0000U); // near = 1.0f
+        appendU32(cameraPayload, 0x459C'4000U); // far = 5000.0f
+        cameraPayload.push_back(std::byte{3});
+        const DataBytes fovPayload{
+            std::byte{0x00}, std::byte{0x00}, std::byte{0x40}, std::byte{0x3F} // 0.75f
+        };
+        const auto fov = chunk(144, fovPayload);
+        cameraPayload.insert(cameraPayload.end(), fov.begin(), fov.end());
+        const auto bytes = chunk(7, cameraPayload);
+        LegacyChunkReader reader(bytes);
+        expect(readLegacySequenceRecord(reader).has_value(),
+            "camera fixture positions reader before private FOV attribute");
+        const auto attributes = readLegacySequenceAttributes(reader);
+        const auto* value = attributes && attributes->values.size() == 1 ?
+            std::get_if<SequenceCameraFieldOfViewAttribute>(&attributes->values.front()) : nullptr;
+        expect(value && value->fieldOfView == 0.75F,
+            "private chunk 144 decodes camera field of view as an unclamped float");
+
+        DataBytes shortParent = CommonHeader;
+        appendU32(shortParent, 0x3F80'0000U);
+        appendU32(shortParent, 0x459C'4000U);
+        shortParent.push_back(std::byte{3});
+        const DataBytes shortFovPayload{std::byte{0}, std::byte{0}, std::byte{0x40}};
+        const auto shortFov = chunk(144, shortFovPayload);
+        shortParent.insert(shortParent.end(), shortFov.begin(), shortFov.end());
+        const auto shortBytes = chunk(7, shortParent);
+        LegacyChunkReader shortReader(shortBytes);
+        (void)readLegacySequenceRecord(shortReader);
+        const auto truncated = readLegacySequenceAttributes(shortReader);
+        expect(!truncated && truncated.error().code == SequenceErrorCode::AttributeTruncated,
+            "three-byte camera FOV payload is rejected before reading its float");
+    }
+
     void testDataIdResolution()
     {
         auto header = *decodeLegacySequenceHeader(CommonHeader);
@@ -304,6 +354,7 @@ int main()
     testFixedRecords();
     testTraversalOwnershipAndErrors();
     testMeshChoiceAttribute();
+    testCameraFieldOfViewAttribute();
     testDataIdResolution();
     return failures == 0 ? 0 : 1;
 }

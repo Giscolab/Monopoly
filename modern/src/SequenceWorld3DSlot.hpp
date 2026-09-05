@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RenderSlots.hpp"
+#include "SequenceCommands.hpp"
 #include "SequenceRenderData.hpp"
 #include "World3DProjection.hpp"
 
@@ -33,6 +34,15 @@ namespace monopoly::engine
         std::optional<World3DRect> screenBounds;
         std::shared_ptr<const data::MeshRenderData> renderData;
     };
+
+    // Resolves the historical SetCamera render-slot state. A labelled
+    // camera with no current label owner intentionally returns nullopt so the
+    // caller can preserve the previously installed camera, matching ArtLib.
+    [[nodiscard]] World3DCamera world3DCameraFromSequence(
+        const sequence::SequenceCamera3DView& camera) noexcept;
+    [[nodiscard]] std::optional<World3DCamera> resolveWorld3DCamera(
+        const sequence::SetCameraCommand& command,
+        const sequence::SequenceRuntime& runtime) noexcept;
 
     struct SequenceWorld3DSyncStats
     {
