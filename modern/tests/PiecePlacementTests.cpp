@@ -92,13 +92,34 @@ namespace
         expect(!tokenRestingOrientation(0, 6, 0),
             "resting position outside the six-entry legacy table is rejected");
     }
-}
+    void testBuildingPlacement()
+    {
+        using monopoly::pieces::hotelPosition;
+        using monopoly::pieces::housePosition;
+        const auto hotelGo = hotelPosition(0);
+        expect(hotelGo && near(hotelGo->x, 58.25F) && near(hotelGo->z, 45.5F) && near(hotelGo->yaw, 0.0F),
+            "hotel on side 1 uses the historical swatch offset");
+        const auto hotelVisiting = hotelPosition(10);
+        expect(hotelVisiting && near(hotelVisiting->x, 45.5F) && near(hotelVisiting->z, 427.75F) &&
+            near(hotelVisiting->yaw, std::numbers::pi_v<float> / 2.0F),
+            "hotel on side 2 rotates the same offsets");
+        const auto hotelJail = hotelPosition(40);
+        expect(hotelJail && near(hotelJail->x, hotelVisiting->x) && near(hotelJail->z, hotelVisiting->z),
+            "hotel In Jail reuses the Just Visiting center exactly as source");
+        const auto house0 = housePosition(1, 0);
+        const auto house3 = housePosition(1, 3);
+        expect(house0 && house3 && near(house0->x, 58.25F) && near(house0->z, 99.1F) &&
+            near(house3->z, 70.9F), "house slots reproduce HOUSE0..HOUSE3 X offsets");
+        expect(!housePosition(1, 4), "invalid fifth house slot is rejected instead of reproducing legacy UB");
+        expect(!hotelPosition(42), "building placement rejects a square beyond BoardGeometry");
+    }}
 
 int main()
 {
     testBaseOrientation();
     testRestingOffsets();
     testCornerAndSpecialResting();
+    testBuildingPlacement();
     std::cout << (failures ? "Piece placement tests FAILED\n" : "Piece placement tests passed\n");
     return failures ? 1 : 0;
 }

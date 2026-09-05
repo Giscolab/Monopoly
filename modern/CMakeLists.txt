@@ -880,6 +880,7 @@ target_sources(
     src/BoardGeometry.cpp
     src/PiecePlacement.cpp
     src/PieceRuntime.cpp
+    src/PieceCamera.cpp
 )
 
 target_sources(
@@ -1215,4 +1216,32 @@ if(BUILD_TESTING)
         COMMAND MonopolyPieceRuntimeTests
     )
 
+endif()
+
+# DISPLAY_UDPIECES camera-selection subset
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceCameraTests
+        tests/PieceCameraTests.cpp
+        src/PieceCamera.cpp
+    )
+
+    target_include_directories(
+        MonopolyPieceCameraTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(
+        MonopolyPieceCameraTests PRIVATE MonopolyDataCore
+    )
+
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceCameraTests PRIVATE /W4 /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.PieceCamera
+        COMMAND MonopolyPieceCameraTests
+    )
 endif()
