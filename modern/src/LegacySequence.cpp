@@ -1,5 +1,6 @@
 #include "LegacySequence.hpp"
 
+#include <bit>
 #include <utility>
 
 namespace monopoly::data
@@ -22,6 +23,12 @@ namespace monopoly::data
             return (word & 0x0080'0000U) != 0 ? value - 0x0100'0000 : value;
         }
 
+        float readF32(std::span<const std::byte> bytes,
+            std::size_t offset) noexcept
+        {
+            return std::bit_cast<float>(readU32(bytes, offset));
+        }
+
         // L_Seqncr.h:574-677 et L_Chunk.cpp:551-565. Ce sont des tailles
         // de payload, sans les quatre octets de LE_CHUNK_HeaderRecord.
         std::size_t fixedRecordSize(std::uint8_t chunkId) noexcept
@@ -34,6 +41,7 @@ namespace monopoly::data
             case 4: return 24; // Model (geometry, texture table, joints)
             case 5: return 16; // Sound
             case 9: return 16; // Mesh
+            case 10: return 13; // Tweeker (common header + interpolation ID)
             default: return 0;
             }
         }
@@ -48,10 +56,112 @@ namespace monopoly::data
         case SequenceErrorCode::ChunkFailure: return "ChunkFailure";
         case SequenceErrorCode::UnsupportedRecord: return "UnsupportedRecord";
         case SequenceErrorCode::FixedRecordTruncated: return "FixedRecordTruncated";
+        case SequenceErrorCode::AttributeTruncated: return "AttributeTruncated";
+        case SequenceErrorCode::InvalidDimensionality: return "InvalidDimensionality";
+        case SequenceErrorCode::AttributeLimitExceeded: return "AttributeLimitExceeded";
         case SequenceErrorCode::RecordLimitExceeded: return "RecordLimitExceeded";
         case SequenceErrorCode::InvalidClockRange: return "InvalidClockRange";
         }
         return "InvalidSequenceErrorCode";
+    }
+
+    std::expected<LegacySequenceAttributes, SequenceError>
+    readLegacySequenceAttributes(const LegacyChunkReader& reader,
+        std::size_t maximumAttributes)
+    {
+        LegacySequenceAttributes result;
+        auto candidate = reader;
+        while (candidate.remaining() != 0)
+        {
+            const auto part = candidate.descend();
+            if (!part)
+                return std::unexpected(SequenceError{SequenceErrorCode::ChunkFailure,
+                    part.error().offset, "cannot enter sequence attribute", part.error()});
+            if (part->id >= 1 && part->id < 11)
+                break; // first child sequence; attributes have ended
+            if (result.values.size() >= maximumAttributes)
+                return std::unexpected(SequenceError{SequenceErrorCode::AttributeLimitExceeded,
+                    part->headerOffset, "sequence attribute count exceeds configured limit", {}});
+
+            std::size_t required{};
+            switch (part->id)
+            {
+            case 129: required = 1; break;
+            case 130: required = 8; break;
+            case 131: required = 36; break;
+            case 132: required = 28; break;
+            case 133: required = 12; break;
+            case 134: required = 64; break;
+            case 135: required = 48; break;
+            default:
+                result.values.push_back(SequenceUnsupportedAttribute{*part});
+                (void)candidate.ascend();
+                continue;
+            }
+            if (part->dataSize < required)
+                return std::unexpected(SequenceError{SequenceErrorCode::AttributeTruncated,
+                    part->dataOffset, "private sequence attribute is shorter than its fixed record", {}});
+            const auto bytes = candidate.map(required);
+            if (!bytes || bytes->size() != required)
+                return std::unexpected(SequenceError{SequenceErrorCode::ChunkFailure,
+                    part->dataOffset, "cannot map private sequence attribute", bytes ?
+                        std::optional<ChunkError>{} : std::optional<ChunkError>{bytes.error()}});
+
+            switch (part->id)
+            {
+            case 129:
+            {
+                const auto value = std::to_integer<std::uint8_t>((*bytes)[0]);
+                if (value == 1 || value > 3)
+                    return std::unexpected(SequenceError{SequenceErrorCode::InvalidDimensionality,
+                        part->dataOffset, "sequence dimensionality must be 0, 2 or 3", {}});
+                result.values.push_back(SequenceDimensionalityAttribute{*part, value});
+                break;
+            }
+            case 130:
+                result.values.push_back(Sequence2DOffsetAttribute{*part,
+                    static_cast<std::int32_t>(readU32(*bytes, 0)),
+                    static_cast<std::int32_t>(readU32(*bytes, 4))});
+                break;
+            case 131:
+            {
+                Sequence2DMatrixAttribute value{*part, {}};
+                for (std::size_t index = 0; index < value.values.size(); ++index)
+                    value.values[index] = readF32(*bytes, index * 4);
+                result.values.push_back(value);
+                break;
+            }
+            case 132:
+                result.values.push_back(Sequence2DOriginScaleRotateOffsetAttribute{*part,
+                    static_cast<std::int32_t>(readU32(*bytes, 0)),
+                    static_cast<std::int32_t>(readU32(*bytes, 4)),
+                    static_cast<std::int32_t>(readU32(*bytes, 8)),
+                    static_cast<std::int32_t>(readU32(*bytes, 12)),
+                    readF32(*bytes, 16), readF32(*bytes, 20), readF32(*bytes, 24)});
+                break;
+            case 133:
+                result.values.push_back(Sequence3DOffsetAttribute{*part,
+                    readF32(*bytes, 0), readF32(*bytes, 4), readF32(*bytes, 8)});
+                break;
+            case 134:
+            {
+                Sequence3DMatrixAttribute value{*part, {}};
+                for (std::size_t index = 0; index < value.values.size(); ++index)
+                    value.values[index] = readF32(*bytes, index * 4);
+                result.values.push_back(value);
+                break;
+            }
+            case 135:
+                result.values.push_back(Sequence3DOriginScaleRotateOffsetAttribute{*part,
+                    readF32(*bytes, 0), readF32(*bytes, 4), readF32(*bytes, 8),
+                    readF32(*bytes, 12), readF32(*bytes, 16), readF32(*bytes, 20),
+                    readF32(*bytes, 24), readF32(*bytes, 28), readF32(*bytes, 32),
+                    readF32(*bytes, 36), readF32(*bytes, 40), readF32(*bytes, 44)});
+                break;
+            }
+            (void)candidate.ascend();
+        }
+        return result;
     }
 
     std::expected<LegacySequenceHeader, SequenceError>
@@ -148,6 +258,10 @@ namespace monopoly::data
             break;
         case 9:
             record.data = SequenceMeshData{ readU32(*mapped, 12) };
+            break;
+        case 10:
+            record.data = SequenceTweekerData{
+                std::to_integer<std::uint8_t>((*mapped)[12]) };
             break;
         }
         reader = std::move(candidate);

@@ -10,6 +10,7 @@
 
 namespace
 {
+    // Calendars copy only their cursor; immutable decoded bytes are shared.
     using namespace monopoly::data;
     using namespace monopoly::sequence;
     int failures{};

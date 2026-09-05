@@ -22,6 +22,17 @@ namespace monopoly::sequence
             result.cause = std::move(cause);
             return result;
         }
+
+        SequenceTransform applyTweekerBeforeLocal(const SequenceTransform& tweeker,
+            bool applied, const SequenceTransform& local, std::uint8_t dimensionality)
+        {
+            if (!applied) return local;
+            if (dimensionality == 2)
+                return multiply(std::get<Matrix2D>(tweeker), std::get<Matrix2D>(local));
+            if (dimensionality == 3)
+                return multiply(std::get<Matrix3D>(tweeker), std::get<Matrix3D>(local));
+            return local;
+        }
     }
 
     std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
@@ -66,21 +77,19 @@ namespace monopoly::sequence
             auto record = data::readLegacySequenceRecord(*reader);
             if (!record) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, record.error()));
-            if (record->chunk.id != 1 && record->chunk.id != 2)
+            if (record->chunk.id != 1 && record->chunk.id != 2 && record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
-                    currentId, currentOffset, "runtime currently executes grouping/indirect only"));
-            // Never turn parsed transforms/labels/etc into silently ignored
-            // runtime effects. Attribute support is a separate following port.
-            while (reader->remaining() != 0)
-            {
-                const auto part = reader->descend();
-                if (!part) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
-                    currentId, reader->currentOffset(), part.error()));
-                if (part->id < 1 || part->id >= 11)
+                    currentId, currentOffset,
+                    "runtime currently executes grouping, indirect and tweeker records only"));
+            auto attributes = data::readLegacySequenceAttributes(*reader);
+            if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
+                currentId, currentOffset, attributes.error()));
+            for (const auto& attribute : attributes->values)
+                if (const auto* unsupported =
+                    std::get_if<data::SequenceUnsupportedAttribute>(&attribute))
                     return std::unexpected(error(RuntimeErrorCode::UnsupportedAttribute,
-                        currentId, part->headerOffset, "sequence attribute is not executed yet"));
-                (void)reader->ascend();
-            }
+                        currentId, unsupported->chunk.headerOffset,
+                        "sequence attribute is decoded but its effect is not executed"));
             auto schedule = openSequenceChildSchedule(registry, currentId, currentOffset,
                 limits.maximumReferences - references);
             if (!schedule)
@@ -92,7 +101,8 @@ namespace monopoly::sequence
                     currentId, currentOffset, "description reference budget exceeded"));
             references += schedule->records().size();
             const auto index = program->descriptions_.size();
-            program->descriptions_.push_back({currentId, *record, *schedule, {}});
+            program->descriptions_.push_back({currentId, *record, *schedule,
+                std::move(*attributes), {}});
             visited.emplace(key, Entry{index, true, 1});
             std::size_t height = 1;
             for (const auto& child : schedule->records())
@@ -140,6 +150,12 @@ namespace monopoly::sequence
         SequenceChildSchedule schedule;
         Nodes children;
         bool reevaluate{true};
+        std::uint8_t dimensionality{};
+        bool explicitlyPositioned{};
+        SequenceTransform localTransform;
+        bool tweekerTransformApplied{};
+        SequenceTransform tweekerTransform;
+        SequenceTransform worldTransform;
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -178,8 +194,18 @@ namespace monopoly::sequence
         else options.parentClockAtBirth.reset();
         auto clock = SequenceClock::start(def.record, options);
         if (!clock) return std::unexpected(caused(RuntimeErrorCode::ClockFailure, id, offset, clock.error()));
+        const auto initial = initialSequenceTransform(def.record, def.attributes,
+            parent ? parent->dimensionality : 0);
+        const auto tweeker = initial.dimensionality == 2 ? SequenceTransform(identity2D()) :
+            initial.dimensionality == 3 ? SequenceTransform(identity3D()) :
+            SequenceTransform(std::monostate{});
+        const auto world = composeSequenceWorld(initial.local, initial.dimensionality,
+            parent ? parent->worldTransform : SequenceTransform(std::monostate{}),
+            parent ? parent->dimensionality : 0);
         auto node = std::make_unique<Node>(Node{nextId_++, parent, std::move(program),
-            description, priority, *clock, def.children, {}, true});
+            description, priority, *clock, def.children, {}, true,
+            initial.dimensionality, initial.explicitlyPositioned,
+            initial.local, false, tweeker, world});
         ++liveNodes_; ++births_;
         emit(SequenceEventKind::Created, *node);
         return node;
@@ -334,8 +360,30 @@ namespace monopoly::sequence
         if (tick->stopped) return false; // children do not get a final tick
         const auto children = tick->restartChildren ? rebuildChildren(node) : birthChildren(node, tick->previousClock);
         if (!children) return std::unexpected(children.error());
+        if (node.definition().record.chunk.id == 10)
+        {
+            const auto applied = applyTweeker(node);
+            if (!applied) return std::unexpected(applied.error());
+        }
+
+        // Tweeker children run before their parent's position calculation.
         for (auto iterator = node.children.begin(); iterator != node.children.end();)
         {
+            if ((*iterator)->definition().record.chunk.id != 10) { ++iterator; continue; }
+            const auto alive = updateNode(**iterator, node.clock.clock());
+            if (!alive) return std::unexpected(alive.error());
+            if (!*alive) { destroy(*iterator); iterator = node.children.erase(iterator); }
+            else ++iterator;
+        }
+        const auto effectiveLocal = applyTweekerBeforeLocal(node.tweekerTransform,
+            node.tweekerTransformApplied, node.localTransform, node.dimensionality);
+        node.worldTransform = composeSequenceWorld(effectiveLocal,
+            node.dimensionality,
+            node.parent ? node.parent->worldTransform : SequenceTransform(std::monostate{}),
+            node.parent ? node.parent->dimensionality : 0);
+        for (auto iterator = node.children.begin(); iterator != node.children.end();)
+        {
+            if ((*iterator)->definition().record.chunk.id == 10) { ++iterator; continue; }
             const auto alive = updateNode(**iterator, node.clock.clock());
             if (!alive) return std::unexpected(alive.error());
             if (!*alive) { destroy(*iterator); iterator = node.children.erase(iterator); }
@@ -343,6 +391,26 @@ namespace monopoly::sequence
         }
         node.reevaluate = false;
         return true;
+    }
+    std::expected<void, RuntimeError> SequenceRuntime::applyTweeker(Node& node)
+    {
+        if (!node.parent) return std::unexpected(error(RuntimeErrorCode::TweekerFailure,
+            node.definition().dataId, node.definition().record.chunk.headerOffset,
+            "a tweeker must be a child of the sequence it modifies"));
+        const auto& tweeker = std::get<data::SequenceTweekerData>(node.definition().record.data);
+        const auto evaluated = evaluateTweekerTransform(node.definition().attributes,
+            tweeker.interpolationType, node.clock.clock(), node.clock.endTime(),
+            node.parent->dimensionality);
+        if (!evaluated)
+            return std::unexpected(error(RuntimeErrorCode::TweekerFailure,
+                node.definition().dataId, node.definition().record.chunk.headerOffset,
+                evaluated.error() == TweekerTransformError::InvalidInterpolation ?
+                    "tweeker interpolation type is not implemented" :
+                    "tweeker transform dimensionality does not match its parent"));
+        if (!evaluated->changed) return {};
+        node.parent->tweekerTransformApplied = !evaluated->identity;
+        node.parent->tweekerTransform = evaluated->transform;
+        return {};
     }
     std::expected<void, RuntimeError> SequenceRuntime::update(std::int32_t parentClock)
     {
@@ -374,20 +442,31 @@ namespace monopoly::sequence
         visit(visit, roots_);
         return matches;
     }
-    std::size_t SequenceRuntime::stopMatching(data::DataId id, std::uint16_t priority)
+    std::size_t SequenceRuntime::stopMatching(data::DataId id,
+        std::uint16_t priority, bool wholeTree)
     {
         events_.clear();
-        const auto matches = matching(id, priority);
-        for (const auto match : matches) erase(*find(match));
-        return matches.size();
+        const auto matches = matching(id, priority, wholeTree);
+        std::size_t stopped{};
+        for (const auto match : matches)
+        {
+            // A matching ancestor deletes matching descendants with it.
+            // FindNextSequence likewise resumes from the surviving tree.
+            if (auto* node = find(match))
+            {
+                erase(*node);
+                ++stopped;
+            }
+        }
+        return stopped;
     }
     std::expected<std::size_t, RuntimeError> SequenceRuntime::setEndingActionMatching(
-        data::DataId id, std::uint16_t priority, std::uint8_t action)
+        data::DataId id, std::uint16_t priority, std::uint8_t action, bool wholeTree)
     {
         events_.clear();
         if (action == 0 || action > 3)
             return std::unexpected(caused(RuntimeErrorCode::ClockFailure, id, 0, ClockError::InvalidEndingAction));
-        const auto matches = matching(id, priority);
+        const auto matches = matching(id, priority, wholeTree);
         for (const auto match : matches)
         {
             auto* node = find(match);
@@ -402,7 +481,10 @@ namespace monopoly::sequence
         if (!node) return std::nullopt;
         SequenceNodeView view{node->id, node->parent ? node->parent->id : 0,
             node->definition().dataId, node->definition().record.chunk.headerOffset, node->priority,
-            node->clock.clock(), node->clock.endTime(), node->clock.timeMultiple(), node->clock.paused(), {}};
+            node->clock.clock(), node->clock.endTime(), node->clock.timeMultiple(), node->clock.paused(),
+            node->dimensionality, node->explicitlyPositioned,
+            node->localTransform, node->tweekerTransformApplied,
+            node->tweekerTransform, node->worldTransform, {}};
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }

@@ -3,6 +3,7 @@
 #include "ResourceRuntime.hpp"
 #include "SequenceChildSchedule.hpp"
 #include "SequenceClock.hpp"
+#include "SequenceTransforms.hpp"
 
 #include <memory>
 #include <string>
@@ -13,7 +14,8 @@ namespace monopoly::sequence
     {
         DataFailure, DecodeFailure, UnsupportedType, UnsupportedAttribute,
         InvalidLimits, DepthLimit, DescriptionLimit, ReferenceLimit, IndirectCycle,
-        LiveNodeLimit, BirthLimit, InvalidHandle, ClockFailure, IdentifierExhausted
+        LiveNodeLimit, BirthLimit, InvalidHandle, ClockFailure, TweekerFailure,
+        IdentifierExhausted
     };
     struct RuntimeError
     {
@@ -36,6 +38,7 @@ namespace monopoly::sequence
         data::DataId dataId{};
         data::LegacySequenceRecord record;
         SequenceChildSchedule children;
+        data::LegacySequenceAttributes attributes;
         // One program index for each record in the schedule, in DISK order.
         std::vector<std::size_t> childDescriptions;
     };
@@ -43,7 +46,8 @@ namespace monopoly::sequence
     // Immutable, bounded description DAG. Shared sublists are not expanded
     // exponentially; cycles are rejected by (DATA ID, chunk offset). Every
     // CNK lease needed by the supported tree is acquired before publication.
-    // Currently executable: grouping/indirect, without attribute effects.
+    // Currently executable: grouping/indirect plus transform tweekers. The
+    // private dimensionality/offset/matrix/OSRT attributes are immutable input.
     // Other decoded kinds and attributes fail explicitly; no fake renderer.
     class SequenceProgram final
     {
@@ -85,6 +89,12 @@ namespace monopoly::sequence
         std::int32_t endTime{};
         std::uint8_t timeMultiple{};
         bool paused{};
+        std::uint8_t dimensionality{};
+        bool explicitlyPositioned{};
+        SequenceTransform localTransform;
+        bool tweekerTransformApplied{};
+        SequenceTransform tweekerTransform;
+        SequenceTransform worldTransform;
         std::vector<SequenceNodeId> children; // runtime priority order
     };
     struct RuntimeLimits
@@ -120,9 +130,11 @@ namespace monopoly::sequence
         // including during whole-tree searches. Duplicate matches are legal.
         [[nodiscard]] std::vector<SequenceNodeId> matching(data::DataId id,
             std::uint16_t priority, bool wholeTree = false) const;
-        [[nodiscard]] std::size_t stopMatching(data::DataId id, std::uint16_t priority);
+        [[nodiscard]] std::size_t stopMatching(data::DataId id,
+            std::uint16_t priority, bool wholeTree = false);
         [[nodiscard]] std::expected<std::size_t, RuntimeError> setEndingActionMatching(
-            data::DataId id, std::uint16_t priority, std::uint8_t action);
+            data::DataId id, std::uint16_t priority, std::uint8_t action,
+            bool wholeTree = false);
 
         [[nodiscard]] std::optional<SequenceNodeView> inspect(SequenceNodeId node) const;
         [[nodiscard]] std::vector<SequenceNodeId> roots() const;
@@ -149,6 +161,7 @@ namespace monopoly::sequence
             std::optional<std::int32_t> previous);
         [[nodiscard]] std::expected<void, RuntimeError> rebuildChildren(Node& node);
         [[nodiscard]] std::expected<bool, RuntimeError> seekNode(Node& node, std::int32_t time);
+        [[nodiscard]] std::expected<void, RuntimeError> applyTweeker(Node& node);
         [[nodiscard]] std::expected<bool, RuntimeError> updateNode(Node& node, std::int32_t parentClock);
         RuntimeLimits limits_;
         Nodes roots_;
