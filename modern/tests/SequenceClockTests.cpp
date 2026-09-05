@@ -190,7 +190,7 @@ namespace
 
     void testErrors()
     {
-        for (auto id : std::array<std::uint8_t, 6>{0, 5, 6, 7, 8, 10})
+        for (auto id : std::array<std::uint8_t, 5>{0, 5, 6, 7, 8})
         {
             auto unsupported = record();
             unsupported.chunk.id = id;
@@ -198,6 +198,10 @@ namespace
             expect(!result && result.error() == ClockError::UnsupportedSequenceType,
                 "unsupported and hardware-clock sequence types are refused");
         }
+        auto tweeker = record();
+        tweeker.chunk.id = 10;
+        expect(SequenceClock::start(tweeker).has_value(),
+            "tweeker sequences use the same deterministic CPU clock");
         auto invalid = record();
         invalid.header.scrollingWorld = true;
         auto result = SequenceClock::start(invalid);
@@ -246,6 +250,40 @@ namespace
         expect(clockErrorName(ClockError::ClockOverflow) == "ClockOverflow",
             "runtime errors expose stable diagnostic names");
     }
+
+    void testSeekAndEndingCommand()
+    {
+        auto loop = SequenceClock::start(record(3, false)).value();
+        auto update = loop.seek(29, 100);
+        expect(update.updated && update.restartChildren && update.clock == 5 &&
+            !update.stopped, "explicit loop seek uses modulo, unlike natural looping");
+        const auto afterSeek = loop.update(104);
+        expect(afterSeek && afterSeek->clock == 9,
+            "seek rebases the sequence against the current parent clock");
+
+        auto held = SequenceClock::start(record(2, true)).value();
+        update = held.seek(20, 10);
+        expect(update.clock == 12 && update.restartChildren && !update.stopped,
+            "hold seek clamps to the ending time and requests child rebuild");
+        (void)held.update(10);
+        (void)held.update(265);
+        expect(held.timeMultiple() == 255, "held sequence adopts the source low update rate");
+        expect(held.setEndingAction(3).has_value() && held.timeMultiple() == 255,
+            "Hold-to-Loop command retains cadence 255 exactly as the source");
+        update = held.update(265, true).value();
+        expect(update.restartChildren && update.clock == 0,
+            "ending-action command can loop immediately without elapsed time");
+
+        auto stopped = SequenceClock::start(record(1)).value();
+        update = stopped.seek(12, 4);
+        expect(update.stopped, "seek to exact Stop end destroys the sequence");
+        auto negative = SequenceClock::start(record(2)).value();
+        update = negative.seek(-1, 4);
+        expect(update.stopped, "negative seek destroys even a held sequence");
+        const auto invalid = loop.setEndingAction(0);
+        expect(!invalid && invalid.error() == ClockError::InvalidEndingAction,
+            "public ending-action command rejects runtime suicide zero");
+    }
 }
 
 int main()
@@ -255,5 +293,6 @@ int main()
     testStartAndOverrides();
     testPauseAndForce();
     testErrors();
+    testSeekAndEndingCommand();
     return failures == 0 ? 0 : 1;
 }

@@ -71,7 +71,7 @@ effectivement present sous `modern/`.
 | `Source/artlib/L_Chunk.*` | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | lecteur consomme : header 24-bit + ID 8-bit, descend/ascend/seek/map/read, limite 8 niveaux | `LegacyDataArchive`, futur `L_Seqncr` | Contrat read-only et ownership `ReadFromDataID` portes sans bitfield ABI et testes sur fixtures, y compris le franchissement historique des siblings ID 0/128 lors d'une recherche precise. La validation d'un CNK retail reste bloquee separement; l'editeur/writer non consomme n'est pas dans ce perimetre. |
 | `Source/artlib/L_Grafix.*`, `L_Rend2D.*`, `L_Sprite.*` | `Display`, futur renderer UI SDL_GPU | `PORTED_PARTIAL` | composition 2D, clipping, priorites, surfaces | SDL_GPU, assets, transformation 800x600 | Seul le cycle d'etat existe; rendu des objets/sprites/fonts a construire. |
 | `Source/artlib/L_Rend3D.*` | `GPUFrame` et futur renderer 3D | `PORTED_PARTIAL` | viewport et fond 3D | SDL_GPU, PC3D moderne | Fond BMP seulement; scene, camera, mesh, materiaux et animations absents. |
-| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule` | `PORTED_PARTIAL` | records, horloges et selection temporelle des enfants | `LegacyChunkReader`, DATA, futurs objets/slots | Six records decodes; horloge CPU, pause/reprise, actions de fin et selection des enfants directs/indirects testees. Aucun executeur recursif, commandes/chains/watches, transformation, tweeker, streaming audio/video ni raccordement aux slots de rendu. |
+| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives et transformations CPU | `LegacyChunkReader`, DATA, futurs objets/slots | Sept records decodes, dont tweeker. L'arbre grouping/indirect/tweeker est immutable puis execute recursivement : naissance, mise a jour, fin, destruction, pause, seek, hold et loop. FIFO Start/Stop/SetEndingAction et transforms 2D/3D prouvees sont raccordes. Restent Move*, labels/actions de fin, effets bitmap/model/mesh/sound, chains non consommees par les callers Monopoly actifs, render data et slots. |
 | `Source/artlib/L_Fonts.*`, `L_Print.*` | Aucun | `NOT_STARTED` | Arial 10, mesure/rendu de texte | font rasterizer portable, LANG | Choisir un backend portable et conserver metriques/layout observables. |
 | `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer` partiel | `REPLACED_PORTABLE` | input clavier/souris | SDL3, `LogicalViewport` | Souris reconvertie vers 800x600 et bandes noires rejetees; rendu du pointeur et certains types d'evenements restent partiels. |
 | `Source/artlib/L_Sound.*`, `L_Midi.*` | Aucun | `NOT_STARTED` | WAV, musique, mixage, voice | audio portable, data | Inventorier les appels Monopoly et remplacer DirectSound/MIDI legacy. |
@@ -82,7 +82,7 @@ effectivement present sous `modern/`.
 | Original | Equivalent moderne | Statut | Contrat consomme | Dependances | Travail restant / blocage |
 |---|---|---|---|---|---|
 | cameras, viewports, background (`camera.*`, `D3DDevice.*`, view code) | `GPUFrame`, `Display::Viewport3D`, `LogicalViewport` | `PORTED_PARTIAL` | rectangles Main/Status/Trade, fond et clear | SDL_GPU | Rectangles mis a l'echelle dans le viewport letterbox; cameras, scene et projection 3D reelles restent a porter. |
-| meshes/scenes/materials (`mesh*`, `NewMesh*`, `Scene.h`, `l_material.h`) | Aucun | `NOT_STARTED` | plateau et pieces effectivement references | HMD/MESHX, textures, SDL_GPU | Faire l'inventaire des services appeles; ne pas porter PC3D entier. |
+| meshes/scenes/materials (`mesh*`, `NewMesh*`, `Scene.h`, `l_material.h`) | transforms CPU seulement; MESHX runtime absent | `NOT_STARTED` | plateau et pieces effectivement references | HMD/MESHX, textures, SDL_GPU | Les matrices du sequenceur ne constituent pas un MESHX. Construire l'objet runtime depuis le HMD decode, puis seulement les render data et les slots; ne pas porter PC3D entier. |
 | decodeur HMD / postload MESHX (`HMDData.h`, `NewMesh.cpp`, `hmdload.*`) | `LegacyMeshData`, `openLegacyMeshData` | `PORTED_PARTIAL` | HMD disque LE, offsets DWORD, primitives, triangles | `DAT_3D`, futur mesh CPU/GPU | Structure bornee, cycles/budgets et triangles categorie 0 avec normales testes. Sections image/TIM, MIMe, animations, autres polygones et conversion en mesh runtime restent absentes. MESHX est le resultat en memoire du postload HMD, pas un second format disque. |
 | vieux DirectDraw/Direct3D drivers (`DDraw*`, `D3DDevice*`) | SDL3 / SDL_GPU | `REPLACED_PORTABLE` | creation device, swapchain, soumission | SDL3 | Les implementations legacy ne seront pas portees; completer seulement les comportements de rendu consommes. |
 
@@ -99,8 +99,15 @@ effectivement present sous `modern/`.
 | Writer DAT portable | `LegacyDataArchiveBuilder` | `PORTED_COMPLETE` | Reconstruit deterministement un conteneur valide depuis des payloads fournis; ne pretend pas reproduire les payloads ou octets retail. |
 | Index logique packed 6 octets | `DataIndexTable`, `lookupIndexedDataId` | `PORTED_COMPLETE` | Tri strict, cles dupliquees rejetees, plusieurs cles vers le meme tag permises, groupe parent reapplique. |
 | Lecteur CNK | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | Lecture hierarchique source-compatible sur fixtures, y compris la semantique des sentinelles nulles selectionnees ou sautees; aucune validation retail faute de CNK. |
-| Parseurs semantiques CNK / sequence | `LegacySequence` | `PORTED_PARTIAL` | En-tete 12 octets, temps signes 24 bits, flags et records grouping/indirect/bitmap/model/sound/mesh decodes sans bitfield ABI. Lecteur inchange en erreur, references relatives au DAT contenant. Video/camera/preloader/tweeker refuses; attributs et sous-chunks non interpretes par ce decodeur. |
-| Etat et timing des sequences | `SequenceClock`, `SequenceChildSchedule` | `PORTED_PARTIAL` | Etats CPU proprietaires, choix des enfants dans l'ordre disque, leases des CNK directs/indirects, cadence, pause/reprise et actions de fin testes. Pas de creation/destruction effective d'arbre, de commandes chainees, d'animation ni de rendu. |
+| Parseurs semantiques CNK / sequence | `LegacySequence` | `PORTED_PARTIAL` | En-tete 12 octets, temps signes 24 bits, flags et records grouping/indirect/bitmap/model/sound/mesh/tweeker decodes champ par champ, sans bitfield ABI. Attributs prives dimensionality, offsets, matrices et OSRT 2D/3D bornes et immutables. Video/camera/preloader et attributs encore inconnus sont refuses par l'execution. |
+| `SequenceClock` | `SequenceClock` | `PORTED_COMPLETE` | Cadence, premiere evaluation, drop/catch-up enfant, pause/reprise, stop, seek, hold cadence 255 et boucle naturelle a zero sont testes pour les types actuellement executables. |
+| `SequenceChildSchedule` | `SequenceChildSchedule` | `PORTED_COMPLETE` | Selection ouverte a gauche/fermee a droite, ordre disque, refs DATA relatives et rewind; description partagee immutable et curseur runtime independant. |
+| Arbre runtime et execution | `SequenceProgram`, `SequenceRuntime` | `PORTED_PARTIAL` | DAG descriptif borne puis foret mutable a ownership unique; creation/mise a jour/destruction recursives, enfants imbriques, grands sauts, equal-priority, stop/hold/loop/seek, cycles/profondeur/budgets et snapshots remplaces testes. Complet pour grouping/indirect/tweeker; autres objets de sequence refuses tant que leur lifecycle n'est pas porte. |
+| Commandes `L_Seqncr` | `SequenceCommandQueue` | `PORTED_PARTIAL` | FIFO proprietaire 500 commandes, nesting Collect/Execute, Start, Stop et SetEndingAction, priorite 16 bits, doublons et recherche top-level/whole-tree portes. Les callers Monopoly actifs ne donnent aucun chain ID; chains et commandes Move*/GetInfo/ForceRedraw restent a porter selon leurs effets reels. |
+| Transformations / tweekers | `SequenceTransforms`, etat `SequenceRuntime` | `PORTED_PARTIAL` | Matrices row-vector 2D/3D, offset/matrix/OSRT, ordre origin-scale-roll-pitch-yaw-offset, composition parentale, identity/constant/linear tweekers et ordre tweeker-avant-position portes. Les tweekers son, mesh choice, camera/FOV, visibility et callbacks restent absents. |
+| MESHX runtime | aucun objet moderne | `NOT_STARTED` | MESHX demeure le resultat memoire du postload HMD; aucun format disque fictif n'est defini. |
+| Render data de sequence | aucun | `NOT_STARTED` | Aucun objet geometrie/materiau/texture n'est encore publie par `SequenceRuntime`. |
+| Raccordement sequence -> render slots | aucun | `NOT_STARTED` | Les `RenderSlots` existants ne recoivent pas encore de creation, transform, visibilite ou destruction issue du sequenceur. |
 | LANG core | `LanguageCatalog`, `LanguageService`, `ResourceRuntime` | `PORTED_PARTIAL` | Contrats existants conserves et raccordes au startup via les memes archives que DATA; index valide avant publication. Adaptateurs de rendu et migration des callers UI non raccordes. |
 | Chaines/audio/dialogues LANG retail | aucun payload | `BLOCKED_MISSING_DATA` | Les neuf fichiers texte bruts sont vides et les `dat_ln/lm/lkNN.dat` sont absents; aucune chaine ne sera inventee. |
 | Catalogue `TexInfo` | `TextureCatalog` | `PORTED_COMPLETE` | Huit atlas, recettes USA/Europe, overlays, provenances et tags HMD portes et testes; meshes/resolutions invalides rejetes par erreurs typees. |
@@ -111,6 +118,16 @@ effectivement present sous `modern/`.
 | Banques DAT retail exactes | absentes | `BLOCKED_MISSING_DATA` | `dat_main`, `dat_pat`, `dat_bord[e]`, `dat_brd2`, `dat_3d`, `dat_ln/lm/lkNN` introuvables dans l'arbre, `Source.zip` et l'ISO inspectes. |
 | `2DVIEW01..39` externes | noms portes, fichiers absents | `BLOCKED_MISSING_DATA` | Ne pas confondre ces vues custom avec les vues 2D standard stockees en DAT/TAB. |
 | HMD retail / objets MESHX | headers/tags seulement, fixtures HMD synthetiques | `BLOCKED_MISSING_DATA` | Le decodeur HMD partiel est teste depuis le contrat source, mais aucun mesh retail ne permet sa validation; aucun faux payload MESHX disque n'est cree. |
+
+### Dettes de fidelite connues, non bloquantes pour le sequenceur
+
+- Le decodeur LANG moderne valide les paires de substituts et le contenu apres
+  NUL plus strictement que les manipulations historiques de code units UTF-16
+  Windows. Cette difference reste a arbitrer avant de declarer LANG complet.
+- `lookupIndexedDataId` represente l'absence par une erreur typee; le helper
+  generique ne reproduit donc pas encore exactement le retour sentinelle
+  historique `LED_EI == 0` de tous les callers. Ne pas masquer cette difference
+  en `PORTED_COMPLETE` lorsqu'un caller dependra de la sentinelle.
 
 `MonopolyManifestTool <output.tsv> <header-DMake>...` exporte uniquement les
 informations effectivement reconstructibles : banque, tag decimal, type et
@@ -169,41 +186,74 @@ constructeur de mesh devra aussi respecter le parcours des primitives de fin
 de chaine vers le debut de `NewMesh::ProcessHMDPrimitive`, et non confondre
 l'ordre d'inspection avec l'ordre de construction.
 
-`LegacySequence` decode six parties fixes, pas des animations jouables.
-`SequenceClock` consomme ces records et possede l'etat temporel des types
-grouping/indirect/bitmap/model/mesh non defilants. Le contrat est extrait de
+`LegacySequence` decode maintenant les sept parties fixes effectivement utiles
+a cette etape, dont le record tweeker de 13 octets. Il decode aussi les attributs
+prives dimensionality, offset, matrix et OSRT 2D/3D sans copier dans une
+structure native. Les octets/records et attributs restent immutables; ils ne
+sont jamais utilises comme etat runtime mutable.
+
+`SequenceClock` possede l'etat temporel. Le contrat est extrait de
 `L_Seqncr.cpp:3756-3835,6443-6703,7326-7337` : premiere mise a jour immediate,
 rattrapage initial des enfants seulement si dropFrames, cadence, pause/reprise,
 stop/suicide, maintien a la fin avec cadence 255 activee dans `C_ArtLib.h`,
-boucle naturelle a zero (pas modulo du depassement). EndTime zero conserve le
-sentinel historique 1234567890. Les commandes de remplacement non nulles de
-cadence/action sont appliquees avant validation. Une cadence finale nulle,
-une action inconnue, une duree negative ou un depassement arithmetique produit
-une erreur explicite. Le decoder, lui, conserve les champs disque bruts.
-Les horloges son/video et la visibilite des mondes defilants ne sont pas
-simulees. Un recul du temps parent exige le futur rembobinage de l'arbre.
+boucle naturelle a zero (pas modulo du depassement), et seek explicite. EndTime
+zero conserve la sentinelle historique 1234567890. Les commandes de remplacement
+non nulles de cadence/action sont appliquees avant validation. Une cadence finale
+nulle, une action inconnue, une duree negative ou un depassement arithmetique
+produit une erreur explicite. Le decoder conserve les champs disque bruts.
+Les horloges son/video et la visibilite des mondes defilants ne sont pas simulees.
 
 `SequenceChildSchedule` porte la selection de `AddNewlyBornChildren`
 (`L_Seqncr.cpp:5230-5330`) : intervalle ouvert a gauche, ferme a droite,
 premier enfant futur bloquant le scan, enfants Stop deja termines ignores.
-L'ordre disque n'est jamais trie. Le loader DATA respecte les bornes du parent
-direct et le remplacement par une liste CNK indirecte; le tag relatif zero
-est remappe, tandis que l'ID absolu zero signifie aucun enfant. La lease permet
-de relire les records/attributs apres fermeture de la banque. Les attributs
-non-sequences ne participent pas au calendrier mais restent dans les octets
-proprietaires; cela ne porte pas leur comportement. Un type de sequence non
-decode est refuse, pas saute silencieusement. Le chargement ne developpe
-qu'un niveau, sans expansion recursive des references indirectes.
+L'ordre disque n'est jamais trie dans le calendrier. Le loader DATA respecte les
+bornes du parent direct et le remplacement par une liste CNK indirecte; le tag
+relatif zero est remappe, tandis que l'ID absolu zero signifie aucun enfant. La
+description partagee conserve sa lease et chaque runtime possede son propre
+curseur. Un type non decode est refuse, pas saute silencieusement.
 Une reference indirecte vers le meme item est refusee : le source conserve
 dans ce cas les bornes du parent puis echoue en tentant de revenir a zero
 (`L_Seqncr.cpp:5269-5279`, `L_Chunk.cpp:2497-2511`). Le port preserve ce refus;
 il n'invente pas une lecture recursive pour cette donnee invalide.
 
-Les tests raccordent record -> horloge -> selection -> rewind/reselection.
-Le caller doit encore instancier/detruire les enfants, appliquer les
-transformations/tweekers et transmettre leurs objets aux render slots.
-Cette separation ne constitue donc pas encore un executeur complet integre
-au cycle du jeu, ni une preuve d'animation visible.
+`SequenceProgram` construit ensuite un DAG descriptif immutable, avec budgets
+de references/descriptions et profondeur configurable plafonnee a 128. Les
+cycles indirects sont refuses par couple `(DataId, offset)`; les sous-descriptions
+partagees ne sont pas amplifiees exponentiellement. Une construction depuis
+`ResourceSnapshot` garde toutes les archives en vie apres remplacement du
+snapshot publie. Ce chargement eager et borne remplace volontairement le parcours
+paresseux par pointeurs du code Win32 afin que toute dependance invalide echoue
+avant publication.
+
+`SequenceRuntime` instancie une foret mutable a ownership unique sous la racine
+historique implicite. Les enfants naissent a leur tick, sont mis a jour
+recursivement et detruits enfant-avant-parent. Les loops detruisent les anciennes
+instances, rembobinent le calendrier et creent de nouveaux IDs; stop, fin
+naturelle, hold, pause/reprise et seek reconstruisent ou conservent les enfants
+selon le contrat de l'horloge. Les siblings sont ordonnes par priorite croissante,
+avec insertion avant l'ancien en cas d'egalite comme `InsertRuntimeChild`.
+Aucun handle n'est reutilise et une erreur de construction/mise a jour vide
+explicitement la foret plutot que publier un etat partiel trompeur.
+
+`SequenceCommandQueue` reproduit la FIFO owner-thread de 500 entrees et le niveau
+Collect/Execute, y compris un Execute surnumeraire negatif. Start cree toujours
+une nouvelle instance; Stop et SetEndingAction ciblent le couple DataId/priorite
+16 bits, top-level ou arbre entier, avec offset de donnees nul. L'audit des
+callers Monopoly ne montre aucun chain ID actif; les listes waiting/dechained ne
+sont donc pas inventees. Les commandes Move*, les labels/actions de fin et les
+callbacks restent a porter.
+
+`SequenceTransforms` porte les conventions row-vector 2D/3D de `L_Matrix.cpp`,
+les six attributs offset/matrix/OSRT et la composition local puis parent. Les
+tweekers identity, constant et linear appliquent leur transformation avant le
+calcul de position du parent (`L_Seqncr.cpp:5484-5672,5789-6275`); un enfant
+normal voit cette world matrix dans le meme cycle. Les autres effets tweeker et
+les objets bitmap/model/mesh/sound ne sont pas simules. Les IDs d'interpolation
+non implementes (a partir de `INTERPOLATION_MAX`) sont refuses explicitement au
+lieu de tomber dans le chemin constant permissif d'un build release historique.
+Ce noyau reste donc un
+executeur CPU partiel, sans render data, sans raccordement aux render slots et
+sans preuve d'animation visible.
 
 ### Derniere validation locale
 
@@ -215,11 +265,14 @@ CMake **4.3.1-msvc1** / Ninja, SDL **3.4.14** et zlib **1.3.2** :
   `all` dans **le meme** `modern/build-phase-c`, dependances preservees ;
 - configurations et builds `all` incrementaux reussis pour les ajouts suivants,
   y compris `MonopolyModern`, `MonopolyManifestTool`, `MonopolyDataCore` ;
-- tests cibles apres chaque correction; suite complete finale : **24/24 suites
+- tests cibles apres chaque correction; suite complete finale : **27/27 suites
   passees**, zero echec,
-  dont les **16 initiales conservees** et huit ajouts : ResourcePaths,
+  dont les **16 initiales conservees** et onze ajouts : ResourcePaths,
   ResourceRuntime, ResourceLifecycle, ResourceConfiguration, LegacySequence,
-  LegacyMeshData, SequenceClock, SequenceChildSchedule ;
+  LegacyMeshData, SequenceClock, SequenceChildSchedule, SequenceRuntime,
+  SequenceCommands et SequenceTransforms ;
+- trace du dernier CTest complet conservee dans le build ignore sous
+  `modern/build-phase-c/ctest-full-20260905-sequence-runtime.log` ;
 - deux branches ResourcePaths dependent de l'hote : collision de casse
   marquee `[SKIP]` sur ce filesystem Windows insensible a la casse, et boucle
   de symlink marquee `[SKIP]` faute de droits de creation. Le reste de la suite
@@ -230,7 +283,10 @@ et les expirations de timers 0/1 restant dans la file UI apres arret. Leurs
 tests conservent aussi les evenements clavier et les autres timers. Les tests
 verrouillent egalement le refus historique d'une reference indirecte vers son
 propre item : le test a echoue sur le premier raccordement, puis passe apres
-correction. Les tests
+correction. Pour ce lot, une fixture tweeker supposait initialement un saut
+drop-frames tout en encodant une cadence bornee : l'attente a ete corrigee en
+encodant explicitement le flag historique, sans modifier le calcul runtime.
+Les tests
 LANG/DATA couvrent les huit banques manquantes ou tronquees, l'index invalide,
 le rollback et les lectures non cachees apres arret/remplacement. La
 configuration des chemins est egalement testee contre SDL reel, sans GPU.
@@ -244,11 +300,10 @@ retail absents, ni parcours interactif, ni rendu sur GPU reel.
 
 ## Prochaines priorites
 
-1. Construire l'arbre runtime de sequences autour des records, leases,
-   horloges et calendriers existants : naissance/destruction/rebouclage des
-   enfants, limites d'expansion indirecte, commandes, transformations et
-   tweekers. Ne pas creer un second moteur de temps ni pretendre executer les
-   types encore refuses. Raccorder ensuite ce noyau au cycle du jeu.
+1. Porter le prochain ensemble de commandes de transformation reellement
+   consomme : `MoveTheWorks`, `MoveXY` et `MoveRySTxz`, avec ciblage et mutations
+   du transform runtime actuel, puis verrouiller visibilite/ForceRedraw si leurs
+   effets sont necessaires a la publication des render data.
 2. Completer les donnees HMD consommees par `NewMesh` (image/TIM et MIMe), puis
    les objets mesh CPU et les transformations/animations determinees par le
    source. Ne pas creer de format MESHX disque ni de geometrie retail fictive.

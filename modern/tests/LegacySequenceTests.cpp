@@ -120,10 +120,14 @@ namespace
 
     void testFixedRecords()
     {
-        for (const auto id : std::array<std::uint8_t, 6>{ 1, 2, 3, 4, 5, 9 })
+        for (const auto id : std::array<std::uint8_t, 7>{ 1, 2, 3, 4, 5, 9, 10 })
         {
             DataBytes payload = CommonHeader;
-            if (id != 1)
+            if (id == 10)
+            {
+                payload.push_back(std::byte{2});
+            }
+            else if (id != 1)
             {
                 appendU32(payload, 0x1234'BCDEU);
             }
@@ -176,6 +180,10 @@ namespace
                 expect(std::get<SequenceMeshData>(record->data).modelDataId ==
                     0x1234'BCDEU, "MESHX sequence retains its model DataID");
                 break;
+            case 10:
+                expect(std::get<SequenceTweekerData>(record->data).interpolationType == 2,
+                    "tweeker interpolation ID is decoded without executing it");
+                break;
             }
 
             for (std::size_t length = 0; length < payload.size(); ++length)
@@ -222,7 +230,7 @@ namespace
             reader.currentOffset() == position && reader.level() == 1,
             "end-of-parent error is preserved without changing traversal state");
 
-        for (const auto id : std::array<std::uint8_t, 6>{ 6, 7, 8, 10, 20, 129 })
+        for (const auto id : std::array<std::uint8_t, 5>{ 6, 7, 8, 20, 129 })
         {
             const auto unsupportedBytes = chunk(id, CommonHeader);
             LegacyChunkReader unsupportedReader(unsupportedBytes);

@@ -4,12 +4,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <expected>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace monopoly::data
 {
@@ -20,6 +22,9 @@ namespace monopoly::data
         ChunkFailure,
         UnsupportedRecord,
         FixedRecordTruncated,
+        AttributeTruncated,
+        InvalidDimensionality,
+        AttributeLimitExceeded,
         RecordLimitExceeded,
         InvalidClockRange
     };
@@ -70,6 +75,7 @@ namespace monopoly::data
     };
     struct SequenceSoundData { DataId soundDataId{}; };
     struct SequenceMeshData { DataId modelDataId{}; };
+    struct SequenceTweekerData { std::uint8_t interpolationType{}; };
 
     using LegacySequenceData = std::variant<
         SequenceGroupingData,
@@ -77,7 +83,8 @@ namespace monopoly::data
         SequenceBitmapData,
         SequenceModelData,
         SequenceSoundData,
-        SequenceMeshData>;
+        SequenceMeshData,
+        SequenceTweekerData>;
 
     struct LegacySequenceRecord
     {
@@ -87,8 +94,59 @@ namespace monopoly::data
         std::size_t subchunksOffset{};
     };
 
+    // Immutable values of the private positioning subchunks. These preserve
+    // the packed Win32 representation field-by-field; matrix composition is
+    // a runtime responsibility in SequenceTransforms.
+    struct SequenceDimensionalityAttribute { ChunkInfo chunk; std::uint8_t value{}; };
+    struct Sequence2DOffsetAttribute
+    { ChunkInfo chunk; std::int32_t x{}; std::int32_t y{}; };
+    struct Sequence2DMatrixAttribute
+    { ChunkInfo chunk; std::array<float, 9> values{}; };
+    struct Sequence2DOriginScaleRotateOffsetAttribute
+    {
+        ChunkInfo chunk;
+        std::int32_t offsetX{}, offsetY{}, originX{}, originY{};
+        float scaleX{}, scaleY{}, rotate{};
+    };
+    struct Sequence3DOffsetAttribute
+    { ChunkInfo chunk; float x{}, y{}, z{}; };
+    struct Sequence3DMatrixAttribute
+    { ChunkInfo chunk; std::array<float, 16> values{}; };
+    struct Sequence3DOriginScaleRotateOffsetAttribute
+    {
+        ChunkInfo chunk;
+        float offsetX{}, offsetY{}, offsetZ{};
+        float originX{}, originY{}, originZ{};
+        float roll{}, pitch{}, yaw{};
+        float scaleX{}, scaleY{}, scaleZ{};
+    };
+    struct SequenceUnsupportedAttribute { ChunkInfo chunk; };
+
+    using LegacySequenceAttribute = std::variant<
+        SequenceDimensionalityAttribute,
+        Sequence2DOffsetAttribute,
+        Sequence2DMatrixAttribute,
+        Sequence2DOriginScaleRotateOffsetAttribute,
+        Sequence3DOffsetAttribute,
+        Sequence3DMatrixAttribute,
+        Sequence3DOriginScaleRotateOffsetAttribute,
+        SequenceUnsupportedAttribute>;
+
+    struct LegacySequenceAttributes
+    {
+        std::vector<LegacySequenceAttribute> values;
+    };
+
+    // Reads only private attributes preceding the first child sequence. The
+    // supplied reader is not mutated. Unknown attributes remain explicit so
+    // an execution layer cannot silently claim their effects are supported.
+    [[nodiscard]] std::expected<LegacySequenceAttributes, SequenceError>
+    readLegacySequenceAttributes(const LegacyChunkReader& reader,
+        std::size_t maximumAttributes = 256);
+
     // Descend au prochain chunk et decode uniquement sa partie fixe prouvee :
-    // grouping(1), indirect(2), bitmap(3), model(4), sound(5), mesh(9).
+    // grouping(1), indirect(2), bitmap(3), model(4), sound(5), mesh(9),
+    // tweeker(10).
     // En succes, le reader reste dans ce chunk au debut des sous-chunks.
     // En erreur, position/niveau/ownership du reader sont inchanges.
     // Le resultat contient des valeurs, sans vue empruntee. La possession du
