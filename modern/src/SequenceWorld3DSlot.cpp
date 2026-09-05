@@ -8,9 +8,11 @@ namespace monopoly::engine
     void SequenceWorld3DSlot::refreshBounds(SequenceWorld3DObject& object) noexcept
     {
         object.screenBounds.reset();
-        if (!view_ || !object.asset || !object.asset->renderData) return;
+        if (!view_ || !object.asset) return;
+        const auto renderData = object.renderData ? object.renderData : object.asset->renderData;
+        if (!renderData) return;
         object.screenBounds = world3DMeshScreenRect(
-            object.asset->renderData->bounds, object.worldTransform, *view_);
+            renderData->bounds, object.worldTransform, *view_);
     }
 
     void SequenceWorld3DSlot::refreshAllBounds() noexcept
@@ -54,7 +56,7 @@ namespace monopoly::engine
                 auto [inserted, created] = next.emplace(item.node,
                     SequenceWorld3DObject{item.node, item.contentsDataId,
                         item.priority, item.clock, item.worldTransform,
-                        item.asset, std::nullopt});
+                        item.asset, std::nullopt, item.renderData});
                 (void)created;
                 refreshBounds(inserted->second);
                 ++stats.started;
@@ -64,12 +66,14 @@ namespace monopoly::engine
             const bool moved =
                 found->second.contentsDataId != item.contentsDataId ||
                 found->second.asset != item.asset ||
+                found->second.renderData != item.renderData ||
                 found->second.worldTransform.values != item.worldTransform.values;
             found->second.contentsDataId = item.contentsDataId;
             found->second.priority = item.priority;
             found->second.clock = item.clock;
             found->second.worldTransform = item.worldTransform;
             found->second.asset = item.asset;
+            found->second.renderData = item.renderData;
             if (moved)
             {
                 refreshBounds(found->second);

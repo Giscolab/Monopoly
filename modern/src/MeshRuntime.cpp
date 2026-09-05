@@ -241,6 +241,9 @@ namespace monopoly::data
                                     "MESHX vertex budget or 32-bit index range exceeded"));
                             index = result.vertices_.size();
                             result.vertices_.push_back(vertex);
+                            result.sourceIndices_.push_back({
+                                triangle->vertexIndices[vertexIndex],
+                                triangle->normalIndices[vertexIndex]});
                         }
                         else index = static_cast<std::size_t>(
                             std::distance(result.vertices_.begin(), found));
@@ -250,6 +253,18 @@ namespace monopoly::data
                 }
             }
         }
+
+        auto mime = result.source_->mimePoses();
+        if (!mime)
+        {
+            auto failure = runtimeError(MeshRuntimeErrorCode::MimeDecodeFailed,
+                "HMD MIMe diff blocks could not be decoded");
+            failure.sourceError = mime.error();
+            failure.skippedUnsupportedSections = skippedUnsupported;
+            failure.skippedTexturedTriangles = skippedTextured;
+            return std::unexpected(std::move(failure));
+        }
+        result.mimePoses_ = std::move(*mime);
 
         if (result.vertices_.empty())
         {
@@ -282,11 +297,150 @@ namespace monopoly::data
     const MeshBounds& MeshXRuntime::bounds() const noexcept
     { return bounds_; }
 
+    std::size_t MeshXRuntime::poseCount() const noexcept
+    { return mimePoses_.size() + 1U; }
+
+    std::expected<MeshPoseData, MeshRuntimeError> MeshXRuntime::evaluatePose(
+        std::int32_t poseA, std::int32_t poseB, float proportion) const
+    {
+        const auto validPose = [&](std::int32_t pose)
+        {
+            return pose >= 0 &&
+                static_cast<std::size_t>(pose) <= mimePoses_.size();
+        };
+        if (!validPose(poseA) || !validPose(poseB))
+            return std::unexpected(runtimeError(MeshRuntimeErrorCode::InvalidPose,
+                "MESHX pose index is outside base-plus-MIMe pose range"));
+        if (vertices_.size() != sourceIndices_.size())
+            return std::unexpected(runtimeError(MeshRuntimeErrorCode::InvalidPose,
+                "MESHX source-index map no longer matches base vertices"));
+
+        auto applyPose = [&](std::size_t vertexIndex, std::int32_t pose)
+        {
+            auto value = vertices_[vertexIndex];
+            if (pose == 0)
+                return value;
+            const auto& mime = mimePoses_[static_cast<std::size_t>(pose - 1)];
+            const auto sourceVertex = sourceIndices_[vertexIndex][0];
+            const auto sourceNormal = sourceIndices_[vertexIndex][1];
+            if (mime.vertex && sourceVertex >= mime.vertex->startIndex)
+            {
+                const auto diffIndex = static_cast<std::size_t>(
+                    sourceVertex - mime.vertex->startIndex);
+                if (diffIndex < mime.vertex->diffs.size())
+                {
+                    const auto& diff = mime.vertex->diffs[diffIndex];
+                    value.position[0] += static_cast<float>(diff.x);
+                    value.position[1] -= static_cast<float>(diff.y);
+                    value.position[2] += static_cast<float>(diff.z);
+                }
+            }
+            if (mime.normal && sourceNormal >= mime.normal->startIndex)
+            {
+                const auto diffIndex = static_cast<std::size_t>(
+                    sourceNormal - mime.normal->startIndex);
+                if (diffIndex < mime.normal->diffs.size())
+                {
+                    // hmdload.cpp::SetVertexAndSiblings adds normal MIMe
+                    // SVECTOR values directly after the base /4096 conversion.
+                    const auto& diff = mime.normal->diffs[diffIndex];
+                    value.normal[0] += static_cast<float>(diff.x);
+                    value.normal[1] -= static_cast<float>(diff.y);
+                    value.normal[2] += static_cast<float>(diff.z);
+                }
+            }
+            return value;
+        };
+
+        MeshPoseData result;
+        result.vertices.reserve(vertices_.size());
+        MeshBounds boundsA{};
+        MeshBounds boundsB{};
+        bool first = true;
+        for (std::size_t index = 0; index < vertices_.size(); ++index)
+        {
+            const auto a = applyPose(index, poseA);
+            const auto b = applyPose(index, poseB);
+            auto value = a;
+            if (poseA != poseB && proportion != 0.0F)
+            {
+                if (proportion == 1.0F)
+                    value = b;
+                else
+                {
+                    for (std::size_t axis = 0; axis < 3; ++axis)
+                    {
+                        value.position[axis] = a.position[axis] +
+                            (b.position[axis] - a.position[axis]) * proportion;
+                        value.normal[axis] = a.normal[axis] +
+                            (b.normal[axis] - a.normal[axis]) * proportion;
+                    }
+                    // Legacy HMD_interpolate copies UVs from pose A.
+                    value.uv = a.uv;
+                }
+            }
+            result.vertices.push_back(value);
+
+            if (first)
+            {
+                boundsA.minimum = boundsA.maximum = a.position;
+                boundsB.minimum = boundsB.maximum = b.position;
+                first = false;
+            }
+            else
+            {
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                {
+                    boundsA.minimum[axis] = std::min(boundsA.minimum[axis], a.position[axis]);
+                    boundsA.maximum[axis] = std::max(boundsA.maximum[axis], a.position[axis]);
+                    boundsB.minimum[axis] = std::min(boundsB.minimum[axis], b.position[axis]);
+                    boundsB.maximum[axis] = std::max(boundsB.maximum[axis], b.position[axis]);
+                }
+            }
+        }
+
+        if (poseA == poseB || proportion == 0.0F)
+            result.bounds = boundsA;
+        else if (proportion == 1.0F)
+            result.bounds = boundsB;
+        else
+        {
+            for (std::size_t axis = 0; axis < 3; ++axis)
+            {
+                result.bounds.minimum[axis] = boundsA.minimum[axis] +
+                    (boundsB.minimum[axis] - boundsA.minimum[axis]) * proportion;
+                result.bounds.maximum[axis] = boundsA.maximum[axis] +
+                    (boundsB.maximum[axis] - boundsA.maximum[axis]) * proportion;
+            }
+        }
+        return result;
+    }
+
     MeshRenderData makeMeshRenderData(const MeshXRuntime& mesh)
     {
         MeshRenderData result;
         result.vertices = mesh.vertices();
         result.bounds = mesh.bounds();
+        for (const auto& group : mesh.groups())
+        {
+            const auto first = result.indices.size();
+            result.indices.insert(result.indices.end(), group.indices.begin(), group.indices.end());
+            result.batches.push_back({first, group.indices.size(),
+                group.material, group.texture});
+        }
+        return result;
+    }
+
+    std::expected<MeshRenderData, MeshRuntimeError> makeMeshRenderData(
+        const MeshXRuntime& mesh, std::int32_t poseA, std::int32_t poseB,
+        float proportion)
+    {
+        auto evaluated = mesh.evaluatePose(poseA, poseB, proportion);
+        if (!evaluated)
+            return std::unexpected(evaluated.error());
+        MeshRenderData result;
+        result.vertices = std::move(evaluated->vertices);
+        result.bounds = evaluated->bounds;
         for (const auto& group : mesh.groups())
         {
             const auto first = result.indices.size();

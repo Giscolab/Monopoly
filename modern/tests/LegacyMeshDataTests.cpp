@@ -89,6 +89,60 @@ namespace
         return data;
     }
 
+    DataBytes mimeDiffs()
+    {
+        // Active Monopoly path is hmdload.cpp (USE_OLD_FRAME): pose 0 is
+        // the base mesh; appended vertex/normal diff blocks form poses 1..N.
+        DataBytes data(42U * 4U);
+        setWord(data, 0, 0x01020304);
+        setWord(data, 1, 0);
+        setWord(data, 2, 5);  // primitive header table
+        setWord(data, 3, 1);  // one block
+        setWord(data, 4, 11); // primitive root
+        setWord(data, 5, 1);  // one primitive header
+        setWord(data, 6, 4);  // polygon/vertex/normal/MIMe diff base
+        setWord(data, 7, 0);
+        setWord(data, 8, 0);
+        setWord(data, 9, 0);
+        setWord(data, 10, 0x80000014); // diff-block base = word 20
+
+        setWord(data, 11, 0xFFFFFFFF);
+        setWord(data, 12, 6);          // header descriptor at word 6
+        setWord(data, 13, 0x80000002); // two sections, process required
+        setWord(data, 14, 0x04010020); // GsVtxMIMe
+        setWord(data, 15, 0x80010002); // one item, three section words
+        setWord(data, 16, 0);          // current vertex block at base + 0
+        setWord(data, 17, 0x04010021); // GsNrmMIMe
+        setWord(data, 18, 0x80010002);
+        setWord(data, 19, 4);          // current normal block at base + 4
+
+        setWord(data, 20, 0x00020000); // two vertex diff blocks
+        setWord(data, 21, 0);
+        setWord(data, 22, 8);          // vertex pose 1 at word 28
+        setWord(data, 23, 14);         // vertex pose 2 at word 34
+        setWord(data, 24, 0x00000001); // one normal diff block
+        setWord(data, 25, 0);
+        setWord(data, 26, 18);         // normal pose 1 at word 38
+
+        setWord(data, 28, 1);          // vertex pose 1 starts at HMD vertex 1
+        setWord(data, 29, 0x00020000); // two SVECTOR deltas
+        setWord(data, 30, 0xFFEC000A); // +10, -20
+        setWord(data, 31, 30);         // +30
+        setWord(data, 32, 0x0032FFD8); // -40, +50
+        setWord(data, 33, 0x0000FFC4); // -60
+
+        setWord(data, 34, 0);          // vertex pose 2 starts at vertex 0
+        setWord(data, 35, 0x00010000);
+        setWord(data, 36, 0x00060005); // +5, +6
+        setWord(data, 37, 7);          // +7
+
+        setWord(data, 38, 0);          // normal pose 1 starts at normal 0
+        setWord(data, 39, 0x00010000);
+        setWord(data, 40, 0xF8001000); // +4096, -2048
+        setWord(data, 41, 1024);       // +1024
+        return data;
+    }
+
     auto parse(DataBytes data, MeshParseLimits limits = {})
     {
         return LegacyMeshData::parse(std::make_shared<const DataBytes>(
@@ -221,6 +275,79 @@ namespace
                 std::unexpected(malformedSource.error()));
         expect(hasError(badImages, MeshDataErrorCode::RangeOutOfBounds),
             "GsUIMG1 CLUT index is bounded before palette access");
+    }
+
+    void testMimeDiffBlocks()
+    {
+        auto source = parse(mimeDiffs());
+        expect(source.has_value(), "vertex/normal MIMe synthetic HMD hierarchy parses");
+        if (!source) return;
+        const auto poses = source->mimePoses();
+        expect(poses && poses->size() == 2,
+            "two vertex diff blocks publish two legacy poses after implicit base pose zero");
+        if (!poses || poses->size() != 2) return;
+        expect((*poses)[0].vertex && (*poses)[0].normal &&
+            (*poses)[1].vertex && !(*poses)[1].normal,
+            "vertex and normal MIMe blocks pair by global ordinal without inventing missing data");
+        const auto& firstVertex = *(*poses)[0].vertex;
+        const auto& firstNormal = *(*poses)[0].normal;
+        expect(firstVertex.startIndex == 1 && firstVertex.diffs.size() == 2 &&
+            firstVertex.diffs[0].x == 10 && firstVertex.diffs[0].y == -20 &&
+            firstVertex.diffs[1].x == -40 && firstVertex.diffs[1].z == -60,
+            "vertex MIMe start/count and signed SVECTOR deltas decode exactly");
+        expect(firstNormal.startIndex == 0 && firstNormal.diffs.size() == 1 &&
+            firstNormal.diffs[0].x == 4096 && firstNormal.diffs[0].y == -2048 &&
+            firstNormal.diffs[0].z == 1024,
+            "normal MIMe uses the same bounded diff-block representation");
+        expect((*poses)[1].vertex->startIndex == 0 &&
+            (*poses)[1].vertex->diffs[0].x == 5 &&
+            (*poses)[1].vertex->diffs[0].z == 7,
+            "later vertex-only pose retains append/disk order used by hmdload.cpp");
+
+        auto malformed = mimeDiffs();
+        setWord(malformed, 10, 0xFFFFFFFE);
+        auto malformedSource = parse(std::move(malformed));
+        const auto badBase = malformedSource ? malformedSource->mimePoses() :
+            std::expected<std::vector<HmdMimePose>, MeshDataError>(
+                std::unexpected(malformedSource.error()));
+        expect(hasError(badBase, MeshDataErrorCode::RangeOutOfBounds),
+            "MIMe diff-section base is bounded before relative pointer arithmetic");
+
+        malformed = mimeDiffs();
+        setWord(malformed, 16, 0x7FFFFFFF);
+        malformedSource = parse(std::move(malformed));
+        const auto badCurrent = malformedSource ? malformedSource->mimePoses() :
+            std::expected<std::vector<HmdMimePose>, MeshDataError>(
+                std::unexpected(malformedSource.error()));
+        expect(hasError(badCurrent, MeshDataErrorCode::RangeOutOfBounds),
+            "MIMe current-block relative offset cannot leave the HMD payload");
+
+        malformed = mimeDiffs();
+        setWord(malformed, 22, 0x7FFFFFFF);
+        malformedSource = parse(std::move(malformed));
+        const auto badDiff = malformedSource ? malformedSource->mimePoses() :
+            std::expected<std::vector<HmdMimePose>, MeshDataError>(
+                std::unexpected(malformedSource.error()));
+        expect(hasError(badDiff, MeshDataErrorCode::RangeOutOfBounds),
+            "MIMe individual diff-block offset is checked before dereference");
+
+        malformed = mimeDiffs();
+        setWord(malformed, 29, 0x7FFF0000);
+        malformedSource = parse(std::move(malformed));
+        const auto truncatedVectors = malformedSource ? malformedSource->mimePoses() :
+            std::expected<std::vector<HmdMimePose>, MeshDataError>(
+                std::unexpected(malformedSource.error()));
+        expect(hasError(truncatedVectors, MeshDataErrorCode::RangeOutOfBounds),
+            "MIMe SVECTOR count cannot extend past the owning HMD payload");
+
+        HmdMimeLimits limits;
+        limits.maximumDiffBlocks = 1;
+        expect(hasError(source->mimePoses(limits), MeshDataErrorCode::RecordLimitExceeded),
+            "MIMe diff-block allocation work is bounded");
+        limits = {};
+        limits.maximumVectors = 2;
+        expect(hasError(source->mimePoses(limits), MeshDataErrorCode::RecordLimitExceeded),
+            "aggregate MIMe SVECTOR work is bounded across poses");
     }
 
     void testChainsAndOpaqueSections()
@@ -398,6 +525,7 @@ int main()
     testFlatTriangleAndOwnership();
     testTexturedGouraudAndTiledColours();
     testEmbeddedImageAndClut();
+    testMimeDiffBlocks();
     testChainsAndOpaqueSections();
     testMalformedHierarchy();
     testMalformedTriangleReferences();

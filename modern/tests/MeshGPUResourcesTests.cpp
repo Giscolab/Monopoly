@@ -133,10 +133,51 @@ namespace
             expect(first && again && *first == *again && cache.size() == 1,
                 "repeated resolution reuses the exact GPU cache entry");
 
+            auto animated = std::make_shared<data::MeshRenderData>(*firstAsset->renderData);
+            animated->vertices[0].position[0] = 20.0F;
+            const auto dynamic = cache.resolveDynamicVertices(1001U,
+                firstAsset, animated);
+            expect(dynamic && (*dynamic)->vertexBuffer &&
+                (*dynamic)->sourceRenderData == animated && cache.dynamicSize() == 1,
+                "real SDL_GPU cache uploads evaluated MIMe vertices per sequence instance");
+            const auto dynamicAgain = cache.resolveDynamicVertices(1001U,
+                firstAsset, animated);
+            expect(dynamic && dynamicAgain && *dynamic == *dynamicAgain,
+                "unchanged evaluated render identity reuses the exact dynamic vertex entry");
+
+            auto animatedNext = std::make_shared<data::MeshRenderData>(*firstAsset->renderData);
+            animatedNext->vertices[0].position[0] = 30.0F;
+            const auto cycled = cache.resolveDynamicVertices(1001U,
+                firstAsset, animatedNext);
+            expect(cycled && (*cycled)->sourceRenderData == animatedNext &&
+                cache.dynamicSize() == 1,
+                "same-size animated vertex update cycles the existing per-instance GPU resource");
+
+            auto badTopology = std::make_shared<data::MeshRenderData>(*animatedNext);
+            badTopology->indices = {0U, 2U, 1U};
+            const auto rejectedDynamic = cache.resolveDynamicVertices(1001U,
+                firstAsset, badTopology);
+            expect(!rejectedDynamic && rejectedDynamic.error().code ==
+                engine::MeshGPUErrorCode::DynamicTopologyMismatch &&
+                cache.findDynamic(1001U) &&
+                cache.findDynamic(1001U)->sourceRenderData == animatedNext,
+                "dynamic vertex path rejects topology mutation without replacing the last valid upload");
+
+            const auto secondDynamic = cache.resolveDynamicVertices(1002U,
+                firstAsset, animated);
+            expect(secondDynamic && cache.dynamicSize() == 2,
+                "two sequence nodes sharing one HMD keep independent animated vertex buffers");
+            const std::array<std::uint64_t, 1> activeDynamic{1001U};
+            cache.pruneDynamicVertices(activeDynamic);
+            expect(cache.dynamicSize() == 1 && cache.findDynamic(1001U) &&
+                !cache.findDynamic(1002U),
+                "dynamic GPU resources are pruned by live sequence-node identity");
+
             auto replacement = asset(data::packDataId(8, 6), 10.0F);
             const auto replaced = cache.resolve(replacement);
-            expect(replaced && (*replaced)->source == replacement && cache.size() == 1,
-                "same DataId with different immutable CPU identity replaces GPU buffers transactionally");
+            expect(replaced && (*replaced)->source == replacement && cache.size() == 1 &&
+                cache.dynamicSize() == 0,
+                "same DataId replacement invalidates dependent animated vertex buffers transactionally");
 
             const auto missingPixels = cache.resolve(
                 asset(data::packDataId(8, 7), 1.0F, true, false));

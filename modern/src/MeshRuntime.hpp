@@ -23,6 +23,8 @@ namespace monopoly::data
         SourceLoadFailed,
         TriangleDecodeFailed,
         TextureDecodeFailed,
+        MimeDecodeFailed,
+        InvalidPose,
         InvalidTextureRegion,
         VertexLimitExceeded,
         GroupLimitExceeded,
@@ -101,6 +103,12 @@ namespace monopoly::data
         std::array<float, 3> maximum{};
     };
 
+    struct MeshPoseData
+    {
+        std::vector<MeshVertex> vertices;
+        MeshBounds bounds{};
+    };
+
     class MeshXRuntime final
     {
     public:
@@ -113,12 +121,17 @@ namespace monopoly::data
         [[nodiscard]] const std::vector<MeshVertex>& vertices() const noexcept;
         [[nodiscard]] const std::vector<MeshGroupRuntime>& groups() const noexcept;
         [[nodiscard]] const MeshBounds& bounds() const noexcept;
+        [[nodiscard]] std::size_t poseCount() const noexcept;
+        [[nodiscard]] std::expected<MeshPoseData, MeshRuntimeError> evaluatePose(
+            std::int32_t poseA, std::int32_t poseB, float proportion) const;
 
     private:
         std::shared_ptr<const LegacyMeshData> source_;
         std::vector<MeshVertex> vertices_;
         std::vector<MeshGroupRuntime> groups_;
         MeshBounds bounds_{};
+        std::vector<std::array<std::uint16_t, 2>> sourceIndices_;
+        std::vector<HmdMimePose> mimePoses_;
     };
 
     struct MeshRenderBatch
@@ -138,6 +151,9 @@ namespace monopoly::data
     };
 
     [[nodiscard]] MeshRenderData makeMeshRenderData(const MeshXRuntime& mesh);
+    [[nodiscard]] std::expected<MeshRenderData, MeshRuntimeError> makeMeshRenderData(
+        const MeshXRuntime& mesh, std::int32_t poseA, std::int32_t poseB,
+        float proportion);
 
     struct MeshRuntimeAsset
     {

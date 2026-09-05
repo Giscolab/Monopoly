@@ -289,17 +289,77 @@ namespace
         expect(downloaded, "renderer framebuffer can be read back after GPU execution");
 
         std::size_t redPixels{};
+        std::uint64_t redXSum{};
         if (downloaded)
         {
-            for (std::size_t i = 0; i + 3U < pixels.size(); i += 4U)
-            {
-                if (pixels[i] > 80U && pixels[i + 1U] < 24U &&
-                    pixels[i + 2U] < 24U && pixels[i + 3U] > 200U)
-                    ++redPixels;
-            }
+            for (std::size_t y = 0; y < 64U; ++y)
+                for (std::size_t x = 0; x < 64U; ++x)
+                {
+                    const auto i = (y * 64U + x) * 4U;
+                    if (pixels[i] > 80U && pixels[i + 1U] < 24U &&
+                        pixels[i + 2U] < 24U && pixels[i + 3U] > 200U)
+                    {
+                        ++redPixels;
+                        redXSum += x;
+                    }
+                }
         }
         expect(redPixels > 0U,
             "real SDL_GPU draw changes framebuffer pixels with legacy ambient material color");
+
+        auto animatedSlot = slot;
+        sequence::SequenceMeshRenderItem animatedItem;
+        animatedItem.node = 1;
+        animatedItem.contentsDataId = data::packDataId(8, 1);
+        animatedItem.priority = 7;
+        animatedItem.clock = 13;
+        animatedItem.worldTransform = sequence::identity3D();
+        animatedItem.asset = slot.find(1)->asset;
+        auto animatedRender = std::make_shared<data::MeshRenderData>(
+            *animatedItem.asset->renderData);
+        for (auto& vertex : animatedRender->vertices)
+            vertex.position[0] += 4.0F;
+        animatedRender->bounds.minimum[0] += 4.0F;
+        animatedRender->bounds.maximum[0] += 4.0F;
+        animatedItem.renderData = animatedRender;
+        expect(animatedSlot.sync({animatedItem}).has_value(),
+            "renderer test publishes evaluated MIMe-style vertices for the same sequence node");
+
+        SDL_GPUCommandBuffer* animatedCommand = SDL_AcquireGPUCommandBuffer(device);
+        expect(animatedCommand && clearTarget(animatedCommand, target),
+            "animated renderer frame starts from a known black target");
+        if (animatedCommand)
+        {
+            const auto animatedStats = renderer->render(animatedCommand, target,
+                64U, 64U, viewport, animatedSlot);
+            pixels.fill(0);
+            const bool animatedRead = animatedStats &&
+                downloadTarget(device, animatedCommand, target, pixels);
+            if (!animatedStats) (void)SDL_CancelGPUCommandBuffer(animatedCommand);
+            std::size_t animatedRedPixels{};
+            std::uint64_t animatedRedXSum{};
+            if (animatedRead)
+            {
+                for (std::size_t y = 0; y < 64U; ++y)
+                    for (std::size_t x = 0; x < 64U; ++x)
+                    {
+                        const auto i = (y * 64U + x) * 4U;
+                        if (pixels[i] > 80U && pixels[i + 1U] < 24U &&
+                            pixels[i + 2U] < 24U && pixels[i + 3U] > 200U)
+                        {
+                            ++animatedRedPixels;
+                            animatedRedXSum += x;
+                        }
+                    }
+            }
+            const double baseMeanX = redPixels == 0 ? 0.0 :
+                static_cast<double>(redXSum) / redPixels;
+            const double animatedMeanX = animatedRedPixels == 0 ? 0.0 :
+                static_cast<double>(animatedRedXSum) / animatedRedPixels;
+            expect(animatedRead && animatedRedPixels > 0U &&
+                animatedMeanX > baseMeanX + 5.0,
+                "dynamic per-node vertex upload moves real rasterized pixels while static topology is reused");
+        }
 
         {
             SyntheticSequenceResources fixture;
