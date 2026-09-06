@@ -62,7 +62,7 @@ namespace
             controller.current() == start,
             "waiting preset starts without advancing interpolation in same tick");
 
-        controller.tick(47);
+        (void)controller.tick(47);
         expect(controller.current().location[0] < start.location[0] &&
             controller.current().location[0] > -420.0F,
             "preset interpolates between historical endpoints");
@@ -84,7 +84,7 @@ namespace
         boardcamera::Controller controller;
         controller.reset(0);
         controller.requestPreset(pieces::BoardCameraView::TopDownSoccer, 0);
-        controller.tick(0);
+        (void)controller.tick(0);
         expect(controller.moving(), "first preset move is active");
 
         controller.requestPreset(pieces::BoardCameraView::TopDownStarWars, 10);
@@ -96,7 +96,7 @@ namespace
             controller.endCamera() == boardcamera::preset(
                 pieces::BoardCameraView::ThreeTiles01),
             "replacement waiting camera starts on completion of current move");
-        controller.tick(150);
+        (void)controller.tick(150);
         expect(controller.current() == boardcamera::preset(
                 pieces::BoardCameraView::ThreeTiles01),
             "replacement waiting camera completes normally");
@@ -107,8 +107,8 @@ namespace
         boardcamera::Controller controller;
         controller.reset(0);
         controller.requestPreset(pieces::BoardCameraView::FifteenTiles12, 0);
-        controller.tick(0);
-        controller.tick(10);
+        (void)controller.tick(0);
+        (void)controller.tick(10);
         const auto interpolated = controller.current();
         const auto base = controller.endCamera();
 
@@ -137,8 +137,8 @@ namespace
         high.reset(0);
         low.requestDiceMove(0, 0);
         high.requestDiceMove(0, 13);
-        low.tick(0);
-        high.tick(0);
+        (void)low.tick(0);
+        (void)high.tick(0);
         expect(low.endCamera().location != high.endCamera().location,
             "rand modulo fourteen changes dice camera destination");
         expect(high.endCamera().location[1] < low.endCamera().location[1],

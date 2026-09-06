@@ -1147,6 +1147,7 @@ if(BUILD_TESTING)
         MonopolyDisplayContractTests
         tests/DisplayContractTests.cpp
         src/Display.cpp
+        src/BoardCameraController.cpp
     )
 
     target_include_directories(

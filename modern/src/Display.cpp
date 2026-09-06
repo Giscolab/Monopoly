@@ -1,4 +1,5 @@
 #include "Display.hpp"
+#include "BoardCameraController.hpp"
 
 #include "PlayerSelection.hpp"
 #include "IBar.hpp"
@@ -8,6 +9,8 @@ namespace monopoly::display
     namespace
     {
         State globalState;
+        boardcamera::Controller boardCameraController;
+        std::uint64_t boardCameraTick{};
 
 
         void applyDesiredBackdrop()
@@ -111,6 +114,29 @@ namespace monopoly::display
             globalState.current2DView =
                 globalState.desired2DView;
         }
+        void applyDesiredBoardCamera()
+        {
+            const bool shouldBoard3DBeOn = isBoardVisible(globalState.desired2DView);
+            const bool boardModeChanged = shouldBoard3DBeOn != globalState.board3DOn;
+            const bool cameraChanged = !globalState.currentBoardCamera ||
+                *globalState.currentBoardCamera != globalState.desiredBoardCamera;
+            const bool revalidate = globalState.desiredCameraInvalidatedLock &&
+                globalState.desiredCameraClearToValidate;
+            if (cameraChanged || boardModeChanged || revalidate)
+            {
+                const bool forceInterrupt = !globalState.board3DOn;
+                boardCameraController.requestPreset(
+                    globalState.desiredBoardCamera, boardCameraTick, forceInterrupt);
+                globalState.currentBoardCamera = globalState.desiredBoardCamera;
+                if (revalidate)
+                {
+                    globalState.desiredCameraInvalidatedLock = false;
+                    globalState.desiredCameraClearToValidate = false;
+                }
+            }
+            globalState.board3DOn = shouldBoard3DBeOn;
+            globalState.worldCamera = boardCameraController.current();
+        }
     }
 
     bool initialize()
@@ -124,6 +150,10 @@ namespace monopoly::display
 
         globalState.viewportInUse =
             Viewport3D::Off;
+
+        boardCameraTick = 0;
+        boardCameraController.reset(0);
+        globalState.worldCamera = boardCameraController.current();
 
         // DISPLAY_UDIBAR_Initialize();
         if (!ibar::initialize())
@@ -185,6 +215,8 @@ namespace monopoly::display
         playerselection::shutdown();
 
 
+        boardCameraController.reset(0);
+        boardCameraTick = 0;
         globalState = {};
     }
 
@@ -206,6 +238,36 @@ namespace monopoly::display
             screen;
     }
 
+    void beginDiceCameraOverride(
+        std::optional<std::uint8_t> randomFourteen)
+    {
+        globalState.diceCameraControlActive = true;
+        globalState.desiredCameraInvalidatedLock = true;
+        globalState.desiredCameraClearToValidate = false;
+        if (randomFourteen && globalState.board3DOn)
+            boardCameraController.requestDiceMove(boardCameraTick, *randomFourteen);
+    }
+
+    void releaseDiceCameraOverride()
+    {
+        globalState.diceCameraControlActive = false;
+        globalState.desiredCameraClearToValidate = true;
+    }
+
+    void endDiceCameraOverrideEarly()
+    {
+        // UDPieces.cpp exits the dice lock early when IBar disappears
+        // without setting desiredCameraClearToValidate.
+        globalState.diceCameraControlActive = false;
+    }
+
+    void cancelDiceCameraOverride()
+    {
+        if (globalState.desiredCameraInvalidatedLock)
+            globalState.desiredCameraClearToValidate = true;
+        globalState.diceCameraControlActive = false;
+    }
+
     void showAll2()
     {
         // ====================================================
@@ -223,6 +285,7 @@ namespace monopoly::display
 
         // DISPLAY_UDBOARD_Show().
         applyDesiredBackdrop();
+        applyDesiredBoardCamera();
 
 
         // DISPLAY_UDIBAR_Show().
@@ -251,6 +314,10 @@ namespace monopoly::display
         // aucune logique temporelle du Board n'est encore
         // nécessaire dans cette tranche.
 
+
+        boardCameraTick += numberOfTicks;
+        const auto cameraUpdate = boardCameraController.tick(boardCameraTick);
+        globalState.worldCamera = cameraUpdate.camera;
 
         // DISPLAY_UDIBAR_TickActions().
         ibar::tickActions(
