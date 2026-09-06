@@ -294,6 +294,7 @@ namespace
             "clicking another player's title cannot enter DeedActive");
 
         setHit(ibar::RuleMode::DoneTurn, Layout::General, mask({Slot::Main}));
+        ibar::setPropertyHitState(ibar::layout::propertyBit(1));
         clickProperty(1);
         require(ibar::resolveRuleMode(ibar::RuleMode::DoneTurn, 0) ==
                     ibar::RuleMode::DeedActive &&

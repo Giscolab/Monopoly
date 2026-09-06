@@ -1182,6 +1182,7 @@ if(BUILD_TESTING)
         tests/IBarBackdropPlaybackTests.cpp
         src/IBarBackdropPlayback.cpp
         src/IBarPropertyPlayback.cpp
+        src/IBarLayout.cpp
         src/IBarCurrentPlayerPlayback.cpp
         src/IBarBankPlayback.cpp
         src/IBarCameraButtonPlayback.cpp

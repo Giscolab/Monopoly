@@ -72,7 +72,7 @@ namespace
             "PlaceHouse/PlaceHotel consume the exact RULE placement set");
 
         inputs.mode = ibar::RuleMode::DeedActive;
-        inputs.selectedDeed = 5;
+        inputs.selectedDeed = static_cast<std::uint8_t>(5);
         const auto deed = ibar::planPropertyTitles(state, inputs);
         require(deed.visibleProperties == ibar::layout::propertyBit(5) &&
                 deed.styles[5] == ibar::PropertyTitleStyle::Mortgaged,
