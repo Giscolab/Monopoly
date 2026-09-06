@@ -38,6 +38,16 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::move(
+        data::DataId id, std::uint16_t priority,
+        sequence::SequenceTransform transform)
+    {
+        const auto queued = commands_.enqueue(sequence::makeMoveTheWorks(
+            id, priority, std::move(transform)));
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::transitionMovedDrop(
         std::optional<data::DataId> previousId, data::DataId id,
         std::uint16_t priority, sequence::SequenceTransform transform,

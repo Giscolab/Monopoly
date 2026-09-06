@@ -886,6 +886,8 @@ target_sources(
     src/GameQueueGate.cpp
     src/PieceMoveIngress.cpp
     src/PieceInterpolation.cpp
+    src/PieceJailPlan.cpp
+    src/PieceJailPlayback.cpp
 )
 
 target_sources(
@@ -1378,4 +1380,27 @@ if(BUILD_TESTING)
         NAME Monopoly.PieceInterpolation
         COMMAND MonopolyPieceInterpolationTests
     )
+endif()
+# UDPieces.cpp GoToJail route-planning subset
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceJailPlanTests
+        tests/PieceJailPlanTests.cpp
+        src/PieceJailPlan.cpp
+        src/PieceInterpolation.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+        src/PieceCamera.cpp
+    )
+    target_include_directories(
+        MonopolyPieceJailPlanTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceJailPlanTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(NAME Monopoly.PieceJailPlan COMMAND MonopolyPieceJailPlanTests)
 endif()

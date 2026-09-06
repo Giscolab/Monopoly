@@ -44,10 +44,16 @@ struct SyntheticSequenceResources
                 const auto mesh = words({0x01020304,0,6,2,11,0,1,3,0x80000011,0x80000014,0x8000001A,
                     0xFFFFFFFF,7,0x80000001,8,0x80010002,0,0x000000FF,0,0x00020001,
                     0x0002FFFE,10,0x00020002,10,0xFFFE0000,10,0,4096});
-                // Tags 0..3 include the exact startup board tag HMD_boardmed=3.
-                // Reusing synthetic geometry keeps the test about routing, not retail assets.
+                const auto finite = words({0x09000014, 0, 0x04000064, 17,
+                    packDataId(LegacyGroupId::ThreeD, 0)});
+                // Sparse synthetic DAT_3D: tags 0..3 remain HMD fixtures.
+                // Only the exact GoToJail sequence tags are populated above that.
+                items.resize(0x05CD);
                 for (int tag = 0; tag <= 3; ++tag)
-                    items.push_back({LegacyDataType::Hmd, mesh});
+                    items[tag] = {LegacyDataType::Hmd, mesh};
+                for (const auto tag : {0x0157, 0x0158, 0x05C7, 0x05C8,
+                         0x05C9, 0x05CA, 0x05CB, 0x05CC})
+                    items[tag] = {LegacyDataType::Chunky, finite};
             }
             else if (i == 5)
             {
