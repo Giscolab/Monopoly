@@ -1,9 +1,11 @@
 #include "Display.hpp"
+#include "BoardCameraController.hpp"
 #include "IBar.hpp"
 #include "PlayerSelection.hpp"
 
 #include <array>
 #include <cstdint>
+#include <cmath>
 #include <iostream>
 #include <string_view>
 #include <vector>
@@ -126,6 +128,102 @@ namespace
                "UDPSEL_STARTADDREMOVE == 6");
     }
 
+    bool near(float a, float b)
+    {
+        return std::fabs(a - b) < 0.001F;
+    }
+
+    bool sameCamera(const monopoly::engine::World3DCamera& a,
+        const monopoly::engine::World3DCamera& b)
+    {
+        for (std::size_t i = 0; i < 3; ++i)
+            if (!near(a.location[i], b.location[i]) ||
+                !near(a.forward[i], b.forward[i]) ||
+                !near(a.up[i], b.up[i])) return false;
+        return near(a.fieldOfView, b.fieldOfView) &&
+            near(a.nearPlane, b.nearPlane) && near(a.farPlane, b.farPlane);
+    }
+
+    void testBoardCameraStateMachine()
+    {
+        using namespace monopoly;
+        using namespace monopoly::display;
+
+        expect(initialize(), "DISPLAY initializes for board-camera test");
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::TopDownSquare)),
+            "camera controller resets to historical camera 0");
+
+        showAll2();
+        expect(stateReadOnly().currentBoardCamera ==
+            pieces::BoardCameraView::TopDownSoccer,
+            "first UDBoard show validates desired Soccer camera");
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::TopDownSoccer)),
+            "camera is forced instantly while 3D board is off");
+
+        setBackdrop(Screen2D::Main);
+        showAll2();
+        expect(stateReadOnly().board3DOn,
+            "Main activates historical board3DOn state");
+
+        state().desiredBoardCamera = pieces::BoardCameraView::FifteenTiles12;
+        showAll2();
+        expect(stateReadOnly().currentBoardCamera ==
+            pieces::BoardCameraView::FifteenTiles12,
+            "UDBoard show records changed desired camera");
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::TopDownSoccer)),
+            "3D camera request is waiting, not teleported");
+
+        tickActions(1);
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::TopDownSoccer)),
+            "camera waits at preset start for first chained tick");
+        tickActions(74);
+        expect(!sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::FifteenTiles12)),
+            "camera remains in flight before 75 elapsed ticks");
+        tickActions(1);
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::FifteenTiles12)),
+            "camera reaches preset after exactly 75 elapsed ticks");
+
+        beginDiceCameraOverride(static_cast<std::uint8_t>(0));
+        expect(stateReadOnly().diceCameraControlActive &&
+            stateReadOnly().desiredCameraInvalidatedLock &&
+            !stateReadOnly().desiredCameraClearToValidate,
+            "dice camera override invalidates standard preset");
+        tickActions(1);
+        releaseDiceCameraOverride();
+        expect(stateReadOnly().desiredCameraClearToValidate,
+            "dice camera release requests standard-camera revalidation");
+        showAll2();
+        expect(!stateReadOnly().desiredCameraInvalidatedLock &&
+            !stateReadOnly().desiredCameraClearToValidate,
+            "next UDBoard show consumes camera revalidation flags");
+
+        tickActions(75);
+        expect(!sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::FifteenTiles12)),
+            "dice move completes before queued preset restart");
+        tickActions(75);
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::FifteenTiles12)),
+            "revalidated preset returns through a second 75-tick move");
+
+        beginDiceCameraOverride(std::nullopt);
+        endDiceCameraOverrideEarly();
+        expect(!stateReadOnly().diceCameraControlActive &&
+            stateReadOnly().desiredCameraInvalidatedLock &&
+            !stateReadOnly().desiredCameraClearToValidate,
+            "early IBar-style exit preserves invalidated camera flag");
+        cancelDiceCameraOverride();
+        showAll2();
+
+        shutdown();
+    }
+
     void testDisplayStateMachine()
     {
         using namespace monopoly::display;
@@ -214,6 +312,7 @@ int main()
         << "===============================\n";
 
     testEnumContract();
+    testBoardCameraStateMachine();
     testDisplayStateMachine();
 
     if (failures != 0)

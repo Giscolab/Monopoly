@@ -178,17 +178,28 @@ namespace monopoly::engine
                 if (diceQueueLockHeld) userinterface::unlockGameQueue();
                 diceQueueLockHeld = false;
                 dicePlayback.reset();
-                display::state().diceCameraControlActive = false;
+                display::cancelDiceCameraOverride();
                 return std::unexpected(step.error());
             }
             if (step->cameraTakeover)
-                display::state().diceCameraControlActive = true;
-            if (step->cameraRelease)
-                display::state().diceCameraControlActive = false;
-            if (step->queueRelease && diceQueueLockHeld)
             {
-                userinterface::unlockGameQueue();
-                diceQueueLockHeld = false;
+                std::optional<std::uint8_t> randomFourteen;
+                if (display::stateReadOnly().board3DOn)
+                    randomFourteen = static_cast<std::uint8_t>(std::rand() % 14);
+                display::beginDiceCameraOverride(randomFourteen);
+            }
+            if (step->cameraRelease)
+                display::releaseDiceCameraOverride();
+            if (step->queueRelease)
+            {
+                if (!step->cameraRelease &&
+                    display::stateReadOnly().diceCameraControlActive)
+                    display::endDiceCameraOverrideEarly();
+                if (diceQueueLockHeld)
+                {
+                    userinterface::unlockGameQueue();
+                    diceQueueLockHeld = false;
+                }
             }
             return {};
         }
@@ -488,7 +499,7 @@ namespace monopoly::engine
         if (diceQueueLockHeld) userinterface::unlockGameQueue();
         diceQueueLockHeld = false;
         dicePlayback.reset();
-        display::state().diceCameraControlActive = false;
+        display::cancelDiceCameraOverride();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;
         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;

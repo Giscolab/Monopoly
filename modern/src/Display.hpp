@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include "World3DProjection.hpp"
 #include "PieceCamera.hpp"
 
@@ -93,6 +94,10 @@ namespace monopoly::display
         Screen2D desired2DView = Screen2D::PlayerSelect;
         pieces::BoardCameraView desiredBoardCamera =
             pieces::BoardCameraView::TopDownSoccer;
+        std::optional<pieces::BoardCameraView> currentBoardCamera;
+        bool board3DOn = false;
+        bool desiredCameraInvalidatedLock = false;
+        bool desiredCameraClearToValidate = false;
 
         Viewport3D viewportInUse =
             Viewport3D::Off;
@@ -119,6 +124,12 @@ namespace monopoly::display
     void shutdown();
 
     void setBackdrop(Screen2D screen);
+
+    void beginDiceCameraOverride(
+        std::optional<std::uint8_t> randomFourteen);
+    void releaseDiceCameraOverride();
+    void endDiceCameraOverrideEarly();
+    void cancelDiceCameraOverride();
 
     void tickActions(std::uint64_t numberOfTicks);
 
