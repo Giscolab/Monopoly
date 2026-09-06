@@ -61,9 +61,14 @@ namespace
         require(projection.mode == ibar::RuleMode::Nothing && projection.player == 3,
             "NOTIFY_DICE_ROLLED clears mode without replacing current IBar player");
 
-        projection.process(notification(actions::Type::NotifyPleasePay, 1));
+        auto pleasePay = notification(actions::Type::NotifyPleasePay, 1);
+        pleasePay.numberC = 750;
+        pleasePay.numberE = 1;
+        projection.process(pleasePay);
         require(projection.mode == ibar::RuleMode::RaiseMoney && projection.player == 1,
             "NOTIFY_PLEASE_PAY selects RaiseMoney");
+        require(projection.raiseCashNeeded == 750 && projection.raiseCashCanBankrupt,
+            "NOTIFY_PLEASE_PAY preserves cash target and legacy bankrupt eligibility");
 
         projection.process(notification(actions::Type::NotifyBuyOrAuctionDecision, 1));
         require(projection.mode == ibar::RuleMode::BuyAuction && projection.player == 1,
@@ -152,6 +157,75 @@ namespace
             "NOTIFY_GAME_OVER selects GameOver");
     }
 
+    void testHousingShortageModes()
+    {
+        ibar::RuleProjection projection;
+        auto houses = notification(actions::Type::NotifyHousingShortage, 0);
+        houses.numberC = -3;
+        projection.processHousingShortage(houses, 4);
+        require(projection.mode == ibar::RuleMode::HousingShort && projection.player == 4,
+            "negative housing shortage selects HousingShort for resolved bidder");
+
+        auto hotel = notification(actions::Type::NotifyHousingShortage, 0);
+        hotel.numberC = 1;
+        projection.processHousingShortage(hotel, 2);
+        require(projection.mode == ibar::RuleMode::HotelShort && projection.player == 2,
+            "positive housing shortage selects HotelShort for resolved bidder");
+
+        projection.mode = ibar::RuleMode::DoneTurn;
+        projection.player = 1;
+        projection.processHousingShortage(hotel, rules::NobodyPlayer);
+        require(projection.mode == ibar::RuleMode::DoneTurn && projection.player == 1,
+            "housing shortage with no resolved player leaves prior IBar mode untouched");
+    }
+
+    void testTradeProjection()
+    {
+        ibar::RuleProjection projection;
+        auto started = notification(actions::Type::NotifyTradeStarted, 1);
+        projection.process(started);
+        require(projection.tradeInProgress && projection.tradeAPlayer == 1 &&
+                projection.tradeBPlayer == rules::MaxPlayers,
+            "NOTIFY_TRADE_STARTED records TradeA and resets unresolved TradeB");
+        require(projection.mode == ibar::RuleMode::Nothing && projection.player == 1,
+            "first NOTIFY_TRADE_STARTED resets IBar rules mode to proposer");
+
+        auto item = notification(actions::Type::NotifyTradeItem, 1);
+        item.numberB = 4;
+        projection.process(item);
+        require(projection.tradeBPlayer == 4,
+            "trade item from active TradeA reconstructs TradeB");
+
+        auto editor = notification(actions::Type::NotifyTradeEditor, 2);
+        projection.process(editor);
+        require(projection.tradeAPlayer == 2 && projection.tradeBPlayer == 4,
+            "NOTIFY_TRADE_EDITOR changes TradeA without discarding current TradeB");
+
+        auto reverseItem = notification(actions::Type::NotifyTradeItem, 4);
+        reverseItem.numberB = 2;
+        projection.process(reverseItem);
+        require(projection.tradeBPlayer == 4,
+            "trade item to active TradeA reconstructs TradeB from sender");
+
+        auto acceptance = notification(actions::Type::NotifyTradeAcceptanceDecision);
+        acceptance.numberA = (1u << 4);
+        projection.processTradeAcceptance(acceptance, 4);
+        require(projection.mode == ibar::RuleMode::Trading && projection.player == 4,
+            "trade acceptance enters Trading for the UDTrade-resolved player");
+
+        projection.processTradeAcceptance(acceptance, rules::NobodyPlayer);
+        require(projection.mode == ibar::RuleMode::Trading && projection.player == 4,
+            "trade acceptance with no resolved player preserves current IBar state");
+
+        auto finished = notification(actions::Type::NotifyTradeFinished);
+        finished.numberA = 1;
+        projection.process(finished);
+        require(!projection.tradeInProgress &&
+                projection.tradeAPlayer == rules::MaxPlayers &&
+                projection.tradeBPlayer == rules::MaxPlayers,
+            "completed trade clears tracked TradeA and TradeB slots");
+    }
+
     void testAcceptedActionsClearMode()
     {
         constexpr std::array clearActions{
@@ -220,14 +294,18 @@ namespace
         players.numberA = 0;
         projection.process(players);
         require(projection.mode == ibar::RuleMode::Nothing &&
-                projection.player == rules::NobodyPlayer,
+                projection.player == rules::NobodyPlayer &&
+                projection.raiseCashNeeded == 0 && !projection.raiseCashCanBankrupt,
             "zero player-count notification resets IBar rules state");
 
         projection.mode = ibar::RuleMode::GameOver;
         projection.player = 0;
         projection.reset();
         require(projection.mode == ibar::RuleMode::Nothing &&
-                projection.player == rules::NobodyPlayer,
+                projection.player == rules::NobodyPlayer &&
+                projection.raiseCashNeeded == 0 && !projection.raiseCashCanBankrupt &&
+                projection.tradeAPlayer == rules::MaxPlayers &&
+                projection.tradeBPlayer == rules::MaxPlayers && !projection.tradeInProgress,
             "explicit reset restores the initial IBar rules projection");
     }
 }
@@ -241,6 +319,8 @@ int main()
         testJailModes();
         testCardsMortgageAndTax();
         testBuildingAndGameOverModes();
+        testHousingShortageModes();
+        testTradeProjection();
         testAcceptedActionsClearMode();
         testInvalidInputsAndReset();
         return 0;

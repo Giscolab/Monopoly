@@ -352,6 +352,74 @@ namespace
     }
 
 
+    void testHousingShortageIBarPlayer()
+    {
+        using namespace monopoly;
+        messaging::initialize();
+        ui::localplayers::reset();
+
+        rules::GameState uiState{};
+        uiState.numberOfPlayers = 4;
+        constexpr std::wstring_view names[]{L"Alice", L"Bot", L"Carol"};
+        constexpr std::uint8_t aiLevels[]{0, 2, 0};
+
+        for (rules::PlayerNumber player = 0; player < 3; ++player)
+        {
+            expect(ui::localplayers::requestAddLocalPlayer(
+                       uiState, names[player], player, player,
+                       aiLevels[player], false),
+                "housing-shortage local entry request accepted");
+            actions::Message request{};
+            expect(messaging::receiveAction(request),
+                "housing-shortage local entry request drained");
+
+            actions::Message accepted{};
+            accepted.action = actions::Type::NotifyNamePlayer;
+            accepted.toPlayer = rules::AllPlayers;
+            accepted.numberA = player;
+            accepted.numberB = player;
+            accepted.numberC = player;
+            accepted.numberD = aiLevels[player];
+            setString(accepted, names[player]);
+            ui::localplayers::processRuleMessage(uiState, accepted);
+        }
+
+        const std::uint32_t originalAndHumans =
+            (1u << 0) | (1u << 1) | (1u << 2);
+        expect(ui::localplayers::housingShortageIBarPlayer(
+                   uiState, 0, originalAndHumans) == 2,
+            "housing shortage removes original buyer and prefers first local human");
+
+        const std::uint32_t noLocalHuman =
+            (1u << 0) | (1u << 1) | (1u << 3);
+        expect(ui::localplayers::housingShortageIBarPlayer(
+                   uiState, 0, noLocalHuman) == 1,
+            "housing shortage falls back to first remaining slot when no local human can bid");
+
+        expect(ui::localplayers::housingShortageIBarPlayer(
+                   uiState, 0, (1u << 0)) == rules::NobodyPlayer,
+            "housing shortage returns Nobody when removing original buyer empties playerset");
+        expect(ui::localplayers::housingShortageIBarPlayer(
+                   uiState, 0, (1u << 2) | (1u << 6)) == 2,
+            "housing shortage ignores playerset bits outside current player count");
+
+        expect(ui::localplayers::tradeAcceptanceIBarPlayer(
+                   uiState, 2, (1u << 3)) == 2,
+            "trade acceptance prefers exact TradeB when that slot is a local human");
+        expect(ui::localplayers::tradeAcceptanceIBarPlayer(
+                   uiState, 1, (1u << 2) | (1u << 3)) == 2,
+            "trade acceptance ignores AI TradeB and watches first pending player");
+        expect(ui::localplayers::tradeAcceptanceIBarPlayer(
+                   uiState, rules::MaxPlayers, (1u << 3)) == 3,
+            "trade acceptance with unresolved TradeB watches first pending remote slot");
+        expect(ui::localplayers::tradeAcceptanceIBarPlayer(
+                   uiState, rules::MaxPlayers, 0) == rules::NobodyPlayer,
+            "trade acceptance returns Nobody when no TradeB human or pending player exists");
+
+        messaging::shutdown();
+    }
+
+
     void testMiddleRemovalUsesLastEntry()
     {
         using namespace monopoly;
@@ -443,6 +511,7 @@ int main()
 
     testAddAcceptRemove();
     testTradeSourcePlayer();
+    testHousingShortageIBarPlayer();
     testMiddleRemovalUsesLastEntry();
 
 

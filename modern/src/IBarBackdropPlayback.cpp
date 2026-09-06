@@ -161,6 +161,20 @@ namespace monopoly::ibar
         const bool gameInProgress = runtime::state().gameInProgress;
         const bool buyAuction = inputs.ruleMode == RuleMode::BuyAuction;
         const bool taxDecision = inputs.ruleMode == RuleMode::TaxDecision;
+        const bool raiseMoney = inputs.ruleMode == RuleMode::RaiseMoney;
+        const bool bssmRulePlayerActive = activePlayer == inputs.rulePlayer;
+        const bool trading =
+            inputs.ruleMode == RuleMode::Trading && bssmRulePlayerActive;
+        const bool hotelDecomposition =
+            inputs.ruleMode == RuleMode::HotelDecomposition && bssmRulePlayerActive;
+        const bool placeHouse =
+            inputs.ruleMode == RuleMode::PlaceHouse && bssmRulePlayerActive;
+        const bool placeHotel =
+            inputs.ruleMode == RuleMode::PlaceHotel && bssmRulePlayerActive;
+        const bool housingShort =
+            inputs.ruleMode == RuleMode::HousingShort && bssmRulePlayerActive;
+        const bool hotelShort =
+            inputs.ruleMode == RuleMode::HotelShort && bssmRulePlayerActive;
         const bool gameOver = inputs.ruleMode == RuleMode::GameOver;
 
         struct ButtonRequest
@@ -177,8 +191,14 @@ namespace monopoly::ibar
             ButtonRequest{&buyButton_, visible && buyAuction, inputs.aiButtonRemoteState},
             ButtonRequest{&cameraButton_, visible, false},
             ButtonRequest{&doneButton_, visible && wantsDone(inputs.ruleMode), inputs.aiButtonRemoteState},
+            ButtonRequest{&sellButton_, visible && hotelDecomposition, inputs.aiButtonRemoteState},
             ButtonRequest{&flatTaxButton_, visible && taxDecision, inputs.aiButtonRemoteState},
             ButtonRequest{&percentageButton_, visible && taxDecision, inputs.aiButtonRemoteState},
+            ButtonRequest{&tradeAcceptButton_, visible && trading, inputs.aiButtonRemoteState},
+            ButtonRequest{&tradeCounterButton_, visible && trading, inputs.aiButtonRemoteState},
+            ButtonRequest{&bankruptButton_, visible && raiseMoney &&
+                inputs.raiseCashCanBankrupt, inputs.aiButtonRemoteState},
+            ButtonRequest{&tradeRejectButton_, visible && trading, inputs.aiButtonRemoteState},
             ButtonRequest{&mainButton_, visible && gameInProgress &&
                 (inputs.desired2DView == display::Screen2D::Portfolio ||
                  inputs.desired2DView == display::Screen2D::Trade), false},
@@ -194,7 +214,11 @@ namespace monopoly::ibar
                 inputs.tradeEligible && inputs.desired2DView != display::Screen2D::Trade, false},
             ButtonRequest{&exitButton_, visible && gameOver, false},
             ButtonRequest{&useCardButton_, visible && wantsUseCard(inputs.ruleMode),
-                inputs.aiButtonRemoteState}
+                inputs.aiButtonRemoteState},
+            ButtonRequest{&auctionHouseButton_, visible && housingShort, inputs.aiButtonRemoteState},
+            ButtonRequest{&auctionHotelButton_, visible && hotelShort, inputs.aiButtonRemoteState},
+            ButtonRequest{&placeHouseButton_, visible && placeHouse, inputs.aiButtonRemoteState},
+            ButtonRequest{&placeHotelButton_, visible && placeHotel, inputs.aiButtonRemoteState}
         };
 
         bool actionButtonsStable = true;

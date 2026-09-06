@@ -14,6 +14,10 @@ namespace
     bool acceptRecipient = true;
     int localResetCount = 0;
     int queueLockDepth = 0;
+    monopoly::rules::PlayerNumber shortageResolvedPlayer = monopoly::rules::NobodyPlayer;
+    monopoly::rules::PlayerNumber tradeResolvedPlayer = monopoly::rules::NobodyPlayer;
+    monopoly::rules::PlayerNumber capturedTradeB = monopoly::rules::NobodyPlayer;
+    std::uint32_t capturedTradePending = 0;
     std::uint64_t routingTick = 0;
     monopoly::display::State routingDisplayState{};
     monopoly::display::Screen2D requestedBackdrop =
@@ -57,6 +61,24 @@ namespace monopoly::ui::localplayers
     void reset()
     {
         ++localResetCount;
+    }
+
+    rules::PlayerNumber housingShortageIBarPlayer(
+        const rules::GameState&,
+        rules::PlayerNumber,
+        std::uint32_t)
+    {
+        return shortageResolvedPlayer;
+    }
+
+    rules::PlayerNumber tradeAcceptanceIBarPlayer(
+        const rules::GameState&,
+        rules::PlayerNumber tradeBPlayer,
+        std::uint32_t pendingPlayers)
+    {
+        capturedTradeB = tradeBPlayer;
+        capturedTradePending = pendingPlayers;
+        return tradeResolvedPlayer;
     }
 
     void processRuleMessage(
@@ -248,6 +270,68 @@ namespace
             "idle transition plan is consumed exactly once");
         queueLockDepth = 0;
     }
+    void testHousingShortageProjectionRouting()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        shortageResolvedPlayer = 4;
+
+        actions::Message houses{};
+        houses.action = actions::Type::NotifyHousingShortage;
+        houses.toPlayer = rules::AllPlayers;
+        houses.numberA = 1;
+        houses.numberC = -2;
+        houses.numberE = (1u << 1) | (1u << 4);
+        userinterface::processRuleMessage(houses);
+        const auto& projected = userinterface::iBarRuleStateReadOnly();
+        expect(projected.mode == ibar::RuleMode::HousingShort && projected.player == 4,
+            "housing-shortage routing uses LocalPlayers-resolved bidder and house mode");
+
+        shortageResolvedPlayer = rules::NobodyPlayer;
+        actions::Message none = houses;
+        none.numberC = 1;
+        userinterface::processRuleMessage(none);
+        expect(projected.mode == ibar::RuleMode::HousingShort && projected.player == 4,
+            "housing-shortage routing preserves prior mode when no eligible player remains");
+        shortageResolvedPlayer = rules::NobodyPlayer;
+    }
+
+    void testTradeAcceptanceProjectionRouting()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        tradeResolvedPlayer = 3;
+        capturedTradeB = rules::NobodyPlayer;
+        capturedTradePending = 0;
+
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 1;
+        userinterface::processRuleMessage(started);
+
+        actions::Message item{};
+        item.action = actions::Type::NotifyTradeItem;
+        item.toPlayer = rules::AllPlayers;
+        item.numberA = 1;
+        item.numberB = 3;
+        userinterface::processRuleMessage(item);
+
+        actions::Message acceptance{};
+        acceptance.action = actions::Type::NotifyTradeAcceptanceDecision;
+        acceptance.toPlayer = rules::AllPlayers;
+        acceptance.numberA = (1u << 2) | (1u << 3);
+        userinterface::processRuleMessage(acceptance);
+
+        const auto& projected = userinterface::iBarRuleStateReadOnly();
+        expect(capturedTradeB == 3 && capturedTradePending == acceptance.numberA,
+            "trade acceptance routing passes reconstructed TradeB and pending playerset");
+        expect(projected.mode == ibar::RuleMode::Trading && projected.player == 3,
+            "trade acceptance routing enters Trading for UDTrade-resolved player");
+
+        tradeResolvedPlayer = rules::NobodyPlayer;
+    }
+
     void testDicePromptProjection()
     {
         using namespace monopoly;
@@ -373,6 +457,8 @@ int main()
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();
+    testHousingShortageProjectionRouting();
+    testTradeAcceptanceProjectionRouting();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
     testFirstNonZeroPlayerProjection();

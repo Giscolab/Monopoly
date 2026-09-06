@@ -284,8 +284,9 @@ namespace
     void testRuleModeActionButtons()
     {
         rules::GameState state{};
-        state.numberOfPlayers = 1;
-        state.players[0].colour = 0;
+        state.numberOfPlayers = 4;
+        for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            state.players[player].colour = player;
         runtime::reset();
 
         {
@@ -363,6 +364,145 @@ namespace
                     hasAnyActionIn(playback, ibar::PayButtonIndex) == test.pay &&
                     hasAnyActionIn(playback, ibar::UseCardButtonIndex) == test.card,
                 "jail RuleMode reproduces exact UseCard/RollDice/Pay fallthrough set");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::RaiseMoney;
+            inputs.rulePlayer = 0;
+            inputs.raiseCashCanBankrupt = true;
+            inputs.aiButtonRemoteState = true;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::BankruptButtonIndex, true),
+                "RaiseMoney starts grey Bankrupt@1001 only when numberE permits bankruptcy");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::RaiseMoney;
+            inputs.rulePlayer = 0;
+            inputs.raiseCashCanBankrupt = false;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    !hasAnyActionIn(playback, ibar::BankruptButtonIndex),
+                "RaiseMoney suppresses Bankrupt when NOTIFY_PLEASE_PAY numberE is zero");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::HotelDecomposition;
+            inputs.rulePlayer = 0;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::SellButtonIndex),
+                "HotelDecomposition forces Sell@1001 for the tracked RULE player");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::PlaceHouse;
+            inputs.rulePlayer = 0;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::PlaceHouseButtonIndex),
+                "PlaceHouse starts its exact index-26 full-colour button at priority 999");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::PlaceHotel;
+            inputs.rulePlayer = 0;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::PlaceHotelButtonIndex),
+                "PlaceHotel starts its exact index-27 full-colour button at priority 999");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::HousingShort;
+            inputs.rulePlayer = 2;
+            require(backdrop.sync(state, true, 2, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 2, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::AuctionHouseButtonIndex),
+                "HousingShort starts AucHouse@1002 for the playerset-resolved IBar player");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::HotelShort;
+            inputs.rulePlayer = 3;
+            inputs.aiButtonRemoteState = true;
+            require(backdrop.sync(state, true, 3, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 3, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::AuctionHotelButtonIndex, true),
+                "HotelShort starts grey AucHotel@1002 for fallback remote/AI player");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::HousingShort;
+            inputs.rulePlayer = 2;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    !hasAnyActionIn(playback, ibar::AuctionHouseButtonIndex),
+                "HousingShort cannot expose AucHouse on a different displayed IBar player");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::Trading;
+            inputs.rulePlayer = 3;
+            require(backdrop.sync(state, true, 3, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 3, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::TradeAcceptButtonIndex) &&
+                    hasActionIn(playback, ibar::TradeCounterButtonIndex) &&
+                    hasActionIn(playback, ibar::TradeRejectButtonIndex),
+                "Trading starts TradeAcc/TradeCnt/TradeRej together at legacy priority 999");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::Trading;
+            inputs.rulePlayer = 2;
+            inputs.aiButtonRemoteState = true;
+            require(backdrop.sync(state, true, 2, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 2, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::TradeAcceptButtonIndex, true) &&
+                    hasActionIn(playback, ibar::TradeCounterButtonIndex, true) &&
+                    hasActionIn(playback, ibar::TradeRejectButtonIndex, true),
+                "fallback remote Trading player receives grey TradeAcc/TradeCnt/TradeRej atlas");
         }
 
         {

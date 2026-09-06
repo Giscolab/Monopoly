@@ -434,26 +434,32 @@ namespace monopoly::engine
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
             const auto& ruleState = userinterface::ruleStateReadOnly();
-            const bool activePlayerCanTrade =
-                ruleState.currentPlayer < ruleState.numberOfPlayers &&
-                ruleState.currentPlayer < rules::MaxPlayers &&
-                ruleState.players[ruleState.currentPlayer].currentSquare < 41;
-            const bool tradeEligible = activePlayerCanTrade &&
-                ui::localplayers::tradeSourcePlayer(
-                    ruleState, ruleState.currentPlayer) != rules::MaxPlayers;
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
             const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
+            const rules::PlayerNumber iBarActivePlayer =
+                iBarRules.player < ruleState.numberOfPlayers &&
+                iBarRules.player < rules::MaxPlayers
+                    ? iBarRules.player
+                    : ruleState.currentPlayer;
+            const bool activePlayerCanTrade =
+                iBarActivePlayer < ruleState.numberOfPlayers &&
+                iBarActivePlayer < rules::MaxPlayers &&
+                ruleState.players[iBarActivePlayer].currentSquare < 41;
+            const bool tradeEligible = activePlayerCanTrade &&
+                ui::localplayers::tradeSourcePlayer(
+                    ruleState, iBarActivePlayer) != rules::MaxPlayers;
             ibar::ActionButtonInputs iBarInputs{};
             iBarInputs.desired2DView = displayState.desired2DView;
             iBarInputs.ruleMode = iBarRules.mode;
             iBarInputs.rulePlayer = iBarRules.player;
             iBarInputs.tradeEligible = tradeEligible;
             iBarInputs.rollDiceDesired = dicePrompt.currentStartTurn;
+            iBarInputs.raiseCashCanBankrupt = iBarRules.raiseCashCanBankrupt;
             iBarInputs.aiButtonRemoteState =
-                !ui::localplayers::slotIsLocalHumanPlayer(iBarRules.player);
+                !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
             const auto backdropSync = iBarBackdropPlayback.sync(
-                ruleState, iBarVisible, ruleState.currentPlayer, *session,
+                ruleState, iBarVisible, iBarActivePlayer, *session,
                 iBarInputs);
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",

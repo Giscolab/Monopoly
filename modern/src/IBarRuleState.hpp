@@ -44,13 +44,29 @@ namespace monopoly::ibar
     {
         RuleMode mode{RuleMode::Nothing};
         rules::PlayerNumber player{rules::NobodyPlayer};
+        std::int64_t raiseCashNeeded{};
+        bool raiseCashCanBankrupt{};
+        rules::PlayerNumber tradeAPlayer{rules::MaxPlayers};
+        rules::PlayerNumber tradeBPlayer{rules::MaxPlayers};
+        bool tradeInProgress{};
 
         void reset() noexcept
         {
             mode = RuleMode::Nothing;
             player = rules::NobodyPlayer;
+            raiseCashNeeded = 0;
+            raiseCashCanBankrupt = false;
+            tradeAPlayer = rules::MaxPlayers;
+            tradeBPlayer = rules::MaxPlayers;
+            tradeInProgress = false;
         }
 
         void process(const actions::Message& message) noexcept;
+        void processHousingShortage(
+            const actions::Message& message,
+            rules::PlayerNumber resolvedPlayer) noexcept;
+        void processTradeAcceptance(
+            const actions::Message& message,
+            rules::PlayerNumber resolvedPlayer) noexcept;
     };
 }

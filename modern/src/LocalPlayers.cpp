@@ -777,6 +777,63 @@ namespace monopoly::ui::localplayers
     }
 
 
+    PlayerNumber housingShortageIBarPlayer(
+        const GameState& uiState,
+        PlayerNumber originalBuyer,
+        std::uint32_t allowedPlayers)
+    {
+        // UDIBar.cpp NOTIFY_HOUSING_SHORTAGE: remove the original buyer,
+        // prefer the first eligible local human in ascending slot order, then
+        // fall back to the first remaining player so remote/AI games can watch.
+        const PlayerNumber count = std::min(uiState.numberOfPlayers, MaxPlayers);
+        if (count == 0)
+            return NobodyPlayer;
+
+        const std::uint32_t validMask = (1u << count) - 1u;
+        allowedPlayers &= validMask;
+        if (originalBuyer < count)
+            allowedPlayers &= ~(1u << originalBuyer);
+
+        for (PlayerNumber player = 0; player < count; ++player)
+        {
+            if ((allowedPlayers & (1u << player)) && localHumanSlots[player])
+                return player;
+        }
+
+        for (PlayerNumber player = 0; player < count; ++player)
+        {
+            if (allowedPlayers & (1u << player))
+                return player;
+        }
+
+        return NobodyPlayer;
+    }
+
+
+    PlayerNumber tradeAcceptanceIBarPlayer(
+        const GameState& uiState,
+        PlayerNumber tradeBPlayer,
+        std::uint32_t pendingPlayers)
+    {
+        // UDTrade.cpp NOTIFY_TRADE_ACCEPTANCE_DECISION: first try the
+        // displayed TradeB player if that exact slot is a local human; if not,
+        // show the first player still present in numberA so remote trades can
+        // be watched.
+        const PlayerNumber count = std::min(uiState.numberOfPlayers, MaxPlayers);
+        if (tradeBPlayer < count && localHumanSlots[tradeBPlayer])
+            return tradeBPlayer;
+
+        const std::uint32_t validMask = count == 0 ? 0u : (1u << count) - 1u;
+        pendingPlayers &= validMask;
+        for (PlayerNumber player = 0; player < count; ++player)
+        {
+            if (pendingPlayers & (1u << player))
+                return player;
+        }
+        return NobodyPlayer;
+    }
+
+
     bool requestAddLocalPlayer(
         const GameState& uiState,
         std::wstring_view name,

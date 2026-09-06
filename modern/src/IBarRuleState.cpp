@@ -47,6 +47,36 @@ namespace monopoly::ibar
         }
     }
 
+    void RuleProjection::processHousingShortage(
+        const actions::Message& message,
+        rules::PlayerNumber resolvedPlayer) noexcept
+    {
+        if (message.action != actions::Type::NotifyHousingShortage ||
+            resolvedPlayer >= rules::MaxPlayers)
+        {
+            return;
+        }
+
+        mode = message.numberC < 0
+            ? RuleMode::HousingShort
+            : RuleMode::HotelShort;
+        player = resolvedPlayer;
+    }
+
+    void RuleProjection::processTradeAcceptance(
+        const actions::Message& message,
+        rules::PlayerNumber resolvedPlayer) noexcept
+    {
+        if (message.action != actions::Type::NotifyTradeAcceptanceDecision ||
+            resolvedPlayer >= rules::MaxPlayers)
+        {
+            return;
+        }
+
+        mode = RuleMode::Trading;
+        player = resolvedPlayer;
+    }
+
     void RuleProjection::process(const actions::Message& message) noexcept
     {
         if (message.action == actions::Type::NotifyActionCompleted)
@@ -78,8 +108,17 @@ namespace monopoly::ibar
             mode = RuleMode::Nothing;
             return;
         case actions::Type::NotifyPleasePay:
-            setMode(*this, RuleMode::RaiseMoney, message.numberA);
+        {
+            const auto incomingPlayer = messagePlayer(message.numberA);
+            if (incomingPlayer)
+            {
+                mode = RuleMode::RaiseMoney;
+                player = *incomingPlayer;
+                raiseCashNeeded = message.numberC;
+                raiseCashCanBankrupt = message.numberE != 0;
+            }
             return;
+        }
         case actions::Type::NotifyBuyOrAuctionDecision:
             setMode(*this, RuleMode::BuyAuction, message.numberA);
             return;
@@ -113,6 +152,56 @@ namespace monopoly::ibar
             return;
         case actions::Type::NotifyDecomposeSale:
             setMode(*this, RuleMode::HotelDecomposition, message.numberA);
+            return;
+        case actions::Type::NotifyTradeStarted:
+        {
+            const auto proposer = messagePlayer(message.numberA);
+            if (proposer && *proposer < rules::MaxPlayers)
+            {
+                if (!tradeInProgress)
+                {
+                    mode = RuleMode::Nothing;
+                    player = *proposer;
+                }
+                tradeAPlayer = *proposer;
+                tradeBPlayer = rules::MaxPlayers;
+                tradeInProgress = true;
+            }
+            return;
+        }
+        case actions::Type::NotifyTradeEditor:
+        {
+            const auto editor = messagePlayer(message.numberA);
+            if (editor && *editor < rules::MaxPlayers)
+                tradeAPlayer = *editor;
+            return;
+        }
+        case actions::Type::NotifyTradeItem:
+        {
+            const auto from = messagePlayer(message.numberA);
+            const auto to = messagePlayer(message.numberB);
+            if (!from || !to || *from >= rules::MaxPlayers || *to >= rules::MaxPlayers)
+                return;
+            if (*from == tradeAPlayer)
+                tradeBPlayer = *to;
+            else if (*to == tradeAPlayer)
+                tradeBPlayer = *from;
+            return;
+        }
+        case actions::Type::NotifyTradeFinished:
+            if (message.numberA != -1)
+            {
+                tradeInProgress = false;
+                tradeAPlayer = rules::MaxPlayers;
+                tradeBPlayer = rules::MaxPlayers;
+            }
+            else
+            {
+                // Counter-offer: UDTrade may swap A/B for a local TradeB.
+                // The next TradeStarted/TradeEditor notification rebuilds the
+                // pair; do not guess local ownership in this pure projection.
+                tradeInProgress = false;
+            }
             return;
         case actions::Type::NotifyGameOver:
             setMode(*this, RuleMode::GameOver, message.numberA);
