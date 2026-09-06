@@ -47,8 +47,7 @@ namespace monopoly::ibar
         bool visible,
         rules::PlayerNumber activePlayer,
         engine::SequencePlayback& playback,
-        display::Screen2D desired2DView,
-        bool tradeEligible)
+        ActionButtonInputs inputs)
     {
         const auto resolved = desiredBackdrop(state, visible, activePlayer);
         if (!resolved)
@@ -113,9 +112,26 @@ namespace monopoly::ibar
         currentBackdrop_ = desired;
         }
 
+        // UDIBar.cpp computes IBarIsStable once before iterating buttons.
+        // Off/Idle are stable; In/Out/Pressed block ordinary fly-in/fly-out
+        // transitions until the next stable cycle.
+        const auto stable = [](CameraButtonVisualState state) noexcept
+        {
+            return state == CameraButtonVisualState::Off ||
+                state == CameraButtonVisualState::Idle;
+        };
+        const bool actionButtonsStable =
+            stable(cameraButton_.visualState()) &&
+            stable(mainButton_.visualState()) &&
+            stable(optionsButton_.visualState()) &&
+            stable(rollDiceButton_.visualState()) &&
+            stable(statusButton_.visualState()) &&
+            stable(tradeButton_.visualState());
+
         // UDIBar.cpp processes the action-button bar before the score/bank
         // section. Camera is always desired Idle while the IBar is visible.
-        const auto camera = cameraButton_.sync(visible, playback);
+        const auto camera = cameraButton_.sync(
+            visible, playback, false, actionButtonsStable);
         if (!camera)
         {
             return camera;
@@ -125,9 +141,9 @@ namespace monopoly::ibar
 
         const auto mainButton = mainButton_.sync(
             visible && gameInProgress &&
-                (desired2DView == display::Screen2D::Portfolio ||
-                 desired2DView == display::Screen2D::Trade),
-            playback);
+                (inputs.desired2DView == display::Screen2D::Portfolio ||
+                 inputs.desired2DView == display::Screen2D::Trade),
+            playback, false, actionButtonsStable);
         if (!mainButton)
         {
             return mainButton;
@@ -135,25 +151,35 @@ namespace monopoly::ibar
 
         const auto options = optionsButton_.sync(
             visible && gameInProgress,
-            playback);
+            playback, actionButtonsStable);
         if (!options)
         {
             return options;
         }
 
+        const auto rollDiceButton = rollDiceButton_.sync(
+            visible && inputs.rollDiceDesired,
+            playback,
+            inputs.aiButtonRemoteState,
+            actionButtonsStable);
+        if (!rollDiceButton)
+        {
+            return rollDiceButton;
+        }
+
         const auto statusButton = statusButton_.sync(
             visible && gameInProgress &&
-                desired2DView == display::Screen2D::Main,
-            playback);
+                inputs.desired2DView == display::Screen2D::Main,
+            playback, false, actionButtonsStable);
         if (!statusButton)
         {
             return statusButton;
         }
 
         const auto tradeButton = tradeButton_.sync(
-            visible && gameInProgress && tradeEligible &&
-                desired2DView != display::Screen2D::Trade,
-            playback);
+            visible && gameInProgress && inputs.tradeEligible &&
+                inputs.desired2DView != display::Screen2D::Trade,
+            playback, false, actionButtonsStable);
         if (!tradeButton)
         {
             return tradeButton;

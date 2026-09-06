@@ -441,14 +441,20 @@ namespace monopoly::engine
             const bool tradeEligible = activePlayerCanTrade &&
                 ui::localplayers::tradeSourcePlayer(
                     ruleState, ruleState.currentPlayer) != rules::MaxPlayers;
+            auto& dicePrompt = userinterface::dicePromptState();
+            dicePrompt.show();
+            ibar::ActionButtonInputs iBarInputs{};
+            iBarInputs.desired2DView = displayState.desired2DView;
+            iBarInputs.tradeEligible = tradeEligible;
+            iBarInputs.rollDiceDesired = dicePrompt.currentStartTurn;
+            iBarInputs.aiButtonRemoteState =
+                !ui::localplayers::slotIsLocalHumanPlayer(ruleState.currentPlayer);
             const auto backdropSync = iBarBackdropPlayback.sync(
                 ruleState, iBarVisible, ruleState.currentPlayer, *session,
-                displayState.desired2DView, tradeEligible);
+                iBarInputs);
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",
                     backdropSync.error().c_str());
-            auto& dicePrompt = userinterface::dicePromptState();
-            dicePrompt.show();
             const auto dice2DSync = dice2DPlayback.sync(ruleState.dice,
                 dicePrompt.currentStartTurn, iBarVisible, dicePrompt.diceRollNotification, *session);
             if (!dice2DSync)

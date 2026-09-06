@@ -144,7 +144,9 @@ struct SyntheticSequenceResources
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
                 for (std::uint32_t tag = 0x00BEU; tag <= 0x00C5U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
-                for (std::uint32_t tag = 0x00D2U; tag <= 0x00D9U; ++tag)
+                for (std::uint32_t tag = 0x00CEU; tag <= 0x00D9U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
+                for (std::uint32_t tag = 0x014AU; tag <= 0x014DU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
                 items[0x02F5] = {LegacyDataType::Chunky,
                     words({0x03000014, 0, 0x04000000, 2, 0x000002F6})};

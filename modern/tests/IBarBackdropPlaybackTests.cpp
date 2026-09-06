@@ -147,10 +147,20 @@ namespace
 
         runtime::state().gameInProgress = true;
         require(backdrop.sync(state, true, 0, playback) &&
-                playback.commands().pendingCount() == 6 && playback.update(1) &&
+                playback.commands().pendingCount() == 0 &&
+                backdrop.optionsButtonState() == ibar::CameraButtonVisualState::Off &&
+                backdrop.statusButtonState() == ibar::CameraButtonVisualState::Off,
+            "unstable Camera In defers new action buttons like legacy IBarIsStable");
+        require(playback.update(10).has_value() &&
+                backdrop.sync(state, true, 0, playback) &&
+                backdrop.cameraButtonState() == ibar::CameraButtonVisualState::Idle &&
+                playback.commands().pendingCount() == 4 && playback.update(11),
+            "completed Camera In reaches Idle before other buttons may enter");
+        require(backdrop.sync(state, true, 0, playback) &&
+                playback.commands().pendingCount() == 6 && playback.update(12) &&
                 backdrop.optionsButtonState() == ibar::CameraButtonVisualState::In &&
                 backdrop.statusButtonState() == ibar::CameraButtonVisualState::In,
-            "Main view starts Options then Status in legacy index order");
+            "stable next cycle starts Options then Status in legacy index order");
         require(playback.runtime().matching(
                     ibar::optionsButtonSequence(ibar::CameraButtonVisualState::In),
                     ibar::CameraButtonPriority, false).size() == 1 &&
@@ -164,8 +174,10 @@ namespace
         engine::SequencePlayback portfolioPlayback(
             portfolioResources.service.snapshot());
         ibar::BackdropPlayback portfolioBackdrop;
+        ibar::ActionButtonInputs portfolioInputs{};
+        portfolioInputs.desired2DView = display::Screen2D::Portfolio;
         require(portfolioBackdrop.sync(state, true, 0, portfolioPlayback,
-                    display::Screen2D::Portfolio) &&
+                    portfolioInputs) &&
                 portfolioPlayback.update(0) &&
                 portfolioBackdrop.mainButtonState() ==
                     ibar::CameraButtonVisualState::In &&
@@ -178,8 +190,10 @@ namespace
         SyntheticSequenceResources tradeResources;
         engine::SequencePlayback tradePlayback(tradeResources.service.snapshot());
         ibar::BackdropPlayback tradeBackdrop;
+        ibar::ActionButtonInputs tradeInputs{};
+        tradeInputs.tradeEligible = true;
         require(tradeBackdrop.sync(state, true, 0, tradePlayback,
-                    display::Screen2D::Main, true) &&
+                    tradeInputs) &&
                 tradePlayback.update(0) &&
                 tradeBackdrop.tradeButtonState() ==
                     ibar::CameraButtonVisualState::In,
@@ -189,8 +203,11 @@ namespace
         engine::SequencePlayback tradeScreenPlayback(
             tradeScreenResources.service.snapshot());
         ibar::BackdropPlayback tradeScreenBackdrop;
+        ibar::ActionButtonInputs tradeScreenInputs{};
+        tradeScreenInputs.desired2DView = display::Screen2D::Trade;
+        tradeScreenInputs.tradeEligible = true;
         require(tradeScreenBackdrop.sync(state, true, 0, tradeScreenPlayback,
-                    display::Screen2D::Trade, true) &&
+                    tradeScreenInputs) &&
                 tradeScreenPlayback.update(0) &&
                 tradeScreenBackdrop.mainButtonState() ==
                     ibar::CameraButtonVisualState::In &&
@@ -203,6 +220,46 @@ namespace
                 playback.commands().pendingCount() == 0,
             "game-only button In animations are not aborted mid-flight");
         runtime::reset();
+    }
+
+    void testRollDicePromptInputs()
+    {
+        SyntheticSequenceResources localResources;
+        engine::SequencePlayback localPlayback(localResources.service.snapshot());
+        ibar::BackdropPlayback localBackdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 0;
+        runtime::reset();
+
+        ibar::ActionButtonInputs localInputs{};
+        localInputs.rollDiceDesired = true;
+        require(localBackdrop.sync(state, true, 0, localPlayback, localInputs) &&
+                localPlayback.update(0) &&
+                localBackdrop.rollDiceButtonState() ==
+                    ibar::CameraButtonVisualState::In,
+            "StartTurn input adds RollDice to the integrated IBar playback");
+        require(localPlayback.runtime().matching(
+                    ibar::actionButtonSequence(ibar::RollDiceButtonIndex,
+                        ibar::CameraButtonVisualState::In),
+                    ibar::actionButtonPriority(ibar::RollDiceButtonIndex),
+                    false).size() == 1,
+            "local integrated RollDice reaches priority 1002 Overlay2D runtime");
+
+        SyntheticSequenceResources remoteResources;
+        engine::SequencePlayback remotePlayback(remoteResources.service.snapshot());
+        ibar::BackdropPlayback remoteBackdrop;
+        ibar::ActionButtonInputs remoteInputs{};
+        remoteInputs.rollDiceDesired = true;
+        remoteInputs.aiButtonRemoteState = true;
+        require(remoteBackdrop.sync(state, true, 0, remotePlayback, remoteInputs) &&
+                remotePlayback.update(0) &&
+                remotePlayback.runtime().matching(
+                    ibar::actionButtonSequence(ibar::RollDiceButtonIndex,
+                        ibar::CameraButtonVisualState::In, true),
+                    ibar::actionButtonPriority(ibar::RollDiceButtonIndex),
+                    false).size() == 1,
+            "remote/AI integrated RollDice uses the grey CNK_iycaf sequence");
     }
 
     void testFailureIsTransactional()
@@ -249,6 +306,7 @@ int main()
         testResolution();
         testLifecycle();
         testGlobalButtonPredicates();
+        testRollDicePromptInputs();
         testFailureIsTransactional();
         return 0;
     }
