@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 
 namespace monopoly::ibar
@@ -50,6 +51,7 @@ namespace monopoly::ibar
         bool canMortgage{};
         bool canUnmortgage{};
         bool aiButtonRemoteState{};
+        std::optional<std::uint8_t> pressedButtonIndex;
         PropertyTitlePlan propertyTitles{};
     };
 
@@ -102,6 +104,7 @@ namespace monopoly::ibar
             trackedRuleMode_ = RuleMode::Nothing;
             trackedRulePlayer_ = rules::NobodyPlayer;
             propertyTitles_.reset();
+            consumedPressedButton_.reset();
             bank_.reset();
             currentPlayer_.reset();
         }
@@ -114,6 +117,11 @@ namespace monopoly::ibar
         [[nodiscard]] data::DataId currentPlayerToken() const noexcept
         {
             return currentPlayer_.currentToken();
+        }
+
+        [[nodiscard]] std::optional<std::uint8_t> consumedPressedButton() const noexcept
+        {
+            return consumedPressedButton_;
         }
 
         [[nodiscard]] bool bankVisible() const noexcept
@@ -153,6 +161,7 @@ namespace monopoly::ibar
 
     private:
         data::DataId currentBackdrop_{data::EmptyDataId};
+        std::optional<std::uint8_t> consumedPressedButton_;
         CameraButtonPlayback auctionButton_{AuctionButtonIndex};
         CameraButtonPlayback buyButton_{BuyButtonIndex};
         CameraButtonPlayback cameraButton_;

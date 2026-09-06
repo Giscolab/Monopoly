@@ -547,6 +547,8 @@ namespace monopoly::engine
                 : bssmAvailability.unmortgageProperties != 0;
             iBarInputs.aiButtonRemoteState =
                 !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
+            iBarInputs.pressedButtonIndex =
+                ibar::stateReadOnly().pendingPressedButton;
 
             ibar::PropertyTitleInputs titleInputs{};
             titleInputs.available = iBarVisible &&
@@ -579,6 +581,8 @@ namespace monopoly::engine
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",
                     backdropSync.error().c_str());
+            if (const auto consumed = iBarBackdropPlayback.consumedPressedButton())
+                ibar::clearPendingPressedButton(*consumed);
             const auto dice2DSync = dice2DPlayback.sync(ruleState.dice,
                 dicePrompt.currentStartTurn, iBarVisible, dicePrompt.diceRollNotification, *session);
             if (!dice2DSync)

@@ -96,6 +96,7 @@ namespace monopoly::userinterface
         }
 
         dicePrompt.process(message);
+        ibar::processRuleMessage(message, iBarRuleProjection.mode);
         if (message.action == actions::Type::NotifyHousingShortage)
         {
             rules::PlayerNumber originalBuyer = rules::NobodyPlayer;

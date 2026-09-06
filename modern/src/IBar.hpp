@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 
 namespace monopoly::ibar
 {
@@ -54,6 +55,7 @@ namespace monopoly::ibar
         bool localRuleModeActive{};
         RuleMode localRuleMode{RuleMode::Nothing};
         std::optional<std::uint8_t> selectedDeed;
+        std::optional<std::uint8_t> pendingPressedButton;
 
 
         bool initialized = false;
@@ -77,6 +79,15 @@ namespace monopoly::ibar
     void processLibraryMessage(
         const uimsg::Message& message
     );
+
+
+    void processRuleMessage(
+        const actions::Message& message,
+        RuleMode projectedMode
+    ) noexcept;
+
+
+    void clearPendingPressedButton(std::uint8_t buttonIndex) noexcept;
 
 
     [[nodiscard]] RuleMode resolveRuleMode(

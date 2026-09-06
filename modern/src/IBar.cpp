@@ -1,5 +1,7 @@
 #include "IBar.hpp"
 
+#include "IBarCameraButtonPlayback.hpp"
+
 #include "Display.hpp"
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
@@ -201,8 +203,9 @@ namespace monopoly::ibar
         bool handleLocalRuleAction(layout::ActionButtonSlot slot)
         {
             using Slot = layout::ActionButtonSlot;
-            const auto enterBssm = [&](RuleMode mode)
+            const auto enterBssm = [&](RuleMode mode, std::uint8_t buttonIndex)
             {
+                globalState.pendingPressedButton = buttonIndex;
                 enterLocalRuleMode(mode);
                 return true;
             };
@@ -213,15 +216,15 @@ namespace monopoly::ibar
             case RuleMode::OtherPlayer:
             case RuleMode::DoneTurn:
             case RuleMode::FreeUnmortgage:
-                if (slot == Slot::General1) return enterBssm(RuleMode::Build);
-                if (slot == Slot::General2) return enterBssm(RuleMode::Sell);
-                if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage);
-                if (slot == Slot::General4) return enterBssm(RuleMode::UnMortgage);
+                if (slot == Slot::General1) return enterBssm(RuleMode::Build, BuildButtonIndex);
+                if (slot == Slot::General2) return enterBssm(RuleMode::Sell, SellButtonIndex);
+                if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage, MortgageButtonIndex);
+                if (slot == Slot::General4) return enterBssm(RuleMode::UnMortgage, UnmortButtonIndex);
                 break;
 
             case RuleMode::RaiseMoney:
-                if (slot == Slot::General2) return enterBssm(RuleMode::Sell);
-                if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage);
+                if (slot == Slot::General2) return enterBssm(RuleMode::Sell, SellButtonIndex);
+                if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage, MortgageButtonIndex);
                 break;
 
             case RuleMode::Build:
@@ -230,6 +233,7 @@ namespace monopoly::ibar
             case RuleMode::UnMortgage:
                 if (slot == Slot::Main)
                 {
+                    globalState.pendingPressedButton = DoneButtonIndex;
                     leaveLocalRuleMode();
                     return true;
                 }
@@ -238,6 +242,7 @@ namespace monopoly::ibar
             case RuleMode::DeedActive:
                 if (slot == Slot::Main)
                 {
+                    globalState.pendingPressedButton = DoneButtonIndex;
                     leaveLocalRuleMode();
                     return true;
                 }
@@ -594,6 +599,67 @@ namespace monopoly::ibar
         (void)handlePropertyClick(*property);
     }
 
+
+    void processRuleMessage(
+        const actions::Message& message,
+        RuleMode projectedMode) noexcept
+    {
+        if (message.action != actions::Type::NotifyActionCompleted ||
+            message.numberB == 0 ||
+            message.numberA < 0 ||
+            message.numberA > static_cast<std::int64_t>(
+                actions::Type::ClearTradedImmunitiesOrFutures))
+        {
+            return;
+        }
+
+        const auto action = static_cast<actions::Type>(message.numberA);
+        std::optional<std::uint8_t> pressed;
+        switch (action)
+        {
+        case actions::Type::EndTurn:
+        case actions::Type::CardSeen:
+        case actions::Type::FreeUnmortgageDone:
+            pressed = DoneButtonIndex;
+            break;
+        case actions::Type::RollDice:
+            pressed = RollDiceButtonIndex;
+            break;
+        case actions::Type::ExitJailDecision:
+            if (message.numberD == 0) pressed = RollDiceButtonIndex;
+            else if (message.numberD == 1) pressed = PayButtonIndex;
+            else if (message.numberD == 2) pressed = UseCardButtonIndex;
+            break;
+        case actions::Type::GoBankrupt:
+            pressed = BankruptButtonIndex;
+            break;
+        case actions::Type::BuyOrAuctionDecision:
+            pressed = message.numberD != 0 ? BuyButtonIndex : AuctionButtonIndex;
+            break;
+        case actions::Type::TaxDecision:
+            if (message.numberD == 0) pressed = FlatTaxButtonIndex;
+            else if (message.numberD == 1) pressed = PercentageButtonIndex;
+            break;
+        case actions::Type::StartHousingAuction:
+            if (projectedMode == RuleMode::HousingShort)
+                pressed = AuctionHouseButtonIndex;
+            else if (projectedMode == RuleMode::HotelShort)
+                pressed = AuctionHotelButtonIndex;
+            break;
+        default:
+            break;
+        }
+
+        if (pressed)
+            globalState.pendingPressedButton = *pressed;
+    }
+
+
+    void clearPendingPressedButton(std::uint8_t buttonIndex) noexcept
+    {
+        if (globalState.pendingPressedButton == buttonIndex)
+            globalState.pendingPressedButton.reset();
+    }
 
     RuleMode resolveRuleMode(
         RuleMode projectedMode,

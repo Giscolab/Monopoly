@@ -1,4 +1,5 @@
 #include "IBar.hpp"
+#include "IBarCameraButtonPlayback.hpp"
 #include "Display.hpp"
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
@@ -245,6 +246,62 @@ namespace
             "HotelShort Main starts hotel shortage auction");
     }
 
+    void testPressedAcknowledgements()
+    {
+        const auto acknowledge = [](actions::Type action,
+                                    std::int64_t choice,
+                                    ibar::RuleMode mode,
+                                    bool accepted = true)
+        {
+            ibar::state().pendingPressedButton.reset();
+            actions::Message message{};
+            message.action = actions::Type::NotifyActionCompleted;
+            message.numberA = static_cast<std::int64_t>(action);
+            message.numberB = accepted ? 1 : 0;
+            message.numberD = choice;
+            ibar::processRuleMessage(message, mode);
+            return ibar::stateReadOnly().pendingPressedButton;
+        };
+
+        require(!acknowledge(actions::Type::EndTurn, 0,
+                    ibar::RuleMode::DoneTurn, false),
+            "rejected action acknowledgement never requests Pressed art");
+        require(acknowledge(actions::Type::EndTurn, 0,
+                    ibar::RuleMode::DoneTurn) == ibar::DoneButtonIndex,
+            "accepted EndTurn requests Done Pressed art");
+        require(acknowledge(actions::Type::RollDice, 0,
+                    ibar::RuleMode::StartTurn) == ibar::RollDiceButtonIndex,
+            "accepted RollDice requests RollDice Pressed art");
+        require(acknowledge(actions::Type::ExitJailDecision, 0,
+                    ibar::RuleMode::JailExitPCR) == ibar::RollDiceButtonIndex &&
+                acknowledge(actions::Type::ExitJailDecision, 1,
+                    ibar::RuleMode::JailExitPCR) == ibar::PayButtonIndex &&
+                acknowledge(actions::Type::ExitJailDecision, 2,
+                    ibar::RuleMode::JailExitPCR) == ibar::UseCardButtonIndex,
+            "jail acknowledgement maps roll/pay/card to exact pressed button");
+        require(acknowledge(actions::Type::BuyOrAuctionDecision, 1,
+                    ibar::RuleMode::BuyAuction) == ibar::BuyButtonIndex &&
+                acknowledge(actions::Type::BuyOrAuctionDecision, 0,
+                    ibar::RuleMode::BuyAuction) == ibar::AuctionButtonIndex,
+            "buy/auction acknowledgement preserves original decision in Pressed art");
+        require(acknowledge(actions::Type::TaxDecision, 0,
+                    ibar::RuleMode::TaxDecision) == ibar::FlatTaxButtonIndex &&
+                acknowledge(actions::Type::TaxDecision, 1,
+                    ibar::RuleMode::TaxDecision) == ibar::PercentageButtonIndex,
+            "tax acknowledgement maps flat/percentage to exact pressed button");
+        require(acknowledge(actions::Type::GoBankrupt, 0,
+                    ibar::RuleMode::RaiseMoney) == ibar::BankruptButtonIndex,
+            "accepted bankruptcy requests Bankrupt Pressed art");
+        require(acknowledge(actions::Type::StartHousingAuction, 0,
+                    ibar::RuleMode::HousingShort) == ibar::AuctionHouseButtonIndex &&
+                acknowledge(actions::Type::StartHousingAuction, 0,
+                    ibar::RuleMode::HotelShort) == ibar::AuctionHotelButtonIndex,
+            "shortage acknowledgement uses pre-clear RULE mode for house/hotel pressed art");
+        require(!acknowledge(actions::Type::TradeAccept, 1,
+                    ibar::RuleMode::Trading),
+            "TradeAccept acknowledgement does not invent legacy Pressed feedback");
+    }
+
     void testBSSMSubstatesAndDeeds()
     {
         test_support::ruleState.squares[1].owner = 0;
@@ -370,6 +427,7 @@ int main()
         testBuyAuctionAndTax();
         testJailVariants();
         testTradeAndSpecialDirectActions();
+        testPressedAcknowledgements();
         testBSSMSubstatesAndDeeds();
         testRemoteAndPlayerSelectGuards();
         monopoly::ibar::shutdown();

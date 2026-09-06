@@ -124,7 +124,8 @@ namespace monopoly::ibar
             engine::SequencePlayback& playback,
             bool useGreyButtons = false,
             bool buttonBarStable = true,
-            bool allowIncoming = true);
+            bool allowIncoming = true,
+            bool requestPressed = false);
 
         void reset() noexcept
         {
@@ -141,6 +142,11 @@ namespace monopoly::ibar
         [[nodiscard]] data::DataId currentSequence() const noexcept
         {
             return currentSequence_;
+        }
+
+        [[nodiscard]] std::uint8_t buttonIndex() const noexcept
+        {
+            return buttonIndex_;
         }
 
         [[nodiscard]] std::uint16_t priority() const noexcept

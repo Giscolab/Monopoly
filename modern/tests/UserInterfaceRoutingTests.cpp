@@ -106,6 +106,10 @@ namespace monopoly::ibar
     void processLibraryMessage(const uimsg::Message&)
     {
     }
+
+    void processRuleMessage(const actions::Message&, RuleMode) noexcept
+    {
+    }
 }
 
 namespace monopoly::timers
