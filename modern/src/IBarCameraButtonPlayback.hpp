@@ -21,7 +21,10 @@ namespace monopoly::ibar
     inline constexpr std::uint8_t FlatTaxButtonIndex = 5;
     inline constexpr std::uint8_t PercentageButtonIndex = 6;
     inline constexpr std::uint8_t BuildButtonIndex = 7;
+    inline constexpr std::uint8_t TradeAcceptButtonIndex = 8;
+    inline constexpr std::uint8_t TradeCounterButtonIndex = 9;
     inline constexpr std::uint8_t BankruptButtonIndex = 10;
+    inline constexpr std::uint8_t TradeRejectButtonIndex = 11;
     inline constexpr std::uint8_t MortgageButtonIndex = 12;
     inline constexpr std::uint8_t MainButtonIndex = 13;
     inline constexpr std::uint8_t OptionsButtonIndex = 14;
@@ -36,6 +39,8 @@ namespace monopoly::ibar
     inline constexpr std::uint8_t UseCardButtonIndex = 23;
     inline constexpr std::uint8_t AuctionHouseButtonIndex = 24;
     inline constexpr std::uint8_t AuctionHotelButtonIndex = 25;
+    inline constexpr std::uint8_t PlaceHouseButtonIndex = 26;
+    inline constexpr std::uint8_t PlaceHotelButtonIndex = 27;
     inline constexpr std::uint8_t ButtonAnimationsPerSet = 4;
     inline constexpr std::uint8_t CameraButtonStayAtEnd = 2;
     inline constexpr std::uint8_t CameraButtonLoopToBeginning = 3;

@@ -35,6 +35,7 @@ namespace monopoly::ibar
         bool trackRules{true};
         bool tradeEligible{};
         bool rollDiceDesired{};
+        bool raiseCashCanBankrupt{};
         bool aiButtonRemoteState{};
     };
 
@@ -55,8 +56,13 @@ namespace monopoly::ibar
             buyButton_.reset();
             cameraButton_.reset();
             doneButton_.reset();
+            sellButton_.reset();
+            tradeAcceptButton_.reset();
+            tradeCounterButton_.reset();
             flatTaxButton_.reset();
             percentageButton_.reset();
+            bankruptButton_.reset();
+            tradeRejectButton_.reset();
             mainButton_.reset();
             optionsButton_.reset();
             payButton_.reset();
@@ -66,6 +72,10 @@ namespace monopoly::ibar
             tradeButton_.reset();
             exitButton_.reset();
             useCardButton_.reset();
+            auctionHouseButton_.reset();
+            auctionHotelButton_.reset();
+            placeHouseButton_.reset();
+            placeHotelButton_.reset();
             trackedRuleMode_ = RuleMode::Nothing;
             trackedRulePlayer_ = rules::NobodyPlayer;
             bank_.reset();
@@ -123,8 +133,13 @@ namespace monopoly::ibar
         CameraButtonPlayback buyButton_{BuyButtonIndex};
         CameraButtonPlayback cameraButton_;
         CameraButtonPlayback doneButton_{DoneButtonIndex};
+        CameraButtonPlayback sellButton_{SellButtonIndex};
+        CameraButtonPlayback tradeAcceptButton_{TradeAcceptButtonIndex};
+        CameraButtonPlayback tradeCounterButton_{TradeCounterButtonIndex};
         CameraButtonPlayback flatTaxButton_{FlatTaxButtonIndex};
         CameraButtonPlayback percentageButton_{PercentageButtonIndex};
+        CameraButtonPlayback bankruptButton_{BankruptButtonIndex};
+        CameraButtonPlayback tradeRejectButton_{TradeRejectButtonIndex};
         CameraButtonPlayback mainButton_{MainButtonIndex};
         CameraButtonPlayback optionsButton_{OptionsButtonIndex};
         CameraButtonPlayback payButton_{PayButtonIndex};
@@ -134,6 +149,10 @@ namespace monopoly::ibar
         CameraButtonPlayback tradeButton_{TradeButtonIndex};
         CameraButtonPlayback exitButton_{ExitButtonIndex};
         CameraButtonPlayback useCardButton_{UseCardButtonIndex};
+        CameraButtonPlayback auctionHouseButton_{AuctionHouseButtonIndex};
+        CameraButtonPlayback auctionHotelButton_{AuctionHotelButtonIndex};
+        CameraButtonPlayback placeHouseButton_{PlaceHouseButtonIndex};
+        CameraButtonPlayback placeHotelButton_{PlaceHotelButtonIndex};
         RuleMode trackedRuleMode_{RuleMode::Nothing};
         rules::PlayerNumber trackedRulePlayer_{rules::NobodyPlayer};
         BankPlayback bank_;

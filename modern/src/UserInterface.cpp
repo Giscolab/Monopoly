@@ -96,7 +96,31 @@ namespace monopoly::userinterface
         }
 
         dicePrompt.process(message);
-        iBarRuleProjection.process(message);
+        if (message.action == actions::Type::NotifyHousingShortage)
+        {
+            rules::PlayerNumber originalBuyer = rules::NobodyPlayer;
+            if (message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+                originalBuyer = static_cast<rules::PlayerNumber>(message.numberA);
+            const std::uint32_t allowedPlayers = message.numberE > 0
+                ? static_cast<std::uint32_t>(message.numberE)
+                : 0u;
+            const auto shortagePlayer = ui::localplayers::housingShortageIBarPlayer(
+                uiRuleState, originalBuyer, allowedPlayers);
+            iBarRuleProjection.processHousingShortage(message, shortagePlayer);
+        }
+        else
+        {
+            iBarRuleProjection.process(message);
+            if (message.action == actions::Type::NotifyTradeAcceptanceDecision)
+            {
+                const std::uint32_t pendingPlayers = message.numberA > 0
+                    ? static_cast<std::uint32_t>(message.numberA)
+                    : 0u;
+                const auto tradePlayer = ui::localplayers::tradeAcceptanceIBarPlayer(
+                    uiRuleState, iBarRuleProjection.tradeBPlayer, pendingPlayers);
+                iBarRuleProjection.processTradeAcceptance(message, tradePlayer);
+            }
+        }
 
         if (message.action == actions::Type::NotifyDiceRolled)
         {

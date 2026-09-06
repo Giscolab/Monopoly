@@ -65,6 +65,20 @@ namespace monopoly::ui::localplayers
     );
 
 
+    rules::PlayerNumber housingShortageIBarPlayer(
+        const rules::GameState& uiState,
+        rules::PlayerNumber originalBuyer,
+        std::uint32_t allowedPlayers
+    );
+
+
+    rules::PlayerNumber tradeAcceptanceIBarPlayer(
+        const rules::GameState& uiState,
+        rules::PlayerNumber tradeBPlayer,
+        std::uint32_t pendingPlayers
+    );
+
+
     bool requestAddLocalPlayer(
         const rules::GameState& uiState,
         std::wstring_view name,
