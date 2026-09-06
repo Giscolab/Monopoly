@@ -113,6 +113,28 @@ namespace
         expect(!idle.center(),
             "new-game setup starts with no player in the center idle");
     }
+    void testBankruptCenterLeavesWithoutRestingSlot()
+    {
+        auto state = threePlayersSameSquare();
+        pieces::PieceIdleState idle;
+        expect(idle.initialize(state, rules::PlayerNumber{1}).has_value(),
+            "bankruptcy fixture starts with player 1 in the center");
+        state.players[1].currentSquare = 41;
+        const auto plan = idle.planTurnChange(state, 2);
+        expect(plan && !plan->movingOut && plan->movingIn,
+            "off-board center leaves without a center-to-rest animation");
+        expect(plan && plan->movingIn->player == 2 &&
+            idle.center() == rules::PlayerNumber{2},
+            "next live player still becomes the center after bankruptcy");
+        bool bankruptOccupiesRest = false;
+        for (const auto& square : idle.occupancy())
+            for (const auto& slot : square)
+                bankruptOccupiesRest = bankruptOccupiesRest ||
+                    (slot && *slot == rules::PlayerNumber{1});
+        expect(!bankruptOccupiesRest,
+            "bankrupt center is not reinserted into any resting slot");
+    }
+
     void testSixRestingSlotsFillWithoutOverwrite()
     {
         rules::GameState state{};
@@ -139,6 +161,7 @@ int main()
     testHistoricalIdsAndCornerYaw();
     testProjectionFailuresAreAtomic();
     testNewGameReverseGoLayout();
+    testBankruptCenterLeavesWithoutRestingSlot();
     testSixRestingSlotsFillWithoutOverwrite();
     if (failures != 0) std::cerr << failures << " failure(s)\n";
     return failures == 0 ? 0 : 1;

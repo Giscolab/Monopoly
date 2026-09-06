@@ -375,7 +375,8 @@ namespace monopoly::engine
                 syncPersistentPieceIdles(*session, boardVisible);
             if (!persistentIdleSync)
                 return SDL_SetError("Persistent piece idle: %s",
-                    persistentIdleSync.error().c_str());            const auto boardSync = syncBoardPlayback(*session, displayState);
+                    persistentIdleSync.error().c_str());
+            const auto boardSync = syncBoardPlayback(*session, displayState);
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
                     boardSync.error().c_str());
@@ -418,6 +419,7 @@ namespace monopoly::engine
         pieceMovePlayback = {};
         pieceJailPlayback = {};
         pieceIdlePlayback = {};
+        pieceIdleDisplay.reset();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;
         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
