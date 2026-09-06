@@ -19,9 +19,6 @@ namespace monopoly::engine
     {
         auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
         if (!program) return std::unexpected(program.error().detail);
-        // Start + MoveTheWorks is one historical collect-command unit in
-        // UDBoard.cpp. Preflight both FIFO slots so a full queue cannot leave
-        // a started-but-unscaled board behind.
         if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - 2)
             return std::unexpected("sequence command queue capacity exceeded");
         auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority});
@@ -41,12 +38,15 @@ namespace monopoly::engine
         return {};
     }
 
-    std::expected<void, std::string> SequencePlayback::transitionRySTxzDropStayAtEnd(
+    std::expected<void, std::string> SequencePlayback::transitionMovedDrop(
         std::optional<data::DataId> previousId, data::DataId id,
-        std::uint16_t priority, float yaw, float scale, float x, float z)
+        std::uint16_t priority, sequence::SequenceTransform transform,
+        std::uint8_t endingAction)
     {
         auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
         if (!program) return std::unexpected(program.error().detail);
+        if (endingAction == 0 || endingAction > 3)
+            return std::unexpected("invalid sequence ending action");
 
         const std::size_t required = previousId ? 4U : 3U;
         if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - required)
@@ -61,14 +61,25 @@ namespace monopoly::engine
 
         sequence::ClockStartOptions options{};
         options.dropFrames = true;
-        auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority, options});
+        auto queued = commands_.enqueue(
+            sequence::StartSequenceCommand{*program, priority, options});
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
-        queued = commands_.enqueue(sequence::makeMoveRySTxz(id, priority, yaw, scale, x, z));
+        queued = commands_.enqueue(sequence::makeMoveTheWorks(
+            id, priority, std::move(transform)));
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
         queued = commands_.enqueue(sequence::SetSequenceEndingActionCommand{
-            id, priority, 2, false});
-        if (!queued) return std::unexpected("sequence command queue rejected StayAtEnd");
+            id, priority, endingAction, false});
+        if (!queued) return std::unexpected("sequence command queue rejected ending action");
         return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::transitionRySTxzDropStayAtEnd(
+        std::optional<data::DataId> previousId, data::DataId id,
+        std::uint16_t priority, float yaw, float scale, float x, float z)
+    {
+        return transitionMovedDrop(previousId, id, priority,
+            sequence::makeMoveRySTxz(id, priority, yaw, scale, x, z).transform,
+            2);
     }
 
     std::expected<void, std::string> SequencePlayback::setCamera3D(
@@ -85,8 +96,6 @@ namespace monopoly::engine
     std::expected<void, std::string> SequencePlayback::setCameraNumber(
         std::uint8_t cameraNumber)
     {
-        // L_Seqncr.cpp::LE_SEQNCR_SetCameraNumber supplies these defaults as
-        // ignored placeholders whenever cameraNumber is nonzero.
         const auto queued = commands_.enqueue(sequence::SetCameraCommand{
             static_cast<std::uint8_t>(RenderSlot::World3D), cameraNumber,
             {0.0F, 0.0F, -500.0F}, {0.0F, 0.0F, 1.0F},

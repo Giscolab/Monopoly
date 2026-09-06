@@ -15,6 +15,7 @@ namespace monopoly::userinterface
     namespace
     {
         rules::GameState uiRuleState{};
+        pieces::PieceMoveIngress pieceMoveIngress;
         bool firstNumberOfPlayersNotification = true;
 
 
@@ -56,6 +57,7 @@ namespace monopoly::userinterface
     void resetRuleProjection()
     {
         uiRuleState = {};
+        pieceMoveIngress.reset();
         firstNumberOfPlayersNotification = true;
     }
 
@@ -70,6 +72,20 @@ namespace monopoly::userinterface
         if (!ui::localplayers::isLocalRecipient(message.toPlayer))
         {
             return;
+        }
+
+        if (message.action == actions::Type::NotifyMoveForwards ||
+            message.action == actions::Type::NotifyMoveBackwards ||
+            message.action == actions::Type::NotifyJumpToSquare)
+        {
+            // UDIBar.cpp processes the move against the old UI square, then
+            // updates UICurrentGameState except for the GoToJail destination.
+            // Token animations default to TRUE in display.cpp; the Options
+            // screen toggle is not yet ported.
+            const auto movement = pieceMoveIngress.process(
+                uiRuleState, message, true);
+            if (movement && movement->sourceQueueLockRequired)
+                lockGameQueue();
         }
 
         if (
@@ -169,6 +185,16 @@ namespace monopoly::userinterface
     const rules::GameState& ruleStateReadOnly()
     {
         return uiRuleState;
+    }
+
+    std::optional<pieces::PieceMovePlan> takePendingPieceMovePlan()
+    {
+        return pieceMoveIngress.takePlan();
+    }
+
+    std::optional<pieces::PieceMoveSpecialRequest> takePendingPieceMoveSpecial()
+    {
+        return pieceMoveIngress.takeSpecial();
     }
 
     void update()

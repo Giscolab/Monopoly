@@ -3,6 +3,9 @@
 #include "UIMessages.hpp"
 #include "Actions.hpp"
 #include "RuleTypes.hpp"
+#include "PieceMoveIngress.hpp"
+
+#include <optional>
 
 namespace monopoly::userinterface
 {
@@ -20,6 +23,9 @@ namespace monopoly::userinterface
 
 
     const rules::GameState& ruleStateReadOnly();
+
+    [[nodiscard]] std::optional<pieces::PieceMovePlan> takePendingPieceMovePlan();
+    [[nodiscard]] std::optional<pieces::PieceMoveSpecialRequest> takePendingPieceMoveSpecial();
 
 
     // ProcessPlayersUI(NULL) original: laisse les modules UI actifs
