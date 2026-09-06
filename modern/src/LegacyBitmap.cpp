@@ -99,6 +99,8 @@ namespace monopoly::data
     {
         switch (code)
         {
+        case BitmapErrorCode::InvalidPalette: return "InvalidPalette";
+        case BitmapErrorCode::DecodeBudgetExceeded: return "DecodeBudgetExceeded";
         case BitmapErrorCode::None: return "None";
         case BitmapErrorCode::FileOpenFailed: return "FileOpenFailed";
         case BitmapErrorCode::ReadFailed: return "ReadFailed";
@@ -279,6 +281,61 @@ namespace monopoly::data
         }
 
         return metadata;
+    }
+
+
+    std::expected<LegacyBitmapRGBA8, BitmapError> decodeLegacyBitmapRGBA8(
+        std::span<const std::byte> bytes, std::size_t maxPixels)
+    {
+        const auto inspected = inspectLegacyBitmap(bytes);
+        if (!inspected) return std::unexpected(inspected.error());
+        const auto& m = *inspected;
+        if (m.bitsPerPixel != 8 && m.bitsPerPixel != 24)
+            return std::unexpected(error(BitmapErrorCode::InvalidBitDepth,
+                "RGBA8 decoding supports only BI_RGB 8/24-bit BMP"));
+        const auto height = static_cast<std::uint32_t>(m.topDown() ? -m.height : m.height);
+        const auto width = static_cast<std::uint32_t>(m.width);
+        const auto count = static_cast<std::uint64_t>(width) * height;
+        if (count > maxPixels || count > std::numeric_limits<std::size_t>::max() / 4U)
+            return std::unexpected(error(BitmapErrorCode::DecodeBudgetExceeded,
+                "decoded BMP exceeds pixel allocation budget"));
+        const auto paletteStart = 14ULL + m.dibHeaderSize;
+        std::uint32_t paletteCount{};
+        if (m.bitsPerPixel == 8)
+        {
+            paletteCount = readU32Le(bytes.data() + 46);
+            if (!paletteCount) paletteCount = 256;
+            if (paletteCount > 256 || paletteStart + 4ULL * paletteCount > m.pixelDataOffset)
+                return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                    "BMP palette is truncated or overlaps raster"));
+        }
+        const auto stride = (static_cast<std::uint64_t>(width) * m.bitsPerPixel + 31U) / 32U * 4U;
+        LegacyBitmapRGBA8 result{width, height, {}};
+        result.pixels.resize(static_cast<std::size_t>(count) * 4U);
+        for (std::uint32_t y = 0; y < height; ++y)
+        {
+            const auto sourceY = m.topDown() ? y : height - 1U - y;
+            const auto* row = bytes.data() + m.pixelDataOffset + sourceY * stride;
+            for (std::uint32_t x = 0; x < width; ++x)
+            {
+                const std::byte* color{};
+                if (m.bitsPerPixel == 8)
+                {
+                    const auto index = std::to_integer<std::uint8_t>(row[x]);
+                    if (index >= paletteCount)
+                        return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                            "BMP raster references an absent palette entry"));
+                    color = bytes.data() + paletteStart + 4U * index;
+                }
+                else color = row + 3ULL * x;
+                const auto offset = (static_cast<std::size_t>(y) * width + x) * 4U;
+                result.pixels[offset] = std::to_integer<std::uint8_t>(color[2]);
+                result.pixels[offset + 1] = std::to_integer<std::uint8_t>(color[1]);
+                result.pixels[offset + 2] = std::to_integer<std::uint8_t>(color[0]);
+                result.pixels[offset + 3] = 255;
+            }
+        }
+        return result;
     }
 
 

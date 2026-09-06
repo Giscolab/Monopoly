@@ -2,6 +2,7 @@
 
 #include "SequenceCommands.hpp"
 #include "SequenceWorld3DSlot.hpp"
+#include "SequenceWorld2DSlot.hpp"
 
 namespace monopoly::engine
 {
@@ -41,10 +42,15 @@ namespace monopoly::engine
         sequence::SequenceCommandQueue& commands() noexcept { return commands_; }
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }
         SequenceWorld3DSlot& world() noexcept { return world_; }
+        SequenceWorld2DSlot& world2D() noexcept { return world2D_; }
+        std::shared_ptr<const data::ResourceSnapshot> resources() const noexcept
+        { return meshes_.resources(); }
     private:
         data::MeshRuntimeCache meshes_;
         sequence::SequenceRuntime runtime_;
         sequence::SequenceCommandQueue commands_;
         SequenceWorld3DSlot world_;
+        data::BitmapRuntimeCache bitmaps_;
+        SequenceWorld2DSlot world2D_;
     };
 }

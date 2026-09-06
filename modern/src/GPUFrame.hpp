@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_gpu.h>
 #include "World3DRenderer.hpp"
+#include "World2DRenderer.hpp"
 
 namespace monopoly::engine::gpuframe
 {
@@ -16,6 +17,8 @@ namespace monopoly::engine::gpuframe
         SDL_GPUDevice* device,
         SDL_Window* window,
         World3DRenderer* renderer = nullptr,
-        const SequenceWorld3DSlot* world = nullptr
+        const SequenceWorld3DSlot* world = nullptr,
+        World2DRenderer* overlayRenderer = nullptr,
+        const SequenceWorld2DSlot* overlay = nullptr
     );
 }

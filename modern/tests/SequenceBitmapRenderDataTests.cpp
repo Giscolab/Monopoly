@@ -53,7 +53,7 @@ namespace
         engine::SequencePlayback playback(snapshot);
         const auto bad = data::packDataId(data::LegacyGroupId::Main, 0x009D);
         expect(playback.startXY(bad, 300, 5, 6).has_value() &&
-            playback.update(0).has_value(),
+            playback.commands().updateCycle(0).has_value(),
             "synthetic wrong-type bitmap sequence reaches runtime intent");
         const auto collected = sequence::collectSequenceBitmapRenderData(
             playback.runtime(), snapshot);
@@ -62,6 +62,8 @@ namespace
             collected.error().contentsDataId ==
                 data::packDataId(data::LegacyGroupId::Main, 1),
             "wrong DAT content type fails closed before publishing a partial bitmap list");
+        expect(!playback.update(1) && playback.world2D().size() == 0 && playback.world().size() == 0,
+            "integrated playback rejects wrong bitmap type and clears both render slots");
     }
 }
 

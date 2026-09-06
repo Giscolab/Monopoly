@@ -11,6 +11,7 @@
 
 namespace monopoly::userinterface
 {
+    dice::PromptState& dicePromptState() noexcept;
     // Repart d'une projection UI neuve et réarme l'initialisation spéciale
     // déclenchée par la première notification du nombre de joueurs.
     void resetRuleProjection();
@@ -25,7 +26,7 @@ namespace monopoly::userinterface
 
 
     const rules::GameState& ruleStateReadOnly();
-
+
     const pieces::PieceIdleState& pieceIdleStateReadOnly();
     [[nodiscard]] std::optional<pieces::PieceMovePlan> takePendingPieceMovePlan();
     [[nodiscard]] std::optional<pieces::PieceMoveSpecialRequest> takePendingPieceMoveSpecial();

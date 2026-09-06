@@ -15,6 +15,8 @@
 
 namespace monopoly::userinterface
 {
+    namespace { dice::PromptState dicePrompt; }
+    dice::PromptState& dicePromptState() noexcept { return dicePrompt; }
     namespace
     {
         rules::GameState uiRuleState{};
@@ -66,6 +68,7 @@ namespace monopoly::userinterface
         pieceMoveIngress.reset();
         pieceIdleState.reset();
         diceIngress.reset();
+        dicePrompt = {};
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -82,6 +85,8 @@ namespace monopoly::userinterface
         {
             return;
         }
+
+        dicePrompt.process(message);
 
         if (message.action == actions::Type::NotifyDiceRolled)
         {

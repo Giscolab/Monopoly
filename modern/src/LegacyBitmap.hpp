@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace monopoly::data
 {
@@ -23,7 +24,9 @@ namespace monopoly::data
         InvalidBitDepth,
         UnsupportedCompression,
         PixelDataOutOfRange,
-        DeclaredSizeOutOfRange
+        DeclaredSizeOutOfRange,
+        InvalidPalette,
+        DecodeBudgetExceeded
     };
 
 
@@ -56,8 +59,20 @@ namespace monopoly::data
     [[nodiscard]] std::string_view bitmapErrorCodeName(
         BitmapErrorCode code) noexcept;
 
+    struct LegacyBitmapRGBA8
+    {
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::vector<std::uint8_t> pixels; // top-down, straight RGBA8
+    };
+
+    // BI_RGB 8/24 only. BMP reserved palette bytes are not alpha.
+    // L_Data.cpp:7490 sets BITMAP_NOTRANSPARENCY for DataBMP.
+    [[nodiscard]] std::expected<LegacyBitmapRGBA8, BitmapError>
+    decodeLegacyBitmapRGBA8(std::span<const std::byte> bytes,
+        std::size_t maxPixels = 16U * 1024U * 1024U);
+
     // Inspecteur sans SDL/GPU pour prouver les metadonnees des BMP bruts.
-    // Le decodeur et l'upload runtime restent assures par SDL_LoadBMP.
     [[nodiscard]] std::expected<LegacyBitmapMetadata, BitmapError>
     inspectLegacyBitmap(std::span<const std::byte> bytes);
 

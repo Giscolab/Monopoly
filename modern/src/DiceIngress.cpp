@@ -4,6 +4,29 @@
 
 namespace monopoly::dice
 {
+    void PromptState::process(const actions::Message& message) noexcept
+    {
+        switch (message.action)
+        {
+        case actions::Type::NotifyPleaseRollDice:
+            ruleStartTurn = true;
+            diceRollNotification = true;
+            break;
+        case actions::Type::NotifyDiceRolled:
+        case actions::Type::NotifyStartTurn:
+        case actions::Type::NotifyEndTurn:
+            ruleStartTurn = false;
+            break;
+        case actions::Type::NotifyActionCompleted:
+            if (message.numberB &&
+                (message.numberA == static_cast<std::int64_t>(actions::Type::RollDice) ||
+                 message.numberA == static_cast<std::int64_t>(actions::Type::EndTurn)))
+                ruleStartTurn = false;
+            break;
+        default: break;
+        }
+    }
+
     std::expected<RollRequest, IngressError> Ingress::process(
         rules::GameState& state,
         const actions::Message& message,

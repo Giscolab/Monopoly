@@ -234,6 +234,30 @@ namespace
             "idle transition plan is consumed exactly once");
         queueLockDepth = 0;
     }
+    void testDicePromptProjection()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        actions::Message prompt{};
+        prompt.action=actions::Type::NotifyPleaseRollDice;
+        prompt.toPlayer=rules::AllPlayers;
+        userinterface::processRuleMessage(prompt);
+        auto& state=userinterface::dicePromptState();
+        state.show();
+        expect(state.currentStartTurn && state.diceRollNotification,
+            "local PLEASE_ROLL_DICE routes the bobbing prompt and notification");
+        actions::Message roll{};
+        roll.action=actions::Type::NotifyDiceRolled;roll.toPlayer=rules::AllPlayers;
+        roll.numberA=1;roll.numberB=2;
+        userinterface::processRuleMessage(roll);
+        state.show();
+        expect(!state.currentStartTurn && state.diceRollNotification,
+            "local DICE_ROLLED exits bobbing without losing skipped-frame notification");
+        userinterface::resetRuleProjection();queueLockDepth=0;
+        expect(!state.currentStartTurn && !state.ruleStartTurn && !state.diceRollNotification,
+            "rule projection reset clears pending 2D dice prompt");
+    }
+
     void testDiceNotificationQueuesHistoricalRoll()
     {
         using namespace monopoly;
@@ -324,6 +348,7 @@ int main()
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();
     testDiceNotificationQueuesHistoricalRoll();
+    testDicePromptProjection();
     testFirstNonZeroPlayerProjection();
     testPausedAndNewGameProjection();
 
