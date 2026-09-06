@@ -56,6 +56,7 @@ namespace monopoly::ibar
         RuleMode localRuleMode{RuleMode::Nothing};
         std::optional<std::uint8_t> selectedDeed;
         std::optional<std::uint8_t> pendingPressedButton;
+        std::optional<std::uint8_t> desiredCardIndex;
 
 
         bool initialized = false;

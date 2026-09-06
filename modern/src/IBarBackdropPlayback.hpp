@@ -53,6 +53,8 @@ namespace monopoly::ibar
         bool aiButtonRemoteState{};
         std::optional<std::uint8_t> pressedButtonIndex;
         PropertyTitlePlan propertyTitles{};
+        int propertyCurrentMouseOver{-1};
+        std::uint64_t tick{};
     };
 
     [[nodiscard]] RuleActionHitState ruleActionHitState(
@@ -104,6 +106,7 @@ namespace monopoly::ibar
             trackedRuleMode_ = RuleMode::Nothing;
             trackedRulePlayer_ = rules::NobodyPlayer;
             propertyTitles_.reset();
+            propertyHover_.reset();
             consumedPressedButton_.reset();
             bank_.reset();
             currentPlayer_.reset();
@@ -122,6 +125,11 @@ namespace monopoly::ibar
         [[nodiscard]] std::optional<std::uint8_t> consumedPressedButton() const noexcept
         {
             return consumedPressedButton_;
+        }
+
+        [[nodiscard]] data::DataId propertyHoverDeed() const noexcept
+        {
+            return propertyHover_.currentDeed();
         }
 
         [[nodiscard]] bool bankVisible() const noexcept
@@ -192,6 +200,7 @@ namespace monopoly::ibar
         RuleMode trackedRuleMode_{RuleMode::Nothing};
         rules::PlayerNumber trackedRulePlayer_{rules::NobodyPlayer};
         PropertyTitlePlayback propertyTitles_;
+        PropertyHoverPlayback propertyHover_;
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };

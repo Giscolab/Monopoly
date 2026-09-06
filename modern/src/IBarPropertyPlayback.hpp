@@ -18,6 +18,12 @@ namespace monopoly::ibar
     inline constexpr data::DataTag PropertyLowColourBaseTag = 0x017F;
     inline constexpr data::DataTag PropertyMortgagedBaseTag = 0x019B;
     inline constexpr std::uint16_t PropertyBasePriority = 256;
+    inline constexpr data::DataTag PropertyHoverMortgagedBaseTag = 0x0B53;
+    inline constexpr data::DataTag PropertyHoverNormalBaseTag = 0x0CD0;
+    inline constexpr std::uint16_t PropertyHoverPriority = 1003;
+    inline constexpr std::int32_t PropertyHoverX = 540;
+    inline constexpr std::int32_t PropertyHoverY = 130;
+    inline constexpr std::uint64_t PropertyHoverDelayTicks = 36;
 
     enum class PropertyTitleStyle : std::uint8_t
     {
@@ -67,4 +73,32 @@ namespace monopoly::ibar
         std::array<data::DataId, rules::SquareCount> current_{};
         std::array<std::uint16_t, rules::SquareCount> priorities_{};
     };
+
+    [[nodiscard]] data::DataId propertyHoverDataId(
+        int square, bool mortgaged) noexcept;
+
+    class PropertyHoverPlayback final
+    {
+    public:
+        [[nodiscard]] std::expected<void, std::string> sync(
+            const rules::GameState& state,
+            const PropertyTitlePlan& titles,
+            int currentMouseOver,
+            std::uint64_t tick,
+            engine::SequencePlayback& playback);
+        void reset() noexcept;
+
+        [[nodiscard]] data::DataId currentDeed() const noexcept
+        {
+            return currentDeed_;
+        }
+        [[nodiscard]] int checkedSquare() const noexcept { return checkedSquare_; }
+        [[nodiscard]] std::uint64_t hoverStartTick() const noexcept { return hoverStartTick_; }
+
+    private:
+        int checkedSquare_{-1};
+        std::uint64_t hoverStartTick_{};
+        data::DataId currentDeed_{data::EmptyDataId};
+    };
+
 }

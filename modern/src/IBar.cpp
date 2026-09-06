@@ -1,6 +1,7 @@
 #include "IBar.hpp"
 
 #include "IBarCameraButtonPlayback.hpp"
+#include "CardTypes.hpp"
 
 #include "Display.hpp"
 #include "LocalPlayers.hpp"
@@ -604,6 +605,31 @@ namespace monopoly::ibar
         const actions::Message& message,
         RuleMode projectedMode) noexcept
     {
+        if (message.action == actions::Type::NotifyPickedUpCard)
+        {
+            const auto deck = message.numberB;
+            const auto card = message.numberC;
+            if (deck == static_cast<std::int64_t>(DeckType::Chance) &&
+                card >= ChanceFirst && card < ChanceFirst + ChanceCount)
+            {
+                globalState.desiredCardIndex = static_cast<std::uint8_t>(
+                    card - ChanceFirst);
+            }
+            else if (deck == static_cast<std::int64_t>(DeckType::Community) &&
+                card >= CommunityFirst && card < CommunityFirst + CommunityCount)
+            {
+                globalState.desiredCardIndex = static_cast<std::uint8_t>(
+                    16 + card - CommunityFirst);
+            }
+            return;
+        }
+
+        if (message.action == actions::Type::NotifyPutAwayCard)
+        {
+            globalState.desiredCardIndex.reset();
+            return;
+        }
+
         if (message.action != actions::Type::NotifyActionCompleted ||
             message.numberB == 0 ||
             message.numberA < 0 ||
@@ -614,6 +640,9 @@ namespace monopoly::ibar
         }
 
         const auto action = static_cast<actions::Type>(message.numberA);
+        if (action == actions::Type::CardSeen)
+            globalState.desiredCardIndex.reset();
+
         std::optional<std::uint8_t> pressed;
         switch (action)
         {
