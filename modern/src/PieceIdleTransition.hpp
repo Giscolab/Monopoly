@@ -46,6 +46,8 @@ namespace monopoly::pieces
         using Occupancy = std::array<SquareSlots, BoardSquareCountWithSpecials>;
 
         void reset() noexcept;
+        [[nodiscard]] std::expected<void, PieceIdleTransitionError> initializeNewGame(
+            const rules::GameState& state) noexcept;
         [[nodiscard]] std::expected<void, PieceIdleTransitionError> initialize(
             const rules::GameState& state,
             std::optional<rules::PlayerNumber> center = std::nullopt) noexcept;

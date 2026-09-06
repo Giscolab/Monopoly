@@ -12,21 +12,21 @@ namespace monopoly::pieces
             return player < state.numberOfPlayers && player < rules::MaxPlayers;
         }
 
-        [[nodiscard]] std::uint8_t chooseSourceFreeSlot(
+        [[nodiscard]] std::optional<std::uint8_t> chooseSourceFreeSlot(
             const PieceIdleState::SquareSlots& slots) noexcept
         {
-            std::uint8_t selected{};
+            std::optional<std::uint8_t> selected;
             for (int index = RestingPositionCount - 1; index >= 0; --index)
                 if (!slots[static_cast<std::size_t>(index)])
                     selected = static_cast<std::uint8_t>(index);
             return selected;
         }
 
-        [[nodiscard]] std::uint8_t findSourcePlayerSlot(
+        [[nodiscard]] std::optional<std::uint8_t> findSourcePlayerSlot(
             const PieceIdleState::SquareSlots& slots,
             rules::PlayerNumber player) noexcept
         {
-            std::uint8_t selected{};
+            std::optional<std::uint8_t> selected;
             for (std::uint8_t index = 0; index < RestingPositionCount; ++index)
                 if (slots[index] && *slots[index] == player) selected = index;
             return selected;
@@ -77,6 +77,22 @@ namespace monopoly::pieces
         initialized_ = false;
     }
 
+    std::expected<void, PieceIdleTransitionError> PieceIdleState::initializeNewGame(
+        const rules::GameState& state) noexcept
+    {
+        reset();
+        if (state.numberOfPlayers > rules::MaxPlayers)
+            return std::unexpected(PieceIdleTransitionError::InvalidProjection);
+        for (rules::PlayerNumber slot = 0;
+            slot < state.numberOfPlayers; ++slot)
+        {
+            const auto player = static_cast<rules::PlayerNumber>(
+                state.numberOfPlayers - slot - 1U);
+            occupancy_[0][slot] = player;
+        }
+        initialized_ = true;
+        return {};
+    }
     std::expected<void, PieceIdleTransitionError> PieceIdleState::initialize(
         const rules::GameState& state,
         std::optional<rules::PlayerNumber> center) noexcept
@@ -95,7 +111,9 @@ namespace monopoly::pieces
                 return std::unexpected(PieceIdleTransitionError::InvalidSquare);
             auto& slots = occupancy_[square];
             const auto selected = chooseSourceFreeSlot(slots);
-            if (!center || player != *center) slots[selected] = player;
+            if ((!center || player != *center) && !selected)
+                return std::unexpected(PieceIdleTransitionError::InvalidProjection);
+            if (!center || player != *center) slots[*selected] = player;
         }
         center_ = center;
         initialized_ = true;
@@ -113,6 +131,7 @@ namespace monopoly::pieces
 
         PieceIdleTransitionPlan result{};
         result.newCenter = newCurrent;
+        auto nextOccupancy = occupancy_;
 
         if (center_)
         {
@@ -121,28 +140,31 @@ namespace monopoly::pieces
             const auto square = state.players[*center_].currentSquare;
             if (square >= 41)
                 return std::unexpected(PieceIdleTransitionError::InvalidSquare);
-            auto& slots = occupancy_[square];
+            auto& slots = nextOccupancy[square];
             const auto selected = chooseSourceFreeSlot(slots);
-            slots[selected] = *center_;
-            auto animation = makeIdleAnimation(state, *center_, selected,
+            if (!selected)
+                return std::unexpected(PieceIdleTransitionError::InvalidProjection);
+            auto animation = makeIdleAnimation(state, *center_, *selected,
                 IdleToRestBaseTag);
             if (!animation) return std::unexpected(animation.error());
+            slots[*selected] = *center_;
             result.movingOut = *animation;
         }
 
-        {
-            const auto square = state.players[newCurrent].currentSquare;
-            if (square >= 41)
-                return std::unexpected(PieceIdleTransitionError::InvalidSquare);
-            auto& slots = occupancy_[square];
-            const auto selected = findSourcePlayerSlot(slots, newCurrent);
-            slots[selected].reset();
-            auto animation = makeIdleAnimation(state, newCurrent, selected,
-                RestToCenterBaseTag);
-            if (!animation) return std::unexpected(animation.error());
-            result.movingIn = *animation;
-        }
+        const auto square = state.players[newCurrent].currentSquare;
+        if (square >= 41)
+            return std::unexpected(PieceIdleTransitionError::InvalidSquare);
+        auto& slots = nextOccupancy[square];
+        const auto selected = findSourcePlayerSlot(slots, newCurrent);
+        if (!selected)
+            return std::unexpected(PieceIdleTransitionError::InvalidProjection);
+        auto animation = makeIdleAnimation(state, newCurrent, *selected,
+            RestToCenterBaseTag);
+        if (!animation) return std::unexpected(animation.error());
+        slots[*selected].reset();
+        result.movingIn = *animation;
 
+        occupancy_ = std::move(nextOccupancy);
         center_ = newCurrent;
         return result;
     }

@@ -666,6 +666,9 @@ if(BUILD_TESTING)
         src/PieceMoveIngress.cpp
         src/PieceMovePlan.cpp
         src/PieceCamera.cpp
+        src/PieceIdleTransition.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
     )
 
     target_include_directories(
@@ -891,6 +894,8 @@ target_sources(
     src/PieceInterpolation.cpp
     src/PieceJailPlan.cpp
     src/PieceJailPlayback.cpp
+    src/PieceIdleTransition.cpp
+    src/PieceIdlePlayback.cpp
 )
 
 target_sources(
@@ -1440,5 +1445,61 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.PieceJailPlayback
         COMMAND MonopolyPieceJailPlaybackTests
+    )
+endif()
+
+# UDPieces.cpp center/resting idle transition planner
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceIdleTransitionTests
+        tests/PieceIdleTransitionTests.cpp
+        src/PieceIdleTransition.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+    target_include_directories(
+        MonopolyPieceIdleTransitionTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(
+        MonopolyPieceIdleTransitionTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceIdleTransitionTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceIdleTransition
+        COMMAND MonopolyPieceIdleTransitionTests
+    )
+endif()
+
+# UDPieces.cpp center/resting idle transition playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceIdlePlaybackTests
+        tests/PieceIdlePlaybackTests.cpp
+        src/PieceIdlePlayback.cpp
+        src/PieceIdleTransition.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+    target_include_directories(
+        MonopolyPieceIdlePlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyPieceIdlePlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceIdlePlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceIdlePlayback
+        COMMAND MonopolyPieceIdlePlaybackTests
     )
 endif()

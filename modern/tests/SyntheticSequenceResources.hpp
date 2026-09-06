@@ -2,6 +2,7 @@
 
 #include "LegacyDataArchiveBuilder.hpp"
 #include "ResourceRuntime.hpp"
+#include "RuleTypes.hpp"
 #include <chrono>
 #include <stdexcept>
 
@@ -47,13 +48,22 @@ struct SyntheticSequenceResources
                 const auto finite = words({0x09000014, 0, 0x04000064, 17,
                     packDataId(LegacyGroupId::ThreeD, 0)});
                 // Sparse synthetic DAT_3D: tags 0..3 remain HMD fixtures.
-                // Only the exact GoToJail sequence tags are populated above that.
+                // GoToJail plus center/resting transition tags are finite CNKs.
                 items.resize(0x05CD);
                 for (int tag = 0; tag <= 3; ++tag)
                     items[tag] = {LegacyDataType::Hmd, mesh};
                 for (const auto tag : {0x0157, 0x0158, 0x05C7, 0x05C8,
                          0x05C9, 0x05CA, 0x05CB, 0x05CC})
                     items[tag] = {LegacyDataType::Chunky, finite};
+                for (std::uint32_t token = 0; token < monopoly::rules::MaxTokens; ++token)
+                    for (std::uint32_t category = 0; category < 5; ++category)
+                        for (std::uint32_t slot = 0; slot < 6; ++slot)
+                        {
+                            const auto outTag = 0x011BU + 0x63U * token +
+                                2U * slot + 12U * category;
+                            items[outTag] = {LegacyDataType::Chunky, finite};
+                            items[outTag + 1U] = {LegacyDataType::Chunky, finite};
+                        }
             }
             else if (i == 5)
             {

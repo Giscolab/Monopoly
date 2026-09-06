@@ -4,11 +4,13 @@
 #include "PlayerSelection.hpp"
 #include "IBar.hpp"
 #include "LocalPlayers.hpp"
+#include "PieceCamera.hpp"
 
 #include "RuntimeState.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <utility>
 
 namespace monopoly::userinterface
 {
@@ -16,6 +18,8 @@ namespace monopoly::userinterface
     {
         rules::GameState uiRuleState{};
         pieces::PieceMoveIngress pieceMoveIngress;
+        pieces::PieceIdleState pieceIdleState;
+        std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
 
 
@@ -58,6 +62,8 @@ namespace monopoly::userinterface
     {
         uiRuleState = {};
         pieceMoveIngress.reset();
+        pieceIdleState.reset();
+        pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
 
@@ -88,6 +94,24 @@ namespace monopoly::userinterface
                 lockGameQueue();
         }
 
+        if (message.action == actions::Type::NotifyStartTurn &&
+            message.numberA >= 0 &&
+            message.numberA < uiRuleState.numberOfPlayers)
+        {
+            const auto newCurrent = static_cast<rules::PlayerNumber>(message.numberA);
+            display::state().desiredBoardCamera = pieces::pickCameraFor3Squares(
+                uiRuleState.players[newCurrent].currentSquare);
+            if (!pendingPieceIdleTransition)
+            {
+                if (auto plan = pieceIdleState.planTurnChange(uiRuleState, newCurrent))
+                {
+                    pendingPieceIdleTransition = std::move(*plan);
+                    lockGameQueue();
+                }
+            }
+            // UDIBar.cpp assigns CurrentPlayer only after the idle plan and lock.
+            uiRuleState.currentPlayer = newCurrent;
+        }
         if (
             message.action ==
             actions::Type::NotifyNumberOfPlayers)
@@ -145,6 +169,11 @@ namespace monopoly::userinterface
         {
             case actions::Type::NotifyGameStarting:
             {
+                // Userifce.cpp original first spreads every token across GO
+                // in reverse player order, with no current center idle.
+                pendingPieceIdleTransition.reset();
+                if (!pieceIdleState.initializeNewGame(uiRuleState))
+                    pieceIdleState.reset();
                 // Userifce.cpp original :
                 // UDPSEL_GameHasJustStarted();
                 // UDBOARD_SetBackdrop(DISPLAY_SCREEN_MainA);
@@ -195,6 +224,12 @@ namespace monopoly::userinterface
     std::optional<pieces::PieceMoveSpecialRequest> takePendingPieceMoveSpecial()
     {
         return pieceMoveIngress.takeSpecial();
+    }
+    std::optional<pieces::PieceIdleTransitionPlan> takePendingPieceIdleTransitionPlan()
+    {
+        auto result = std::move(pendingPieceIdleTransition);
+        pendingPieceIdleTransition.reset();
+        return result;
     }
 
     void update()
