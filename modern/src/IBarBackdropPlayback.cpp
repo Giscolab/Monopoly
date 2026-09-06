@@ -43,6 +43,106 @@ namespace monopoly::ibar
                 PlayerBackdropBaseTag + colour));
     }
 
+    RuleActionHitState ruleActionHitState(
+        bool visible,
+        rules::PlayerNumber activePlayer,
+        const ActionButtonInputs& inputs) noexcept
+    {
+        RuleActionHitState result{};
+        if (!visible || activePlayer >= rules::MaxPlayers)
+            return result;
+
+        const auto add = [&](layout::ActionButtonSlot slot)
+        {
+            result.activeSlots |= layout::actionButtonBit(slot);
+        };
+
+        switch (inputs.ruleMode)
+        {
+        case RuleMode::BuyAuction:
+            result.layout = layout::ActionButtonLayout::BuyAuction;
+            add(layout::ActionButtonSlot::Main);
+            add(layout::ActionButtonSlot::General3);
+            break;
+        case RuleMode::TaxDecision:
+            result.layout = layout::ActionButtonLayout::TaxDecision;
+            add(layout::ActionButtonSlot::Main);
+            add(layout::ActionButtonSlot::General3);
+            break;
+        case RuleMode::Trading:
+            result.layout = layout::ActionButtonLayout::Trading;
+            add(layout::ActionButtonSlot::Main);
+            add(layout::ActionButtonSlot::General2);
+            add(layout::ActionButtonSlot::General3);
+            break;
+        case RuleMode::JailExitPCR:
+            add(layout::ActionButtonSlot::Main);
+            add(layout::ActionButtonSlot::General2);
+            add(layout::ActionButtonSlot::General3);
+            break;
+        case RuleMode::JailExitPXR:
+            add(layout::ActionButtonSlot::Main);
+            add(layout::ActionButtonSlot::General2);
+            break;
+        case RuleMode::JailExitPCX:
+            add(layout::ActionButtonSlot::General2);
+            add(layout::ActionButtonSlot::General3);
+            break;
+        case RuleMode::JailExitPXX:
+            add(layout::ActionButtonSlot::General2);
+            break;
+        case RuleMode::RaiseMoney:
+            if (inputs.canSell) add(layout::ActionButtonSlot::General2);
+            if (inputs.canMortgage) add(layout::ActionButtonSlot::General3);
+            if (inputs.raiseCashCanBankrupt) add(layout::ActionButtonSlot::Main);
+            break;
+        case RuleMode::HotelDecomposition:
+            add(layout::ActionButtonSlot::General2);
+            break;
+        case RuleMode::HousingShort:
+        case RuleMode::HotelShort:
+        case RuleMode::ViewingCard:
+            add(layout::ActionButtonSlot::Main);
+            break;
+        case RuleMode::GameOver:
+            add(layout::ActionButtonSlot::General2);
+            add(layout::ActionButtonSlot::Main);
+            break;
+        case RuleMode::StartTurn:
+            if (inputs.canBuild) add(layout::ActionButtonSlot::General1);
+            if (inputs.canSell) add(layout::ActionButtonSlot::General2);
+            if (inputs.canMortgage) add(layout::ActionButtonSlot::General3);
+            if (inputs.canUnmortgage) add(layout::ActionButtonSlot::General4);
+            if (inputs.rollDiceDesired) add(layout::ActionButtonSlot::Main);
+            break;
+        case RuleMode::OtherPlayer:
+        case RuleMode::DoneTurn:
+        case RuleMode::FreeUnmortgage:
+            if (inputs.canBuild) add(layout::ActionButtonSlot::General1);
+            if (inputs.canSell) add(layout::ActionButtonSlot::General2);
+            if (inputs.canMortgage) add(layout::ActionButtonSlot::General3);
+            if (inputs.canUnmortgage) add(layout::ActionButtonSlot::General4);
+            add(layout::ActionButtonSlot::Main);
+            break;
+        case RuleMode::DeedActive:
+            if (inputs.canBuild) add(layout::ActionButtonSlot::General1);
+            if (inputs.canSell) add(layout::ActionButtonSlot::General2);
+            if (inputs.canMortgage) add(layout::ActionButtonSlot::General3);
+            if (inputs.canUnmortgage) add(layout::ActionButtonSlot::General4);
+            add(layout::ActionButtonSlot::Main);
+            break;
+        case RuleMode::Build:
+        case RuleMode::Sell:
+        case RuleMode::Mortgage:
+        case RuleMode::UnMortgage:
+            add(layout::ActionButtonSlot::Main);
+            break;
+        default:
+            break;
+        }
+        return result;
+    }
+
     std::expected<void, std::string> BackdropPlayback::sync(
         const rules::GameState& state,
         bool visible,
@@ -182,12 +282,14 @@ namespace monopoly::ibar
             inputs.ruleMode == RuleMode::DoneTurn ||
             inputs.ruleMode == RuleMode::FreeUnmortgage;
         const bool bssmRaiseMoney = inputs.ruleMode == RuleMode::RaiseMoney;
-        const bool buildDesired = bssmNormal && inputs.canBuild;
+        const bool deedActive = inputs.ruleMode == RuleMode::DeedActive;
+        const bool buildDesired = (bssmNormal || deedActive) && inputs.canBuild;
         const bool sellDesired =
-            (bssmNormal || bssmRaiseMoney) && inputs.canSell;
+            (bssmNormal || bssmRaiseMoney || deedActive) && inputs.canSell;
         const bool mortgageDesired =
-            (bssmNormal || bssmRaiseMoney) && inputs.canMortgage;
-        const bool unmortgageDesired = bssmNormal && inputs.canUnmortgage;
+            (bssmNormal || bssmRaiseMoney || deedActive) && inputs.canMortgage;
+        const bool unmortgageDesired =
+            (bssmNormal || deedActive) && inputs.canUnmortgage;
 
         struct ButtonRequest
         {
@@ -261,6 +363,11 @@ namespace monopoly::ibar
             if (!result)
                 return result;
         }
+
+        const auto propertyTitles = propertyTitles_.sync(
+            inputs.propertyTitles, playback);
+        if (!propertyTitles)
+            return propertyTitles;
 
         // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before
         // DISPLAY_UDPIECES_Show() starts the dice at the same priority.

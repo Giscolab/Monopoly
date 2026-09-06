@@ -259,6 +259,35 @@ namespace
     }
 
 
+    void testPropertyTitleLayout()
+    {
+        using namespace monopoly::ibar::layout;
+
+        expect(propertyIndex(1) == 0 && propertyIndex(39) == 27 &&
+               propertyIndex(0) == -1 && propertyIndex(40) == -1,
+            "propconv maps Mediterranean..Boardwalk and rejects non-ownable squares");
+        expect(propertyBarOrder(1) == 11 && propertyBarOrder(3) == 9 &&
+               propertyBarOrder(39) == 30,
+            "IBARPropertyBarOrder maps representative deeds exactly");
+
+        const Rect mediterranean = propertyRect(1);
+        const Rect baltic = propertyRect(3);
+        const Rect boardwalk = propertyRect(39);
+        expect(mediterranean.left == 180 && mediterranean.top == 515 &&
+               mediterranean.right == 214 && mediterranean.bottom == 557 &&
+               baltic.left == 190 && baltic.top == 495 &&
+               boardwalk.left == 698 && boardwalk.top == 495,
+            "property title rectangles reproduce UDIBar coordinate formulas");
+
+        const PropertyMask medBaltic = propertyBit(1) | propertyBit(3);
+        const auto overlap = propertyHit(200, 520, medBaltic);
+        expect(overlap && *overlap == 3,
+            "property hit-test scans square 41->0 so Baltic wins overlapping Mediterranean");
+        expect(!propertyHit(200, 520, 0).has_value(),
+            "property hit-test ignores titles outside the visible property mask");
+    }
+
+
     void testHitRects()
     {
         using namespace
@@ -319,6 +348,8 @@ int main()
     testExactPositions();
 
     testActionButtonRects();
+
+    testPropertyTitleLayout();
 
     testHitRects();
 

@@ -1116,6 +1116,7 @@ target_sources(
     src/IBar.cpp
     src/IBarLayout.cpp
     src/IBarBackdropPlayback.cpp
+    src/IBarPropertyPlayback.cpp
     src/IBarCurrentPlayerPlayback.cpp
     src/IBarBankPlayback.cpp
     src/IBarCameraButtonPlayback.cpp
@@ -1153,11 +1154,34 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarActionInputTests
+        tests/IBarActionInputTests.cpp
+        src/IBar.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyIBarActionInputTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarActionInputTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarActionInput
+        COMMAND MonopolyIBarActionInputTests
+    )
+endif()
+
+if(BUILD_TESTING)
 
     add_executable(
         MonopolyIBarBackdropPlaybackTests
         tests/IBarBackdropPlaybackTests.cpp
         src/IBarBackdropPlayback.cpp
+        src/IBarPropertyPlayback.cpp
         src/IBarCurrentPlayerPlayback.cpp
         src/IBarBankPlayback.cpp
         src/IBarCameraButtonPlayback.cpp
@@ -1181,6 +1205,32 @@ if(BUILD_TESTING)
         COMMAND MonopolyIBarBackdropPlaybackTests
     )
 
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarPropertyPlaybackTests
+        tests/IBarPropertyPlaybackTests.cpp
+        src/IBarPropertyPlayback.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyIBarPropertyPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyIBarPropertyPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarPropertyPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarPropertyPlayback
+        COMMAND MonopolyIBarPropertyPlaybackTests
+    )
 endif()
 
 if(BUILD_TESTING)

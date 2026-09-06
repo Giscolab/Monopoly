@@ -5,6 +5,8 @@
 #include "IBarBankPlayback.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "IBarCurrentPlayerPlayback.hpp"
+#include "IBarLayout.hpp"
+#include "IBarPropertyPlayback.hpp"
 #include "IBarRuleState.hpp"
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
@@ -27,6 +29,13 @@ namespace monopoly::ibar
         bool visible,
         rules::PlayerNumber activePlayer);
 
+    struct RuleActionHitState
+    {
+        layout::ActionButtonLayout layout{layout::ActionButtonLayout::General};
+        layout::ActionButtonMask activeSlots{};
+    };
+
+
     struct ActionButtonInputs
     {
         display::Screen2D desired2DView{display::Screen2D::Main};
@@ -41,7 +50,14 @@ namespace monopoly::ibar
         bool canMortgage{};
         bool canUnmortgage{};
         bool aiButtonRemoteState{};
+        PropertyTitlePlan propertyTitles{};
     };
+
+    [[nodiscard]] RuleActionHitState ruleActionHitState(
+        bool visible,
+        rules::PlayerNumber activePlayer,
+        const ActionButtonInputs& inputs) noexcept;
+
 
     class BackdropPlayback final
     {
@@ -85,6 +101,7 @@ namespace monopoly::ibar
             placeHotelButton_.reset();
             trackedRuleMode_ = RuleMode::Nothing;
             trackedRulePlayer_ = rules::NobodyPlayer;
+            propertyTitles_.reset();
             bank_.reset();
             currentPlayer_.reset();
         }
@@ -165,6 +182,7 @@ namespace monopoly::ibar
         CameraButtonPlayback placeHotelButton_{PlaceHotelButtonIndex};
         RuleMode trackedRuleMode_{RuleMode::Nothing};
         rules::PlayerNumber trackedRulePlayer_{rules::NobodyPlayer};
+        PropertyTitlePlayback propertyTitles_;
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };

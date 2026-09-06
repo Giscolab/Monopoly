@@ -15,6 +15,7 @@
 #include "PieceIdleDisplay.hpp"
 #include "PieceBuildingDisplay.hpp"
 #include "DiceDisplay.hpp"
+#include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
 #include "LocalPlayers.hpp"
 #include "UserInterface.hpp"
@@ -60,10 +61,10 @@ namespace monopoly::engine
 
         struct IBarBSSMAvailability
         {
-            bool build{};
-            bool sell{};
-            bool mortgage{};
-            bool unmortgage{};
+            ibar::layout::PropertyMask buildProperties{};
+            ibar::layout::PropertyMask sellProperties{};
+            ibar::layout::PropertyMask mortgageProperties{};
+            ibar::layout::PropertyMask unmortgageProperties{};
         };
 
         [[nodiscard]] IBarBSSMAvailability iBarBSSMAvailability(
@@ -76,14 +77,15 @@ namespace monopoly::engine
 
             for (std::uint8_t squareNo = 0; squareNo < rules::SquareCount; ++squareNo)
             {
-                if (!result.build &&
-                    rules::buildings::testBuildingPlacement(
+                const auto bit = ibar::layout::propertyBit(squareNo);
+                if (bit == 0) continue;
+
+                if (rules::buildings::testBuildingPlacement(
                         state, player, squareNo, true).error == 0)
-                    result.build = true;
-                if (!result.sell &&
-                    rules::buildings::testBuildingPlacement(
+                    result.buildProperties |= bit;
+                if (rules::buildings::testBuildingPlacement(
                         state, player, squareNo, false).error == 0)
-                    result.sell = true;
+                    result.sellProperties |= bit;
 
                 const auto& square = state.squares[squareNo];
                 if (square.owner != player) continue;
@@ -91,7 +93,7 @@ namespace monopoly::engine
                     static_cast<rules::board::SquareType>(squareNo);
                 const auto& definition = rules::board::definition(squareType);
 
-                if (!square.mortgaged && !result.mortgage)
+                if (!square.mortgaged)
                 {
                     bool groupHasBuildings = false;
                     for (std::uint8_t testNo = 0; testNo < rules::SquareCount; ++testNo)
@@ -106,14 +108,16 @@ namespace monopoly::engine
                             break;
                         }
                     }
-                    result.mortgage = !groupHasBuildings;
+                    if (!groupHasBuildings)
+                        result.mortgageProperties |= bit;
                 }
-                else if (square.mortgaged && !result.unmortgage)
+                else
                 {
                     const std::int64_t mortgage = definition.mortgageCost;
                     const std::int64_t fees = mortgage +
                         (mortgage * state.options.interestRate + 50) / 100;
-                    result.unmortgage = state.players[player].cash >= fees;
+                    if (state.players[player].cash >= fees)
+                        result.unmortgageProperties |= bit;
                 }
             }
             return result;
@@ -512,21 +516,63 @@ namespace monopoly::engine
             const bool tradeEligible = activePlayerCanTrade &&
                 ui::localplayers::tradeSourcePlayer(
                     ruleState, iBarActivePlayer) != rules::MaxPlayers;
+            const auto effectiveRuleMode = ibar::resolveRuleMode(
+                iBarRules.mode, iBarRules.player);
             const auto bssmAvailability =
                 iBarBSSMAvailability(ruleState, iBarActivePlayer);
+            const auto selectedDeed = ibar::stateReadOnly().selectedDeed;
+            const auto selectedBit = selectedDeed
+                ? ibar::layout::propertyBit(*selectedDeed)
+                : 0u;
+
             ibar::ActionButtonInputs iBarInputs{};
             iBarInputs.desired2DView = displayState.desired2DView;
-            iBarInputs.ruleMode = iBarRules.mode;
+            iBarInputs.ruleMode = effectiveRuleMode;
             iBarInputs.rulePlayer = iBarRules.player;
             iBarInputs.tradeEligible = tradeEligible;
             iBarInputs.rollDiceDesired = dicePrompt.currentStartTurn;
             iBarInputs.raiseCashCanBankrupt = iBarRules.raiseCashCanBankrupt;
-            iBarInputs.canBuild = bssmAvailability.build;
-            iBarInputs.canSell = bssmAvailability.sell;
-            iBarInputs.canMortgage = bssmAvailability.mortgage;
-            iBarInputs.canUnmortgage = bssmAvailability.unmortgage;
+            const bool deedActive = effectiveRuleMode == ibar::RuleMode::DeedActive;
+            iBarInputs.canBuild = deedActive
+                ? (bssmAvailability.buildProperties & selectedBit) != 0
+                : bssmAvailability.buildProperties != 0;
+            iBarInputs.canSell = deedActive
+                ? (bssmAvailability.sellProperties & selectedBit) != 0
+                : bssmAvailability.sellProperties != 0;
+            iBarInputs.canMortgage = deedActive
+                ? (bssmAvailability.mortgageProperties & selectedBit) != 0
+                : bssmAvailability.mortgageProperties != 0;
+            iBarInputs.canUnmortgage = deedActive
+                ? (bssmAvailability.unmortgageProperties & selectedBit) != 0
+                : bssmAvailability.unmortgageProperties != 0;
             iBarInputs.aiButtonRemoteState =
                 !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
+
+            ibar::PropertyTitleInputs titleInputs{};
+            titleInputs.available = iBarVisible &&
+                (displayState.desired2DView == display::Screen2D::Main ||
+                 displayState.desired2DView == display::Screen2D::Trade);
+            titleInputs.player = iBarActivePlayer;
+            titleInputs.mode = effectiveRuleMode;
+            titleInputs.projectedMode = iBarRules.mode;
+            titleInputs.buildProperties = bssmAvailability.buildProperties;
+            titleInputs.sellProperties = bssmAvailability.sellProperties;
+            titleInputs.mortgageProperties = bssmAvailability.mortgageProperties;
+            titleInputs.unmortgageProperties = bssmAvailability.unmortgageProperties;
+            titleInputs.freeUnmortgageProperties = iBarRules.freeUnmortgageSet;
+            titleInputs.placeBuildingProperties = iBarRules.placeBuildingSet;
+            titleInputs.selectedDeed = selectedDeed;
+            iBarInputs.propertyTitles = ibar::planPropertyTitles(ruleState, titleInputs);
+            ibar::setPropertyHitState(iBarInputs.propertyTitles.visibleProperties);
+
+            const auto actionHitState = ibar::ruleActionHitState(
+                iBarVisible, iBarActivePlayer, iBarInputs);
+            ibar::setRuleActionHitState(
+                actionHitState.layout,
+                actionHitState.activeSlots,
+                iBarInputs.ruleMode,
+                iBarActivePlayer,
+                iBarInputs.aiButtonRemoteState);
             const auto backdropSync = iBarBackdropPlayback.sync(
                 ruleState, iBarVisible, iBarActivePlayer, *session,
                 iBarInputs);

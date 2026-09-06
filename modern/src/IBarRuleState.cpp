@@ -139,13 +139,15 @@ namespace monopoly::ibar
             setMode(*this, RuleMode::Nothing, message.numberA);
             return;
         case actions::Type::NotifyFreeUnmortgaging:
-            if (message.numberB != 0)
+            freeUnmortgageSet = static_cast<std::uint32_t>(message.numberB);
+            if (freeUnmortgageSet != 0)
                 setMode(*this, RuleMode::FreeUnmortgage, message.numberA);
             return;
         case actions::Type::NotifyFlatOrFractionTaxDecision:
             setMode(*this, RuleMode::TaxDecision, message.numberA);
             return;
         case actions::Type::NotifyPlaceBuilding:
+            placeBuildingSet = static_cast<std::uint32_t>(message.numberC);
             setMode(*this,
                 message.numberB < 0 ? RuleMode::PlaceHouse : RuleMode::PlaceHotel,
                 message.numberA);

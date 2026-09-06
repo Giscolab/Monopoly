@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IBarLayout.hpp"
+#include "IBarRuleState.hpp"
 #include "RuleTypes.hpp"
 #include "UIMessages.hpp"
 
@@ -36,6 +37,24 @@ namespace monopoly::ibar
 
         int playerCurrentMouseOver = -1;
 
+        int actionButtonLastMouseOver = -1;
+        int actionButtonCurrentMouseOver = -1;
+        layout::ActionButtonLayout actionButtonLayout{
+            layout::ActionButtonLayout::General};
+        layout::ActionButtonMask activeActionButtonSlots{};
+        RuleMode actionRuleMode{RuleMode::Nothing};
+        rules::PlayerNumber actionPlayer{rules::NobodyPlayer};
+        bool actionRemote{};
+
+        int propertyLastMouseOver = -1;
+        int propertyCurrentMouseOver = -1;
+        layout::PropertyMask visiblePropertySlots{};
+        RuleMode projectedRuleMode{RuleMode::Nothing};
+        rules::PlayerNumber projectedRulePlayer{rules::NobodyPlayer};
+        bool localRuleModeActive{};
+        RuleMode localRuleMode{RuleMode::Nothing};
+        std::optional<std::uint8_t> selectedDeed;
+
 
         bool initialized = false;
     };
@@ -58,6 +77,24 @@ namespace monopoly::ibar
     void processLibraryMessage(
         const uimsg::Message& message
     );
+
+
+    [[nodiscard]] RuleMode resolveRuleMode(
+        RuleMode projectedMode,
+        rules::PlayerNumber projectedPlayer
+    ) noexcept;
+
+
+    void setRuleActionHitState(
+        layout::ActionButtonLayout layout,
+        layout::ActionButtonMask activeSlots,
+        RuleMode mode,
+        rules::PlayerNumber player,
+        bool remote
+    ) noexcept;
+
+
+    void setPropertyHitState(layout::PropertyMask visibleProperties) noexcept;
 
 
     State& state();
