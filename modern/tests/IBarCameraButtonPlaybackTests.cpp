@@ -198,6 +198,37 @@ namespace
             "camera Off owns no Overlay2D leaf");
     }
 
+    void testPressedLifecycle()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::CameraButtonPlayback done{ibar::DoneButtonIndex};
+
+        require(done.sync(true, playback) && playback.update(0) &&
+                playback.update(10).has_value() && done.sync(true, playback) &&
+                done.visualState() == ibar::CameraButtonVisualState::Idle &&
+                playback.update(11),
+            "Done button reaches Idle before pressed acknowledgement");
+
+        require(done.sync(false, playback, false, true, true, true) &&
+                done.visualState() == ibar::CameraButtonVisualState::Pressed &&
+                done.currentSequence() == ibar::actionButtonSequence(
+                    ibar::DoneButtonIndex, ibar::CameraButtonVisualState::Pressed) &&
+                data::dataTag(done.currentSequence()) == 0x0099 &&
+                playback.commands().pendingCount() == 4 && playback.update(12),
+            "accepted Done acknowledgement replaces Out with exact Pressed asset");
+
+        require(done.sync(false, playback, false, true, true, true) &&
+                done.visualState() == ibar::CameraButtonVisualState::Pressed &&
+                playback.commands().pendingCount() == 0,
+            "Pressed request remains idempotent while finite pressed animation runs");
+        require(playback.update(30).has_value() &&
+                done.sync(false, playback) &&
+                done.visualState() == ibar::CameraButtonVisualState::Off &&
+                playback.commands().pendingCount() == 1 && playback.update(31),
+            "completed Pressed animation stops and returns to Off");
+    }
+
     void testHideDuringInFinishesAnimation()
     {
         SyntheticSequenceResources resources;
@@ -260,6 +291,7 @@ int main()
         testOptionsIdentifiersAndLifecycle();
         testRollDicePriorityAndGreyStyle();
         testLifecycle();
+        testPressedLifecycle();
         testHideDuringInFinishesAnimation();
         testFailureIsTransactional();
         return 0;

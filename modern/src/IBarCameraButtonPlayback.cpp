@@ -36,7 +36,8 @@ namespace monopoly::ibar
         engine::SequencePlayback& playback,
         bool useGreyButtons,
         bool buttonBarStable,
-        bool allowIncoming)
+        bool allowIncoming,
+        bool requestPressed)
     {
         auto nextState = visualState_;
         switch (visualState_)
@@ -50,7 +51,11 @@ namespace monopoly::ibar
                 nextState = CameraButtonVisualState::Idle;
             break;
         case CameraButtonVisualState::Idle:
-            if (currentGrey_ != useGreyButtons ||
+            if (requestPressed && buttonBarStable)
+            {
+                nextState = CameraButtonVisualState::Pressed;
+            }
+            else if (currentGrey_ != useGreyButtons ||
                 (!desired && buttonBarStable))
             {
                 // Source UDIBar.cpp lets a local/remote style reset leave Idle

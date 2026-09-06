@@ -150,6 +150,7 @@ namespace monopoly::ibar
         engine::SequencePlayback& playback,
         ActionButtonInputs inputs)
     {
+        consumedPressedButton_.reset();
         const auto resolved = desiredBackdrop(state, visible, activePlayer);
         if (!resolved)
         {
@@ -355,13 +356,23 @@ namespace monopoly::ibar
         // IBAR_JustChanged makes this pass outgoing-only. It is cleared at the
         // end of the original show routine, so the next sync may fly buttons in
         // once every existing animation is stable again.
+        std::optional<std::uint8_t> consumedPressed;
         for (const auto& request : requests)
         {
+            const auto before = request.button->visualState();
+            const auto buttonIndex = request.button->buttonIndex();
+            const bool requestPressed = inputs.pressedButtonIndex == buttonIndex;
             const auto result = request.button->sync(
                 request.desired, playback, request.useGrey,
-                actionButtonsStable, !justChanged);
+                actionButtonsStable, !justChanged, requestPressed);
             if (!result)
                 return result;
+            if (requestPressed &&
+                (before == CameraButtonVisualState::Pressed ||
+                 request.button->visualState() == CameraButtonVisualState::Pressed))
+            {
+                consumedPressed = buttonIndex;
+            }
         }
 
         const auto propertyTitles = propertyTitles_.sync(
@@ -379,6 +390,11 @@ namespace monopoly::ibar
             return bank;
         }
 
-        return currentPlayer_.sync(state, visible, playback);
+        const auto currentPlayer = currentPlayer_.sync(state, visible, playback);
+        if (!currentPlayer)
+            return currentPlayer;
+
+        consumedPressedButton_ = consumedPressed;
+        return {};
     }
 }
