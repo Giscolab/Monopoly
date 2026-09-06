@@ -901,6 +901,7 @@ target_sources(
     src/PieceBuildingDisplay.cpp
     src/DiceIngress.cpp
     src/DiceDisplay.cpp
+    src/BoardCameraController.cpp
 )
 
 target_sources(
@@ -1619,5 +1620,27 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TimeStepLock
         COMMAND MonopolyTimeStepLockTests
+    )
+endif()
+
+# UDBoard.cpp historical 3D board camera interpolation
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyBoardCameraControllerTests
+        tests/BoardCameraControllerTests.cpp
+        src/BoardCameraController.cpp
+    )
+    target_include_directories(
+        MonopolyBoardCameraControllerTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyBoardCameraControllerTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.BoardCameraController
+        COMMAND MonopolyBoardCameraControllerTests
     )
 endif()
