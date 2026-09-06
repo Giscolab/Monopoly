@@ -36,6 +36,10 @@ namespace monopoly::ibar
         bool tradeEligible{};
         bool rollDiceDesired{};
         bool raiseCashCanBankrupt{};
+        bool canBuild{};
+        bool canSell{};
+        bool canMortgage{};
+        bool canUnmortgage{};
         bool aiButtonRemoteState{};
     };
 
@@ -61,8 +65,10 @@ namespace monopoly::ibar
             tradeCounterButton_.reset();
             flatTaxButton_.reset();
             percentageButton_.reset();
+            buildButton_.reset();
             bankruptButton_.reset();
             tradeRejectButton_.reset();
+            mortgageButton_.reset();
             mainButton_.reset();
             optionsButton_.reset();
             payButton_.reset();
@@ -70,6 +76,7 @@ namespace monopoly::ibar
             rollDiceButton_.reset();
             statusButton_.reset();
             tradeButton_.reset();
+            unmortgageButton_.reset();
             exitButton_.reset();
             useCardButton_.reset();
             auctionHouseButton_.reset();
@@ -138,8 +145,10 @@ namespace monopoly::ibar
         CameraButtonPlayback tradeCounterButton_{TradeCounterButtonIndex};
         CameraButtonPlayback flatTaxButton_{FlatTaxButtonIndex};
         CameraButtonPlayback percentageButton_{PercentageButtonIndex};
+        CameraButtonPlayback buildButton_{BuildButtonIndex};
         CameraButtonPlayback bankruptButton_{BankruptButtonIndex};
         CameraButtonPlayback tradeRejectButton_{TradeRejectButtonIndex};
+        CameraButtonPlayback mortgageButton_{MortgageButtonIndex};
         CameraButtonPlayback mainButton_{MainButtonIndex};
         CameraButtonPlayback optionsButton_{OptionsButtonIndex};
         CameraButtonPlayback payButton_{PayButtonIndex};
@@ -147,6 +156,7 @@ namespace monopoly::ibar
         CameraButtonPlayback rollDiceButton_{RollDiceButtonIndex};
         CameraButtonPlayback statusButton_{StatusButtonIndex};
         CameraButtonPlayback tradeButton_{TradeButtonIndex};
+        CameraButtonPlayback unmortgageButton_{UnmortButtonIndex};
         CameraButtonPlayback exitButton_{ExitButtonIndex};
         CameraButtonPlayback useCardButton_{UseCardButtonIndex};
         CameraButtonPlayback auctionHouseButton_{AuctionHouseButtonIndex};

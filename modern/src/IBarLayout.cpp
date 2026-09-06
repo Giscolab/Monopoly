@@ -1,5 +1,7 @@
 #include "IBarLayout.hpp"
 
+#include <array>
+
 namespace monopoly::ibar::layout
 {
     int scoreBoxWidth(
@@ -98,4 +100,87 @@ namespace monopoly::ibar::layout
             VirtualHeight
         };
     }
+
+    Rect actionButtonRect(
+        ActionButtonSlot slot,
+        ActionButtonLayout layout) noexcept
+    {
+        static constexpr std::array<Rect, 9> GeneralRects{{
+            { 10, 455,  69, 483},
+            { 70, 455, 132, 483},
+            {148, 455, 252, 483},
+            {569, 455, 672, 483},
+            {256, 455, 357, 483},
+            {464, 455, 567, 483},
+            {361, 455, 463, 483},
+            {690, 456, 727, 483},
+            {732, 456, 789, 483}
+        }};
+
+        const int index = static_cast<int>(slot);
+        if (index < 0 || index >= static_cast<int>(GeneralRects.size()))
+            return {};
+
+        Rect result = GeneralRects[static_cast<std::size_t>(index)];
+        switch (layout)
+        {
+        case ActionButtonLayout::BuyAuction:
+            if (slot == ActionButtonSlot::Main)
+            {
+                result.left = 251;
+                result.right = 354;
+            }
+            else if (slot == ActionButtonSlot::General3)
+            {
+                result.left = 467;
+                result.right = 569;
+            }
+            break;
+        case ActionButtonLayout::TaxDecision:
+            if (slot == ActionButtonSlot::Main)
+            {
+                result.left = 254;
+                result.right = 355;
+            }
+            else if (slot == ActionButtonSlot::General3)
+            {
+                result.left = 464;
+                result.right = 567;
+            }
+            break;
+        case ActionButtonLayout::Trading:
+            if (slot == ActionButtonSlot::Main)
+                result = {349, 420, 449, 448};
+            else if (slot == ActionButtonSlot::General2)
+                result = {224, 420, 324, 448};
+            else if (slot == ActionButtonSlot::General3)
+                result = {473, 420, 573, 448};
+            break;
+        case ActionButtonLayout::General:
+        default:
+            break;
+        }
+        return result;
+    }
+
+
+    std::optional<ActionButtonSlot> actionButtonHit(
+        int x,
+        int y,
+        ActionButtonLayout layout,
+        ActionButtonMask activeSlots) noexcept
+    {
+        for (int index = 0;
+             index < static_cast<int>(ActionButtonSlot::Count);
+             ++index)
+        {
+            const auto slot = static_cast<ActionButtonSlot>(index);
+            if ((activeSlots & actionButtonBit(slot)) == 0)
+                continue;
+            if (actionButtonRect(slot, layout).contains(x, y))
+                return slot;
+        }
+        return std::nullopt;
+    }
+
 }

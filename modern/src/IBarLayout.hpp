@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 namespace monopoly::ibar::layout
 {
     inline constexpr int VirtualWidth = 800;
@@ -14,6 +16,31 @@ namespace monopoly::ibar::layout
     inline constexpr int ScoreBoxSmallWidth = 127;
 
     inline constexpr int ScoreBoxLargeWidth = 184;
+
+
+    enum class ActionButtonSlot : int
+    {
+        Options = 0,
+        Trade,
+        General1,
+        General4,
+        General2,
+        General3,
+        Main,
+        Camera,
+        Status,
+
+        Count
+    };
+
+
+    enum class ActionButtonLayout : int
+    {
+        General = 0,
+        BuyAuction,
+        TaxDecision,
+        Trading
+    };
 
 
     struct Rect
@@ -59,5 +86,33 @@ namespace monopoly::ibar::layout
     Rect playerSetupHitRect(
         int playerIndex,
         int numberOfPlayers
+    ) noexcept;
+
+
+    [[nodiscard]]
+    Rect actionButtonRect(
+        ActionButtonSlot slot,
+        ActionButtonLayout layout = ActionButtonLayout::General
+    ) noexcept;
+
+
+    using ActionButtonMask = unsigned int;
+
+    [[nodiscard]]
+    constexpr ActionButtonMask actionButtonBit(ActionButtonSlot slot) noexcept
+    {
+        return 1u << static_cast<unsigned int>(slot);
+    }
+
+    inline constexpr ActionButtonMask AllActionButtonSlots =
+        (1u << static_cast<unsigned int>(ActionButtonSlot::Count)) - 1u;
+
+
+    [[nodiscard]]
+    std::optional<ActionButtonSlot> actionButtonHit(
+        int x,
+        int y,
+        ActionButtonLayout layout = ActionButtonLayout::General,
+        ActionButtonMask activeSlots = AllActionButtonSlots
     ) noexcept;
 }

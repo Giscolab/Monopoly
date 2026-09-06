@@ -296,14 +296,23 @@ namespace
             ibar::ActionButtonInputs inputs{};
             inputs.ruleMode = ibar::RuleMode::DoneTurn;
             inputs.rulePlayer = 0;
+            inputs.canBuild = true;
+            inputs.canSell = true;
+            inputs.canMortgage = true;
+            inputs.canUnmortgage = true;
             require(backdrop.sync(state, true, 0, playback, inputs) &&
                     playback.update(0) &&
-                    !hasAnyActionIn(playback, ibar::DoneButtonIndex),
+                    !hasAnyActionIn(playback, ibar::DoneButtonIndex) &&
+                    !hasAnyActionIn(playback, ibar::BuildButtonIndex),
                 "IBAR_JustChanged makes the first DoneTurn pass outgoing-only");
             require(backdrop.sync(state, true, 0, playback, inputs) &&
                     playback.update(1) &&
-                    hasActionIn(playback, ibar::DoneButtonIndex),
-                "DoneTurn starts Done at legacy priority 1002 on the stable pass");
+                    hasActionIn(playback, ibar::DoneButtonIndex) &&
+                    hasActionIn(playback, ibar::BuildButtonIndex) &&
+                    hasActionIn(playback, ibar::SellButtonIndex) &&
+                    hasActionIn(playback, ibar::MortgageButtonIndex) &&
+                    hasActionIn(playback, ibar::UnmortButtonIndex),
+                "DoneTurn starts Done plus Build/Sell/Mortgage/Unmort at legacy priorities");
         }
 
         {
@@ -374,11 +383,19 @@ namespace
             inputs.ruleMode = ibar::RuleMode::RaiseMoney;
             inputs.rulePlayer = 0;
             inputs.raiseCashCanBankrupt = true;
+            inputs.canBuild = true;
+            inputs.canSell = true;
+            inputs.canMortgage = true;
+            inputs.canUnmortgage = true;
             inputs.aiButtonRemoteState = true;
             require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
                     backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
-                    hasActionIn(playback, ibar::BankruptButtonIndex, true),
-                "RaiseMoney starts grey Bankrupt@1001 only when numberE permits bankruptcy");
+                    hasActionIn(playback, ibar::BankruptButtonIndex, true) &&
+                    hasActionIn(playback, ibar::SellButtonIndex, true) &&
+                    hasActionIn(playback, ibar::MortgageButtonIndex, true) &&
+                    !hasAnyActionIn(playback, ibar::BuildButtonIndex) &&
+                    !hasAnyActionIn(playback, ibar::UnmortButtonIndex),
+                "RaiseMoney exposes grey Sell/Mortgage/Bankrupt but not Build/Unmort");
         }
 
         {
@@ -432,6 +449,27 @@ namespace
                     backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
                     hasActionIn(playback, ibar::PlaceHotelButtonIndex),
                 "PlaceHotel starts its exact index-27 full-colour button at priority 999");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::FreeUnmortgage;
+            inputs.rulePlayer = 0;
+            inputs.canBuild = true;
+            inputs.canSell = true;
+            inputs.canMortgage = true;
+            inputs.canUnmortgage = true;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::BuildButtonIndex) &&
+                    hasActionIn(playback, ibar::SellButtonIndex) &&
+                    hasActionIn(playback, ibar::MortgageButtonIndex) &&
+                    hasActionIn(playback, ibar::UnmortButtonIndex) &&
+                    hasActionIn(playback, ibar::DoneButtonIndex),
+                "FreeUnmortgage exposes the four BSSM buttons plus Done");
         }
 
         {
