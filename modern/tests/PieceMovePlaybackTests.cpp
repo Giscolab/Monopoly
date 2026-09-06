@@ -110,9 +110,11 @@ namespace
         expect(step && step->completed && !step->active &&
             step->camera == BoardCameraView::ThreeTiles02 && step->stoppedSequence,
             "held sequence escalates to final camera-only item then terminates stack");
-        expect(playback.update(100).has_value() &&
+        expect(playback.commands().pendingCount() == 1,
+            "stack termination queues the historical Stop command");
+        expect(playback.update(103).has_value() &&
             !playback.runtime().info(finiteSequenceId(), MovePriority, false),
-            "stack termination stops the final held sequence");
+            "same-tick command processing removes the final held sequence");
     }
 
     void testBoardVisibilityAbort()
