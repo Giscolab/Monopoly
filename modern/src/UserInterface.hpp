@@ -24,7 +24,8 @@ namespace monopoly::userinterface
 
 
     const rules::GameState& ruleStateReadOnly();
-
+
+    const pieces::PieceIdleState& pieceIdleStateReadOnly();
     [[nodiscard]] std::optional<pieces::PieceMovePlan> takePendingPieceMovePlan();
     [[nodiscard]] std::optional<pieces::PieceMoveSpecialRequest> takePendingPieceMoveSpecial();
     [[nodiscard]] std::optional<pieces::PieceIdleTransitionPlan> takePendingPieceIdleTransitionPlan();

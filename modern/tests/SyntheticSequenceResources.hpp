@@ -56,6 +56,9 @@ struct SyntheticSequenceResources
                          0x05C9, 0x05CA, 0x05CB, 0x05CC})
                     items[tag] = {LegacyDataType::Chunky, finite};
                 for (std::uint32_t token = 0; token < monopoly::rules::MaxTokens; ++token)
+                    items[0x010DU + 0x63U * token] =
+                        {LegacyDataType::Chunky, finite};
+                for (std::uint32_t token = 0; token < monopoly::rules::MaxTokens; ++token)
                     for (std::uint32_t category = 0; category < 5; ++category)
                         for (std::uint32_t slot = 0; slot < 6; ++slot)
                         {

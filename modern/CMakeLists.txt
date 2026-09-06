@@ -895,7 +895,8 @@ target_sources(
     src/PieceJailPlan.cpp
     src/PieceJailPlayback.cpp
     src/PieceIdleTransition.cpp
-    src/PieceIdlePlayback.cpp
+    src/PieceIdlePlayback.cpp
+    src/PieceIdleDisplay.cpp
 )
 
 target_sources(
@@ -1480,7 +1481,8 @@ if(BUILD_TESTING)
     add_executable(
         MonopolyPieceIdlePlaybackTests
         tests/PieceIdlePlaybackTests.cpp
-        src/PieceIdlePlayback.cpp
+        src/PieceIdlePlayback.cpp
+    src/PieceIdleDisplay.cpp
         src/PieceIdleTransition.cpp
         src/PiecePlacement.cpp
         src/BoardGeometry.cpp
@@ -1501,5 +1503,34 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.PieceIdlePlayback
         COMMAND MonopolyPieceIdlePlaybackTests
+    )
+endif()
+
+# UDPieces.cpp persistent center/resting token idles
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceIdleDisplayTests
+        tests/PieceIdleDisplayTests.cpp
+        src/PieceIdleDisplay.cpp
+        src/PieceIdleTransition.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+    target_include_directories(
+        MonopolyPieceIdleDisplayTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyPieceIdleDisplayTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceIdleDisplayTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceIdleDisplay
+        COMMAND MonopolyPieceIdleDisplayTests
     )
 endif()

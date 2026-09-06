@@ -29,6 +29,10 @@ namespace monopoly::pieces
         { return movingOutSequence_; }
         [[nodiscard]] data::DataId movingInSequence() const noexcept
         { return movingInSequence_; }
+        [[nodiscard]] std::optional<rules::PlayerNumber> movingOutPlayer() const noexcept
+        { return plan_ && plan_->movingOut ? std::optional<rules::PlayerNumber>(plan_->movingOut->player) : std::nullopt; }
+        [[nodiscard]] std::optional<rules::PlayerNumber> movingInPlayer() const noexcept
+        { return plan_ && plan_->movingIn ? std::optional<rules::PlayerNumber>(plan_->movingIn->player) : std::nullopt; }
 
     private:
         [[nodiscard]] std::expected<void, std::string> startAnimation(
