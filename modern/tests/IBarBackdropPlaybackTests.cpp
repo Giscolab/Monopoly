@@ -281,6 +281,111 @@ namespace
             "remote/AI integrated RollDice uses the grey CNK_iycaf sequence");
     }
 
+    void testRuleActionHitState()
+    {
+        using Slot = ibar::layout::ActionButtonSlot;
+        using Layout = ibar::layout::ActionButtonLayout;
+
+        const auto mask = [](std::initializer_list<Slot> slots)
+        {
+            ibar::layout::ActionButtonMask value = 0;
+            for (const auto slot : slots)
+                value |= ibar::layout::actionButtonBit(slot);
+            return value;
+        };
+
+        const auto check = [&](ibar::RuleMode mode, Layout layout,
+                               ibar::layout::ActionButtonMask expected,
+                               const char* description,
+                               bool bankrupt = false)
+        {
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = mode;
+            inputs.rollDiceDesired = true;
+            inputs.canBuild = true;
+            inputs.canSell = true;
+            inputs.canMortgage = true;
+            inputs.canUnmortgage = true;
+            inputs.raiseCashCanBankrupt = bankrupt;
+            const auto hit = ibar::ruleActionHitState(true, 0, inputs);
+            require(hit.layout == layout && hit.activeSlots == expected, description);
+        };
+
+        check(ibar::RuleMode::BuyAuction, Layout::BuyAuction,
+            mask({Slot::Main, Slot::General3}),
+            "BuyAuction hit mask exposes Buy/Main and Auction/General3 only");
+        check(ibar::RuleMode::TaxDecision, Layout::TaxDecision,
+            mask({Slot::Main, Slot::General3}),
+            "TaxDecision hit mask exposes FlatTax/Main and Percentage/General3 only");
+        check(ibar::RuleMode::Trading, Layout::Trading,
+            mask({Slot::Main, Slot::General2, Slot::General3}),
+            "Trading hit mask exposes Reject/Counter/Accept source slots only");
+
+        check(ibar::RuleMode::JailExitPCR, Layout::General,
+            mask({Slot::Main, Slot::General2, Slot::General3}),
+            "JailExitPCR exposes Roll/Pay/Card");
+        check(ibar::RuleMode::JailExitPXR, Layout::General,
+            mask({Slot::Main, Slot::General2}),
+            "JailExitPXR exposes Roll/Pay only");
+        check(ibar::RuleMode::JailExitPCX, Layout::General,
+            mask({Slot::General2, Slot::General3}),
+            "JailExitPCX exposes Pay/Card only");
+        check(ibar::RuleMode::JailExitPXX, Layout::General,
+            mask({Slot::General2}),
+            "JailExitPXX exposes Pay only");
+
+        check(ibar::RuleMode::StartTurn, Layout::General,
+            mask({Slot::General1, Slot::General2, Slot::General3,
+                  Slot::General4, Slot::Main}),
+            "StartTurn exposes available BSSM slots plus RollDice/Main");
+        check(ibar::RuleMode::DoneTurn, Layout::General,
+            mask({Slot::General1, Slot::General2, Slot::General3,
+                  Slot::General4, Slot::Main}),
+            "DoneTurn exposes available BSSM slots plus Done/Main");
+        check(ibar::RuleMode::FreeUnmortgage, Layout::General,
+            mask({Slot::General1, Slot::General2, Slot::General3,
+                  Slot::General4, Slot::Main}),
+            "FreeUnmortgage exposes available BSSM slots plus Done/Main");
+        check(ibar::RuleMode::RaiseMoney, Layout::General,
+            mask({Slot::General2, Slot::General3, Slot::Main}),
+            "RaiseMoney exposes Sell/Mortgage/Bankrupt when all are allowed", true);
+
+        check(ibar::RuleMode::HousingShort, Layout::General, mask({Slot::Main}),
+            "HousingShort exposes only AucHouse/Main");
+        check(ibar::RuleMode::HotelShort, Layout::General, mask({Slot::Main}),
+            "HotelShort exposes only AucHotel/Main");
+        check(ibar::RuleMode::ViewingCard, Layout::General, mask({Slot::Main}),
+            "ViewingCard exposes only Done/Main");
+        check(ibar::RuleMode::GameOver, Layout::General,
+            mask({Slot::General2, Slot::Main}),
+            "GameOver exposes NewGame/General2 and Exit/Main");
+
+        check(ibar::RuleMode::Build, Layout::General, mask({Slot::Main}),
+            "Build substate exposes only Done/Main");
+        check(ibar::RuleMode::Sell, Layout::General, mask({Slot::Main}),
+            "Sell substate exposes only Done/Main");
+        check(ibar::RuleMode::Mortgage, Layout::General, mask({Slot::Main}),
+            "Mortgage substate exposes only Done/Main");
+        check(ibar::RuleMode::UnMortgage, Layout::General, mask({Slot::Main}),
+            "UnMortgage substate exposes only Done/Main");
+        check(ibar::RuleMode::DeedActive, Layout::General,
+            mask({Slot::General1, Slot::General2, Slot::General3,
+                  Slot::General4, Slot::Main}),
+            "DeedActive exposes deed-specific BSSM slots plus Done/Main");
+
+        ibar::ActionButtonInputs restricted{};
+        restricted.ruleMode = ibar::RuleMode::DoneTurn;
+        restricted.canSell = true;
+        restricted.canMortgage = true;
+        const auto partial = ibar::ruleActionHitState(true, 0, restricted);
+        require(partial.activeSlots == mask({Slot::General2, Slot::General3, Slot::Main}),
+            "BSSM hit mask includes only actions currently available");
+
+        require(ibar::ruleActionHitState(false, 0, restricted).activeSlots == 0 &&
+                ibar::ruleActionHitState(true, rules::NobodyPlayer, restricted).activeSlots == 0,
+            "hidden or invalid-player IBar has no RULE-action hit slots");
+    }
+
     void testRuleModeActionButtons()
     {
         rules::GameState state{};
@@ -608,6 +713,7 @@ int main()
         testLifecycle();
         testGlobalButtonPredicates();
         testRollDicePromptInputs();
+        testRuleActionHitState();
         testRuleModeActionButtons();
         testFailureIsTransactional();
         return 0;

@@ -49,6 +49,8 @@ namespace monopoly::ibar
         rules::PlayerNumber tradeAPlayer{rules::MaxPlayers};
         rules::PlayerNumber tradeBPlayer{rules::MaxPlayers};
         bool tradeInProgress{};
+        std::uint32_t freeUnmortgageSet{};
+        std::uint32_t placeBuildingSet{};
 
         void reset() noexcept
         {
@@ -59,6 +61,8 @@ namespace monopoly::ibar
             tradeAPlayer = rules::MaxPlayers;
             tradeBPlayer = rules::MaxPlayers;
             tradeInProgress = false;
+            freeUnmortgageSet = 0;
+            placeBuildingSet = 0;
         }
 
         void process(const actions::Message& message) noexcept;

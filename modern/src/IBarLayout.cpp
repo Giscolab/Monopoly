@@ -4,6 +4,79 @@
 
 namespace monopoly::ibar::layout
 {
+    namespace
+    {
+        constexpr std::array<int, 42> PropertyConversion{{
+            -1, 0,-1, 1,-1, 2, 3,-1, 4, 5,
+            -1, 6, 7, 8, 9,10,11,-1,12,13,
+            -1,14,-1,15,16,17,18,19,20,21,
+            -1,22,23,-1,24,25,-1,26,-1,27,
+            -1,-1
+        }};
+
+        constexpr std::array<int, 28> PropertyBarOrder{{
+            11, 9, 2, 14,13,12, 17,8,16,15,
+            0,20,19,18, 23,22,21,5, 26,25,6,24,
+            29,28,27, 3,32,30
+        }};
+    }
+    int propertyIndex(int square) noexcept
+    {
+        if (square < 0 || square >= static_cast<int>(PropertyConversion.size()))
+            return -1;
+        return PropertyConversion[static_cast<std::size_t>(square)];
+    }
+
+
+    PropertyMask propertyBit(int square) noexcept
+    {
+        const int index = propertyIndex(square);
+        return index < 0 ? 0u : (1u << static_cast<unsigned int>(index));
+    }
+
+
+    int propertyBarOrder(int square) noexcept
+    {
+        const int index = propertyIndex(square);
+        if (index < 0) return -1;
+        return PropertyBarOrder[static_cast<std::size_t>(index)];
+    }
+
+
+    Rect propertyRect(int square) noexcept
+    {
+        const int order = propertyBarOrder(square);
+        if (order < 0) return {};
+
+        int x = 0;
+        int y = 0;
+        if (order < 18)
+        {
+            x = 28 + 54 * (order / 3) - 5 * (order % 3);
+            y = 495 + 10 * (order % 3);
+        }
+        else
+        {
+            x = 482 + 54 * ((order - 18) / 3) + 5 * (order % 3);
+            y = 495 + 10 * (order % 3);
+        }
+        return {x, y, x + 34, y + 42};
+    }
+
+
+    std::optional<int> propertyHit(
+        int x, int y, PropertyMask visibleProperties) noexcept
+    {
+        for (int square = 41; square >= 0; --square)
+        {
+            const auto bit = propertyBit(square);
+            if (bit == 0 || (visibleProperties & bit) == 0) continue;
+            if (propertyRect(square).contains(x, y)) return square;
+        }
+        return std::nullopt;
+    }
+
+
     int scoreBoxWidth(
         int numberOfPlayers) noexcept
     {

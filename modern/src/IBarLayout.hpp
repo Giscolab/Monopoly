@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
 namespace monopoly::ibar::layout
@@ -94,6 +95,16 @@ namespace monopoly::ibar::layout
         ActionButtonSlot slot,
         ActionButtonLayout layout = ActionButtonLayout::General
     ) noexcept;
+
+
+    using PropertyMask = std::uint32_t;
+
+    [[nodiscard]] int propertyIndex(int square) noexcept;
+    [[nodiscard]] PropertyMask propertyBit(int square) noexcept;
+    [[nodiscard]] int propertyBarOrder(int square) noexcept;
+    [[nodiscard]] Rect propertyRect(int square) noexcept;
+    [[nodiscard]] std::optional<int> propertyHit(
+        int x, int y, PropertyMask visibleProperties) noexcept;
 
 
     using ActionButtonMask = unsigned int;

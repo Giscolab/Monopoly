@@ -91,11 +91,14 @@ struct SyntheticSequenceResources
                 }
                 // Active UDIBar backdrop sequences: TAB_indsbg0..TAB_indsbg7.
                 // They deliberately reuse the synthetic bitmap payload above.
-                items.resize(0x0163);
+                items.resize(0x01B7);
                 // UDIBar current-player token sequences: CNK_indstra + token.
                 for (std::uint32_t tag = 0x005FU; tag < 0x005FU + monopoly::rules::MaxTokens; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 for (std::uint32_t tag = 0x015BU; tag <= 0x0162U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDIBar property title tabs: full colour, low colour, mortgaged.
+                for (std::uint32_t tag = 0x0163U; tag <= 0x01B6U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
             }
             else if (i == 4)
