@@ -3,6 +3,7 @@
 #include "TimeStep.hpp"
 #include "PlayerSelection.hpp"
 #include "IBar.hpp"
+#include "Timers.hpp"
 #include "LocalPlayers.hpp"
 #include "PieceCamera.hpp"
 
@@ -19,6 +20,7 @@ namespace monopoly::userinterface
         rules::GameState uiRuleState{};
         pieces::PieceMoveIngress pieceMoveIngress;
         pieces::PieceIdleState pieceIdleState;
+        dice::Ingress diceIngress;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
 
@@ -63,6 +65,7 @@ namespace monopoly::userinterface
         uiRuleState = {};
         pieceMoveIngress.reset();
         pieceIdleState.reset();
+        diceIngress.reset();
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -78,6 +81,13 @@ namespace monopoly::userinterface
         if (!ui::localplayers::isLocalRecipient(message.toPlayer))
         {
             return;
+        }
+
+        if (message.action == actions::Type::NotifyDiceRolled)
+        {
+            const auto roll = diceIngress.process(
+                uiRuleState, message, timers::tickCount());
+            if (roll) lockGameQueue();
         }
 
         if (message.action == actions::Type::NotifyMoveForwards ||
@@ -235,6 +245,11 @@ namespace monopoly::userinterface
         auto result = std::move(pendingPieceIdleTransition);
         pendingPieceIdleTransition.reset();
         return result;
+    }
+
+    std::optional<dice::RollRequest> takePendingDiceRoll()
+    {
+        return diceIngress.take();
     }
 
     void update()

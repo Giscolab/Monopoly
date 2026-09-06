@@ -667,6 +667,7 @@ if(BUILD_TESTING)
         src/PieceMovePlan.cpp
         src/PieceCamera.cpp
         src/PieceIdleTransition.cpp
+        src/DiceIngress.cpp
         src/PiecePlacement.cpp
         src/BoardGeometry.cpp
     )
@@ -898,6 +899,8 @@ target_sources(
     src/PieceIdlePlayback.cpp
     src/PieceIdleDisplay.cpp
     src/PieceBuildingDisplay.cpp
+    src/DiceIngress.cpp
+    src/DiceDisplay.cpp
 )
 
 target_sources(
@@ -1561,5 +1564,60 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.PieceBuildingDisplay
         COMMAND MonopolyPieceBuildingDisplayTests
+    )
+endif()
+
+# UDPieces.cpp dice notification ingress
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyDiceIngressTests
+        tests/DiceIngressTests.cpp
+        src/DiceIngress.cpp
+    )
+    target_include_directories(MonopolyDiceIngressTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(MonopolyDiceIngressTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.DiceIngress COMMAND MonopolyDiceIngressTests)
+endif()
+
+# UDPieces.cpp 2D/3D dice display and roll timing
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyDiceDisplayTests
+        tests/DiceDisplayTests.cpp
+        src/DiceDisplay.cpp
+    )
+    target_include_directories(
+        MonopolyDiceDisplayTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolyDiceDisplayTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyDiceDisplayTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.DiceDisplay COMMAND MonopolyDiceDisplayTests)
+endif()
+
+# TimeStep queue-lock integration
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTimeStepLockTests
+        tests/TimeStepLockTests.cpp
+        src/TimeStep.cpp
+        src/GameQueueGate.cpp
+    )
+    target_include_directories(
+        MonopolyTimeStepLockTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTimeStepLockTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TimeStepLock
+        COMMAND MonopolyTimeStepLockTests
     )
 endif()
