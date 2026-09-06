@@ -4,3 +4,7 @@
 # POSIX entry-point scripts must remain executable on Unix-like hosts.
 *.sh text eol=lf
 *.bash text eol=lf
+
+# CMake files must never fall through text=auto binary heuristics.
+CMakeLists.txt text eol=crlf
+*.cmake text eol=crlf

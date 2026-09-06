@@ -895,7 +895,7 @@ target_sources(
     src/PieceJailPlan.cpp
     src/PieceJailPlayback.cpp
     src/PieceIdleTransition.cpp
-    src/PieceIdlePlayback.cpp
+    src/PieceIdlePlayback.cpp
     src/PieceIdleDisplay.cpp
 )
 
@@ -1481,7 +1481,7 @@ if(BUILD_TESTING)
     add_executable(
         MonopolyPieceIdlePlaybackTests
         tests/PieceIdlePlaybackTests.cpp
-        src/PieceIdlePlayback.cpp
+        src/PieceIdlePlayback.cpp
     src/PieceIdleDisplay.cpp
         src/PieceIdleTransition.cpp
         src/PiecePlacement.cpp
