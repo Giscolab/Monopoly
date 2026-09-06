@@ -120,3 +120,51 @@ namespace
         expect(!playback.runtime().info(threeD(0x05CB), JailPlaybackPriority, false),
             "final cleanup removes CNK_mnwpo from runtime");
     }
+
+    void testShortCircuitsAndValidation()
+    {
+        SyntheticSequenceResources fixture;
+        engine::SequencePlayback playback(fixture.service.snapshot());
+        rules::GameState ui{};
+        ui.numberOfPlayers = 1;
+
+        PieceJailPlayback disabled;
+        ui.players[0].currentSquare = 16;
+        expect(disabled.begin(request(16), 0, false).has_value(),
+            "animations-disabled GoToJail request is accepted");
+        auto step = disabled.tick(0, playback, ui);
+        expect(step && step->completed && !disabled.active() &&
+            ui.players[0].currentSquare == 40,
+            "animations-disabled path jumps directly through source cleanup state 14");
+        expect(playback.commands().pendingCount() == 0,
+            "animations-disabled path does not invent paddy/token sequence commands");
+
+        PieceJailPlayback alreadyAtJailCorner;
+        ui.players[0].currentSquare = 10;
+        expect(alreadyAtJailCorner.begin(request(10), 0, true).has_value(),
+            "square-10 GoToJail request is accepted");
+        step = alreadyAtJailCorner.tick(0, playback, ui);
+        expect(step && step->completed && !alreadyAtJailCorner.active() &&
+            ui.players[0].currentSquare == 40,
+            "square-10 source skipAnimValue path completes without paddy travel");
+        expect(playback.commands().pendingCount() == 0,
+            "square-10 source skip path emits no synthetic animation work");
+
+        PieceJailPlayback invalid;
+        auto bad = request(16);
+        bad.special = PieceMoveSpecial::LeaveJail;
+        expect(!invalid.begin(bad, 0, true),
+            "non-GoToJail special is rejected before state mutation");
+        expect(!invalid.active(),
+            "rejected special leaves jail playback inactive");
+    }
+}
+
+int main()
+{
+    testFullGoToJailMachine();
+    testShortCircuitsAndValidation();
+    std::cout << (failures ? "Piece jail-playback tests FAILED\n" :
+        "Piece jail-playback tests passed\n");
+    return failures ? 1 : 0;
+}

@@ -8,6 +8,7 @@
 #include "SequencePlayback.hpp"
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
+#include "PieceJailPlayback.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -17,6 +18,7 @@
 #include <iostream>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -32,6 +34,7 @@ namespace monopoly::engine
         std::optional<data::DataId> activeBoardSequence;
         std::optional<World3DCamera> activeWorldCamera;
         pieces::PieceMovePlayback pieceMovePlayback;
+        pieces::PieceJailPlayback pieceJailPlayback;
         pieces::PieceMoveSpecial activePieceMoveSpecial{pieces::PieceMoveSpecial::None};
         std::optional<pieces::PieceMoveSpecialRequest> pendingPieceMoveSpecial;
         bool pieceMoveQueueLockHeld{};
@@ -81,9 +84,9 @@ namespace monopoly::engine
         }
 
         [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
-            SequencePlayback& session, bool boardVisible)
+            SequencePlayback& session, bool boardVisible, std::uint64_t tick)
         {
-            if (!pendingPieceMoveSpecial)
+            if (!pendingPieceMoveSpecial && !pieceJailPlayback.active())
             {
                 if (auto special = userinterface::takePendingPieceMoveSpecial())
                 {
@@ -94,6 +97,49 @@ namespace monopoly::engine
                 }
             }
 
+            if (pendingPieceMoveSpecial && !pieceJailPlayback.active() &&
+                !pieceMovePlayback.active())
+            {
+                activePieceMoveSpecial = pieces::PieceMoveSpecial::GoToJail;
+                pieceMoveQueueLockHeld = userinterface::gameQueueLocked();
+                const auto randomBit = pendingPieceMoveSpecial->before == 30 ?
+                    static_cast<std::uint8_t>(std::rand() & 1) :
+                    static_cast<std::uint8_t>(0);
+                const auto begun = pieceJailPlayback.begin(*pendingPieceMoveSpecial,
+                    tick, true, randomBit);
+                if (!begun)
+                {
+                    if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
+                    pieceMoveQueueLockHeld = false;
+                    pendingPieceMoveSpecial.reset();
+                    activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+                    return std::unexpected(begun.error());
+                }
+                pendingPieceMoveSpecial.reset();
+            }
+
+            if (pieceJailPlayback.active())
+            {
+                const auto step = pieceJailPlayback.tick(
+                    tick, session, userinterface::ruleState());
+                if (!step)
+                {
+                    if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
+                    pieceMoveQueueLockHeld = false;
+                    pieceJailPlayback = {};
+                    activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+                    return std::unexpected(step.error());
+                }
+                if (step->camera)
+                    display::state().desiredBoardCamera = *step->camera;
+                if (step->completed)
+                {
+                    if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
+                    pieceMoveQueueLockHeld = false;
+                    activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+                }
+                return {};
+            }
             if (!pieceMovePlayback.active() && !pendingPieceMoveSpecial)
             {
                 if (auto plan = userinterface::takePendingPieceMovePlan())
@@ -246,9 +292,12 @@ namespace monopoly::engine
         auto* session = sequencePlayback();
         if (session)
         {
+            const auto tick = timers::tickCount();
+            if (tick > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
+                return SDL_SetError("Sequence parent clock exceeds signed runtime range");
             const auto& displayState = display::stateReadOnly();
             const auto pieceSync = syncPieceMovePlayback(*session,
-                display::isBoardVisible(displayState.desired2DView));
+                display::isBoardVisible(displayState.desired2DView), tick);
             if (!pieceSync)
                 return SDL_SetError("Piece move playback: %s",
                     pieceSync.error().c_str());
@@ -256,9 +305,6 @@ namespace monopoly::engine
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
                     boardSync.error().c_str());
-            const auto tick = timers::tickCount();
-            if (tick > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
-                return SDL_SetError("Sequence parent clock exceeds signed runtime range");
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             const auto viewport = display::worldViewport(displayState.viewportInUse);
@@ -296,6 +342,7 @@ namespace monopoly::engine
     void shutdown()
     {
         pieceMovePlayback = {};
+        pieceJailPlayback = {};
         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
         pendingPieceMoveSpecial.reset();
         pieceMoveQueueLockHeld = false;

@@ -17,8 +17,7 @@ namespace monopoly::pieces
         constexpr std::uint8_t InJail = 40;
         constexpr std::uint8_t OffBoard = 41;
 
-        enum class RestingType : std::uint8_t
-        { GoFreeParking, InJail, JustVisiting, Property, RailroadUtilityChance };
+        using RestingType = RestingIdleCategory;
 
         struct RestingOffset { int x; int z; int degrees; };
         using RestingRow = std::array<RestingOffset, RestingPositionCount>;
@@ -60,6 +59,15 @@ namespace monopoly::pieces
         { return token == 0 || token == 1 || token == 2 || token == 6 || token == 7 || token == 9; }
     }
 
+    std::optional<RestingIdleCategory> restingIdleCategory(
+        std::uint8_t boardSquare) noexcept
+    {
+        if (boardSquare >= BoardSquareCountWithSpecials) return std::nullopt;
+        if (boardSquare == InJail) return RestingIdleCategory::InJail;
+        if (boardSquare == OffBoard) return RestingIdleCategory::GoFreeParking;
+        if (boardSquare < RestingTypes.size()) return RestingTypes[boardSquare];
+        return std::nullopt;
+    }
     std::optional<TokenPose> tokenOrientation(std::uint8_t boardSquare) noexcept
     {
         if (boardSquare >= BoardSquareCountWithSpecials) return std::nullopt;
