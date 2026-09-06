@@ -50,7 +50,7 @@ namespace monopoly::sequence
     // Immutable, bounded description DAG. Shared sublists are not expanded
     // exponentially; cycles are rejected by (DATA ID, chunk offset). Every
     // CNK lease needed by the supported tree is acquired before publication.
-    // Currently executable: grouping/indirect, 3D mesh, 3D camera and
+    // Currently executable: grouping/indirect, 2D bitmap, 3D mesh, 3D camera and
     // transform/FOV tweekers. Private attributes are immutable input.
     // Other decoded kinds and attributes fail explicitly; no fake renderer.
     class SequenceProgram final
@@ -132,6 +132,14 @@ namespace monopoly::sequence
         std::optional<Matrix3D> sequenceToWorldTransformation;
     };
 
+    struct SequenceBitmapInstanceView
+    {
+        SequenceNodeId node{};
+        data::DataId contentsDataId{};
+        std::uint16_t priority{};
+        std::int32_t clock{};
+        Matrix2D worldTransform{};
+    };
     struct SequenceMeshInstanceView
     {
         SequenceNodeId node{};
@@ -196,6 +204,8 @@ namespace monopoly::sequence
             data::DataId id, std::uint16_t priority) const;
         // Active 3D mesh leaves in runtime traversal order. This is CPU render
         // intent only: no HMD decoding, GPU resource or render-slot ownership.
+        // Active 2D bitmap leaves in runtime traversal order.
+        [[nodiscard]] std::vector<SequenceBitmapInstanceView> bitmapInstances() const;
         [[nodiscard]] std::vector<SequenceMeshInstanceView> meshInstances() const;
         // Active 3D camera sequences with raw ArtLib FOV semantics. Projection
         // interpretation remains the renderer's responsibility.

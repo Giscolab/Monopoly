@@ -20,6 +20,27 @@ struct SyntheticSequenceResources
                 bytes.push_back(static_cast<std::byte>((value >> shift) & 255U));
         return bytes;
     }
+    static monopoly::data::DataBytes bitmap24()
+    {
+        monopoly::data::DataBytes bytes;
+        const auto u16 = [&](std::uint16_t value) {
+            bytes.push_back(static_cast<std::byte>(value & 255U));
+            bytes.push_back(static_cast<std::byte>((value >> 8U) & 255U));
+        };
+        const auto u32 = [&](std::uint32_t value) {
+            for (unsigned shift = 0; shift < 32; shift += 8)
+                bytes.push_back(static_cast<std::byte>((value >> shift) & 255U));
+        };
+        bytes.push_back(std::byte{'B'}); bytes.push_back(std::byte{'M'});
+        u32(70); u16(0); u16(0); u32(54); u32(40);
+        u32(2); u32(2); u16(1); u16(24); u32(0); u32(16);
+        u32(0); u32(0); u32(0); u32(0);
+        // Bottom row: red, green; top row: blue, white. BGR24 + 2-byte row pad.
+        for (const auto value : {0U,0U,255U, 0U,255U,0U, 0U,0U,
+                                 255U,0U,0U, 255U,255U,255U, 0U,0U})
+            bytes.push_back(static_cast<std::byte>(value));
+        return bytes;
+    }
     SyntheticSequenceResources()
     {
         using namespace monopoly::data;
@@ -39,6 +60,15 @@ struct SyntheticSequenceResources
                 items.push_back({LegacyDataType::Chunky,
                     words({0x09000014, 0, 0x04000064, 17,
                         packDataId(LegacyGroupId::ThreeD, 0)})});
+                // Synthetic DAT_MAIN dice 2D sequences. Chunk 3 is a bitmap leaf;
+                // tag 0x00A0 is test-only bitmap payload, never a retail substitute.
+                const auto bitmapSequence = words({0x03000014, 0, 0x04000000, 2, 0x000000A0});
+                items.resize(0x00A1);
+                for (std::uint32_t tag = 0x0096U; tag <= 0x009CU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x009D] = {LegacyDataType::Chunky,
+                    words({0x03000014, 0, 0x04000000, 2, 0x00000001})};
+                items[0x00A0] = {LegacyDataType::Bitmap, bitmap24()};
             }
             else if (i == 4)
             {

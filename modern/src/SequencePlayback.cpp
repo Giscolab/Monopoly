@@ -13,6 +13,34 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::startXY(
+        data::DataId id, std::uint16_t priority,
+        std::int32_t x, std::int32_t y, bool dropFrames)
+    {
+        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
+        if (!program) return std::unexpected(program.error().detail);
+        if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - 2)
+            return std::unexpected("sequence command queue capacity exceeded");
+        sequence::ClockStartOptions options{};
+        options.dropFrames = dropFrames;
+        auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority, options});
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        queued = commands_.enqueue(sequence::makeMoveXY(id, priority, x, y));
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::setEndingAction(
+        data::DataId id, std::uint16_t priority, std::uint8_t action)
+    {
+        if (action == 0 || action > 3)
+            return std::unexpected("invalid sequence ending action");
+        const auto queued = commands_.enqueue(sequence::SetSequenceEndingActionCommand{
+            id, priority, action, false});
+        if (!queued) return std::unexpected("sequence command queue rejected ending action");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::startMoved(
         data::DataId id, std::uint16_t priority,
         sequence::SequenceTransform transform)

@@ -144,6 +144,7 @@ add_library(
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
     src/SequenceRenderData.cpp
+    src/SequenceBitmapRenderData.cpp
     src/World3DProjection.cpp
     src/SequenceWorld3DSlot.cpp
     src/LanguageResources.cpp
@@ -1643,5 +1644,49 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.BoardCameraController
         COMMAND MonopolyBoardCameraControllerTests
+    )
+endif()
+# Generic 2D SequencePlayback path used by UDPieces dice/IBar overlays
+if(BUILD_TESTING)
+    add_executable(
+        MonopolySequencePlayback2DTests
+        tests/SequencePlayback2DTests.cpp
+    )
+    target_include_directories(
+        MonopolySequencePlayback2DTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolySequencePlayback2DTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(
+            MonopolySequencePlayback2DTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.SequencePlayback2D
+        COMMAND MonopolySequencePlayback2DTests
+    )
+endif()
+# CPU render intent for legacy 2D bitmap sequence leaves
+if(BUILD_TESTING)
+    add_executable(
+        MonopolySequenceBitmapRenderDataTests
+        tests/SequenceBitmapRenderDataTests.cpp
+    )
+    target_include_directories(
+        MonopolySequenceBitmapRenderDataTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolySequenceBitmapRenderDataTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(
+            MonopolySequenceBitmapRenderDataTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.SequenceBitmapRenderData
+        COMMAND MonopolySequenceBitmapRenderDataTests
     )
 endif()
