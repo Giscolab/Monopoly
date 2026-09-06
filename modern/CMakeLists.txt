@@ -881,6 +881,7 @@ target_sources(
     src/PiecePlacement.cpp
     src/PieceRuntime.cpp
     src/PieceCamera.cpp
+    src/PieceMovePlan.cpp
 )
 
 target_sources(
@@ -1243,5 +1244,33 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.PieceCamera
         COMMAND MonopolyPieceCameraTests
+    )
+endif()
+# DISPLAY_UDPIECES move-plan subset
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceMovePlanTests
+        tests/PieceMovePlanTests.cpp
+        src/PieceMovePlan.cpp
+        src/PieceCamera.cpp
+    )
+
+    target_include_directories(
+        MonopolyPieceMovePlanTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceMovePlanTests
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    endif()
+
+    add_test(
+        NAME Monopoly.PieceMovePlan
+        COMMAND MonopolyPieceMovePlanTests
     )
 endif()
