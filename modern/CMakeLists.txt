@@ -1114,6 +1114,8 @@ target_sources(
     PRIVATE
     src/IBar.cpp
     src/IBarLayout.cpp
+    src/IBarBackdropPlayback.cpp
+    src/IBarCurrentPlayerPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -1144,6 +1146,59 @@ if(BUILD_TESTING)
         COMMAND MonopolyIBarTests
     )
 
+endif()
+
+if(BUILD_TESTING)
+
+    add_executable(
+        MonopolyIBarBackdropPlaybackTests
+        tests/IBarBackdropPlaybackTests.cpp
+        src/IBarBackdropPlayback.cpp
+        src/IBarCurrentPlayerPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyIBarBackdropPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyIBarBackdropPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarBackdropPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarBackdropPlayback
+        COMMAND MonopolyIBarBackdropPlaybackTests
+    )
+
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarCurrentPlayerPlaybackTests
+        tests/IBarCurrentPlayerPlaybackTests.cpp
+        src/IBarCurrentPlayerPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyIBarCurrentPlayerPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyIBarCurrentPlayerPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarCurrentPlayerPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarCurrentPlayerPlayback
+        COMMAND MonopolyIBarCurrentPlayerPlaybackTests
+    )
 endif()
 
 if(BUILD_TESTING)
