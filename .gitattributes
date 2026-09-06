@@ -1,0 +1,6 @@
+# Repository-wide text policy: Windows checkout uses CRLF.
+* text=auto eol=crlf
+
+# POSIX entry-point scripts must remain executable on Unix-like hosts.
+*.sh text eol=lf
+*.bash text eol=lf

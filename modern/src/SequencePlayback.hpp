@@ -5,8 +5,6 @@
 
 namespace monopoly::engine
 {
-    // One playback session owns one resource generation. Published assets and
-    // descriptions keep that generation alive through resource-service shutdown.
     class SequencePlayback final
     {
     public:
@@ -20,6 +18,10 @@ namespace monopoly::engine
             sequence::SequenceTransform transform);
         [[nodiscard]] std::expected<void, std::string> stop(
             data::DataId id, std::uint16_t priority);
+        [[nodiscard]] std::expected<void, std::string> transitionMovedDrop(
+            std::optional<data::DataId> previousId, data::DataId id,
+            std::uint16_t priority, sequence::SequenceTransform transform,
+            std::uint8_t endingAction);
         [[nodiscard]] std::expected<void, std::string> transitionRySTxzDropStayAtEnd(
             std::optional<data::DataId> previousId, data::DataId id,
             std::uint16_t priority, float yaw, float scale, float x, float z);

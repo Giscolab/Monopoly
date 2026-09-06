@@ -5,6 +5,8 @@
 #include "Messaging.hpp"
 #include "RulesEngine.hpp"
 #include "RuleTypes.hpp"
+#include "GameQueueGate.hpp"
+#include "Timers.hpp"
 
 #include <chrono>
 
@@ -18,6 +20,7 @@ namespace monopoly::userinterface
             std::chrono::milliseconds(1000);
 
         Clock::time_point lastTickTime{};
+        GameQueueGate gameQueueGate;
 
         bool firstTimeStep = true;
     }
@@ -26,6 +29,22 @@ namespace monopoly::userinterface
     {
         lastTickTime = {};
         firstTimeStep = true;
+        gameQueueGate.reset();
+    }
+
+    void lockGameQueue()
+    {
+        gameQueueGate.lock(timers::tickCount());
+    }
+
+    void unlockGameQueue()
+    {
+        gameQueueGate.unlock(timers::tickCount());
+    }
+
+    bool gameQueueLocked()
+    {
+        return gameQueueGate.blocks(timers::tickCount());
     }
 
     void advanceTimeStep()
@@ -41,6 +60,15 @@ namespace monopoly::userinterface
                            std::chrono::milliseconds(1);
 
             firstTimeStep = false;
+        }
+
+        // Userifce.cpp::AdvanceTimeStep() stops consuming RULE messages
+        // while display-driven animation locks are active. Voice-chat-only
+        // bypass is not present because voice chat is not yet ported.
+        if (gameQueueGate.blocks(timers::tickCount()))
+        {
+            update();
+            return;
         }
 
         actions::Message message{};

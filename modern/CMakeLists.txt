@@ -883,6 +883,9 @@ target_sources(
     src/PieceCamera.cpp
     src/PieceMovePlan.cpp
     src/PieceMovePlayback.cpp
+    src/GameQueueGate.cpp
+    src/PieceMoveIngress.cpp
+    src/PieceInterpolation.cpp
 )
 
 target_sources(
@@ -1307,3 +1310,72 @@ if(BUILD_TESTING)
     )
 endif()
 
+
+# Userifce.cpp game-queue animation gate
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyGameQueueGateTests
+        tests/GameQueueGateTests.cpp
+        src/GameQueueGate.cpp
+    )
+    target_include_directories(
+        MonopolyGameQueueGateTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyGameQueueGateTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.GameQueueGate
+        COMMAND MonopolyGameQueueGateTests
+    )
+endif()
+# DISPLAY_UDPIECES movement-message ingress
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceMoveIngressTests
+        tests/PieceMoveIngressTests.cpp
+        src/PieceMoveIngress.cpp
+        src/PieceMovePlan.cpp
+        src/PieceCamera.cpp
+    )
+    target_include_directories(
+        MonopolyPieceMoveIngressTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceMoveIngressTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceMoveIngress
+        COMMAND MonopolyPieceMoveIngressTests
+    )
+endif()
+# UDUtils.cpp 3D interpolation subset
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceInterpolationTests
+        tests/PieceInterpolationTests.cpp
+        src/PieceInterpolation.cpp
+    )
+    target_include_directories(
+        MonopolyPieceInterpolationTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceInterpolationTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceInterpolation
+        COMMAND MonopolyPieceInterpolationTests
+    )
+endif()

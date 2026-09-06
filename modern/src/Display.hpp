@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "World3DProjection.hpp"
+#include "PieceCamera.hpp"
 
 namespace monopoly::display
 {
@@ -82,6 +83,8 @@ namespace monopoly::display
         engine::World3DCamera worldCamera = initialBoardCamera();
         Screen2D current2DView = Screen2D::Invalid;
         Screen2D desired2DView = Screen2D::PlayerSelect;
+        pieces::BoardCameraView desiredBoardCamera =
+            pieces::BoardCameraView::TopDownSoccer;
 
         Viewport3D viewportInUse =
             Viewport3D::Off;

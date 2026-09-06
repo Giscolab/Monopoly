@@ -7,6 +7,9 @@
 #include "Display.hpp"
 #include "SequencePlayback.hpp"
 #include "TextureCatalog.hpp"
+#include "PieceMovePlayback.hpp"
+#include "UserInterface.hpp"
+#include "TimeStep.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_gpu.h>
@@ -28,6 +31,11 @@ namespace monopoly::engine
         std::optional<World3DRenderer> worldRenderer;
         std::optional<data::DataId> activeBoardSequence;
         std::optional<World3DCamera> activeWorldCamera;
+        pieces::PieceMovePlayback pieceMovePlayback;
+        pieces::PieceMoveSpecial activePieceMoveSpecial{pieces::PieceMoveSpecial::None};
+        std::optional<pieces::PieceMoveSpecialRequest> pendingPieceMoveSpecial;
+        bool pieceMoveQueueLockHeld{};
+        bool victoryQueueLockReleased{};
 
         [[nodiscard]] sequence::Matrix3D boardStartupScale() noexcept
         {
@@ -69,6 +77,70 @@ namespace monopoly::engine
                 display::Board3DPriority, boardStartupScale());
             if (!started) return started;
             activeBoardSequence = desired;
+            return {};
+        }
+
+        [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
+            SequencePlayback& session, bool boardVisible)
+        {
+            if (!pendingPieceMoveSpecial)
+            {
+                if (auto special = userinterface::takePendingPieceMoveSpecial())
+                {
+                    if (special->special == pieces::PieceMoveSpecial::GoToJail)
+                        pendingPieceMoveSpecial = std::move(*special);
+                    // LeaveJail only clears the historical GoingToJailStatus;
+                    // its projection has already moved from square 40 to 10.
+                }
+            }
+
+            if (!pieceMovePlayback.active() && !pendingPieceMoveSpecial)
+            {
+                if (auto plan = userinterface::takePendingPieceMovePlan())
+                {
+                    activePieceMoveSpecial = plan->special;
+                    victoryQueueLockReleased = false;
+                    pieceMoveQueueLockHeld = userinterface::gameQueueLocked();
+                    const auto begun = pieceMovePlayback.begin(std::move(*plan));
+                    if (!begun)
+                    {
+                        if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
+                        pieceMoveQueueLockHeld = false;
+                        activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+                        return std::unexpected(begun.error());
+                    }
+                }
+            }
+
+            if (!pieceMovePlayback.active()) return {};
+
+            const auto step = pieceMovePlayback.tick(boardVisible, session);
+            if (!step)
+            {
+                if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
+                pieceMoveQueueLockHeld = false;
+                return std::unexpected(step.error());
+            }
+
+            if (step->camera)
+                display::state().desiredBoardCamera = *step->camera;
+
+            if (step->looped &&
+                activePieceMoveSpecial == pieces::PieceMoveSpecial::OffBoardVictory &&
+                pieceMoveQueueLockHeld && !victoryQueueLockReleased)
+            {
+                userinterface::unlockGameQueue();
+                pieceMoveQueueLockHeld = false;
+                victoryQueueLockReleased = true;
+            }
+
+            if (step->completed)
+            {
+                if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
+                pieceMoveQueueLockHeld = false;
+                victoryQueueLockReleased = false;
+                activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+            }
             return {};
         }
     }
@@ -175,6 +247,11 @@ namespace monopoly::engine
         if (session)
         {
             const auto& displayState = display::stateReadOnly();
+            const auto pieceSync = syncPieceMovePlayback(*session,
+                display::isBoardVisible(displayState.desired2DView));
+            if (!pieceSync)
+                return SDL_SetError("Piece move playback: %s",
+                    pieceSync.error().c_str());
             const auto boardSync = syncBoardPlayback(*session, displayState);
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
@@ -218,6 +295,11 @@ namespace monopoly::engine
 
     void shutdown()
     {
+        pieceMovePlayback = {};
+        activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+        pendingPieceMoveSpecial.reset();
+        pieceMoveQueueLockHeld = false;
+        victoryQueueLockReleased = false;
         playback.reset();
         activeBoardSequence.reset();
         activeWorldCamera.reset();
