@@ -12,6 +12,7 @@ namespace monopoly::ibar
     inline constexpr data::DataTag ButtonBaseTag = 0x008A;
     inline constexpr std::uint16_t CameraButtonPriority = 999;
     inline constexpr std::uint8_t CameraButtonIndex = 2;
+    inline constexpr std::uint8_t OptionsButtonIndex = 14;
     inline constexpr std::uint8_t ButtonAnimationsPerSet = 4;
     inline constexpr std::uint8_t CameraButtonStayAtEnd = 2;
     inline constexpr std::uint8_t CameraButtonLoopToBeginning = 3;
@@ -25,7 +26,8 @@ namespace monopoly::ibar
         Pressed = 3
     };
 
-    [[nodiscard]] constexpr data::DataId cameraButtonSequence(
+    [[nodiscard]] constexpr data::DataId actionButtonSequence(
+        std::uint8_t buttonIndex,
         CameraButtonVisualState state) noexcept
     {
         if (state == CameraButtonVisualState::Off)
@@ -34,12 +36,30 @@ namespace monopoly::ibar
         return data::packDataId(
             data::LegacyGroupId::LanguageGraphics,
             static_cast<data::DataTag>(ButtonBaseTag +
-                CameraButtonIndex * ButtonAnimationsPerSet + mode));
+                buttonIndex * ButtonAnimationsPerSet + mode));
+    }
+
+    [[nodiscard]] constexpr data::DataId cameraButtonSequence(
+        CameraButtonVisualState state) noexcept
+    {
+        return actionButtonSequence(CameraButtonIndex, state);
+    }
+
+    [[nodiscard]] constexpr data::DataId optionsButtonSequence(
+        CameraButtonVisualState state) noexcept
+    {
+        return actionButtonSequence(OptionsButtonIndex, state);
     }
 
     class CameraButtonPlayback final
     {
     public:
+        explicit CameraButtonPlayback(
+            std::uint8_t buttonIndex = CameraButtonIndex) noexcept
+            : buttonIndex_(buttonIndex)
+        {
+        }
+
         [[nodiscard]] std::expected<void, std::string> sync(
             bool iBarVisible,
             engine::SequencePlayback& playback);
@@ -61,7 +81,37 @@ namespace monopoly::ibar
         }
 
     private:
+        std::uint8_t buttonIndex_{CameraButtonIndex};
         CameraButtonVisualState visualState_{CameraButtonVisualState::Off};
         data::DataId currentSequence_{data::EmptyDataId};
+    };
+
+    class OptionsButtonPlayback final
+    {
+    public:
+        [[nodiscard]] std::expected<void, std::string> sync(
+            bool desired,
+            engine::SequencePlayback& playback)
+        {
+            return core_.sync(desired, playback);
+        }
+
+        void reset() noexcept
+        {
+            core_.reset();
+        }
+
+        [[nodiscard]] CameraButtonVisualState visualState() const noexcept
+        {
+            return core_.visualState();
+        }
+
+        [[nodiscard]] data::DataId currentSequence() const noexcept
+        {
+            return core_.currentSequence();
+        }
+
+    private:
+        CameraButtonPlayback core_{OptionsButtonIndex};
     };
 }

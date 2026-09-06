@@ -1,4 +1,5 @@
 #include "IBarBackdropPlayback.hpp"
+#include "RuntimeState.hpp"
 
 #include <utility>
 #include <variant>
@@ -116,6 +117,14 @@ namespace monopoly::ibar
         if (!camera)
         {
             return camera;
+        }
+
+        const auto options = optionsButton_.sync(
+            visible && runtime::state().gameInProgress,
+            playback);
+        if (!options)
+        {
+            return options;
         }
 
         // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before

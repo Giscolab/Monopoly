@@ -1159,6 +1159,7 @@ if(BUILD_TESTING)
         src/IBarCurrentPlayerPlayback.cpp
         src/IBarBankPlayback.cpp
         src/IBarCameraButtonPlayback.cpp
+        src/RuntimeState.cpp
     )
     target_include_directories(
         MonopolyIBarBackdropPlaybackTests PRIVATE
