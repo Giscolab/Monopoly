@@ -9,6 +9,7 @@
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
 #include "PieceJailPlayback.hpp"
+#include "PieceIdlePlayback.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -35,6 +36,9 @@ namespace monopoly::engine
         std::optional<World3DCamera> activeWorldCamera;
         pieces::PieceMovePlayback pieceMovePlayback;
         pieces::PieceJailPlayback pieceJailPlayback;
+        pieces::PieceIdlePlayback pieceIdlePlayback;
+        std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
+        bool pieceIdleQueueLockHeld{};
         pieces::PieceMoveSpecial activePieceMoveSpecial{pieces::PieceMoveSpecial::None};
         std::optional<pieces::PieceMoveSpecialRequest> pendingPieceMoveSpecial;
         bool pieceMoveQueueLockHeld{};
@@ -83,6 +87,44 @@ namespace monopoly::engine
             return {};
         }
 
+        [[nodiscard]] std::expected<void, std::string> syncPieceIdlePlayback(
+            SequencePlayback& session)
+        {
+            if (!pendingPieceIdleTransition && !pieceIdlePlayback.active())
+                if (auto plan = userinterface::takePendingPieceIdleTransitionPlan())
+                    pendingPieceIdleTransition = std::move(*plan);
+
+            if (pendingPieceIdleTransition && !pieceIdlePlayback.active() &&
+                !pieceMovePlayback.active() && !pieceJailPlayback.active())
+            {
+                pieceIdleQueueLockHeld = userinterface::gameQueueLocked();
+                auto plan = std::move(*pendingPieceIdleTransition);
+                pendingPieceIdleTransition.reset();
+                const auto begun = pieceIdlePlayback.begin(std::move(plan));
+                if (!begun)
+                {
+                    if (pieceIdleQueueLockHeld) userinterface::unlockGameQueue();
+                    pieceIdleQueueLockHeld = false;
+                    return std::unexpected(begun.error());
+                }
+            }
+
+            if (!pieceIdlePlayback.active()) return {};
+            const auto step = pieceIdlePlayback.tick(session);
+            if (!step)
+            {
+                if (pieceIdleQueueLockHeld) userinterface::unlockGameQueue();
+                pieceIdleQueueLockHeld = false;
+                pieceIdlePlayback = {};
+                return std::unexpected(step.error());
+            }
+            if (step->completed)
+            {
+                if (pieceIdleQueueLockHeld) userinterface::unlockGameQueue();
+                pieceIdleQueueLockHeld = false;
+            }
+            return {};
+        }
         [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
             SequencePlayback& session, bool boardVisible, std::uint64_t tick)
         {
@@ -301,6 +343,10 @@ namespace monopoly::engine
             if (!pieceSync)
                 return SDL_SetError("Piece move playback: %s",
                     pieceSync.error().c_str());
+            const auto idleSync = syncPieceIdlePlayback(*session);
+            if (!idleSync)
+                return SDL_SetError("Piece idle playback: %s",
+                    idleSync.error().c_str());
             const auto boardSync = syncBoardPlayback(*session, displayState);
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
@@ -343,6 +389,9 @@ namespace monopoly::engine
     {
         pieceMovePlayback = {};
         pieceJailPlayback = {};
+        pieceIdlePlayback = {};
+        pendingPieceIdleTransition.reset();
+        pieceIdleQueueLockHeld = false;
         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
         pendingPieceMoveSpecial.reset();
         pieceMoveQueueLockHeld = false;

@@ -4,6 +4,7 @@
 #include "Actions.hpp"
 #include "RuleTypes.hpp"
 #include "PieceMoveIngress.hpp"
+#include "PieceIdleTransition.hpp"
 
 #include <optional>
 
@@ -26,6 +27,7 @@ namespace monopoly::userinterface
 
     [[nodiscard]] std::optional<pieces::PieceMovePlan> takePendingPieceMovePlan();
     [[nodiscard]] std::optional<pieces::PieceMoveSpecialRequest> takePendingPieceMoveSpecial();
+    [[nodiscard]] std::optional<pieces::PieceIdleTransitionPlan> takePendingPieceIdleTransitionPlan();
 
 
     // ProcessPlayersUI(NULL) original: laisse les modules UI actifs

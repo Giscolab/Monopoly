@@ -2,6 +2,7 @@
 #include "Display.hpp"
 #include "RuntimeState.hpp"
 #include "UserInterface.hpp"
+#include "PieceCamera.hpp"
 
 #include <iostream>
 #include <string_view>
@@ -12,6 +13,8 @@ namespace
     int failures = 0;
     bool acceptRecipient = true;
     int localResetCount = 0;
+    int queueLockDepth = 0;
+    monopoly::display::State routingDisplayState{};
     monopoly::display::Screen2D requestedBackdrop =
         monopoly::display::Screen2D::Invalid;
     std::vector<std::string_view> route;
@@ -31,6 +34,11 @@ namespace
 
 namespace monopoly::display
 {
+    State& state()
+    {
+        return routingDisplayState;
+    }
+
     void setBackdrop(Screen2D screen)
     {
         requestedBackdrop = screen;
@@ -85,15 +93,17 @@ namespace monopoly::userinterface
 
     void lockGameQueue()
     {
+        ++queueLockDepth;
     }
 
     void unlockGameQueue()
     {
+        if (queueLockDepth > 0) --queueLockDepth;
     }
 
     bool gameQueueLocked()
     {
-        return false;
+        return queueLockDepth > 0;
     }
 }
 
@@ -181,6 +191,43 @@ namespace
     }
 
 
+    void testStartTurnQueuesHistoricalIdleTransition()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        queueLockDepth = 0;
+        routingDisplayState = {};
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 3;
+        for (rules::PlayerNumber player = 0; player < 3; ++player)
+        {
+            uiState.players[player].currentSquare = 0;
+            uiState.players[player].token = player;
+        }
+
+        actions::Message starting{};
+        starting.action = actions::Type::NotifyGameStarting;
+        starting.toPlayer = rules::AllPlayers;
+        userinterface::processRuleMessage(starting);
+
+        actions::Message turn{};
+        turn.action = actions::Type::NotifyStartTurn;
+        turn.toPlayer = rules::AllPlayers;
+        turn.numberA = 0;
+        userinterface::processRuleMessage(turn);
+        auto plan = userinterface::takePendingPieceIdleTransitionPlan();
+
+        expect(plan && !plan->movingOut && plan->movingIn &&
+            plan->movingIn->restingSlot == 2,
+            "first start-turn uses reversed GO slot and has no outgoing center");
+        expect(queueLockDepth == 1 && uiState.currentPlayer == 0,
+            "start-turn takes game-queue lock and then publishes new current player");
+        expect(routingDisplayState.desiredBoardCamera == pieces::pickCameraFor3Squares(0),
+            "start-turn requests the historical three-square camera before playback");
+        expect(!userinterface::takePendingPieceIdleTransitionPlan(),
+            "idle transition plan is consumed exactly once");
+        queueLockDepth = 0;
+    }
     void testFirstNonZeroPlayerProjection()
     {
         using namespace monopoly;
@@ -240,6 +287,7 @@ int main()
 
     testLocalBoundary();
     testGameStartingRoute();
+    testStartTurnQueuesHistoricalIdleTransition();
     testFirstNonZeroPlayerProjection();
     testPausedAndNewGameProjection();
 
