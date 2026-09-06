@@ -82,6 +82,19 @@ namespace monopoly::userinterface
     void advanceTimeStep()
     {
     }
+
+    void lockGameQueue()
+    {
+    }
+
+    void unlockGameQueue()
+    {
+    }
+
+    bool gameQueueLocked()
+    {
+        return false;
+    }
 }
 
 namespace

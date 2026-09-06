@@ -25,6 +25,18 @@ namespace monopoly::pieces
     inline constexpr std::uint8_t BoardSquareCountWithSpecials = 42;
     inline constexpr std::uint8_t RestingPositionCount = 6;
 
+    enum class RestingIdleCategory : std::uint8_t
+    {
+        GoFreeParking = 0,
+        InJail,
+        JustVisiting,
+        Property,
+        RailroadUtilityChance
+    };
+
+    [[nodiscard]] std::optional<RestingIdleCategory> restingIdleCategory(
+        std::uint8_t boardSquare) noexcept;
+
     // Source/monopoly/UDPieces.cpp::UDPIECES_GetTokenOrientation.
     [[nodiscard]] std::optional<TokenPose> tokenOrientation(
         std::uint8_t boardSquare) noexcept;

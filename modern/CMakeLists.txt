@@ -663,6 +663,9 @@ if(BUILD_TESTING)
         tests/UserInterfaceRoutingTests.cpp
         src/UserInterface.cpp
         src/RuntimeState.cpp
+        src/PieceMoveIngress.cpp
+        src/PieceMovePlan.cpp
+        src/PieceCamera.cpp
     )
 
     target_include_directories(
@@ -1403,4 +1406,39 @@ if(BUILD_TESTING)
         )
     endif()
     add_test(NAME Monopoly.PieceJailPlan COMMAND MonopolyPieceJailPlanTests)
+endif()
+# UDPieces.cpp GoToJail playback state machine
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceJailPlaybackTests
+        tests/PieceJailPlaybackTests.cpp
+        src/PieceJailPlayback.cpp
+        src/PieceJailPlan.cpp
+        src/PieceInterpolation.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+        src/PieceCamera.cpp
+        src/PieceMoveIngress.cpp
+        src/PieceMovePlan.cpp
+    )
+    target_include_directories(
+        MonopolyPieceJailPlaybackTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyPieceJailPlaybackTests
+        PRIVATE
+        MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceJailPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceJailPlayback
+        COMMAND MonopolyPieceJailPlaybackTests
+    )
 endif()
