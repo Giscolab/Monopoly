@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DataBanks.hpp"
+#include "Display.hpp"
 #include "IBarBankPlayback.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "IBarCurrentPlayerPlayback.hpp"
@@ -32,13 +33,18 @@ namespace monopoly::ibar
             const rules::GameState& state,
             bool visible,
             rules::PlayerNumber activePlayer,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback,
+            display::Screen2D desired2DView = display::Screen2D::Main,
+            bool tradeEligible = false);
 
         void reset() noexcept
         {
             currentBackdrop_ = data::EmptyDataId;
             cameraButton_.reset();
+            mainButton_.reset();
             optionsButton_.reset();
+            statusButton_.reset();
+            tradeButton_.reset();
             bank_.reset();
             currentPlayer_.reset();
         }
@@ -63,15 +69,33 @@ namespace monopoly::ibar
             return cameraButton_.visualState();
         }
 
+        [[nodiscard]] CameraButtonVisualState mainButtonState() const noexcept
+        {
+            return mainButton_.visualState();
+        }
+
         [[nodiscard]] CameraButtonVisualState optionsButtonState() const noexcept
         {
             return optionsButton_.visualState();
         }
 
+        [[nodiscard]] CameraButtonVisualState statusButtonState() const noexcept
+        {
+            return statusButton_.visualState();
+        }
+
+        [[nodiscard]] CameraButtonVisualState tradeButtonState() const noexcept
+        {
+            return tradeButton_.visualState();
+        }
+
     private:
         data::DataId currentBackdrop_{data::EmptyDataId};
         CameraButtonPlayback cameraButton_;
+        CameraButtonPlayback mainButton_{MainButtonIndex};
         OptionsButtonPlayback optionsButton_;
+        CameraButtonPlayback statusButton_{StatusButtonIndex};
+        CameraButtonPlayback tradeButton_{TradeButtonIndex};
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };

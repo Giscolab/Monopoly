@@ -302,6 +302,56 @@ namespace
     }
 
 
+    void testTradeSourcePlayer()
+    {
+        using namespace monopoly;
+        messaging::initialize();
+        ui::localplayers::reset();
+
+        rules::GameState uiState{};
+        uiState.numberOfPlayers = 3;
+        constexpr std::wstring_view names[]{L"Alice", L"Bot", L"Carol"};
+        constexpr std::uint8_t aiLevels[]{0, 2, 0};
+
+        for (rules::PlayerNumber player = 0; player < 3; ++player)
+        {
+            expect(ui::localplayers::requestAddLocalPlayer(
+                       uiState, names[player], player, player,
+                       aiLevels[player], false),
+                "trade-source local entry request accepted");
+            actions::Message request{};
+            expect(messaging::receiveAction(request),
+                "trade-source local entry request drained");
+
+            actions::Message accepted{};
+            accepted.action = actions::Type::NotifyNamePlayer;
+            accepted.toPlayer = rules::AllPlayers;
+            accepted.numberA = player;
+            accepted.numberB = player;
+            accepted.numberC = player;
+            accepted.numberD = aiLevels[player];
+            setString(accepted, names[player]);
+            ui::localplayers::processRuleMessage(uiState, accepted);
+            uiState.players[player].currentSquare = player;
+        }
+
+        expect(ui::localplayers::tradeSourcePlayer(uiState, 2) == 2,
+            "trade source accepts current local human first");
+        uiState.players[2].currentSquare = 41;
+        expect(ui::localplayers::tradeSourcePlayer(uiState, 2) == 0,
+            "trade source walks backward past bankrupt human and local AI");
+        expect(ui::localplayers::tradeSourcePlayer(
+                   uiState, rules::BankPlayer) == 0,
+            "trade source starts from last player when IBar shows bank");
+        uiState.players[0].currentSquare = 41;
+        expect(ui::localplayers::tradeSourcePlayer(uiState, 2) ==
+                   rules::MaxPlayers,
+            "trade source returns RULE_MAX_PLAYERS when no eligible human remains");
+
+        messaging::shutdown();
+    }
+
+
     void testMiddleRemovalUsesLastEntry()
     {
         using namespace monopoly;
@@ -392,6 +442,7 @@ int main()
 
 
     testAddAcceptRemove();
+    testTradeSourcePlayer();
     testMiddleRemovalUsesLastEntry();
 
 

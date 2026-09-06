@@ -14,6 +14,7 @@
 #include "PieceBuildingDisplay.hpp"
 #include "DiceDisplay.hpp"
 #include "IBarBackdropPlayback.hpp"
+#include "LocalPlayers.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -433,8 +434,16 @@ namespace monopoly::engine
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
             const auto& ruleState = userinterface::ruleStateReadOnly();
+            const bool activePlayerCanTrade =
+                ruleState.currentPlayer < ruleState.numberOfPlayers &&
+                ruleState.currentPlayer < rules::MaxPlayers &&
+                ruleState.players[ruleState.currentPlayer].currentSquare < 41;
+            const bool tradeEligible = activePlayerCanTrade &&
+                ui::localplayers::tradeSourcePlayer(
+                    ruleState, ruleState.currentPlayer) != rules::MaxPlayers;
             const auto backdropSync = iBarBackdropPlayback.sync(
-                ruleState, iBarVisible, ruleState.currentPlayer, *session);
+                ruleState, iBarVisible, ruleState.currentPlayer, *session,
+                displayState.desired2DView, tradeEligible);
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",
                     backdropSync.error().c_str());

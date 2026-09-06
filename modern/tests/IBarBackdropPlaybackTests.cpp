@@ -1,4 +1,5 @@
 #include "IBarBackdropPlayback.hpp"
+#include "RuntimeState.hpp"
 #include "SyntheticSequenceResources.hpp"
 
 #include <iostream>
@@ -129,6 +130,81 @@ namespace
             "hidden Camera Out completes and finally clears Overlay2D");
     }
 
+    void testGlobalButtonPredicates()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 0;
+        runtime::reset();
+
+        require(backdrop.sync(state, true, 0, playback) && playback.update(0) &&
+                backdrop.optionsButtonState() == ibar::CameraButtonVisualState::Off &&
+                backdrop.statusButtonState() == ibar::CameraButtonVisualState::Off,
+            "visible Main IBar keeps game-only buttons off before GameInProgress");
+
+        runtime::state().gameInProgress = true;
+        require(backdrop.sync(state, true, 0, playback) &&
+                playback.commands().pendingCount() == 6 && playback.update(1) &&
+                backdrop.optionsButtonState() == ibar::CameraButtonVisualState::In &&
+                backdrop.statusButtonState() == ibar::CameraButtonVisualState::In,
+            "Main view starts Options then Status in legacy index order");
+        require(playback.runtime().matching(
+                    ibar::optionsButtonSequence(ibar::CameraButtonVisualState::In),
+                    ibar::CameraButtonPriority, false).size() == 1 &&
+                playback.runtime().matching(
+                    ibar::actionButtonSequence(ibar::StatusButtonIndex,
+                        ibar::CameraButtonVisualState::In),
+                    ibar::CameraButtonPriority, false).size() == 1,
+            "integrated Options and Status reach priority 999 Overlay2D runtime");
+
+        SyntheticSequenceResources portfolioResources;
+        engine::SequencePlayback portfolioPlayback(
+            portfolioResources.service.snapshot());
+        ibar::BackdropPlayback portfolioBackdrop;
+        require(portfolioBackdrop.sync(state, true, 0, portfolioPlayback,
+                    display::Screen2D::Portfolio) &&
+                portfolioPlayback.update(0) &&
+                portfolioBackdrop.mainButtonState() ==
+                    ibar::CameraButtonVisualState::In &&
+                portfolioBackdrop.optionsButtonState() ==
+                    ibar::CameraButtonVisualState::In &&
+                portfolioBackdrop.statusButtonState() ==
+                    ibar::CameraButtonVisualState::Off,
+            "Portfolio view starts Main and Options but not Status");
+
+        SyntheticSequenceResources tradeResources;
+        engine::SequencePlayback tradePlayback(tradeResources.service.snapshot());
+        ibar::BackdropPlayback tradeBackdrop;
+        require(tradeBackdrop.sync(state, true, 0, tradePlayback,
+                    display::Screen2D::Main, true) &&
+                tradePlayback.update(0) &&
+                tradeBackdrop.tradeButtonState() ==
+                    ibar::CameraButtonVisualState::In,
+            "eligible Main view starts Trade after Status at legacy priority 999");
+
+        SyntheticSequenceResources tradeScreenResources;
+        engine::SequencePlayback tradeScreenPlayback(
+            tradeScreenResources.service.snapshot());
+        ibar::BackdropPlayback tradeScreenBackdrop;
+        require(tradeScreenBackdrop.sync(state, true, 0, tradeScreenPlayback,
+                    display::Screen2D::Trade, true) &&
+                tradeScreenPlayback.update(0) &&
+                tradeScreenBackdrop.mainButtonState() ==
+                    ibar::CameraButtonVisualState::In &&
+                tradeScreenBackdrop.tradeButtonState() ==
+                    ibar::CameraButtonVisualState::Off,
+            "Trade view shows Main but suppresses the Trade button itself");
+
+        runtime::state().gameInProgress = false;
+        require(backdrop.sync(state, true, 0, playback) &&
+                playback.commands().pendingCount() == 0,
+            "game-only button In animations are not aborted mid-flight");
+        runtime::reset();
+    }
+
     void testFailureIsTransactional()
     {
         SyntheticSequenceResources resources;
@@ -172,6 +248,7 @@ int main()
     {
         testResolution();
         testLifecycle();
+        testGlobalButtonPredicates();
         testFailureIsTransactional();
         return 0;
     }

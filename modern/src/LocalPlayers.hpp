@@ -59,6 +59,12 @@ namespace monopoly::ui::localplayers
     );
 
 
+    rules::PlayerNumber tradeSourcePlayer(
+        const rules::GameState& uiState,
+        rules::PlayerNumber iBarCurrentPlayer
+    );
+
+
     bool requestAddLocalPlayer(
         const rules::GameState& uiState,
         std::wstring_view name,
