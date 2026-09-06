@@ -138,6 +138,10 @@ struct SyntheticSequenceResources
             else if (i == 6)
             {
                 items.resize(0x02F7);
+                const auto finiteButton = words({
+                    0x03000014, 0, 0x04000004, 2, 0x000002F6});
+                for (std::uint32_t tag = 0x0092U; tag <= 0x0095U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 items[0x02F5] = {LegacyDataType::Chunky,
                     words({0x03000014, 0, 0x04000000, 2, 0x000002F6})};
                 items[0x02F6] = {LegacyDataType::Bitmap, bitmap24()};

@@ -63,12 +63,13 @@ namespace
             data::LegacyGroupId::Main, 0x0162);
 
         require(backdrop.sync(state, true, 0, playback) &&
-                playback.commands().pendingCount() == 2 &&
+                playback.commands().pendingCount() == 7 &&
                 playback.update(0),
-            "first IBar backdrop queues exact StartXY operation");
-        require(backdrop.currentBackdrop() == first &&
-                playback.world2D().size() == 1,
-            "first player backdrop reaches Overlay2D");
+            "first IBar cycle queues backdrop, Camera In, then bank operations");
+        require(backdrop.currentBackdrop() == first && backdrop.bankVisible() &&
+                backdrop.cameraButtonState() == ibar::CameraButtonVisualState::In &&
+                playback.world2D().size() == 3,
+            "backdrop, Camera In and bank all reach Overlay2D");
 
         const auto node = playback.world2D().order().front();
         const auto* object = playback.world2D().find(node);
@@ -103,11 +104,29 @@ namespace
             "bank switch uses TAB_indsbg7 through the same lifecycle");
 
         require(backdrop.sync(state, false, rules::BankPlayer, playback) &&
-                playback.commands().pendingCount() == 1 &&
+                playback.commands().pendingCount() == 2 &&
                 playback.update(3) &&
-                playback.world2D().size() == 0 &&
-                backdrop.currentBackdrop() == data::EmptyDataId,
-            "hiding IBar stops its backdrop and clears Overlay2D");
+                playback.world2D().size() == 1 &&
+                backdrop.currentBackdrop() == data::EmptyDataId &&
+                !backdrop.bankVisible() &&
+                backdrop.cameraButtonState() == ibar::CameraButtonVisualState::In,
+            "hiding IBar stops backdrop and bank while Camera In finishes");
+
+        require(playback.update(10).has_value() &&
+                backdrop.sync(state, false, rules::BankPlayer, playback) &&
+                backdrop.cameraButtonState() == ibar::CameraButtonVisualState::Idle &&
+                playback.commands().pendingCount() == 4 && playback.update(11),
+            "hidden Camera In completes through legacy Idle transition");
+        require(backdrop.sync(state, false, rules::BankPlayer, playback) &&
+                backdrop.cameraButtonState() == ibar::CameraButtonVisualState::Out &&
+                playback.commands().pendingCount() == 4 && playback.update(12),
+            "hidden Camera Idle starts legacy Out transition");
+        require(playback.update(30).has_value() &&
+                backdrop.sync(state, false, rules::BankPlayer, playback) &&
+                backdrop.cameraButtonState() == ibar::CameraButtonVisualState::Off &&
+                playback.commands().pendingCount() == 1 && playback.update(31) &&
+                playback.world2D().size() == 0,
+            "hidden Camera Out completes and finally clears Overlay2D");
     }
 
     void testFailureIsTransactional()

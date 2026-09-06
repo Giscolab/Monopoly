@@ -1,6 +1,8 @@
 #pragma once
 
 #include "DataBanks.hpp"
+#include "IBarBankPlayback.hpp"
+#include "IBarCameraButtonPlayback.hpp"
 #include "IBarCurrentPlayerPlayback.hpp"
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
@@ -35,6 +37,8 @@ namespace monopoly::ibar
         void reset() noexcept
         {
             currentBackdrop_ = data::EmptyDataId;
+            cameraButton_.reset();
+            bank_.reset();
             currentPlayer_.reset();
         }
 
@@ -48,8 +52,20 @@ namespace monopoly::ibar
             return currentPlayer_.currentToken();
         }
 
+        [[nodiscard]] bool bankVisible() const noexcept
+        {
+            return bank_.visible();
+        }
+
+        [[nodiscard]] CameraButtonVisualState cameraButtonState() const noexcept
+        {
+            return cameraButton_.visualState();
+        }
+
     private:
         data::DataId currentBackdrop_{data::EmptyDataId};
+        CameraButtonPlayback cameraButton_;
+        BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };
 }

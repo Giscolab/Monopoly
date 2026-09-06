@@ -110,6 +110,24 @@ namespace monopoly::ibar
         currentBackdrop_ = desired;
         }
 
+        // UDIBar.cpp processes the action-button bar before the score/bank
+        // section. Camera is always desired Idle while the IBar is visible.
+        const auto camera = cameraButton_.sync(visible, playback);
+        if (!camera)
+        {
+            return camera;
+        }
+
+        // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before
+        // DISPLAY_UDPIECES_Show() starts the dice at the same priority.
+        // Main-screen bank hover tracking is not wired yet, so engine
+        // integration deliberately starts from the non-hovered source state.
+        const auto bank = bank_.sync(visible, false, playback);
+        if (!bank)
+        {
+            return bank;
+        }
+
         return currentPlayer_.sync(state, visible, playback);
     }
 }

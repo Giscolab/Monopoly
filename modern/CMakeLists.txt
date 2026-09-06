@@ -1116,6 +1116,8 @@ target_sources(
     src/IBarLayout.cpp
     src/IBarBackdropPlayback.cpp
     src/IBarCurrentPlayerPlayback.cpp
+    src/IBarBankPlayback.cpp
+    src/IBarCameraButtonPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -1155,6 +1157,8 @@ if(BUILD_TESTING)
         tests/IBarBackdropPlaybackTests.cpp
         src/IBarBackdropPlayback.cpp
         src/IBarCurrentPlayerPlayback.cpp
+        src/IBarBankPlayback.cpp
+        src/IBarCameraButtonPlayback.cpp
     )
     target_include_directories(
         MonopolyIBarBackdropPlaybackTests PRIVATE
@@ -1198,6 +1202,53 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.IBarCurrentPlayerPlayback
         COMMAND MonopolyIBarCurrentPlayerPlaybackTests
+    )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarBankPlaybackTests
+        tests/IBarBankPlaybackTests.cpp
+        src/IBarBankPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyIBarBankPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyIBarBankPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarBankPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(NAME Monopoly.IBarBankPlayback COMMAND MonopolyIBarBankPlaybackTests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarCameraButtonPlaybackTests
+        tests/IBarCameraButtonPlaybackTests.cpp
+        src/IBarCameraButtonPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyIBarCameraButtonPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyIBarCameraButtonPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarCameraButtonPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarCameraButtonPlayback
+        COMMAND MonopolyIBarCameraButtonPlaybackTests
     )
 endif()
 
