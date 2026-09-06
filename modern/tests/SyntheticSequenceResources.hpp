@@ -142,7 +142,9 @@ struct SyntheticSequenceResources
                     0x03000014, 0, 0x04000004, 2, 0x000002F6});
                 for (std::uint32_t tag = 0x0092U; tag <= 0x0095U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
-                for (std::uint32_t tag = 0x00C2U; tag <= 0x00C5U; ++tag)
+                for (std::uint32_t tag = 0x00BEU; tag <= 0x00C5U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
+                for (std::uint32_t tag = 0x00D2U; tag <= 0x00D9U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
                 items[0x02F5] = {LegacyDataType::Chunky,
                     words({0x03000014, 0, 0x04000000, 2, 0x000002F6})};

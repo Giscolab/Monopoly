@@ -46,7 +46,9 @@ namespace monopoly::ibar
         const rules::GameState& state,
         bool visible,
         rules::PlayerNumber activePlayer,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback,
+        display::Screen2D desired2DView,
+        bool tradeEligible)
     {
         const auto resolved = desiredBackdrop(state, visible, activePlayer);
         if (!resolved)
@@ -119,12 +121,42 @@ namespace monopoly::ibar
             return camera;
         }
 
+        const bool gameInProgress = runtime::state().gameInProgress;
+
+        const auto mainButton = mainButton_.sync(
+            visible && gameInProgress &&
+                (desired2DView == display::Screen2D::Portfolio ||
+                 desired2DView == display::Screen2D::Trade),
+            playback);
+        if (!mainButton)
+        {
+            return mainButton;
+        }
+
         const auto options = optionsButton_.sync(
-            visible && runtime::state().gameInProgress,
+            visible && gameInProgress,
             playback);
         if (!options)
         {
             return options;
+        }
+
+        const auto statusButton = statusButton_.sync(
+            visible && gameInProgress &&
+                desired2DView == display::Screen2D::Main,
+            playback);
+        if (!statusButton)
+        {
+            return statusButton;
+        }
+
+        const auto tradeButton = tradeButton_.sync(
+            visible && gameInProgress && tradeEligible &&
+                desired2DView != display::Screen2D::Trade,
+            playback);
+        if (!tradeButton)
+        {
+            return tradeButton;
         }
 
         // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before

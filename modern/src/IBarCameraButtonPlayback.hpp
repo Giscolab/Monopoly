@@ -12,7 +12,10 @@ namespace monopoly::ibar
     inline constexpr data::DataTag ButtonBaseTag = 0x008A;
     inline constexpr std::uint16_t CameraButtonPriority = 999;
     inline constexpr std::uint8_t CameraButtonIndex = 2;
+    inline constexpr std::uint8_t MainButtonIndex = 13;
     inline constexpr std::uint8_t OptionsButtonIndex = 14;
+    inline constexpr std::uint8_t StatusButtonIndex = 18;
+    inline constexpr std::uint8_t TradeButtonIndex = 19;
     inline constexpr std::uint8_t ButtonAnimationsPerSet = 4;
     inline constexpr std::uint8_t CameraButtonStayAtEnd = 2;
     inline constexpr std::uint8_t CameraButtonLoopToBeginning = 3;

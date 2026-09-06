@@ -30,6 +30,41 @@ namespace
             "camera button resolves CNK_iyaaf + camera*4 + animation mode");
     }
 
+    void testOptionsIdentifiersAndLifecycle()
+    {
+        const auto in = ibar::optionsButtonSequence(
+            ibar::CameraButtonVisualState::In);
+        const auto idle = ibar::optionsButtonSequence(
+            ibar::CameraButtonVisualState::Idle);
+        const auto out = ibar::optionsButtonSequence(
+            ibar::CameraButtonVisualState::Out);
+        require(data::dataTag(in) == 0x00C2 &&
+                data::dataTag(idle) == 0x00C3 &&
+                data::dataTag(out) == 0x00C4,
+            "options button resolves CNK_iyaaf + options*4 + animation mode");
+        require(data::dataTag(ibar::actionButtonSequence(
+                    ibar::MainButtonIndex,
+                    ibar::CameraButtonVisualState::In)) == 0x00BE &&
+                data::dataTag(ibar::actionButtonSequence(
+                    ibar::StatusButtonIndex,
+                    ibar::CameraButtonVisualState::In)) == 0x00D2 &&
+                data::dataTag(ibar::actionButtonSequence(
+                    ibar::TradeButtonIndex,
+                    ibar::CameraButtonVisualState::In)) == 0x00D6,
+            "Main, Status and Trade resolve their exact legacy sequence bases");
+
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::OptionsButtonPlayback options;
+        require(options.sync(true, playback) &&
+                options.visualState() == ibar::CameraButtonVisualState::In &&
+                playback.commands().pendingCount() == 3 && playback.update(0),
+            "GameInProgress starts Options In with the shared legacy action-button lifecycle");
+        require(playback.runtime().matching(
+                    in, ibar::CameraButtonPriority, false).size() == 1,
+            "Options In owns priority 999 through DAT_LANG2");
+    }
+
     void testLifecycle()
     {
         SyntheticSequenceResources resources;
@@ -147,6 +182,7 @@ int main()
     try
     {
         testIdentifiers();
+        testOptionsIdentifiersAndLifecycle();
         testLifecycle();
         testHideDuringInFinishesAnimation();
         testFailureIsTransactional();

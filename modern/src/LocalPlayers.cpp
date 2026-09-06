@@ -738,6 +738,45 @@ namespace monopoly::ui::localplayers
     }
 
 
+    PlayerNumber tradeSourcePlayer(
+        const GameState& uiState,
+        PlayerNumber iBarCurrentPlayer)
+    {
+        // UDTrade_GetPlayerToTradeFrom() original : partir du joueur IBar,
+        // exclure la banque, puis parcourir vers l'arriere jusqu'au premier
+        // humain local encore sur le plateau. RULE_MAX_PLAYERS signifie aucun.
+        const PlayerNumber count =
+            std::min(uiState.numberOfPlayers, MaxPlayers);
+        if (count == 0)
+        {
+            return MaxPlayers;
+        }
+
+        PlayerNumber player = iBarCurrentPlayer;
+        if (player >= count)
+        {
+            player = static_cast<PlayerNumber>(count - 1);
+        }
+
+        const PlayerNumber start = player;
+        do
+        {
+            if (localHumanSlots[player] &&
+                uiState.players[player].currentSquare < OffBoardSquare)
+            {
+                return player;
+            }
+
+            player = player == 0
+                ? static_cast<PlayerNumber>(count - 1)
+                : static_cast<PlayerNumber>(player - 1);
+        }
+        while (player != start);
+
+        return MaxPlayers;
+    }
+
+
     bool requestAddLocalPlayer(
         const GameState& uiState,
         std::wstring_view name,
