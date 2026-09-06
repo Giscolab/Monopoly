@@ -30,6 +30,34 @@ namespace
             "camera button resolves CNK_iyaaf + camera*4 + animation mode");
     }
 
+    void testPriorityMapping()
+    {
+        require(ibar::actionButtonPriority(ibar::CameraButtonIndex) == 999 &&
+                ibar::actionButtonPriority(ibar::MainButtonIndex) == 999 &&
+                ibar::actionButtonPriority(ibar::OptionsButtonIndex) == 999 &&
+                ibar::actionButtonPriority(ibar::StatusButtonIndex) == 999 &&
+                ibar::actionButtonPriority(ibar::TradeButtonIndex) == 999,
+            "global IBar buttons preserve DISPLAY_IBAR_ButtonBasePriority");
+        require(ibar::actionButtonPriority(ibar::BuildButtonIndex) == 1000 &&
+                ibar::actionButtonPriority(ibar::UnmortButtonIndex) == 1000,
+            "Build and Unmort preserve ButtonBasePriority + 1");
+        require(ibar::actionButtonPriority(ibar::AuctionButtonIndex) == 1001 &&
+                ibar::actionButtonPriority(ibar::SellButtonIndex) == 1001 &&
+                ibar::actionButtonPriority(ibar::PercentageButtonIndex) == 1001 &&
+                ibar::actionButtonPriority(ibar::BankruptButtonIndex) == 1001 &&
+                ibar::actionButtonPriority(ibar::MortgageButtonIndex) == 1001 &&
+                ibar::actionButtonPriority(ibar::PayButtonIndex) == 1001 &&
+                ibar::actionButtonPriority(ibar::UseCardButtonIndex) == 1001,
+            "secondary IBar buttons preserve ButtonBasePriority + 2");
+        require(ibar::actionButtonPriority(ibar::DoneButtonIndex) == 1002 &&
+                ibar::actionButtonPriority(ibar::BuyButtonIndex) == 1002 &&
+                ibar::actionButtonPriority(ibar::FlatTaxButtonIndex) == 1002 &&
+                ibar::actionButtonPriority(ibar::RollDiceButtonIndex) == 1002 &&
+                ibar::actionButtonPriority(ibar::AuctionHouseButtonIndex) == 1002 &&
+                ibar::actionButtonPriority(ibar::AuctionHotelButtonIndex) == 1002,
+            "primary IBar buttons preserve ButtonBasePriority + 3");
+    }
+
     void testOptionsIdentifiersAndLifecycle()
     {
         const auto in = ibar::optionsButtonSequence(
@@ -63,6 +91,52 @@ namespace
         require(playback.runtime().matching(
                     in, ibar::CameraButtonPriority, false).size() == 1,
             "Options In owns priority 999 through DAT_LANG2");
+    }
+
+    void testRollDicePriorityAndGreyStyle()
+    {
+        const auto colourIn = ibar::actionButtonSequence(
+            ibar::RollDiceButtonIndex,
+            ibar::CameraButtonVisualState::In);
+        const auto greyIn = ibar::actionButtonSequence(
+            ibar::RollDiceButtonIndex,
+            ibar::CameraButtonVisualState::In,
+            true);
+        require(data::dataTag(colourIn) == 0x00CE &&
+                data::dataTag(greyIn) == 0x014A,
+            "RollDice selects CNK_iyaaf or CNK_iycaf using the legacy AI style");
+
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::CameraButtonPlayback rollDice{ibar::RollDiceButtonIndex};
+        require(rollDice.priority() == 1002 &&
+                rollDice.sync(true, playback, false) &&
+                playback.commands().pendingCount() == 3 && playback.update(0),
+            "local RollDice starts at DISPLAY_IBAR_ButtonBasePriority + 3");
+        require(playback.runtime().matching(colourIn, 1002, false).size() == 1 &&
+                !rollDice.currentGrey(),
+            "local RollDice uses the full-colour DAT_LANG2 sequence");
+
+        require(playback.update(10).has_value() &&
+                rollDice.sync(true, playback, false) &&
+                rollDice.visualState() == ibar::CameraButtonVisualState::Idle &&
+                playback.update(11),
+            "RollDice In completes into the legacy looping Idle sequence");
+
+        require(rollDice.sync(true, playback, true) &&
+                rollDice.visualState() == ibar::CameraButtonVisualState::Out &&
+                data::dataTag(rollDice.currentSequence()) == 0x014C &&
+                rollDice.currentGrey() && playback.update(12),
+            "local-to-remote change forces Idle out using the new grey style");
+        require(playback.update(30).has_value() &&
+                rollDice.sync(true, playback, true) &&
+                rollDice.visualState() == ibar::CameraButtonVisualState::Off &&
+                playback.update(31) &&
+                rollDice.sync(true, playback, true) &&
+                rollDice.visualState() == ibar::CameraButtonVisualState::In &&
+                data::dataTag(rollDice.currentSequence()) == 0x014A &&
+                playback.update(32),
+            "grey RollDice restarts through Off then In after the forced reset");
     }
 
     void testLifecycle()
@@ -182,7 +256,9 @@ int main()
     try
     {
         testIdentifiers();
+        testPriorityMapping();
         testOptionsIdentifiersAndLifecycle();
+        testRollDicePriorityAndGreyStyle();
         testLifecycle();
         testHideDuringInFinishesAnimation();
         testFailureIsTransactional();

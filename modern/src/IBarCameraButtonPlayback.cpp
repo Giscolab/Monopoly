@@ -10,12 +10,13 @@ namespace monopoly::ibar
     {
         [[nodiscard]] bool sequenceFinished(
             engine::SequencePlayback& playback,
-            data::DataId id)
+            data::DataId id,
+            std::uint16_t priority)
         {
             if (id == data::EmptyDataId)
                 return false;
             const auto info = playback.runtime().info(
-                id, CameraButtonPriority, false);
+                id, priority, false);
             return info && info->sequenceClock >= info->endTime;
         }
 
@@ -31,27 +32,35 @@ namespace monopoly::ibar
     }
 
     std::expected<void, std::string> CameraButtonPlayback::sync(
-        bool iBarVisible,
-        engine::SequencePlayback& playback)
+        bool desired,
+        engine::SequencePlayback& playback,
+        bool useGreyButtons,
+        bool buttonBarStable)
     {
         auto nextState = visualState_;
         switch (visualState_)
         {
         case CameraButtonVisualState::Off:
-            if (iBarVisible)
+            if (desired && buttonBarStable)
                 nextState = CameraButtonVisualState::In;
             break;
         case CameraButtonVisualState::In:
-            if (sequenceFinished(playback, currentSequence_))
+            if (sequenceFinished(playback, currentSequence_, priority_))
                 nextState = CameraButtonVisualState::Idle;
             break;
         case CameraButtonVisualState::Idle:
-            if (!iBarVisible)
+            if (currentGrey_ != useGreyButtons ||
+                (!desired && buttonBarStable))
+            {
+                // Source UDIBar.cpp lets a local/remote style reset leave Idle
+                // even while another button is flying, but ordinary removal
+                // waits for the globally stable button bar.
                 nextState = CameraButtonVisualState::Out;
+            }
             break;
         case CameraButtonVisualState::Out:
         case CameraButtonVisualState::Pressed:
-            if (sequenceFinished(playback, currentSequence_))
+            if (sequenceFinished(playback, currentSequence_, priority_))
                 nextState = CameraButtonVisualState::Off;
             break;
         }
@@ -59,12 +68,13 @@ namespace monopoly::ibar
         if (nextState == visualState_)
             return {};
 
-        const auto desired = actionButtonSequence(buttonIndex_, nextState);
+        const auto desiredSequence = actionButtonSequence(
+            buttonIndex_, nextState, useGreyButtons);
         std::shared_ptr<const sequence::SequenceProgram> program;
-        if (desired != data::EmptyDataId)
+        if (desiredSequence != data::EmptyDataId)
         {
             auto loaded = sequence::SequenceProgram::load(
-                playback.resources(), desired);
+                playback.resources(), desiredSequence);
             if (!loaded)
                 return std::unexpected(loaded.error().detail);
             program = std::move(*loaded);
@@ -74,19 +84,19 @@ namespace monopoly::ibar
         if (currentSequence_ != data::EmptyDataId)
         {
             commands.push_back(sequence::StopSequenceCommand{
-                currentSequence_, CameraButtonPriority, false});
+                currentSequence_, priority_, false});
         }
 
-        if (desired != data::EmptyDataId)
+        if (desiredSequence != data::EmptyDataId)
         {
             sequence::ClockStartOptions options{};
             options.dropFrames = true;
             commands.push_back(sequence::StartSequenceCommand{
-                std::move(program), CameraButtonPriority, options});
+                std::move(program), priority_, options});
             commands.push_back(sequence::makeMoveXY(
-                desired, CameraButtonPriority, 0, 0));
+                desiredSequence, priority_, 0, 0));
             commands.push_back(sequence::SetSequenceEndingActionCommand{
-                desired, CameraButtonPriority, endingAction(nextState), false});
+                desiredSequence, priority_, endingAction(nextState), false});
         }
 
         if (commands.size() >
@@ -113,7 +123,8 @@ namespace monopoly::ibar
         }
 
         visualState_ = nextState;
-        currentSequence_ = desired;
+        currentSequence_ = desiredSequence;
+        currentGrey_ = useGreyButtons;
         return {};
     }
 }

@@ -26,6 +26,14 @@ namespace monopoly::ibar
         bool visible,
         rules::PlayerNumber activePlayer);
 
+    struct ActionButtonInputs
+    {
+        display::Screen2D desired2DView{display::Screen2D::Main};
+        bool tradeEligible{};
+        bool rollDiceDesired{};
+        bool aiButtonRemoteState{};
+    };
+
     class BackdropPlayback final
     {
     public:
@@ -34,8 +42,7 @@ namespace monopoly::ibar
             bool visible,
             rules::PlayerNumber activePlayer,
             engine::SequencePlayback& playback,
-            display::Screen2D desired2DView = display::Screen2D::Main,
-            bool tradeEligible = false);
+            ActionButtonInputs inputs = {});
 
         void reset() noexcept
         {
@@ -43,6 +50,7 @@ namespace monopoly::ibar
             cameraButton_.reset();
             mainButton_.reset();
             optionsButton_.reset();
+            rollDiceButton_.reset();
             statusButton_.reset();
             tradeButton_.reset();
             bank_.reset();
@@ -79,6 +87,11 @@ namespace monopoly::ibar
             return optionsButton_.visualState();
         }
 
+        [[nodiscard]] CameraButtonVisualState rollDiceButtonState() const noexcept
+        {
+            return rollDiceButton_.visualState();
+        }
+
         [[nodiscard]] CameraButtonVisualState statusButtonState() const noexcept
         {
             return statusButton_.visualState();
@@ -94,6 +107,7 @@ namespace monopoly::ibar
         CameraButtonPlayback cameraButton_;
         CameraButtonPlayback mainButton_{MainButtonIndex};
         OptionsButtonPlayback optionsButton_;
+        CameraButtonPlayback rollDiceButton_{RollDiceButtonIndex};
         CameraButtonPlayback statusButton_{StatusButtonIndex};
         CameraButtonPlayback tradeButton_{TradeButtonIndex};
         BankPlayback bank_;
