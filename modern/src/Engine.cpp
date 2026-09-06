@@ -12,6 +12,7 @@
 #include "PieceIdlePlayback.hpp"
 #include "PieceIdleDisplay.hpp"
 #include "PieceBuildingDisplay.hpp"
+#include "DiceDisplay.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -41,6 +42,8 @@ namespace monopoly::engine
         pieces::PieceIdlePlayback pieceIdlePlayback;
         pieces::PieceIdleDisplay pieceIdleDisplay;
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
+        dice::Playback dicePlayback;
+        bool diceQueueLockHeld{};
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
         pieces::PieceMoveSpecial activePieceMoveSpecial{pieces::PieceMoveSpecial::None};
@@ -147,6 +150,46 @@ namespace monopoly::engine
             const auto synced = pieceIdleDisplay.sync(
                 state, userinterface::pieceIdleStateReadOnly(), context, session);
             if (!synced) return std::unexpected(synced.error());
+            return {};
+        }
+        [[nodiscard]] std::expected<void, std::string> syncDicePlayback(
+            SequencePlayback& session, std::uint64_t tick,
+            bool boardVisible, bool iBarVisible)
+        {
+            if (!dicePlayback.active())
+            {
+                if (auto request = userinterface::takePendingDiceRoll())
+                {
+                    diceQueueLockHeld = true;
+                    const auto begun = dicePlayback.begin(*request);
+                    if (!begun)
+                    {
+                        userinterface::unlockGameQueue();
+                        diceQueueLockHeld = false;
+                        return std::unexpected(begun.error());
+                    }
+                }
+            }
+
+            const auto step = dicePlayback.tick(tick, boardVisible, iBarVisible,
+                userinterface::ruleStateReadOnly(), session);
+            if (!step)
+            {
+                if (diceQueueLockHeld) userinterface::unlockGameQueue();
+                diceQueueLockHeld = false;
+                dicePlayback.reset();
+                display::state().diceCameraControlActive = false;
+                return std::unexpected(step.error());
+            }
+            if (step->cameraTakeover)
+                display::state().diceCameraControlActive = true;
+            if (step->cameraRelease)
+                display::state().diceCameraControlActive = false;
+            if (step->queueRelease && diceQueueLockHeld)
+            {
+                userinterface::unlockGameQueue();
+                diceQueueLockHeld = false;
+            }
             return {};
         }
         [[nodiscard]] std::expected<void, std::string> syncPieceBuildings(
@@ -372,6 +415,13 @@ namespace monopoly::engine
             const auto& displayState = display::stateReadOnly();
             const bool boardVisible =
                 display::isBoardVisible(displayState.desired2DView);
+            const bool iBarVisible =
+                display::isIBarVisible(displayState.desired2DView);
+            const auto diceSync = syncDicePlayback(*session, tick,
+                boardVisible, iBarVisible);
+            if (!diceSync)
+                return SDL_SetError("Dice playback: %s",
+                    diceSync.error().c_str());
             const auto pieceSync = syncPieceMovePlayback(*session,
                 boardVisible, tick);
             if (!pieceSync)
@@ -435,6 +485,10 @@ namespace monopoly::engine
         pieceIdlePlayback = {};
         pieceIdleDisplay.reset();
         pieceBuildingDisplay.reset();
+        if (diceQueueLockHeld) userinterface::unlockGameQueue();
+        diceQueueLockHeld = false;
+        dicePlayback.reset();
+        display::state().diceCameraControlActive = false;
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;
         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;

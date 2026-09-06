@@ -14,6 +14,7 @@ namespace
     bool acceptRecipient = true;
     int localResetCount = 0;
     int queueLockDepth = 0;
+    std::uint64_t routingTick = 0;
     monopoly::display::State routingDisplayState{};
     monopoly::display::Screen2D requestedBackdrop =
         monopoly::display::Screen2D::Invalid;
@@ -83,6 +84,11 @@ namespace monopoly::ibar
     void processLibraryMessage(const uimsg::Message&)
     {
     }
+}
+
+namespace monopoly::timers
+{
+    std::uint64_t tickCount() { return routingTick; }
 }
 
 namespace monopoly::userinterface
@@ -228,6 +234,35 @@ namespace
             "idle transition plan is consumed exactly once");
         queueLockDepth = 0;
     }
+    void testDiceNotificationQueuesHistoricalRoll()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        queueLockDepth = 0;
+        routingTick = 321;
+
+        actions::Message roll{};
+        roll.action = actions::Type::NotifyDiceRolled;
+        roll.toPlayer = rules::AllPlayers;
+        roll.numberA = 4;
+        roll.numberB = 6;
+        roll.numberC = 2;
+        userinterface::processRuleMessage(roll);
+
+        const auto& state = userinterface::ruleStateReadOnly();
+        auto pending = userinterface::takePendingDiceRoll();
+        expect(state.dice[0] == 4 && state.dice[1] == 6,
+            "NotifyDiceRolled updates the UI dice projection");
+        expect(queueLockDepth == 1,
+            "NotifyDiceRolled takes exactly one game-queue lock");
+        expect(pending && pending->values[0] == 4 && pending->values[1] == 6 &&
+            pending->player == 2 && pending->lockTick == 321,
+            "NotifyDiceRolled publishes the historical timed roll request");
+        expect(!userinterface::takePendingDiceRoll(),
+            "dice roll request is consumed exactly once");
+        queueLockDepth = 0;
+    }
+
     void testFirstNonZeroPlayerProjection()
     {
         using namespace monopoly;
@@ -288,6 +323,7 @@ int main()
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();
+    testDiceNotificationQueuesHistoricalRoll();
     testFirstNonZeroPlayerProjection();
     testPausedAndNewGameProjection();
 

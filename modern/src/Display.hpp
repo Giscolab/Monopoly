@@ -42,6 +42,14 @@ namespace monopoly::display
             screen == Screen2D::Portfolio;
     }
 
+    [[nodiscard]] constexpr bool isIBarVisible(Screen2D screen) noexcept
+    {
+        // display.h DISPLAY_IsIBarVisible uses desired2DView.
+        return screen == Screen2D::Main ||
+            screen == Screen2D::Trade ||
+            screen == Screen2D::Portfolio;
+    }
+
     enum class PlayerSetupPhase : std::uint8_t
     {
         None = 0,
@@ -102,6 +110,7 @@ namespace monopoly::display
         bool showOnlyLocalAIPlayersOnIBar = false;
 
         bool flashCurrentToken = false;
+        bool diceCameraControlActive = false;
 
         bool initialized = false;
     };
