@@ -10,6 +10,7 @@
 #include "PieceMovePlayback.hpp"
 #include "PieceJailPlayback.hpp"
 #include "PieceIdlePlayback.hpp"
+#include "PieceIdleDisplay.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -37,6 +38,7 @@ namespace monopoly::engine
         pieces::PieceMovePlayback pieceMovePlayback;
         pieces::PieceJailPlayback pieceJailPlayback;
         pieces::PieceIdlePlayback pieceIdlePlayback;
+        pieces::PieceIdleDisplay pieceIdleDisplay;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
         pieces::PieceMoveSpecial activePieceMoveSpecial{pieces::PieceMoveSpecial::None};
@@ -123,6 +125,26 @@ namespace monopoly::engine
                 if (pieceIdleQueueLockHeld) userinterface::unlockGameQueue();
                 pieceIdleQueueLockHeld = false;
             }
+            return {};
+        }
+        [[nodiscard]] std::expected<void, std::string> syncPersistentPieceIdles(
+            SequencePlayback& session, bool boardVisible)
+        {
+            pieces::PieceIdleDisplayContext context{};
+            context.boardVisible = boardVisible;
+            context.animationsEnabled = true;
+
+            const auto& state = userinterface::ruleStateReadOnly();
+            if (pieceMovePlayback.active() &&
+                state.currentPlayer < state.numberOfPlayers)
+                context.movingPlayer = state.currentPlayer;
+            context.paddywagonPlayer = pieceJailPlayback.playerInPaddywagon();
+            context.idleMovingOut = pieceIdlePlayback.movingOutPlayer();
+            context.idleMovingIn = pieceIdlePlayback.movingInPlayer();
+
+            const auto synced = pieceIdleDisplay.sync(
+                state, userinterface::pieceIdleStateReadOnly(), context, session);
+            if (!synced) return std::unexpected(synced.error());
             return {};
         }
         [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
@@ -338,8 +360,10 @@ namespace monopoly::engine
             if (tick > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
                 return SDL_SetError("Sequence parent clock exceeds signed runtime range");
             const auto& displayState = display::stateReadOnly();
+            const bool boardVisible =
+                display::isBoardVisible(displayState.desired2DView);
             const auto pieceSync = syncPieceMovePlayback(*session,
-                display::isBoardVisible(displayState.desired2DView), tick);
+                boardVisible, tick);
             if (!pieceSync)
                 return SDL_SetError("Piece move playback: %s",
                     pieceSync.error().c_str());
@@ -347,7 +371,11 @@ namespace monopoly::engine
             if (!idleSync)
                 return SDL_SetError("Piece idle playback: %s",
                     idleSync.error().c_str());
-            const auto boardSync = syncBoardPlayback(*session, displayState);
+            const auto persistentIdleSync =
+                syncPersistentPieceIdles(*session, boardVisible);
+            if (!persistentIdleSync)
+                return SDL_SetError("Persistent piece idle: %s",
+                    persistentIdleSync.error().c_str());            const auto boardSync = syncBoardPlayback(*session, displayState);
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
                     boardSync.error().c_str());

@@ -138,17 +138,20 @@ namespace monopoly::pieces
             if (!validPlayer(state, *center_))
                 return std::unexpected(PieceIdleTransitionError::InvalidPlayer);
             const auto square = state.players[*center_].currentSquare;
-            if (square >= 41)
+            if (square > 41)
                 return std::unexpected(PieceIdleTransitionError::InvalidSquare);
-            auto& slots = nextOccupancy[square];
-            const auto selected = chooseSourceFreeSlot(slots);
-            if (!selected)
-                return std::unexpected(PieceIdleTransitionError::InvalidProjection);
-            auto animation = makeIdleAnimation(state, *center_, *selected,
-                IdleToRestBaseTag);
-            if (!animation) return std::unexpected(animation.error());
-            slots[*selected] = *center_;
-            result.movingOut = *animation;
+            if (square < 41)
+            {
+                auto& slots = nextOccupancy[square];
+                const auto selected = chooseSourceFreeSlot(slots);
+                if (!selected)
+                    return std::unexpected(PieceIdleTransitionError::InvalidProjection);
+                auto animation = makeIdleAnimation(state, *center_, *selected,
+                    IdleToRestBaseTag);
+                if (!animation) return std::unexpected(animation.error());
+                slots[*selected] = *center_;
+                result.movingOut = *animation;
+            }
         }
 
         const auto square = state.players[newCurrent].currentSquare;

@@ -216,6 +216,11 @@ namespace monopoly::userinterface
         return uiRuleState;
     }
 
+    const pieces::PieceIdleState& pieceIdleStateReadOnly()
+    {
+        return pieceIdleState;
+    }
+
     std::optional<pieces::PieceMovePlan> takePendingPieceMovePlan()
     {
         return pieceMoveIngress.takePlan();
