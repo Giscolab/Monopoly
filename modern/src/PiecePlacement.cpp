@@ -77,6 +77,32 @@ namespace monopoly::pieces
         return pose;
     }
 
+    std::optional<TokenPose> tokenAnimationStartOrientation(
+        std::uint8_t boardSquare, data::DataId sequenceId) noexcept
+    {
+        auto pose = tokenOrientation(boardSquare);
+        if (!pose || boardSquare % 10 != 0) return pose;
+
+        constexpr data::DataTag CornerBase = 0x00F6;
+        constexpr std::uint32_t PerToken = 0x0063;
+        if (data::dataGroup(sequenceId) !=
+                data::legacyGroupValue(data::LegacyGroupId::ThreeD) ||
+            data::dataTag(sequenceId) < CornerBase ||
+            (static_cast<std::uint32_t>(data::dataTag(sequenceId)) - CornerBase) %
+                    PerToken != 0U)
+            return pose;
+
+        pose->yaw -= std::numbers::pi_v<float> / 2.0F;
+        switch (boardSquare / 10)
+        {
+        case 3: pose->x += 15.0F; pose->z += 16.0F; break;
+        case 2: pose->x -= 15.0F; pose->z += 16.0F; break;
+        case 1: pose->x -= 16.0F; pose->z -= 15.0F; break;
+        default: pose->x += 16.0F; pose->z -= 15.0F; break;
+        }
+        return pose;
+    }
+
     std::optional<TokenPose> tokenRestingOrientation(std::uint8_t boardSquare,
         std::uint8_t restingPosition, std::uint8_t token) noexcept
     {

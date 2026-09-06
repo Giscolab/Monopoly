@@ -20,6 +20,9 @@ namespace monopoly::engine
             sequence::SequenceTransform transform);
         [[nodiscard]] std::expected<void, std::string> stop(
             data::DataId id, std::uint16_t priority);
+        [[nodiscard]] std::expected<void, std::string> transitionRySTxzDropStayAtEnd(
+            std::optional<data::DataId> previousId, data::DataId id,
+            std::uint16_t priority, float yaw, float scale, float x, float z);
         [[nodiscard]] std::expected<void, std::string> setCamera3D(
             const World3DCamera& camera);
         [[nodiscard]] std::expected<void, std::string> setCameraNumber(
