@@ -897,6 +897,7 @@ target_sources(
     src/PieceIdleTransition.cpp
     src/PieceIdlePlayback.cpp
     src/PieceIdleDisplay.cpp
+    src/PieceBuildingDisplay.cpp
 )
 
 target_sources(
@@ -1532,5 +1533,33 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.PieceIdleDisplay
         COMMAND MonopolyPieceIdleDisplayTests
+    )
+endif()
+
+# UDPieces.cpp persistent house/hotel display
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceBuildingDisplayTests
+        tests/PieceBuildingDisplayTests.cpp
+        src/PieceBuildingDisplay.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+    target_include_directories(
+        MonopolyPieceBuildingDisplayTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyPieceBuildingDisplayTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceBuildingDisplayTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceBuildingDisplay
+        COMMAND MonopolyPieceBuildingDisplayTests
     )
 endif()

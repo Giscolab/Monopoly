@@ -11,6 +11,7 @@
 #include "PieceJailPlayback.hpp"
 #include "PieceIdlePlayback.hpp"
 #include "PieceIdleDisplay.hpp"
+#include "PieceBuildingDisplay.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -39,6 +40,7 @@ namespace monopoly::engine
         pieces::PieceJailPlayback pieceJailPlayback;
         pieces::PieceIdlePlayback pieceIdlePlayback;
         pieces::PieceIdleDisplay pieceIdleDisplay;
+        pieces::PieceBuildingDisplay pieceBuildingDisplay;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
         pieces::PieceMoveSpecial activePieceMoveSpecial{pieces::PieceMoveSpecial::None};
@@ -144,6 +146,14 @@ namespace monopoly::engine
 
             const auto synced = pieceIdleDisplay.sync(
                 state, userinterface::pieceIdleStateReadOnly(), context, session);
+            if (!synced) return std::unexpected(synced.error());
+            return {};
+        }
+        [[nodiscard]] std::expected<void, std::string> syncPieceBuildings(
+            SequencePlayback& session, bool boardVisible)
+        {
+            const auto synced = pieceBuildingDisplay.sync(
+                userinterface::ruleStateReadOnly(), boardVisible, session);
             if (!synced) return std::unexpected(synced.error());
             return {};
         }
@@ -376,6 +386,10 @@ namespace monopoly::engine
             if (!persistentIdleSync)
                 return SDL_SetError("Persistent piece idle: %s",
                     persistentIdleSync.error().c_str());
+            const auto buildingSync = syncPieceBuildings(*session, boardVisible);
+            if (!buildingSync)
+                return SDL_SetError("Piece building display: %s",
+                    buildingSync.error().c_str());
             const auto boardSync = syncBoardPlayback(*session, displayState);
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
@@ -420,6 +434,7 @@ namespace monopoly::engine
         pieceJailPlayback = {};
         pieceIdlePlayback = {};
         pieceIdleDisplay.reset();
+        pieceBuildingDisplay.reset();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;
         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
