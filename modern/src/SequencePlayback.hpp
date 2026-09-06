@@ -18,6 +18,9 @@ namespace monopoly::engine
             sequence::SequenceTransform transform);
         [[nodiscard]] std::expected<void, std::string> stop(
             data::DataId id, std::uint16_t priority);
+        [[nodiscard]] std::expected<void, std::string> move(
+            data::DataId id, std::uint16_t priority,
+            sequence::SequenceTransform transform);
         [[nodiscard]] std::expected<void, std::string> transitionMovedDrop(
             std::optional<data::DataId> previousId, data::DataId id,
             std::uint16_t priority, sequence::SequenceTransform transform,
