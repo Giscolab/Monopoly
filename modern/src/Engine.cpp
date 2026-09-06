@@ -549,6 +549,9 @@ namespace monopoly::engine
                 !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
             iBarInputs.pressedButtonIndex =
                 ibar::stateReadOnly().pendingPressedButton;
+            iBarInputs.desiredCardIndex =
+                ibar::stateReadOnly().desiredCardIndex;
+            iBarInputs.desiredBoardCamera = displayState.desiredBoardCamera;
 
             ibar::PropertyTitleInputs titleInputs{};
             titleInputs.available = iBarVisible &&

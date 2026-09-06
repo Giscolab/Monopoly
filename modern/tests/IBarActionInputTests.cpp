@@ -1,5 +1,6 @@
 #include "IBar.hpp"
 #include "IBarCameraButtonPlayback.hpp"
+#include "CardTypes.hpp"
 #include "Display.hpp"
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
@@ -321,6 +322,45 @@ namespace
             "TradeAccept acknowledgement does not invent legacy Pressed feedback");
     }
 
+    void testCardNotificationState()
+    {
+        ibar::state().desiredCardIndex.reset();
+        actions::Message message{};
+        message.action = actions::Type::NotifyPickedUpCard;
+        message.numberB = static_cast<std::int64_t>(rules::DeckType::Chance);
+        message.numberC = static_cast<std::int64_t>(rules::CardType::ChanceGoDirectlyToGo);
+        ibar::processRuleMessage(message, ibar::RuleMode::Nothing);
+        require(ibar::stateReadOnly().desiredCardIndex == 0,
+            "NotifyPickedUpCard maps first Chance card to display index 0");
+
+        message.numberB = static_cast<std::int64_t>(rules::DeckType::Community);
+        message.numberC = static_cast<std::int64_t>(rules::CardType::CommunityPay100ToBank);
+        ibar::processRuleMessage(message, ibar::RuleMode::ViewingCard);
+        require(ibar::stateReadOnly().desiredCardIndex == 31,
+            "NotifyPickedUpCard maps final Community card to display index 31");
+
+        message.action = actions::Type::NotifyPutAwayCard;
+        ibar::processRuleMessage(message, ibar::RuleMode::ViewingCard);
+        require(!ibar::stateReadOnly().desiredCardIndex,
+            "NotifyPutAwayCard clears requested card visual");
+
+        message.action = actions::Type::NotifyPickedUpCard;
+        message.numberB = static_cast<std::int64_t>(rules::DeckType::Chance);
+        message.numberC = static_cast<std::int64_t>(rules::CardType::ChanceGet50FromBank);
+        ibar::processRuleMessage(message, ibar::RuleMode::ViewingCard);
+        require(ibar::stateReadOnly().desiredCardIndex == 4,
+            "second Chance pickup records exact zero-based display index");
+
+        message = {};
+        message.action = actions::Type::NotifyActionCompleted;
+        message.numberA = static_cast<std::int64_t>(actions::Type::CardSeen);
+        message.numberB = 1;
+        ibar::processRuleMessage(message, ibar::RuleMode::ViewingCard);
+        require(!ibar::stateReadOnly().desiredCardIndex &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::DoneButtonIndex,
+            "accepted CardSeen clears card request and requests Done Pressed feedback");
+    }
+
     void testBSSMSubstatesAndDeeds()
     {
         test_support::ruleState.squares[1].owner = 0;
@@ -448,6 +488,7 @@ int main()
         testJailVariants();
         testTradeAndSpecialDirectActions();
         testPressedAcknowledgements();
+        testCardNotificationState();
         testBSSMSubstatesAndDeeds();
         testRemoteAndPlayerSelectGuards();
         monopoly::ibar::shutdown();

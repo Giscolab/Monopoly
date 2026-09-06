@@ -192,6 +192,56 @@ namespace
             "aggregate IBar removes floating deed immediately when mouse leaves titles");
     }
 
+    void testCardPlaybackIntegration()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 0;
+        state.players[0].token = 0;
+        runtime::reset();
+
+        ibar::ActionButtonInputs inputs{};
+        inputs.trackRules = false;
+        inputs.ruleMode = ibar::RuleMode::ViewingCard;
+        inputs.rulePlayer = 0;
+        inputs.desiredCardIndex = static_cast<std::uint8_t>(0);
+        inputs.desiredBoardCamera = pieces::BoardCameraView::FifteenTiles12;
+        inputs.desired2DView = display::Screen2D::Main;
+
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::DeckOut &&
+                data::dataTag(backdrop.currentCardSequence()) == 0x0035,
+            "aggregate ViewingCard starts Chance deck-out using Engine camera index 38");
+
+        require(playback.update(10).has_value() &&
+                backdrop.sync(state, true, 0, playback, inputs) && playback.update(11) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::CardIn,
+            "aggregate card advances deck-out to CardIn");
+        require(playback.update(20).has_value() &&
+                backdrop.sync(state, true, 0, playback, inputs) && playback.update(21) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::FaceIn,
+            "aggregate card advances CardIn to face animation");
+        require(playback.update(30).has_value() &&
+                backdrop.sync(state, true, 0, playback, inputs) && playback.update(31) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::Idle,
+            "aggregate card reaches legacy Idle state");
+
+        inputs.desiredCardIndex.reset();
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(32) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::Out &&
+                data::dataTag(backdrop.currentCardSequence()) == 0x0048,
+            "cleared CardSeen/PutAway request drives aggregate Chance card to Out");
+
+        require(backdrop.sync(state, true, 0, playback, inputs) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::Off,
+            "aggregate outgoing card returns to Off on the next legacy state-4 cycle");
+
+        runtime::reset();
+    }
+
     void testGlobalButtonPredicates()
     {
         SyntheticSequenceResources resources;
@@ -755,6 +805,7 @@ int main()
         testResolution();
         testLifecycle();
         testPropertyHoverIntegration();
+        testCardPlaybackIntegration();
         testGlobalButtonPredicates();
         testRollDicePromptInputs();
         testRuleActionHitState();
