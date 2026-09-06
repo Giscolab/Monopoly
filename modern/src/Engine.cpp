@@ -443,12 +443,15 @@ namespace monopoly::engine
                     ruleState, ruleState.currentPlayer) != rules::MaxPlayers;
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
+            const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
             ibar::ActionButtonInputs iBarInputs{};
             iBarInputs.desired2DView = displayState.desired2DView;
+            iBarInputs.ruleMode = iBarRules.mode;
+            iBarInputs.rulePlayer = iBarRules.player;
             iBarInputs.tradeEligible = tradeEligible;
             iBarInputs.rollDiceDesired = dicePrompt.currentStartTurn;
             iBarInputs.aiButtonRemoteState =
-                !ui::localplayers::slotIsLocalHumanPlayer(ruleState.currentPlayer);
+                !ui::localplayers::slotIsLocalHumanPlayer(iBarRules.player);
             const auto backdropSync = iBarBackdropPlayback.sync(
                 ruleState, iBarVisible, ruleState.currentPlayer, *session,
                 iBarInputs);

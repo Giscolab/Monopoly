@@ -1,6 +1,7 @@
 #include "IBarBackdropPlayback.hpp"
 #include "RuntimeState.hpp"
 
+#include <array>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -120,69 +121,106 @@ namespace monopoly::ibar
             return state == CameraButtonVisualState::Off ||
                 state == CameraButtonVisualState::Idle;
         };
-        const bool actionButtonsStable =
-            stable(cameraButton_.visualState()) &&
-            stable(mainButton_.visualState()) &&
-            stable(optionsButton_.visualState()) &&
-            stable(rollDiceButton_.visualState()) &&
-            stable(statusButton_.visualState()) &&
-            stable(tradeButton_.visualState());
 
-        // UDIBar.cpp processes the action-button bar before the score/bank
-        // section. Camera is always desired Idle while the IBar is visible.
-        const auto camera = cameraButton_.sync(
-            visible, playback, false, actionButtonsStable);
-        if (!camera)
+        const auto wantsDone = [](RuleMode mode) noexcept
         {
-            return camera;
-        }
+            switch (mode)
+            {
+            case RuleMode::Build:
+            case RuleMode::Sell:
+            case RuleMode::Mortgage:
+            case RuleMode::UnMortgage:
+            case RuleMode::OtherPlayer:
+            case RuleMode::DoneTurn:
+            case RuleMode::DeedActive:
+            case RuleMode::ViewingCard:
+            case RuleMode::FreeUnmortgage:
+                return true;
+            default:
+                return false;
+            }
+        };
+        const auto wantsUseCard = [](RuleMode mode) noexcept
+        {
+            return mode == RuleMode::JailExitPCR ||
+                mode == RuleMode::JailExitPCX;
+        };
+        const auto wantsJailRoll = [](RuleMode mode) noexcept
+        {
+            return mode == RuleMode::JailExitPCR ||
+                mode == RuleMode::JailExitPXR;
+        };
+        const auto wantsPay = [](RuleMode mode) noexcept
+        {
+            return mode == RuleMode::JailExitPCR ||
+                mode == RuleMode::JailExitPXR ||
+                mode == RuleMode::JailExitPCX ||
+                mode == RuleMode::JailExitPXX;
+        };
 
         const bool gameInProgress = runtime::state().gameInProgress;
+        const bool buyAuction = inputs.ruleMode == RuleMode::BuyAuction;
+        const bool taxDecision = inputs.ruleMode == RuleMode::TaxDecision;
+        const bool gameOver = inputs.ruleMode == RuleMode::GameOver;
 
-        const auto mainButton = mainButton_.sync(
-            visible && gameInProgress &&
+        struct ButtonRequest
+        {
+            CameraButtonPlayback* button;
+            bool desired;
+            bool useGrey;
+        };
+
+        // Preserve the original t=0..IBAR_BUTTON_DISTINCT_MAX iteration order
+        // for the subset whose predicates are now ported.
+        const std::array requests{
+            ButtonRequest{&auctionButton_, visible && buyAuction, inputs.aiButtonRemoteState},
+            ButtonRequest{&buyButton_, visible && buyAuction, inputs.aiButtonRemoteState},
+            ButtonRequest{&cameraButton_, visible, false},
+            ButtonRequest{&doneButton_, visible && wantsDone(inputs.ruleMode), inputs.aiButtonRemoteState},
+            ButtonRequest{&flatTaxButton_, visible && taxDecision, inputs.aiButtonRemoteState},
+            ButtonRequest{&percentageButton_, visible && taxDecision, inputs.aiButtonRemoteState},
+            ButtonRequest{&mainButton_, visible && gameInProgress &&
                 (inputs.desired2DView == display::Screen2D::Portfolio ||
-                 inputs.desired2DView == display::Screen2D::Trade),
-            playback, false, actionButtonsStable);
-        if (!mainButton)
+                 inputs.desired2DView == display::Screen2D::Trade), false},
+            ButtonRequest{&optionsButton_, visible && gameInProgress, false},
+            ButtonRequest{&payButton_, visible && wantsPay(inputs.ruleMode), inputs.aiButtonRemoteState},
+            ButtonRequest{&newGameButton_, visible && gameOver, false},
+            ButtonRequest{&rollDiceButton_, visible &&
+                (inputs.rollDiceDesired || wantsJailRoll(inputs.ruleMode)),
+                inputs.aiButtonRemoteState},
+            ButtonRequest{&statusButton_, visible && gameInProgress &&
+                inputs.desired2DView == display::Screen2D::Main, false},
+            ButtonRequest{&tradeButton_, visible && gameInProgress &&
+                inputs.tradeEligible && inputs.desired2DView != display::Screen2D::Trade, false},
+            ButtonRequest{&exitButton_, visible && gameOver, false},
+            ButtonRequest{&useCardButton_, visible && wantsUseCard(inputs.ruleMode),
+                inputs.aiButtonRemoteState}
+        };
+
+        bool actionButtonsStable = true;
+        for (const auto& request : requests)
+            actionButtonsStable = actionButtonsStable &&
+                stable(request.button->visualState());
+
+        const bool justChanged = inputs.trackRules &&
+            (trackedRuleMode_ != inputs.ruleMode ||
+             trackedRulePlayer_ != inputs.rulePlayer);
+        if (inputs.trackRules)
         {
-            return mainButton;
+            trackedRuleMode_ = inputs.ruleMode;
+            trackedRulePlayer_ = inputs.rulePlayer;
         }
 
-        const auto options = optionsButton_.sync(
-            visible && gameInProgress,
-            playback, actionButtonsStable);
-        if (!options)
+        // IBAR_JustChanged makes this pass outgoing-only. It is cleared at the
+        // end of the original show routine, so the next sync may fly buttons in
+        // once every existing animation is stable again.
+        for (const auto& request : requests)
         {
-            return options;
-        }
-
-        const auto rollDiceButton = rollDiceButton_.sync(
-            visible && inputs.rollDiceDesired,
-            playback,
-            inputs.aiButtonRemoteState,
-            actionButtonsStable);
-        if (!rollDiceButton)
-        {
-            return rollDiceButton;
-        }
-
-        const auto statusButton = statusButton_.sync(
-            visible && gameInProgress &&
-                inputs.desired2DView == display::Screen2D::Main,
-            playback, false, actionButtonsStable);
-        if (!statusButton)
-        {
-            return statusButton;
-        }
-
-        const auto tradeButton = tradeButton_.sync(
-            visible && gameInProgress && inputs.tradeEligible &&
-                inputs.desired2DView != display::Screen2D::Trade,
-            playback, false, actionButtonsStable);
-        if (!tradeButton)
-        {
-            return tradeButton;
+            const auto result = request.button->sync(
+                request.desired, playback, request.useGrey,
+                actionButtonsStable, !justChanged);
+            if (!result)
+                return result;
         }
 
         // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before

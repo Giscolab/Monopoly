@@ -6,12 +6,14 @@
 #include "PieceMoveIngress.hpp"
 #include "PieceIdleTransition.hpp"
 #include "DiceIngress.hpp"
+#include "IBarRuleState.hpp"
 
 #include <optional>
 
 namespace monopoly::userinterface
 {
     dice::PromptState& dicePromptState() noexcept;
+    const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept;
     // Repart d'une projection UI neuve et réarme l'initialisation spéciale
     // déclenchée par la première notification du nombre de joueurs.
     void resetRuleProjection();

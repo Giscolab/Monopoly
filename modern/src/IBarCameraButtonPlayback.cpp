@@ -35,13 +35,14 @@ namespace monopoly::ibar
         bool desired,
         engine::SequencePlayback& playback,
         bool useGreyButtons,
-        bool buttonBarStable)
+        bool buttonBarStable,
+        bool allowIncoming)
     {
         auto nextState = visualState_;
         switch (visualState_)
         {
         case CameraButtonVisualState::Off:
-            if (desired && buttonBarStable)
+            if (desired && buttonBarStable && allowIncoming)
                 nextState = CameraButtonVisualState::In;
             break;
         case CameraButtonVisualState::In:

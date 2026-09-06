@@ -5,6 +5,7 @@
 #include "IBarBankPlayback.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "IBarCurrentPlayerPlayback.hpp"
+#include "IBarRuleState.hpp"
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
 
@@ -29,6 +30,9 @@ namespace monopoly::ibar
     struct ActionButtonInputs
     {
         display::Screen2D desired2DView{display::Screen2D::Main};
+        RuleMode ruleMode{RuleMode::Nothing};
+        rules::PlayerNumber rulePlayer{rules::NobodyPlayer};
+        bool trackRules{true};
         bool tradeEligible{};
         bool rollDiceDesired{};
         bool aiButtonRemoteState{};
@@ -47,12 +51,23 @@ namespace monopoly::ibar
         void reset() noexcept
         {
             currentBackdrop_ = data::EmptyDataId;
+            auctionButton_.reset();
+            buyButton_.reset();
             cameraButton_.reset();
+            doneButton_.reset();
+            flatTaxButton_.reset();
+            percentageButton_.reset();
             mainButton_.reset();
             optionsButton_.reset();
+            payButton_.reset();
+            newGameButton_.reset();
             rollDiceButton_.reset();
             statusButton_.reset();
             tradeButton_.reset();
+            exitButton_.reset();
+            useCardButton_.reset();
+            trackedRuleMode_ = RuleMode::Nothing;
+            trackedRulePlayer_ = rules::NobodyPlayer;
             bank_.reset();
             currentPlayer_.reset();
         }
@@ -104,12 +119,23 @@ namespace monopoly::ibar
 
     private:
         data::DataId currentBackdrop_{data::EmptyDataId};
+        CameraButtonPlayback auctionButton_{AuctionButtonIndex};
+        CameraButtonPlayback buyButton_{BuyButtonIndex};
         CameraButtonPlayback cameraButton_;
+        CameraButtonPlayback doneButton_{DoneButtonIndex};
+        CameraButtonPlayback flatTaxButton_{FlatTaxButtonIndex};
+        CameraButtonPlayback percentageButton_{PercentageButtonIndex};
         CameraButtonPlayback mainButton_{MainButtonIndex};
-        OptionsButtonPlayback optionsButton_;
+        CameraButtonPlayback optionsButton_{OptionsButtonIndex};
+        CameraButtonPlayback payButton_{PayButtonIndex};
+        CameraButtonPlayback newGameButton_{NewGameButtonIndex};
         CameraButtonPlayback rollDiceButton_{RollDiceButtonIndex};
         CameraButtonPlayback statusButton_{StatusButtonIndex};
         CameraButtonPlayback tradeButton_{TradeButtonIndex};
+        CameraButtonPlayback exitButton_{ExitButtonIndex};
+        CameraButtonPlayback useCardButton_{UseCardButtonIndex};
+        RuleMode trackedRuleMode_{RuleMode::Nothing};
+        rules::PlayerNumber trackedRulePlayer_{rules::NobodyPlayer};
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };

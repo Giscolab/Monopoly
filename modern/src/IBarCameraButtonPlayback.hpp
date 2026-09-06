@@ -26,10 +26,13 @@ namespace monopoly::ibar
     inline constexpr std::uint8_t MainButtonIndex = 13;
     inline constexpr std::uint8_t OptionsButtonIndex = 14;
     inline constexpr std::uint8_t PayButtonIndex = 15;
+    inline constexpr std::uint8_t NewGameButtonIndex = 16;
     inline constexpr std::uint8_t RollDiceButtonIndex = 17;
     inline constexpr std::uint8_t StatusButtonIndex = 18;
     inline constexpr std::uint8_t TradeButtonIndex = 19;
     inline constexpr std::uint8_t UnmortButtonIndex = 20;
+    inline constexpr std::uint8_t ExitButtonIndex = 21;
+    inline constexpr std::uint8_t PlayAgainButtonIndex = 22;
     inline constexpr std::uint8_t UseCardButtonIndex = 23;
     inline constexpr std::uint8_t AuctionHouseButtonIndex = 24;
     inline constexpr std::uint8_t AuctionHotelButtonIndex = 25;
@@ -115,7 +118,8 @@ namespace monopoly::ibar
             bool desired,
             engine::SequencePlayback& playback,
             bool useGreyButtons = false,
-            bool buttonBarStable = true);
+            bool buttonBarStable = true,
+            bool allowIncoming = true);
 
         void reset() noexcept
         {
@@ -158,9 +162,10 @@ namespace monopoly::ibar
         [[nodiscard]] std::expected<void, std::string> sync(
             bool desired,
             engine::SequencePlayback& playback,
-            bool buttonBarStable = true)
+            bool buttonBarStable = true,
+            bool allowIncoming = true)
         {
-            return core_.sync(desired, playback, false, buttonBarStable);
+            return core_.sync(desired, playback, false, buttonBarStable, allowIncoming);
         }
 
         void reset() noexcept

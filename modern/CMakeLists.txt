@@ -667,6 +667,7 @@ if(BUILD_TESTING)
         MonopolyUserInterfaceRoutingTests
         tests/UserInterfaceRoutingTests.cpp
         src/UserInterface.cpp
+        src/IBarRuleState.cpp
         src/RuntimeState.cpp
         src/PieceMoveIngress.cpp
         src/PieceMovePlan.cpp
@@ -1118,6 +1119,7 @@ target_sources(
     src/IBarCurrentPlayerPlayback.cpp
     src/IBarBankPlayback.cpp
     src/IBarCameraButtonPlayback.cpp
+    src/IBarRuleState.cpp
 )
 
 if(BUILD_TESTING)
@@ -1250,6 +1252,27 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.IBarCameraButtonPlayback
         COMMAND MonopolyIBarCameraButtonPlaybackTests
+    )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarRuleStateTests
+        tests/IBarRuleStateTests.cpp
+        src/IBarRuleState.cpp
+    )
+    target_include_directories(
+        MonopolyIBarRuleStateTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarRuleStateTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarRuleState
+        COMMAND MonopolyIBarRuleStateTests
     )
 endif()
 

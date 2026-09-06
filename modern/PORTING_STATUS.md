@@ -39,10 +39,10 @@ effectivement present sous `modern/`.
 | `Source/monopoly/Tickler.cpp` | `TimeStep`, `Messaging`, `UserInterface`, `GameQueueGate` | `PORTED_PARTIAL` | `AdvanceTimeStep`, action unique par cycle, `ACTION_TICK`, `gameQueueLock/gameQueueUnLock` | Timers, RULE, DISPLAY, AI | Routage local/broadcast, reset et compteur de verrou animation sont portes; le gate bloque la consommation RULE avec le failsafe historique de 15 s / 900 ticks. AI et voice-chat restent absents. |
 | `Source/monopoly/L_voice.cpp` | Aucun | `NOT_STARTED` | voix, capture/lecture, timing | audio portable, MESS | Identifier les contrats consommes; ne pas porter les codecs/wrappers Win32 litteralement. |
 | `Source/monopoly/display.cpp` | `Display`, `GPUFrame`, `RenderSlots`, `LogicalViewport`, `World2DRenderer` | `PORTED_PARTIAL` | `DISPLAY_initialize`, `DISPLAY_tickActions`, `DISPLAY_showAll2`, `DISPLAY_destroy` | modules UD, renderer, assets | Ordre relatif, cycle desired/current et repere logique letterbox conserves. Le slot Overlay2D rend maintenant les feuilles bitmap du sequenceur via SDL_GPU dans le canvas logique 800x600; sprites/UI generiques, fonts et nombreux modules UD restent a porter. |
-| `Source/monopoly/Userifce.cpp` | `UserInterface`, `LocalPlayers`, `RuntimeState`, `TimeStep`, `ExtendedInitialization`, `ResourceRuntime` | `PORTED_PARTIAL` | `MainExtendedInitialization`, `ProcessLibraryMessage`, `ProcessMessageToPlayer`, `ProcessPlayersUI`, `GameInProgress` | RULE, DISPLAY, LANG, CHAT | Cinq banques core puis LANG avant MESS raccordes; absence/corruption bloque le startup avec erreur typee. Frontiere locale, `NOTIFY_GAME_STARTING`, pause et projection explicite `GameInProgress` sont routes : StartTurn/PleaseRollDice l'activent, GameOver/reset joueurs le coupent, PleaseRollDice retire aussi la pause. Le miroir UI reste incomplet pour cash, plateau, trade, enchere, prison, etc. |
+| `Source/monopoly/Userifce.cpp` | `UserInterface`, `LocalPlayers`, `RuntimeState`, `TimeStep`, `ExtendedInitialization`, `ResourceRuntime`, `IBarRuleState` | `PORTED_PARTIAL` | `MainExtendedInitialization`, `ProcessLibraryMessage`, `ProcessMessageToPlayer`, `ProcessPlayersUI`, `GameInProgress`, projection des etats UDIBar | RULE, DISPLAY, LANG, CHAT | Cinq banques core puis LANG avant MESS raccordes; absence/corruption bloque le startup avec erreur typee. Frontiere locale, `NOTIFY_GAME_STARTING`, pause et `GameInProgress` sont routes. `IBarRuleState` conserve les valeurs numeriques `IBAR_STATES` et projette les notifications de tour, paiement, achat/enchere, prison, cartes, unmortgage gratuit, taxe, placement/decomposition et GameOver, avec reset exact apres les actions acceptees actuellement couvertes. Le miroir UI reste incomplet pour cash, plateau, trade, enchere detaillee et autres etats interactifs. |
 | `Source/monopoly/UDAuct.cpp` | `RuleAuction` couvre seulement la regle | `NOT_STARTED` | init/destroy/tick/show/process message de l'ecran enchere | DISPLAY, IBar, RULE auction | Creer le module UI sans dupliquer l'etat authoritative de `RuleAuction`. |
 | `Source/monopoly/UDBoard.cpp` | `Display`, `BoardCameraController`, `BoardGeometry` | `PORTED_PARTIAL` | `UDBOARD_SetBackdrop`, `DISPLAY_UDBOARD_Show`, presets/camera waiting et interpolation `TickActions` | assets plateau, renderer, PC3D | Valeurs des huit ecrans, etat initial invalide, commit differe et mapping Main/Portfolio/Trade portes. Les 39 `CameraAngles2D`, le slot waiting unique, l interpolation accel/decel sur 75 ticks, force-interrupt hors 3D et revalidation apres override des sont portes/testes; composition 2D/hotspots, demo/manual camera et eclairage restent. |
-| `Source/monopoly/UDIBar.cpp` | `IBar`, `IBarLayout`, `IBarBackdropPlayback`, `IBarBankPlayback`, `IBarCameraButtonPlayback`, `IBarCurrentPlayerPlayback` | `PORTED_PARTIAL` | initialize/destroy/tick/show/process, filtrage joueurs, backdrop, boutons globaux, pion courant | LocalPlayers, DISPLAY, SequencePlayback, Overlay2D, assets/fonts | Le chemin reel Overlay2D couvre maintenant backdrop joueur/banque, icone Banque, pion du joueur courant et boutons Camera/Main/Options/Status/Trade. Tags `DAT_MAIN`/`DAT_LANG2`, priorites 11/256/258/999, StartXY/StartXYDrop, DropDropFrames, ending actions, ordre egal-priorite et cycles In/Idle/Out sont testes. `GameInProgress` est projete explicitement et `UDTrade_GetPlayerToTradeFrom()` est reproduit via LocalPlayers. Restent boutons d'etat BSSM/deed/roll, cartes, cash/textes, surfaces dynamiques et mouseover complet. |
+| `Source/monopoly/UDIBar.cpp` | `IBar`, `IBarLayout`, `IBarBackdropPlayback`, `IBarBankPlayback`, `IBarCameraButtonPlayback`, `IBarCurrentPlayerPlayback`, `IBarRuleState` | `PORTED_PARTIAL` | initialize/destroy/tick/show/process, filtrage joueurs, backdrop, boutons globaux et d'etat, pion courant | LocalPlayers, DISPLAY, UserInterface, SequencePlayback, Overlay2D, assets/fonts | Overlay2D couvre backdrop joueur/banque, icone Banque, pion courant et les boutons Camera/Main/Options/Status/Trade plus Done, Auction/Buy, FlatTax/Percentage, UseCard/RollDice/Pay et NewGame/Exit. Les deux atlas `CNK_iyaaf`/`CNK_iycaf`, priorites historiques 999/1000/1001/1002, style humain vs IA/distant, `IBarIsStable`, passage outgoing-only `IBAR_JustChanged`, StartXYDrop, ending actions et ordre d'index sont testes. Les quatre combinaisons prison et GameOver sont verrouillees. Restent notamment BSSM Build/Sell/Mortgage/Unmort, Bankrupt, AucHouse/AucHotel, PlaceHouse/PlaceHotel, boutons de trade interactifs, pressed/click complet, cartes, cash/textes, surfaces dynamiques et mouseover. |
 | `Source/monopoly/UDOpts.cpp` | Aucun | `NOT_STARTED` | options UI | persistence options, DISPLAY | Porter apres le resolver de ressources et le renderer UI. |
 | `Source/monopoly/UDPieces.cpp` | `PiecePlacement`, `PieceRuntime`, `PieceCamera`, `PieceMovePlan`, `PieceMovePlayback`, `PieceMoveIngress`, `PieceInterpolation`, `PieceJailPlan`, `PieceJailPlayback`, `PieceIdleTransition`, `PieceIdlePlayback`, `PieceIdleDisplay`, `PieceBuildingDisplay`, `DiceIngress`, `DiceDisplay`, `BoardGeometry` | `PORTED_PARTIAL` | orientation tokens/repos, maisons/hotels, pose runtime, cameras, TokenAnimStack, game-queue movement ingress, GoToJail 1..14, transitions idle centre<->repos, idles persistants, batiments et cycle des | `SequenceRuntime`, `SequencePlayback`, GameQueueGate, BoardCameraController, PC3D moderne, BoardGeometry, RULE | Placement/orientation, pose runtime, cameras 3/5/15, `PlanMoveAnim`, faillite/victoire, interpolation Bezier, paddywagon GoToJail 1..14, transitions centre/repos et `Player3DTokenShown` sont portes/testes. Maisons/hotels utilisent HMD 4/5 et priorites historiques. Le lancer de des 3D/idle 3D utilise les tables 6x6, priorite 100, seuils stricts +36/+91/+121, queue lock et override camera. Le cycle 2D DAT_MAIN 0x0096..0x009C est raccorde au moteur : `CurrentDiceID`, `CurrentBobDice`, Stop/Start, notification consommee apres le de gauche, bobbing -35/-11, DropDropFrames a droite et LoopToBeginning. Un readback D3D12 prouve les pixels reels aux deux positions. Restent surtout shadows, effets audio/Pennybags et quelques aspects lifecycle/options. |
 | `Source/monopoly/UDPsel.cpp` | `PlayerSelection`, `PlayerSetupFlow`, `LocalPlayers`, `IBar` | `PORTED_PARTIAL` | phases, noms, tokens, humains/IA, add/remove/start | UserInterface, Messaging, DISPLAY | Commit de phase limite a `DISPLAY_UDPSEL_Show`, refresh one-shot, reset zero-joueur et initialisation de la premiere notification non nulle portes; SelectCity/regles, projections mortes et rendu restent a traiter. |
@@ -278,7 +278,7 @@ SDL 3.4.14 et zlib 1.3.2 :
 - regeneration CMake du build Visual Studio puis reconstruction **clean-first
   complete** de `modern/build`, code de sortie zero, incluant
   `MonopolyModern.exe`, `MonopolyDataCore` et `MonopolyGPU3DCore` ;
-- suite complete depuis ce build neuf : **61/61 suites passees**, zero echec ;
+- suite complete depuis ce build neuf : **62/62 suites passees**, zero echec ;
 - les suites `MeshGPUResources`, `World3DGPUScene`, `World3DRenderer` et
   `World2DRenderer` utilisent un vrai device SDL_GPU **Direct3D 12** sans
   passing skip ;
@@ -293,6 +293,13 @@ SDL 3.4.14 et zlib 1.3.2 :
 - `Dice2DPlayback` verrouille `CurrentDiceID`, `CurrentBobDice`, ordre
   Stop/Start/Move, consommation historique de `DiceRollNotification`, bobbing
   gauche/droit, DropDropFrames uniquement a droite et LoopToBeginning ;
+- `IBarRuleState` verrouille les valeurs 0..26 de `IBAR_STATES`, les quatre
+  variantes de sortie de prison, les transitions notification/action acceptee et
+  le reset; `UserInterface` expose cette projection au moteur ;
+- le playback des boutons UDIBar conserve les priorites 999/1000/1001/1002,
+  les atlas couleur/gris, `IBarIsStable` et le cycle outgoing-only
+  `IBAR_JustChanged`; les etats DoneTurn, BuyAuction, TaxDecision, prison et
+  GameOver atteignent les feuilles Overlay2D attendues ;
 - deux branches ResourcePaths dependent de l'hote restent `[SKIP]` sur ce
   Windows (collision de casse et creation de symlink sans droit). Elles ne sont
   pas presentees comme validees.
@@ -314,10 +321,10 @@ indisponible.
 
 ## Prochaines priorites
 
-1. Etendre le chemin Overlay2D maintenant prouve au-dela des des vers les
-   feuilles bitmap effectivement appelees par `UDPieces`/`UDIBar`/`UDBoard`,
-   en conservant priorites, transformations et clipping du source avant de
-   generaliser aux sprites/fonts.
+1. Continuer `UDIBar` dans l'ordre du switch source avec les etats deja projetes :
+   `RaiseMoney -> Bankrupt`, `HotelDecomposition -> Sell`, puis
+   `PlaceHouse/PlaceHotel`; auditer separement HousingShort/HotelShort et le
+   mode Trading avant de raccorder leurs boutons, sans inventer le joueur actif.
 2. Raccorder progressivement les transitions camera des ecrans puis poursuivre
    les consommateurs UI qui reposent deja sur le sequenceur moderne.
 3. Auditer les autres types HMD effectivement atteignables sous `USE_OLD_FRAME`;

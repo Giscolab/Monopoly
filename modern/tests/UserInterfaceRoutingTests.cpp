@@ -260,6 +260,9 @@ namespace
         userinterface::processRuleMessage(prompt);
         auto& state=userinterface::dicePromptState();
         state.show();
+        const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
+        expect(iBarRules.mode == ibar::RuleMode::StartTurn && iBarRules.player == 0,
+            "local PLEASE_ROLL_DICE also routes the exact UDIBar StartTurn mode");
         expect(state.currentStartTurn && state.diceRollNotification,
             "local PLEASE_ROLL_DICE routes the bobbing prompt and notification");
         expect(runtime::state().gameInProgress && !runtime::state().gamePaused,
@@ -271,9 +274,14 @@ namespace
         state.show();
         expect(!state.currentStartTurn && state.diceRollNotification,
             "local DICE_ROLLED exits bobbing without losing skipped-frame notification");
+        expect(iBarRules.mode == ibar::RuleMode::Nothing && iBarRules.player == 0,
+            "local DICE_ROLLED clears UDIBar mode without replacing its player");
         userinterface::resetRuleProjection();queueLockDepth=0;
         expect(!state.currentStartTurn && !state.ruleStartTurn && !state.diceRollNotification,
             "rule projection reset clears pending 2D dice prompt");
+        expect(iBarRules.mode == ibar::RuleMode::Nothing &&
+                iBarRules.player == rules::NobodyPlayer,
+            "rule projection reset also clears the UDIBar rules state");
     }
 
     void testDiceNotificationQueuesHistoricalRoll()
