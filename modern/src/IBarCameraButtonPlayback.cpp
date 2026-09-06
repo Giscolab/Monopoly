@@ -59,7 +59,7 @@ namespace monopoly::ibar
         if (nextState == visualState_)
             return {};
 
-        const auto desired = cameraButtonSequence(nextState);
+        const auto desired = actionButtonSequence(buttonIndex_, nextState);
         std::shared_ptr<const sequence::SequenceProgram> program;
         if (desired != data::EmptyDataId)
         {
@@ -94,7 +94,7 @@ namespace monopoly::ibar
                 playback.commands().pendingCount())
         {
             return std::unexpected(
-                "sequence command queue cannot fit IBar camera transition");
+                "sequence command queue cannot fit IBar action-button transition");
         }
 
         for (auto& command : commands)
@@ -108,7 +108,7 @@ namespace monopoly::ibar
             if (!queued)
             {
                 return std::unexpected(
-                    "validated IBar camera command rejected");
+                    "validated IBar action-button command rejected");
             }
         }
 

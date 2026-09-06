@@ -125,8 +125,17 @@ namespace monopoly::userinterface
                 }
             }
             // UDIBar.cpp assigns CurrentPlayer only after the idle plan and lock.
+            runtime::state().gameInProgress = true;
             uiRuleState.currentPlayer = newCurrent;
         }
+
+        if (message.action == actions::Type::NotifyPleaseRollDice)
+        {
+            // UDIBar.cpp sets GameInProgress before leaving the roll prompt.
+            runtime::state().gameInProgress = true;
+            runtime::state().gamePaused = false;
+        }
+
         if (
             message.action ==
             actions::Type::NotifyNumberOfPlayers)
@@ -149,6 +158,7 @@ namespace monopoly::userinterface
             if (initializeProjection)
             {
                 firstNumberOfPlayersNotification = false;
+                runtime::state().gameInProgress = false;
 
 
                 initializePlayerSetupProjection(
@@ -198,6 +208,13 @@ namespace monopoly::userinterface
                 // portable. La transition d'ecran, elle, est exacte et
                 // reste differee jusqu'au prochain show DISPLAY.
                 display::setBackdrop(display::Screen2D::Main);
+                break;
+            }
+
+
+            case actions::Type::NotifyGameOver:
+            {
+                runtime::state().gameInProgress = false;
                 break;
             }
 

@@ -4,6 +4,7 @@ namespace monopoly::runtime
 {
     struct State
     {
+        bool gameInProgress = false;
         bool gamePaused = false;
         bool gameQuitRequested = false;
     };

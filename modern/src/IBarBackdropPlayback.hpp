@@ -38,6 +38,7 @@ namespace monopoly::ibar
         {
             currentBackdrop_ = data::EmptyDataId;
             cameraButton_.reset();
+            optionsButton_.reset();
             bank_.reset();
             currentPlayer_.reset();
         }
@@ -62,9 +63,15 @@ namespace monopoly::ibar
             return cameraButton_.visualState();
         }
 
+        [[nodiscard]] CameraButtonVisualState optionsButtonState() const noexcept
+        {
+            return optionsButton_.visualState();
+        }
+
     private:
         data::DataId currentBackdrop_{data::EmptyDataId};
         CameraButtonPlayback cameraButton_;
+        OptionsButtonPlayback optionsButton_;
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };

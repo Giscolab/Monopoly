@@ -169,6 +169,14 @@ namespace
         expect(runtime::state().gamePaused,
                "NotifyGamePaused updates portable runtime state");
 
+        runtime::state().gameInProgress = true;
+        actions::Message gameOver{};
+        gameOver.action = actions::Type::NotifyGameOver;
+        gameOver.toPlayer = rules::AllPlayers;
+        userinterface::processRuleMessage(gameOver);
+        expect(!runtime::state().gameInProgress,
+               "NotifyGameOver clears legacy GameInProgress projection");
+
         auto& uiState = userinterface::ruleState();
         uiState.options.housesPerHotel = 9;
         uiState.squares[0].owner = 2;
@@ -176,6 +184,7 @@ namespace
         uiState.players[0].currentSquare = 3;
 
         const int resetBefore = localResetCount;
+        runtime::state().gameInProgress = true;
 
         actions::Message reset{};
         reset.action = actions::Type::NotifyNumberOfPlayers;
@@ -183,6 +192,8 @@ namespace
         reset.numberA = 0;
         userinterface::processRuleMessage(reset);
 
+        expect(!runtime::state().gameInProgress,
+               "new-game player reset clears legacy GameInProgress projection");
         expect(uiState.numberOfPlayers == 0,
                "new-game projection has zero players");
         expect(uiState.options.housesPerHotel == 5,
@@ -201,6 +212,7 @@ namespace
     {
         using namespace monopoly;
         userinterface::resetRuleProjection();
+        runtime::reset();
         queueLockDepth = 0;
         routingDisplayState = {};
         auto& uiState = userinterface::ruleState();
@@ -228,6 +240,8 @@ namespace
             "first start-turn uses reversed GO slot and has no outgoing center");
         expect(queueLockDepth == 1 && uiState.currentPlayer == 0,
             "start-turn takes game-queue lock and then publishes new current player");
+        expect(runtime::state().gameInProgress,
+            "NotifyStartTurn sets legacy GameInProgress projection");
         expect(routingDisplayState.desiredBoardCamera == pieces::pickCameraFor3Squares(0),
             "start-turn requests the historical three-square camera before playback");
         expect(!userinterface::takePendingPieceIdleTransitionPlan(),
@@ -238,6 +252,8 @@ namespace
     {
         using namespace monopoly;
         userinterface::resetRuleProjection();
+        runtime::reset();
+        runtime::state().gamePaused = true;
         actions::Message prompt{};
         prompt.action=actions::Type::NotifyPleaseRollDice;
         prompt.toPlayer=rules::AllPlayers;
@@ -246,6 +262,8 @@ namespace
         state.show();
         expect(state.currentStartTurn && state.diceRollNotification,
             "local PLEASE_ROLL_DICE routes the bobbing prompt and notification");
+        expect(runtime::state().gameInProgress && !runtime::state().gamePaused,
+            "NotifyPleaseRollDice sets GameInProgress and clears GamePaused");
         actions::Message roll{};
         roll.action=actions::Type::NotifyDiceRolled;roll.toPlayer=rules::AllPlayers;
         roll.numberA=1;roll.numberB=2;
