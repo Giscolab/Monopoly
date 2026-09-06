@@ -63,7 +63,11 @@ struct SyntheticSequenceResources
                 // Synthetic DAT_MAIN dice 2D sequences. Chunk 3 is a bitmap leaf;
                 // tag 0x00A0 is test-only bitmap payload, never a retail substitute.
                 const auto bitmapSequence = words({0x03000014, 0, 0x04000000, 2, 0x000000A0});
+                const auto finiteCardSequence = words({0x03000014, 0, 0x04000004, 2, 0x000000A0});
                 items.resize(0x00A1);
+                // USA Chance / Community deck fly-off sequences: 39 camera views each.
+                for (std::uint32_t tag = 0x000FU; tag <= 0x005CU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteCardSequence};
                 for (std::uint32_t tag = 0x0096U; tag <= 0x009CU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x009D] = {LegacyDataType::Chunky,
@@ -143,6 +147,11 @@ struct SyntheticSequenceResources
                 items.resize(0x02F7);
                 const auto finiteButton = words({
                     0x03000014, 0, 0x04000004, 2, 0x000002F6});
+                // USA Chance / Community card in/face/idle/out animations.
+                for (std::uint32_t tag = 0x0008U; tag <= 0x0057U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
+                for (std::uint32_t tag = 0x0059U; tag <= 0x0088U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // Complete contiguous full-colour and AI/remote action-button
                 // atlases used by UDIBar.cpp (28 buttons x 4 modes).
                 for (std::uint32_t tag = 0x008AU; tag <= 0x00F9U; ++tag)

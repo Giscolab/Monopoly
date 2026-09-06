@@ -375,6 +375,14 @@ namespace monopoly::ibar
             }
         }
 
+        const auto desiredCard = inputs.ruleMode == RuleMode::ViewingCard
+            ? inputs.desiredCardIndex : std::optional<std::uint8_t>{};
+        const auto card = card_.sync(
+            desiredCard, visible, inputs.desired2DView,
+            inputs.desiredBoardCamera, playback);
+        if (!card)
+            return card;
+
         const auto propertyTitles = propertyTitles_.sync(
             inputs.propertyTitles, playback);
         if (!propertyTitles)

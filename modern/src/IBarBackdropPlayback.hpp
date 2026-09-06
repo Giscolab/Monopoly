@@ -3,6 +3,7 @@
 #include "DataBanks.hpp"
 #include "Display.hpp"
 #include "IBarBankPlayback.hpp"
+#include "IBarCardPlayback.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "IBarCurrentPlayerPlayback.hpp"
 #include "IBarLayout.hpp"
@@ -52,6 +53,8 @@ namespace monopoly::ibar
         bool canUnmortgage{};
         bool aiButtonRemoteState{};
         std::optional<std::uint8_t> pressedButtonIndex;
+        std::optional<std::uint8_t> desiredCardIndex;
+        pieces::BoardCameraView desiredBoardCamera{pieces::BoardCameraView::TopDownSoccer};
         PropertyTitlePlan propertyTitles{};
         int propertyCurrentMouseOver{-1};
         std::uint64_t tick{};
@@ -107,6 +110,7 @@ namespace monopoly::ibar
             trackedRulePlayer_ = rules::NobodyPlayer;
             propertyTitles_.reset();
             propertyHover_.reset();
+            card_.reset();
             consumedPressedButton_.reset();
             bank_.reset();
             currentPlayer_.reset();
@@ -130,6 +134,16 @@ namespace monopoly::ibar
         [[nodiscard]] data::DataId propertyHoverDeed() const noexcept
         {
             return propertyHover_.currentDeed();
+        }
+
+        [[nodiscard]] CardVisualState cardVisualState() const noexcept
+        {
+            return card_.visualState();
+        }
+
+        [[nodiscard]] data::DataId currentCardSequence() const noexcept
+        {
+            return card_.currentSequence();
         }
 
         [[nodiscard]] bool bankVisible() const noexcept
@@ -201,6 +215,7 @@ namespace monopoly::ibar
         rules::PlayerNumber trackedRulePlayer_{rules::NobodyPlayer};
         PropertyTitlePlayback propertyTitles_;
         PropertyHoverPlayback propertyHover_;
+        CardPlayback card_;
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
     };

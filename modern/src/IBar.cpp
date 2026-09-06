@@ -609,17 +609,17 @@ namespace monopoly::ibar
         {
             const auto deck = message.numberB;
             const auto card = message.numberC;
-            if (deck == static_cast<std::int64_t>(DeckType::Chance) &&
-                card >= ChanceFirst && card < ChanceFirst + ChanceCount)
+            if (deck == static_cast<std::int64_t>(rules::DeckType::Chance) &&
+                card >= rules::ChanceFirst && card < rules::ChanceFirst + rules::ChanceCount)
             {
                 globalState.desiredCardIndex = static_cast<std::uint8_t>(
-                    card - ChanceFirst);
+                    card - rules::ChanceFirst);
             }
-            else if (deck == static_cast<std::int64_t>(DeckType::Community) &&
-                card >= CommunityFirst && card < CommunityFirst + CommunityCount)
+            else if (deck == static_cast<std::int64_t>(rules::DeckType::Community) &&
+                card >= rules::CommunityFirst && card < rules::CommunityFirst + rules::CommunityCount)
             {
                 globalState.desiredCardIndex = static_cast<std::uint8_t>(
-                    16 + card - CommunityFirst);
+                    16 + card - rules::CommunityFirst);
             }
             return;
         }
