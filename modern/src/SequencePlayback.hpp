@@ -13,6 +13,11 @@ namespace monopoly::engine
 
         [[nodiscard]] std::expected<void, std::string> start(
             data::DataId id, std::uint16_t priority = 0);
+        [[nodiscard]] std::expected<void, std::string> startXY(
+            data::DataId id, std::uint16_t priority,
+            std::int32_t x, std::int32_t y, bool dropFrames = false);
+        [[nodiscard]] std::expected<void, std::string> setEndingAction(
+            data::DataId id, std::uint16_t priority, std::uint8_t action);
         [[nodiscard]] std::expected<void, std::string> startMoved(
             data::DataId id, std::uint16_t priority,
             sequence::SequenceTransform transform);

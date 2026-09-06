@@ -198,10 +198,11 @@ namespace monopoly::sequence
             if (!record) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, record.error()));
             if (record->chunk.id != 1 && record->chunk.id != 2 &&
-                record->chunk.id != 7 && record->chunk.id != 9 && record->chunk.id != 10)
+                record->chunk.id != 3 && record->chunk.id != 7 &&
+                record->chunk.id != 9 && record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect, camera, 3D mesh and tweeker records only"));
+                    "runtime currently executes grouping, indirect, 2D bitmap, camera, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -222,7 +223,10 @@ namespace monopoly::sequence
                     currentId, currentOffset, "description reference budget exceeded"));
             references += schedule->records().size();
             std::optional<data::DataId> contentsDataId;
-            if (const auto* mesh = std::get_if<data::SequenceMeshData>(&record->data))
+            if (const auto* bitmap = std::get_if<data::SequenceBitmapData>(&record->data))
+                contentsDataId = data::resolveSequenceDataId(record->header,
+                    bitmap->bitmapDataId, currentId);
+            else if (const auto* mesh = std::get_if<data::SequenceMeshData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     mesh->modelDataId, currentId);
             const auto index = program->descriptions_.size();
@@ -782,6 +786,26 @@ namespace monopoly::sequence
             return std::nullopt;
         };
         return visit(visit, *selected);
+    }
+
+    std::vector<SequenceBitmapInstanceView> SequenceRuntime::bitmapInstances() const
+    {
+        std::vector<SequenceBitmapInstanceView> result;
+        const auto visit = [&](const auto& self, const Nodes& nodes) -> void {
+            for (const auto& node : nodes)
+            {
+                const auto& definition = node->definition();
+                if (definition.contentsDataId && node->dimensionality == 2 &&
+                    std::holds_alternative<data::SequenceBitmapData>(definition.record.data) &&
+                    std::holds_alternative<Matrix2D>(node->worldTransform))
+                    result.push_back({node->id, *definition.contentsDataId,
+                        node->priority, node->clock.clock(),
+                        std::get<Matrix2D>(node->worldTransform)});
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
+        return result;
     }
 
     std::vector<SequenceMeshInstanceView> SequenceRuntime::meshInstances() const

@@ -54,6 +54,16 @@ namespace
         word(payload, target);
         return chunk(2, payload);
     }
+    DataBytes bitmap(DataId target, bool absolute, std::int32_t start = 0)
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint32_t>(start) & 0x00FF'FFFFU);
+        word(payload, 4U << 24U);
+        word(payload, 2U | (absolute ? 16U : 0U)); // Hold + absolute IDs flag.
+        word(payload, target);
+        return chunk(3, payload);
+    }
+
     DataBytes mesh(DataId target, bool absolute, std::int32_t start = 0,
         const DataBytes& attributes = {})
     {
@@ -327,6 +337,46 @@ namespace
         auto stop = runtime.start(stopProgram, 8).value();
         expect(runtime.seek(stop, 8).has_value() && !runtime.inspect(stop),
             "seek to exact Stop end destroys only the selected root");
+    }
+
+    void testBitmapLeafRuntimeIntent()
+    {
+        Fixture fixture;
+        const auto rawBitmap = packDataId(77, 9);
+        const std::array relativeItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            bitmap(rawBitmap, false)}};
+        DataBankRegistry relativeRegistry;
+        (void)archive(fixture.root / "bitmap-relative.dat", relativeItems, relativeRegistry);
+        auto relativeProgram = program(relativeRegistry);
+        expect(relativeProgram && relativeProgram->descriptions().front().contentsDataId ==
+            packDataId(2, 9),
+            "relative 2D bitmap contents DataID inherits containing sequence group");
+        SequenceRuntime runtime;
+        const auto root = runtime.start(relativeProgram, 256).value();
+        auto view = runtime.inspect(root);
+        expect(view && view->dimensionality == 2 &&
+            view->contentsDataId == packDataId(2, 9) &&
+            std::holds_alternative<Matrix2D>(view->worldTransform),
+            "2D bitmap sequence is an executable transform-bearing runtime leaf");
+        expect(runtime.moveMatching(packDataId(2, 0), 256,
+            SequenceTransform(translate2D(-35, 7))) == 1 && runtime.update(0).has_value(),
+            "2D bitmap accepts source-compatible replacement XY movement");
+        const auto bitmaps = runtime.bitmapInstances();
+        expect(bitmaps.size() == 1 && bitmaps.front().node == root &&
+            bitmaps.front().contentsDataId == packDataId(2, 9) &&
+            bitmaps.front().priority == 256 && bitmaps.front().worldTransform.values[6] == -35.0F &&
+            bitmaps.front().worldTransform.values[7] == 7.0F,
+            "active bitmap intent exposes resolved content, priority and 2D world transform");
+        expect(runtime.stop(root).has_value() && runtime.bitmapInstances().empty(),
+            "destroyed bitmap leaf disappears from renderer-independent runtime intent");
+
+        const std::array absoluteItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            bitmap(rawBitmap, true)}};
+        DataBankRegistry absoluteRegistry;
+        (void)archive(fixture.root / "bitmap-absolute.dat", absoluteItems, absoluteRegistry, 3);
+        const auto absolute = SequenceProgram::load(absoluteRegistry, packDataId(3, 0));
+        expect(absolute && (*absolute)->descriptions().front().contentsDataId == rawBitmap,
+            "absolute 2D bitmap contents DataID is preserved verbatim");
     }
 
     void testMeshLeafRuntimeIntent()
@@ -873,6 +923,7 @@ int main()
         testRecursiveLifecycleAndOrder();
         testEndCrossingHoldAndLoop();
         testPauseAndSeek();
+        testBitmapLeafRuntimeIntent();
         testMeshLeafRuntimeIntent();
         testMeshChoiceRuntimeAndTweeker();
         testCameraRuntimeAndFieldOfViewTweeker();
