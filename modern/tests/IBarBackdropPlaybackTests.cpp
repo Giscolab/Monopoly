@@ -19,6 +19,25 @@ namespace
         }
     }
 
+    [[nodiscard]] bool hasActionIn(
+        engine::SequencePlayback& playback,
+        std::uint8_t buttonIndex,
+        bool grey = false)
+    {
+        return playback.runtime().matching(
+            ibar::actionButtonSequence(buttonIndex,
+                ibar::CameraButtonVisualState::In, grey),
+            ibar::actionButtonPriority(buttonIndex), false).size() == 1;
+    }
+
+    [[nodiscard]] bool hasAnyActionIn(
+        engine::SequencePlayback& playback,
+        std::uint8_t buttonIndex)
+    {
+        return hasActionIn(playback, buttonIndex, false) ||
+            hasActionIn(playback, buttonIndex, true);
+    }
+
     void testResolution()
     {
         rules::GameState state{};
@@ -262,6 +281,110 @@ namespace
             "remote/AI integrated RollDice uses the grey CNK_iycaf sequence");
     }
 
+    void testRuleModeActionButtons()
+    {
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 0;
+        runtime::reset();
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::DoneTurn;
+            inputs.rulePlayer = 0;
+            require(backdrop.sync(state, true, 0, playback, inputs) &&
+                    playback.update(0) &&
+                    !hasAnyActionIn(playback, ibar::DoneButtonIndex),
+                "IBAR_JustChanged makes the first DoneTurn pass outgoing-only");
+            require(backdrop.sync(state, true, 0, playback, inputs) &&
+                    playback.update(1) &&
+                    hasActionIn(playback, ibar::DoneButtonIndex),
+                "DoneTurn starts Done at legacy priority 1002 on the stable pass");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::BuyAuction;
+            inputs.rulePlayer = 0;
+            inputs.aiButtonRemoteState = true;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::AuctionButtonIndex, true) &&
+                    hasActionIn(playback, ibar::BuyButtonIndex, true) &&
+                    !hasActionIn(playback, ibar::AuctionButtonIndex, false) &&
+                    !hasActionIn(playback, ibar::BuyButtonIndex, false),
+                "BuyAuction starts grey Auction@1001 then Buy@1002 for remote/AI");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::TaxDecision;
+            inputs.rulePlayer = 0;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::FlatTaxButtonIndex) &&
+                    hasActionIn(playback, ibar::PercentageButtonIndex),
+                "TaxDecision starts FlatTax@1002 and Percentage@1001");
+        }
+
+        struct JailExpectation
+        {
+            ibar::RuleMode mode;
+            bool roll;
+            bool pay;
+            bool card;
+        };
+        constexpr std::array jailCases{
+            JailExpectation{ibar::RuleMode::JailExitPCR, true,  true, true},
+            JailExpectation{ibar::RuleMode::JailExitPXR, true,  true, false},
+            JailExpectation{ibar::RuleMode::JailExitPCX, false, true, true},
+            JailExpectation{ibar::RuleMode::JailExitPXX, false, true, false}
+        };
+        for (const auto& test : jailCases)
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = test.mode;
+            inputs.rulePlayer = 0;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasAnyActionIn(playback, ibar::RollDiceButtonIndex) == test.roll &&
+                    hasAnyActionIn(playback, ibar::PayButtonIndex) == test.pay &&
+                    hasAnyActionIn(playback, ibar::UseCardButtonIndex) == test.card,
+                "jail RuleMode reproduces exact UseCard/RollDice/Pay fallthrough set");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::GameOver;
+            inputs.rulePlayer = 0;
+            inputs.aiButtonRemoteState = true;
+            require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0) &&
+                    backdrop.sync(state, true, 0, playback, inputs) && playback.update(1) &&
+                    hasActionIn(playback, ibar::NewGameButtonIndex, false) &&
+                    hasActionIn(playback, ibar::ExitButtonIndex, false) &&
+                    !hasActionIn(playback, ibar::NewGameButtonIndex, true) &&
+                    !hasActionIn(playback, ibar::ExitButtonIndex, true),
+                "GameOver keeps NewGame and Exit full-colour even for remote/AI");
+        }
+
+        runtime::reset();
+    }
+
     void testFailureIsTransactional()
     {
         SyntheticSequenceResources resources;
@@ -307,6 +430,7 @@ int main()
         testLifecycle();
         testGlobalButtonPredicates();
         testRollDicePromptInputs();
+        testRuleModeActionButtons();
         testFailureIsTransactional();
         return 0;
     }
