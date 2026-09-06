@@ -35,6 +35,7 @@ namespace monopoly::engine
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
         std::optional<World3DRenderer> worldRenderer;
+        std::unique_ptr<World2DRenderer> overlayRenderer;
         std::optional<data::DataId> activeBoardSequence;
         std::optional<World3DCamera> activeWorldCamera;
         pieces::PieceMovePlayback pieceMovePlayback;
@@ -43,6 +44,7 @@ namespace monopoly::engine
         pieces::PieceIdleDisplay pieceIdleDisplay;
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
         dice::Playback dicePlayback;
+        dice::TwoDPlayback dice2DPlayback;
         bool diceQueueLockHeld{};
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
@@ -428,6 +430,12 @@ namespace monopoly::engine
                 display::isBoardVisible(displayState.desired2DView);
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
+            auto& dicePrompt = userinterface::dicePromptState();
+            dicePrompt.show();
+            const auto dice2DSync = dice2DPlayback.sync(userinterface::ruleStateReadOnly().dice,
+                dicePrompt.currentStartTurn, iBarVisible, dicePrompt.diceRollNotification, *session);
+            if (!dice2DSync)
+                return SDL_SetError("Dice 2D playback: %s", dice2DSync.error().c_str());
             const auto diceSync = syncDicePlayback(*session, tick,
                 boardVisible, iBarVisible);
             if (!diceSync)
@@ -484,9 +492,18 @@ namespace monopoly::engine
                 }
             }
         }
+        if (session && session->world2D().size() && !overlayRenderer)
+        {
+            const auto shaderPath = std::filesystem::path(SDL_GetBasePath()) / "shaders";
+            auto loaded = World2DRenderer::load(gpuDevice, shaderPath,
+                SDL_GetGPUSwapchainTextureFormat(gpuDevice, gameWindow));
+            if (!loaded) return SDL_SetError("World2D pipeline: %s", loaded.error().c_str());
+            overlayRenderer = std::move(*loaded);
+        }
         return gpuframe::present(gpuDevice, gameWindow,
             worldRenderer ? &*worldRenderer : nullptr,
-            session ? &session->world() : nullptr);
+            session ? &session->world() : nullptr,
+            overlayRenderer.get(), session ? &session->world2D() : nullptr);
     }
 
     void shutdown()
@@ -499,6 +516,7 @@ namespace monopoly::engine
         if (diceQueueLockHeld) userinterface::unlockGameQueue();
         diceQueueLockHeld = false;
         dicePlayback.reset();
+        dice2DPlayback.reset();
         display::cancelDiceCameraOverride();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;
@@ -509,6 +527,7 @@ namespace monopoly::engine
         playback.reset();
         activeBoardSequence.reset();
         activeWorldCamera.reset();
+        overlayRenderer.reset();
         worldRenderer.reset(); // GPU objects must be released before the device.
         legacyassets::shutdown();
 

@@ -145,16 +145,22 @@ namespace monopoly::engine
     std::expected<void, std::string> SequencePlayback::update(std::int32_t tick)
     {
         const auto updated = commands_.updateCycle(tick);
-        if (!updated) { world_.clear(); return std::unexpected(updated.error().detail); }
+        if (!updated) { world_.clear(); world2D_.clear(); return std::unexpected(updated.error().detail); }
         for (const auto& outcome : commands_.outcomes())
             if (outcome.error)
-            { world_.clear(); return std::unexpected(outcome.error->detail); }
+            { world_.clear(); world2D_.clear(); return std::unexpected(outcome.error->detail); }
         auto items = sequence::collectSequenceMeshRenderData(runtime_, meshes_);
         if (!items)
-        { world_.clear(); return std::unexpected(items.error().cause.detail); }
+        { world_.clear(); world2D_.clear(); return std::unexpected(items.error().cause.detail); }
+        const auto bitmapItems = sequence::collectSequenceBitmapRenderData(runtime_, meshes_.resources());
+        if (!bitmapItems)
+        { world_.clear(); world2D_.clear(); return std::unexpected(bitmapItems.error().detail); }
+        const auto bitmapPublished = world2D_.sync(*bitmapItems, bitmaps_);
+        if (!bitmapPublished)
+        { world_.clear(); world2D_.clear(); return std::unexpected(bitmapPublished.error()); }
         const auto published = world_.sync(*items);
         if (!published)
-        { world_.clear(); return std::unexpected("duplicate sequence render node"); }
+        { world_.clear(); world2D_.clear(); return std::unexpected("duplicate sequence render node"); }
         return {};
     }
 }

@@ -46,6 +46,24 @@ namespace monopoly::dice
         bool rollAnimationDesired,
         bool iBarVisible) noexcept;
 
+    // UDPieces.cpp:333-390. Fixed and bobbing identities are distinct even
+    // when they occupy the same two priorities. Notification is consumed
+    // after the left fixed die, exactly as in the original loop.
+    class TwoDPlayback final
+    {
+    public:
+        [[nodiscard]] std::expected<void, std::string> sync(
+            const std::array<std::uint8_t, 2>& values,
+            bool rollAnimationDesired, bool iBarVisible,
+            bool& diceRollNotification, engine::SequencePlayback& playback);
+        void reset() noexcept { currentDiceID_ = {}; currentBobDice_ = data::EmptyDataId; }
+        [[nodiscard]] const auto& currentDiceID() const noexcept { return currentDiceID_; }
+        [[nodiscard]] data::DataId currentBobDice() const noexcept { return currentBobDice_; }
+    private:
+        std::array<data::DataId, 2> currentDiceID_{};
+        data::DataId currentBobDice_{data::EmptyDataId};
+    };
+
     struct PlaybackUpdate
     {
         bool activeRoll{};

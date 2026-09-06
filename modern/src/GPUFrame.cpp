@@ -58,7 +58,9 @@ namespace monopoly::engine::gpuframe
         SDL_GPUDevice* device,
         SDL_Window* window,
         World3DRenderer* renderer,
-        const SequenceWorld3DSlot* world)
+        const SequenceWorld3DSlot* world,
+        World2DRenderer* overlayRenderer,
+        const SequenceWorld2DSlot* overlay)
     {
         if (device == nullptr || window == nullptr)
         {
@@ -203,14 +205,6 @@ namespace monopoly::engine::gpuframe
                         destinationBottom - destinationY;
 
 
-                    if (destinationWidth == 0 ||
-                        destinationHeight == 0)
-                    {
-                        return SDL_SubmitGPUCommandBuffer(
-                            commandBuffer
-                        );
-                    }
-
                     SDL_GPUBlitInfo blit{};
 
                     blit.source.texture =
@@ -269,10 +263,9 @@ namespace monopoly::engine::gpuframe
                     blit.cycle = false;
 
 
-                    SDL_BlitGPUTexture(
-                        commandBuffer,
-                        &blit
-                    );
+                    // A subpixel background must not skip later render slots.
+                    if (destinationWidth != 0 && destinationHeight != 0)
+                        SDL_BlitGPUTexture(commandBuffer, &blit);
                 }
             }
 
@@ -291,6 +284,16 @@ namespace monopoly::engine::gpuframe
             }
         }
 
+        if (swapchainTexture && overlayRenderer && overlay)
+        {
+            const auto result = overlayRenderer->render(commandBuffer, swapchainTexture,
+                width, height, *overlay);
+            if (!result)
+            {
+                SDL_CancelGPUCommandBuffer(commandBuffer);
+                return SDL_SetError("World2D render: %s", result.error().c_str());
+            }
+        }
         return SDL_SubmitGPUCommandBuffer(
             commandBuffer
         );

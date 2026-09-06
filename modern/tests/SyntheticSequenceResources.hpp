@@ -41,7 +41,7 @@ struct SyntheticSequenceResources
             bytes.push_back(static_cast<std::byte>(value));
         return bytes;
     }
-    SyntheticSequenceResources()
+    explicit SyntheticSequenceResources(bool anchoredBitmaps = false)
     {
         using namespace monopoly::data;
         std::filesystem::create_directories(directory / "Dat_Mon");
@@ -69,6 +69,26 @@ struct SyntheticSequenceResources
                 items[0x009D] = {LegacyDataType::Chunky,
                     words({0x03000014, 0, 0x04000000, 2, 0x00000001})};
                 items[0x00A0] = {LegacyDataType::Bitmap, bitmap24()};
+                if (anchoredBitmaps)
+                {
+                    // Synthetic child offset (400,300) makes negative root
+                    // offsets visible; no anchor is inserted by the renderer.
+                    auto anchored = words({0x01000035,0,0x04000064,2,0x81000005});
+                    anchored.push_back(std::byte{2});
+                    const auto child = words({0x03000020,0,0x04000064,2,0xA0,
+                        0x8200000C,400,300});
+                    anchored.insert(anchored.end(),child.begin(),child.end());
+                    for (std::uint32_t tag=0x96;tag<=0x9C;++tag)
+                        items[tag] = {LegacyDataType::Chunky, anchored};
+                    items.resize(0xA2);
+                    auto yellow = bitmap24();
+                    for (const auto offset : {54,57,62,65})
+                    { yellow[offset]=std::byte{0}; yellow[offset+1]=yellow[offset+2]=std::byte{255}; }
+                    items[0xA1]={LegacyDataType::Bitmap,yellow};
+                    auto second=anchored;
+                    second[37]=std::byte{0xA1}; // child content DataId, relative DAT_MAIN
+                    items[0x97]={LegacyDataType::Chunky,second};
+                }
             }
             else if (i == 4)
             {

@@ -77,6 +77,77 @@ namespace monopoly::dice
         return plan;
     }
 
+    std::expected<void, std::string> TwoDPlayback::sync(
+        const std::array<std::uint8_t, 2>& values, bool rollAnimationDesired,
+        bool iBarVisible, bool& diceRollNotification, engine::SequencePlayback& playback)
+    {
+        const auto plan = plan2D(values, rollAnimationDesired, iBarVisible);
+        std::vector<sequence::SequenceCommand> commands;
+        auto fixed = currentDiceID_;
+        auto bob = currentBobDice_;
+        bool notification = diceRollNotification;
+        const auto start = [&](const TwoDItem& item) -> std::expected<void, std::string> {
+            auto program = sequence::SequenceProgram::load(playback.resources(), item.sequence);
+            if (!program) return std::unexpected(program.error().detail);
+            sequence::ClockStartOptions options{};
+            options.dropFrames = item.dropFrames;
+            commands.push_back(sequence::StartSequenceCommand{*program,item.priority,options});
+            commands.push_back(sequence::makeMoveXY(item.sequence,item.priority,item.x,item.y));
+            if (item.loop) commands.push_back(sequence::SetSequenceEndingActionCommand{
+                item.sequence,item.priority,LoopToBeginning,false});
+            return {};
+        };
+        for (std::size_t index=0;index<2;++index)
+        {
+            const auto desired = !plan.bobbing && plan.dice[index] ?
+                plan.dice[index]->sequence : data::EmptyDataId;
+            const auto priority=static_cast<std::uint16_t>(IBarGeneralPriority+index);
+            if (fixed[index]!=desired || notification)
+            {
+                if (fixed[index]!=data::EmptyDataId)
+                    commands.push_back(sequence::StopSequenceCommand{fixed[index],priority,false});
+                fixed[index]=desired;
+                if (desired!=data::EmptyDataId)
+                {
+                    const auto ready=start(*plan.dice[index]);
+                    if (!ready) return ready;
+                }
+            }
+            notification=false; // Source consumes the notification inside the loop.
+        }
+        const auto desiredBob=plan.bobbing ? plan.dice[0]->sequence : data::EmptyDataId;
+        if (bob!=desiredBob)
+        {
+            if (bob!=data::EmptyDataId)
+            {
+                commands.push_back(sequence::StopSequenceCommand{bob,IBarGeneralPriority,false});
+                commands.push_back(sequence::StopSequenceCommand{bob,IBarGeneralPriority+1,false});
+            }
+            bob=desiredBob;
+            if (bob!=data::EmptyDataId)
+                for (const auto& item:plan.dice)
+                {
+                    const auto ready=start(*item);
+                    if (!ready) return ready;
+                }
+        }
+        // Load all programs before touching FIFO/state. Capacity is checked
+        // for the complete Stop/Start/Move/Loop operation, not per die.
+        if (commands.size()>sequence::SequenceCommandQueue::Capacity-playback.commands().pendingCount())
+            return std::unexpected("sequence command queue cannot fit dice 2D transition");
+        for (auto& command:commands)
+        {
+            const auto queued=std::visit([&](auto value) {
+                return playback.commands().enqueue(std::move(value));
+            },std::move(command));
+            if (!queued) return std::unexpected("validated dice 2D command rejected");
+        }
+        currentDiceID_=fixed;
+        currentBobDice_=bob;
+        diceRollNotification=notification;
+        return {};
+    }
+
     std::expected<void, std::string> Playback::begin(RollRequest request)
     {
         if (request_)

@@ -145,6 +145,8 @@ add_library(
     src/MeshRuntime.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
+    src/BitmapRuntime.cpp
+    src/SequenceWorld2DSlot.cpp
     src/World3DProjection.cpp
     src/SequenceWorld3DSlot.cpp
     src/LanguageResources.cpp
@@ -184,6 +186,8 @@ add_library(
     src/World3DShaderAssets.cpp
     src/World3DPipeline.cpp
     src/World3DRenderer.cpp
+    src/World2DRenderer.cpp
+    src/LogicalViewport.cpp
 )
 
 target_include_directories(
@@ -1689,4 +1693,29 @@ if(BUILD_TESTING)
         NAME Monopoly.SequenceBitmapRenderData
         COMMAND MonopolySequenceBitmapRenderDataTests
     )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyBitmapRuntimeTests tests/BitmapRuntimeTests.cpp)
+    target_include_directories(MonopolyBitmapRuntimeTests PRIVATE src tests)
+    target_link_libraries(MonopolyBitmapRuntimeTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.BitmapRuntime COMMAND MonopolyBitmapRuntimeTests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyWorld2DRendererTests tests/World2DRendererTests.cpp src/DiceDisplay.cpp)
+    target_include_directories(MonopolyWorld2DRendererTests PRIVATE src tests)
+    target_link_libraries(MonopolyWorld2DRendererTests PRIVATE MonopolyGPU3DCore)
+    target_compile_definitions(MonopolyWorld2DRendererTests PRIVATE
+        MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
+    add_test(NAME Monopoly.World2DRenderer COMMAND MonopolyWorld2DRendererTests)
+    set_tests_properties(Monopoly.World2DRenderer PROPERTIES TIMEOUT 60)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyDice2DPlaybackTests tests/Dice2DPlaybackTests.cpp
+        src/DiceDisplay.cpp src/DiceIngress.cpp)
+    target_include_directories(MonopolyDice2DPlaybackTests PRIVATE src tests)
+    target_link_libraries(MonopolyDice2DPlaybackTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.Dice2DPlayback COMMAND MonopolyDice2DPlaybackTests)
 endif()
