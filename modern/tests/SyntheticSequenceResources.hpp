@@ -29,9 +29,16 @@ struct SyntheticSequenceResources
         {
             std::vector<ArchiveBuildItem> items;
             if (i == 0)
+            {
                 items.push_back({LegacyDataType::Chunky,
                     words({0x09000014, 0, 0x44000000, 18,
                         packDataId(LegacyGroupId::ThreeD, 0)})});
+                // Finite sequence: end=100, cadence=4, keep-frames on disk,
+                // ending action Stop. Piece playback must override both.
+                items.push_back({LegacyDataType::Chunky,
+                    words({0x09000014, 0, 0x04000064, 17,
+                        packDataId(LegacyGroupId::ThreeD, 0)})});
+            }
             else if (i == 4)
             {
                 const auto mesh = words({0x01020304,0,6,2,11,0,1,3,0x80000011,0x80000014,0x8000001A,

@@ -41,6 +41,36 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::transitionRySTxzDropStayAtEnd(
+        std::optional<data::DataId> previousId, data::DataId id,
+        std::uint16_t priority, float yaw, float scale, float x, float z)
+    {
+        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
+        if (!program) return std::unexpected(program.error().detail);
+
+        const std::size_t required = previousId ? 4U : 3U;
+        if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - required)
+            return std::unexpected("sequence command queue capacity exceeded");
+
+        if (previousId)
+        {
+            auto queued = commands_.enqueue(
+                sequence::StopSequenceCommand{*previousId, priority});
+            if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        }
+
+        sequence::ClockStartOptions options{};
+        options.dropFrames = true;
+        auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority, options});
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        queued = commands_.enqueue(sequence::makeMoveRySTxz(id, priority, yaw, scale, x, z));
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        queued = commands_.enqueue(sequence::SetSequenceEndingActionCommand{
+            id, priority, 2, false});
+        if (!queued) return std::unexpected("sequence command queue rejected StayAtEnd");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::setCamera3D(
         const World3DCamera& camera)
     {

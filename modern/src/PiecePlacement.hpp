@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DataBanks.hpp"
+
 #include <cstdint>
 #include <optional>
 
@@ -26,6 +28,9 @@ namespace monopoly::pieces
     // Source/monopoly/UDPieces.cpp::UDPIECES_GetTokenOrientation.
     [[nodiscard]] std::optional<TokenPose> tokenOrientation(
         std::uint8_t boardSquare) noexcept;
+    // UDPieces token-sequence startup, including the CX0 corner adjustment.
+    [[nodiscard]] std::optional<TokenPose> tokenAnimationStartOrientation(
+        std::uint8_t boardSquare, data::DataId sequenceId) noexcept;
     // Source/monopoly/UDPieces.cpp::UDPIECES_GetTokenRestingIdleOrientation.
     [[nodiscard]] std::optional<TokenPose> tokenRestingOrientation(
         std::uint8_t boardSquare, std::uint8_t restingPosition,

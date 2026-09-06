@@ -45,6 +45,38 @@ namespace
         expect(!tokenOrientation(42), "out-of-range square is rejected instead of indexing past legacy data");
     }
 
+    void testTokenAnimationStartOrientation()
+    {
+        using monopoly::pieces::tokenAnimationStartOrientation;
+        using monopoly::data::LegacyGroupId;
+        using monopoly::data::packDataId;
+        constexpr auto base = static_cast<monopoly::data::DataTag>(0x00F6);
+        const auto cx0 = packDataId(LegacyGroupId::ThreeD, base);
+
+        const auto go = tokenAnimationStartOrientation(0, cx0);
+        const auto jail = tokenAnimationStartOrientation(10, cx0);
+        const auto freeParking = tokenAnimationStartOrientation(20, cx0);
+        const auto goToJail = tokenAnimationStartOrientation(30, cx0);
+        expect(go && near(go->x, 46.0F) && near(go->z, 30.5F) &&
+            near(go->yaw, -std::numbers::pi_v<float> / 2.0F),
+            "GO CX0 applies previous-side yaw and +16/-15 offsets");
+        expect(jail && near(jail->x, 29.5F) && near(jail->z, 441.0F) &&
+            near(jail->yaw, 0.0F),
+            "Jail CX0 applies historical -16/-15 adjustment");
+        expect(freeParking && near(freeParking->x, 441.0F) && near(freeParking->z, 456.5F) &&
+            near(freeParking->yaw, std::numbers::pi_v<float> / 2.0F),
+            "Free Parking CX0 applies historical -15/+16 adjustment");
+        expect(goToJail && near(goToJail->x, 455.5F) && near(goToJail->z, 46.0F) &&
+            near(goToJail->yaw, -std::numbers::pi_v<float>),
+            "Go To Jail CX0 applies historical +15/+16 adjustment");
+
+        const auto ordinary = tokenAnimationStartOrientation(0,
+            packDataId(LegacyGroupId::ThreeD, static_cast<monopoly::data::DataTag>(base + 1)));
+        expect(ordinary && near(ordinary->x, 30.0F) && near(ordinary->z, 45.5F) &&
+            near(ordinary->yaw, 0.0F),
+            "non-CX0 sequence keeps ordinary token start orientation");
+    }
+
     void testRestingOffsets()
     {
         using monopoly::pieces::tokenRestingOrientation;
@@ -117,6 +149,7 @@ namespace
 int main()
 {
     testBaseOrientation();
+    testTokenAnimationStartOrientation();
     testRestingOffsets();
     testCornerAndSpecialResting();
     testBuildingPlacement();

@@ -882,6 +882,7 @@ target_sources(
     src/PieceRuntime.cpp
     src/PieceCamera.cpp
     src/PieceMovePlan.cpp
+    src/PieceMovePlayback.cpp
 )
 
 target_sources(
@@ -1274,3 +1275,35 @@ if(BUILD_TESTING)
         COMMAND MonopolyPieceMovePlanTests
     )
 endif()
+# DISPLAY_UDPIECES move-playback subset
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceMovePlaybackTests
+        tests/PieceMovePlaybackTests.cpp
+        src/PieceMovePlayback.cpp
+        src/PiecePlacement.cpp
+        src/BoardGeometry.cpp
+    )
+
+    target_include_directories(
+        MonopolyPieceMovePlaybackTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyPieceMovePlaybackTests
+        PRIVATE
+        MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceMovePlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceMovePlayback
+        COMMAND MonopolyPieceMovePlaybackTests
+    )
+endif()
+
