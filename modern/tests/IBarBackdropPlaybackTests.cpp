@@ -149,6 +149,49 @@ namespace
             "hidden Camera Out completes and finally clears Overlay2D");
     }
 
+
+    void testPropertyHoverIntegration()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 0;
+        state.players[0].token = 0;
+        state.squares[1].owner = 0;
+
+        ibar::ActionButtonInputs inputs{};
+        inputs.propertyTitles.styles[1] = ibar::PropertyTitleStyle::FullColour;
+        inputs.propertyTitles.visibleProperties = ibar::layout::propertyBit(1);
+        inputs.propertyCurrentMouseOver = 1;
+        inputs.tick = 100;
+
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(100),
+            "aggregate IBar starts property hover timer without drawing the deed");
+        require(backdrop.propertyHoverDeed() == data::EmptyDataId,
+            "aggregate property hover remains empty on its first tracked frame");
+
+        inputs.tick = 136;
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(136) &&
+                backdrop.propertyHoverDeed() == data::EmptyDataId,
+            "aggregate hover still suppresses deed at exactly 36 ticks");
+
+        inputs.tick = 137;
+        const auto deed = ibar::propertyHoverDataId(1, false);
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(137) &&
+                backdrop.propertyHoverDeed() == deed &&
+                playback.runtime().matching(deed, ibar::PropertyHoverPriority, false).size() == 1,
+            "Engine-facing IBar aggregate reaches the floating deed after tick 37");
+
+        inputs.propertyCurrentMouseOver = -1;
+        inputs.tick = 138;
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(138) &&
+                backdrop.propertyHoverDeed() == data::EmptyDataId &&
+                playback.runtime().matching(deed, ibar::PropertyHoverPriority, false).empty(),
+            "aggregate IBar removes floating deed immediately when mouse leaves titles");
+    }
+
     void testGlobalButtonPredicates()
     {
         SyntheticSequenceResources resources;
@@ -711,6 +754,7 @@ int main()
     {
         testResolution();
         testLifecycle();
+        testPropertyHoverIntegration();
         testGlobalButtonPredicates();
         testRollDicePromptInputs();
         testRuleActionHitState();

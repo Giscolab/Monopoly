@@ -380,6 +380,12 @@ namespace monopoly::ibar
         if (!propertyTitles)
             return propertyTitles;
 
+        const auto propertyHover = propertyHover_.sync(
+            state, inputs.propertyTitles, inputs.propertyCurrentMouseOver,
+            inputs.tick, playback);
+        if (!propertyHover)
+            return propertyHover;
+
         // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before
         // DISPLAY_UDPIECES_Show() starts the dice at the same priority.
         // Main-screen bank hover tracking is not wired yet, so engine

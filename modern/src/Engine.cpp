@@ -566,6 +566,9 @@ namespace monopoly::engine
             titleInputs.selectedDeed = selectedDeed;
             iBarInputs.propertyTitles = ibar::planPropertyTitles(ruleState, titleInputs);
             ibar::setPropertyHitState(iBarInputs.propertyTitles.visibleProperties);
+            iBarInputs.propertyCurrentMouseOver =
+                ibar::stateReadOnly().propertyCurrentMouseOver;
+            iBarInputs.tick = tick;
 
             const auto actionHitState = ibar::ruleActionHitState(
                 iBarVisible, iBarActivePlayer, iBarInputs);

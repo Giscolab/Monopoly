@@ -152,6 +152,13 @@ struct SyntheticSequenceResources
                 items[0x02F5] = {LegacyDataType::Chunky,
                     words({0x03000014, 0, 0x04000000, 2, 0x000002F6})};
                 items[0x02F6] = {LegacyDataType::Bitmap, bitmap24()};
+                // USA deed pop-ups used by UDIBar property mouseover. City 0 only:
+                // TAB_iyb00x00 (mortgaged) and TAB_iyf00x00 (normal), 28 deeds each.
+                items.resize(0x0CEC);
+                for (std::uint32_t tag = 0x0B53U; tag <= 0x0B6EU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
+                for (std::uint32_t tag = 0x0CD0U; tag <= 0x0CEBU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
             }
             else items.push_back({LegacyDataType::Native, {std::byte{1}}});
             if (!writeLegacyDataArchive(directory / "Dat_Mon" / names[i], items))

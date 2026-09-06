@@ -212,6 +212,130 @@ namespace monopoly::ibar
     }
 
 
+    data::DataId propertyHoverDataId(
+        int square, bool mortgaged) noexcept
+    {
+        const int index = layout::propertyIndex(square);
+        if (index < 0)
+            return data::EmptyDataId;
+
+        const auto base = mortgaged
+            ? PropertyHoverMortgagedBaseTag
+            : PropertyHoverNormalBaseTag;
+        return data::packDataId(
+            data::LegacyGroupId::LanguageGraphics,
+            static_cast<data::DataTag>(base + index));
+    }
+
+
+    std::expected<void, std::string> PropertyHoverPlayback::sync(
+        const rules::GameState& state,
+        const PropertyTitlePlan& titles,
+        int currentMouseOver,
+        std::uint64_t tick,
+        engine::SequencePlayback& playback)
+    {
+        int nextCheckedSquare = checkedSquare_;
+        std::uint64_t nextHoverStartTick = hoverStartTick_;
+        data::DataId desired = data::EmptyDataId;
+
+        const bool validHover =
+            currentMouseOver >= 0 &&
+            currentMouseOver < static_cast<int>(rules::SquareCount) &&
+            layout::propertyBit(currentMouseOver) != 0 &&
+            (titles.visibleProperties & layout::propertyBit(currentMouseOver)) != 0;
+
+        if (!validHover)
+        {
+            nextCheckedSquare = -1;
+        }
+        else if (currentMouseOver == checkedSquare_)
+        {
+            if (tick - hoverStartTick_ > PropertyHoverDelayTicks)
+            {
+                const auto index = static_cast<std::size_t>(currentMouseOver);
+                const auto style = titles.styles[index];
+                if (style == PropertyTitleStyle::FullColour ||
+                    style == PropertyTitleStyle::Mortgaged)
+                {
+                    desired = propertyHoverDataId(
+                        currentMouseOver, state.squares[index].mortgaged);
+                }
+            }
+        }
+        else
+        {
+            if (checkedSquare_ == -1)
+                nextHoverStartTick = tick;
+            nextCheckedSquare = currentMouseOver;
+        }
+
+        if (desired == currentDeed_)
+        {
+            checkedSquare_ = nextCheckedSquare;
+            hoverStartTick_ = nextHoverStartTick;
+            return {};
+        }
+
+        std::shared_ptr<const sequence::SequenceProgram> program;
+        if (desired != data::EmptyDataId)
+        {
+            auto loaded = sequence::SequenceProgram::load(
+                playback.resources(), desired);
+            if (!loaded)
+                return std::unexpected(loaded.error().detail);
+            program = std::move(*loaded);
+        }
+
+        std::vector<sequence::SequenceCommand> commands;
+        if (currentDeed_ != data::EmptyDataId)
+        {
+            commands.push_back(sequence::StopSequenceCommand{
+                currentDeed_, PropertyHoverPriority, false});
+        }
+        if (desired != data::EmptyDataId)
+        {
+            commands.push_back(sequence::StartSequenceCommand{
+                std::move(program), PropertyHoverPriority, {}});
+            commands.push_back(sequence::makeMoveXY(
+                desired, PropertyHoverPriority, PropertyHoverX, PropertyHoverY));
+        }
+
+        if (commands.size() >
+            sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
+        {
+            return std::unexpected(
+                "sequence command queue cannot fit IBar property hover transition");
+        }
+
+        for (auto& command : commands)
+        {
+            const auto queued = std::visit(
+                [&](auto value)
+                {
+                    return playback.commands().enqueue(std::move(value));
+                },
+                std::move(command));
+            if (!queued)
+                return std::unexpected(
+                    "validated IBar property hover command rejected");
+        }
+
+        checkedSquare_ = nextCheckedSquare;
+        hoverStartTick_ = nextHoverStartTick;
+        currentDeed_ = desired;
+        return {};
+    }
+
+
+    void PropertyHoverPlayback::reset() noexcept
+    {
+        checkedSquare_ = -1;
+        hoverStartTick_ = 0;
+        currentDeed_ = data::EmptyDataId;
+    }
+
+
     void PropertyTitlePlayback::reset() noexcept
     {
         current_.fill(data::EmptyDataId);

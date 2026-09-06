@@ -156,6 +156,25 @@ namespace
             "mousemove outside active IBar buttons clears action hover");
     }
 
+
+    void testPropertyMouseOverTracking()
+    {
+        ibar::setPropertyHitState(ibar::layout::propertyBit(1));
+        const auto rect = ibar::layout::propertyRect(1);
+        ibar::processLibraryMessage({
+            uimsg::Type::MouseMoved,
+            (rect.left + rect.right) / 2,
+            (rect.top + rect.bottom) / 2});
+        require(ibar::stateReadOnly().propertyCurrentMouseOver == 1,
+            "mousemove over a visible title records the exact property for hover playback");
+
+        ibar::processLibraryMessage({uimsg::Type::MouseMoved, 799, 300});
+        require(ibar::stateReadOnly().propertyCurrentMouseOver == -1 &&
+                ibar::stateReadOnly().propertyLastMouseOver == 1,
+            "moving off property titles clears current hover and preserves previous property");
+        ibar::setPropertyHitState(0);
+    }
+
     void testBuyAuctionAndTax()
     {
         setHit(ibar::RuleMode::BuyAuction, Layout::BuyAuction,
@@ -424,6 +443,7 @@ int main()
         test_support::ruleState.numberOfPlayers = 1;
         monopoly::ibar::initialize();
         testMaskedHitFiltering();
+        testPropertyMouseOverTracking();
         testBuyAuctionAndTax();
         testJailVariants();
         testTradeAndSpecialDirectActions();
