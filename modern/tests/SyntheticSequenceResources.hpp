@@ -89,6 +89,14 @@ struct SyntheticSequenceResources
                     second[37]=std::byte{0xA1}; // child content DataId, relative DAT_MAIN
                     items[0x97]={LegacyDataType::Chunky,second};
                 }
+                // Active UDIBar backdrop sequences: TAB_indsbg0..TAB_indsbg7.
+                // They deliberately reuse the synthetic bitmap payload above.
+                items.resize(0x0163);
+                // UDIBar current-player token sequences: CNK_indstra + token.
+                for (std::uint32_t tag = 0x005FU; tag < 0x005FU + monopoly::rules::MaxTokens; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                for (std::uint32_t tag = 0x015BU; tag <= 0x0162U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
             }
             else if (i == 4)
             {
@@ -126,6 +134,13 @@ struct SyntheticSequenceResources
                     {std::byte{42},std::byte{0},std::byte{0},std::byte{0},std::byte{1},std::byte{0}}});
                 items.push_back({LegacyDataType::String,
                     {std::byte{'A'},std::byte{0},std::byte{0},std::byte{0}}});
+            }
+            else if (i == 6)
+            {
+                items.resize(0x02F7);
+                items[0x02F5] = {LegacyDataType::Chunky,
+                    words({0x03000014, 0, 0x04000000, 2, 0x000002F6})};
+                items[0x02F6] = {LegacyDataType::Bitmap, bitmap24()};
             }
             else items.push_back({LegacyDataType::Native, {std::byte{1}}});
             if (!writeLegacyDataArchive(directory / "Dat_Mon" / names[i], items))

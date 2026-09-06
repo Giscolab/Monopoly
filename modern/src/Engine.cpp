@@ -13,6 +13,7 @@
 #include "PieceIdleDisplay.hpp"
 #include "PieceBuildingDisplay.hpp"
 #include "DiceDisplay.hpp"
+#include "IBarBackdropPlayback.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
 
@@ -45,6 +46,7 @@ namespace monopoly::engine
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
         dice::Playback dicePlayback;
         dice::TwoDPlayback dice2DPlayback;
+        ibar::BackdropPlayback iBarBackdropPlayback;
         bool diceQueueLockHeld{};
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
@@ -430,9 +432,15 @@ namespace monopoly::engine
                 display::isBoardVisible(displayState.desired2DView);
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
+            const auto& ruleState = userinterface::ruleStateReadOnly();
+            const auto backdropSync = iBarBackdropPlayback.sync(
+                ruleState, iBarVisible, ruleState.currentPlayer, *session);
+            if (!backdropSync)
+                return SDL_SetError("IBar backdrop playback: %s",
+                    backdropSync.error().c_str());
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
-            const auto dice2DSync = dice2DPlayback.sync(userinterface::ruleStateReadOnly().dice,
+            const auto dice2DSync = dice2DPlayback.sync(ruleState.dice,
                 dicePrompt.currentStartTurn, iBarVisible, dicePrompt.diceRollNotification, *session);
             if (!dice2DSync)
                 return SDL_SetError("Dice 2D playback: %s", dice2DSync.error().c_str());
@@ -517,6 +525,7 @@ namespace monopoly::engine
         diceQueueLockHeld = false;
         dicePlayback.reset();
         dice2DPlayback.reset();
+        iBarBackdropPlayback.reset();
         display::cancelDiceCameraOverride();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;
