@@ -50,7 +50,7 @@ struct SyntheticSequenceResources
                 // Sparse synthetic DAT_3D: tags 0..3 remain HMD fixtures.
                 // GoToJail plus center/resting transition tags are finite CNKs.
                 items.resize(0x05CD);
-                for (int tag = 0; tag <= 3; ++tag)
+                for (int tag = 0; tag <= 5; ++tag)
                     items[tag] = {LegacyDataType::Hmd, mesh};
                 for (const auto tag : {0x0157, 0x0158, 0x05C7, 0x05C8,
                          0x05C9, 0x05CA, 0x05CB, 0x05CC})
