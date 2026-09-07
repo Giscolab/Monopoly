@@ -550,6 +550,7 @@ namespace monopoly::display
 
 
         boardCameraTick += numberOfTicks;
+        globalState.boardTick = boardCameraTick;
         updateDemoMode(numberOfTicks);
         const auto cameraUpdate = boardCameraController.tick(boardCameraTick);
         globalState.worldCamera = cameraUpdate.camera;

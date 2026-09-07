@@ -207,6 +207,17 @@ namespace
         return true;
     }
 
+    std::size_t countRedPixels(
+        const std::array<std::uint8_t, 64U * 64U * 4U>& pixels)
+    {
+        std::size_t result{};
+        for (std::size_t i = 0; i + 3U < pixels.size(); i += 4U)
+            if (pixels[i] > 80U && pixels[i + 1U] < 24U &&
+                pixels[i + 2U] < 24U && pixels[i + 3U] > 200U)
+                ++result;
+        return result;
+    }
+
     void testValidationWithoutGPU()
     {
         const auto missing = engine::World3DRenderer::load(
@@ -306,6 +317,78 @@ namespace
         }
         expect(redPixels > 0U,
             "real SDL_GPU draw changes framebuffer pixels with legacy ambient material color");
+
+        engine::World3DLighting directionalLighting{};
+        directionalLighting.ambient = {0.0F, 0.0F, 0.0F};
+        directionalLighting.sun.enabled = true;
+        directionalLighting.sun.color = {1.0F, 0.0F, 0.0F};
+        directionalLighting.sun.direction = {0.0F, 0.0F, -1.0F};
+        renderer->setLighting(directionalLighting);
+        SDL_GPUCommandBuffer* directionalCommand =
+            SDL_AcquireGPUCommandBuffer(device);
+        expect(directionalCommand && clearTarget(directionalCommand, target),
+            "directional-light frame starts from a black target");
+        if (directionalCommand)
+        {
+            const auto directionalStats = renderer->render(
+                directionalCommand, target, 64U, 64U, viewport, slot);
+            pixels.fill(0);
+            const bool directionalRead = directionalStats &&
+                downloadTarget(device, directionalCommand, target, pixels);
+            if (!directionalStats)
+                (void)SDL_CancelGPUCommandBuffer(directionalCommand);
+            expect(directionalRead && countRedPixels(pixels) > 0U,
+                "real SDL_GPU directional light illuminates a matching world normal");
+        }
+
+        engine::World3DLighting spotlightLighting{};
+        spotlightLighting.ambient = {0.0F, 0.0F, 0.0F};
+        spotlightLighting.spotlight.enabled = true;
+        spotlightLighting.spotlight.color = {1.0F, 0.0F, 0.0F};
+        spotlightLighting.spotlight.position = {0.0F, 0.0F, 20.0F};
+        spotlightLighting.spotlight.direction = {0.0F, 0.0F, -1.0F};
+        spotlightLighting.spotlight.attenuation = {1.0F, 0.0F, 0.0F};
+        spotlightLighting.spotlight.range = 30.0F;
+        spotlightLighting.spotlight.falloff = 4.0F;
+        spotlightLighting.spotlight.theta = 3.14159265358979323846F / 7.0F;
+        spotlightLighting.spotlight.phi = 3.14159265358979323846F / 2.0F;
+        renderer->setLighting(spotlightLighting);
+        SDL_GPUCommandBuffer* spotlightCommand =
+            SDL_AcquireGPUCommandBuffer(device);
+        expect(spotlightCommand && clearTarget(spotlightCommand, target),
+            "spotlight frame starts from a black target");
+        if (spotlightCommand)
+        {
+            const auto spotlightStats = renderer->render(
+                spotlightCommand, target, 64U, 64U, viewport, slot);
+            pixels.fill(0);
+            const bool spotlightRead = spotlightStats &&
+                downloadTarget(device, spotlightCommand, target, pixels);
+            if (!spotlightStats)
+                (void)SDL_CancelGPUCommandBuffer(spotlightCommand);
+            expect(spotlightRead && countRedPixels(pixels) > 0U,
+                "real SDL_GPU spotlight lights geometry inside theta/phi and range");
+        }
+
+        spotlightLighting.spotlight.position = {20.0F, 0.0F, 20.0F};
+        renderer->setLighting(spotlightLighting);
+        SDL_GPUCommandBuffer* outsideSpotCommand =
+            SDL_AcquireGPUCommandBuffer(device);
+        expect(outsideSpotCommand && clearTarget(outsideSpotCommand, target),
+            "outside-cone spotlight frame starts from a black target");
+        if (outsideSpotCommand)
+        {
+            const auto outsideStats = renderer->render(
+                outsideSpotCommand, target, 64U, 64U, viewport, slot);
+            pixels.fill(0);
+            const bool outsideRead = outsideStats &&
+                downloadTarget(device, outsideSpotCommand, target, pixels);
+            if (!outsideStats)
+                (void)SDL_CancelGPUCommandBuffer(outsideSpotCommand);
+            expect(outsideRead && countRedPixels(pixels) == 0U,
+                "real SDL_GPU spotlight rejects geometry outside the outer cone");
+        }
+        renderer->setLighting({});
 
         auto animatedSlot = slot;
         sequence::SequenceMeshRenderItem animatedItem;

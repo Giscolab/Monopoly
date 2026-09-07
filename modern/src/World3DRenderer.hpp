@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL_gpu.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -46,6 +47,34 @@ namespace monopoly::engine
         std::size_t triangles{};
     };
 
+    struct World3DDirectionalLight
+    {
+        std::array<float, 3> color{};
+        std::array<float, 3> direction{};
+        bool enabled{};
+    };
+
+    struct World3DSpotLight
+    {
+        std::array<float, 3> color{};
+        std::array<float, 3> position{};
+        std::array<float, 3> direction{0.0F, -1.0F, 0.0F};
+        std::array<float, 3> attenuation{1.0F, 0.0F, 0.0F};
+        float range{300.0F};
+        float falloff{1.0F};
+        float theta{0.0F};
+        float phi{0.0F};
+        bool enabled{};
+    };
+
+    struct World3DLighting
+    {
+        std::array<float, 3> ambient{0.53F, 0.53F, 0.53F};
+        World3DDirectionalLight boardReflection;
+        World3DDirectionalLight sun;
+        World3DSpotLight spotlight;
+    };
+
     class World3DRenderer final
     {
     public:
@@ -72,6 +101,10 @@ namespace monopoly::engine
                 const SequenceWorld3DSlot& slot);
 
         void reset() noexcept;
+        void setLighting(const World3DLighting& lighting) noexcept
+        { lighting_ = lighting; }
+        [[nodiscard]] const World3DLighting& lighting() const noexcept
+        { return lighting_; }
         [[nodiscard]] MeshGPUCache* meshCache() noexcept
         { return meshCache_.get(); }
         [[nodiscard]] const World3DPipeline& pipeline() const noexcept
@@ -91,5 +124,6 @@ namespace monopoly::engine
         SDL_GPUTexture* depthTarget_{};
         std::uint32_t depthWidth_{};
         std::uint32_t depthHeight_{};
+        World3DLighting lighting_{};
     };
 }

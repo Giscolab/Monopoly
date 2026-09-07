@@ -8,11 +8,13 @@
 #include "BoardRules.hpp"
 #include "BoardOwnershipHighlight.hpp"
 #include "BoardBackdropPlayback.hpp"
+#include "BoardLightingController.hpp"
 #include "RuleBuildings.hpp"
 #include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
+#include "PieceRuntime.hpp"
 #include "PieceJailPlayback.hpp"
 #include "PieceIdlePlayback.hpp"
 #include "PieceIdleDisplay.hpp"
@@ -53,6 +55,9 @@ namespace monopoly::engine
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
         boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
         boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
+        boarddisplay::BoardLightingController boardLightingController;
+        pieces::TokenPoseTracker lightingTokenPoseTracker;
+        std::uint64_t lastBoardLightingTick{};
         dice::Playback dicePlayback;
         dice::TwoDPlayback dice2DPlayback;
         ibar::BackdropPlayback iBarBackdropPlayback;
@@ -229,6 +234,73 @@ namespace monopoly::engine
             if (!synced) return std::unexpected(synced.error());
             return {};
         }
+
+        [[nodiscard]] std::expected<void, std::string> syncBoardLighting(
+            SequencePlayback& session, const rules::GameState& ruleState,
+            const display::State& displayState)
+        {
+            const auto tick = displayState.boardTick;
+            const auto elapsed = tick >= lastBoardLightingTick
+                ? tick - lastBoardLightingTick
+                : tick;
+            lastBoardLightingTick = tick;
+            if (elapsed == 0)
+            {
+                if (worldRenderer)
+                    worldRenderer->setLighting(boardLightingController.current());
+                return {};
+            }
+
+            boarddisplay::BoardLightingInputs inputs{};
+            inputs.game3DOn = displayState.game3DOn;
+            inputs.board3DOn = displayState.board3DOn;
+            inputs.lightingOn = displayState.optionLightingOn;
+            inputs.tokenAnimationActive = pieceMovePlayback.active();
+            inputs.tick = tick;
+            inputs.numberOfTicks = elapsed;
+            inputs.lastBoardActivityTick = displayState.lastBoardActivityTick;
+
+            const auto player = ruleState.currentPlayer;
+            if (player < ruleState.numberOfPlayers && player < rules::MaxPlayers)
+            {
+                const auto& source = ruleState.players[player];
+                if (source.colour >= rules::MaxPlayerColours)
+                    return std::unexpected(
+                        "board spotlight player colour is outside legacy 0..5 range");
+                inputs.playerColour = source.colour;
+
+                auto pose = pieces::tokenOrientation(source.currentSquare);
+                if (!pose)
+                    return std::unexpected(
+                        "board spotlight current player square is outside legacy range");
+
+                if (pieceMovePlayback.active())
+                {
+                    pieces::TokenRuntimeSources sources{};
+                    const auto idle = pieceIdleDisplay.shownSequence(player);
+                    if (idle != data::EmptyDataId)
+                        sources.idleSequences[player] = idle;
+                    const auto moving = pieceMovePlayback.currentSequence();
+                    if (moving != data::EmptyDataId)
+                    {
+                        sources.movingSequence = moving;
+                        *pose = lightingTokenPoseTracker.locate(
+                            player, ruleState.numberOfPlayers, sources,
+                            session.runtime());
+                    }
+                }
+                inputs.tokenPosition = {pose->x, pose->y, pose->z};
+            }
+            else if (displayState.board3DOn)
+                return std::unexpected(
+                    "board spotlight current player is outside active player range");
+
+            const auto lighting = boardLightingController.tick(inputs);
+            if (!lighting) return std::unexpected(lighting.error());
+            if (worldRenderer) worldRenderer->setLighting(*lighting);
+            return {};
+        }
+
         [[nodiscard]] std::expected<void, std::string> syncDicePlayback(
             SequencePlayback& session, std::uint64_t tick,
             bool boardVisible, bool iBarVisible)
@@ -697,6 +769,11 @@ namespace monopoly::engine
                     worldRenderer = std::move(*loaded);
                 }
             }
+            const auto lightingSync = syncBoardLighting(
+                *session, ruleState, displayState);
+            if (!lightingSync)
+                return SDL_SetError("Board lighting: %s",
+                    lightingSync.error().c_str());
         }
         if (session && session->world2D().size() && !overlayRenderer)
         {
@@ -721,6 +798,9 @@ namespace monopoly::engine
         pieceBuildingDisplay.reset();
         boardBackdropPlayback.reset();
         ownershipHighlightPlayback.reset();
+        boardLightingController.reset();
+        lightingTokenPoseTracker = {};
+        lastBoardLightingTick = 0;
         if (diceQueueLockHeld) userinterface::unlockGameQueue();
         diceQueueLockHeld = false;
         dicePlayback.reset();

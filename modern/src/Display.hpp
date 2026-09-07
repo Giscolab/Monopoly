@@ -100,6 +100,8 @@ namespace monopoly::display
         int city = 0;
         bool game3DOn = true;
         bool board3DOn = false;
+        bool optionLightingOn = true;
+        std::uint64_t boardTick = 0;
         bool mouseLeftPressed = false;
         bool mouseRightPressed = false;
         bool manualMouseCamLock = false;

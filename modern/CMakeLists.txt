@@ -187,6 +187,7 @@ add_library(
     src/World3DShaderAssets.cpp
     src/World3DPipeline.cpp
     src/World3DRenderer.cpp
+    src/BoardLightingController.cpp
     src/World2DRenderer.cpp
     src/LogicalViewport.cpp
 )
@@ -826,6 +827,33 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.World3DRenderer
         COMMAND MonopolyWorld3DRendererTests
+    )
+
+    add_executable(
+        MonopolyBoardLightingControllerTests
+        tests/BoardLightingControllerTests.cpp
+    )
+    target_link_libraries(
+        MonopolyBoardLightingControllerTests
+        PRIVATE MonopolyGPU3DCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyBoardLightingControllerTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(
+            TARGET MonopolyBoardLightingControllerTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:MonopolyBoardLightingControllerTests>
+                $<TARGET_FILE_DIR:MonopolyBoardLightingControllerTests>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+    add_test(
+        NAME Monopoly.BoardLightingController
+        COMMAND MonopolyBoardLightingControllerTests
     )
 endif()
 
