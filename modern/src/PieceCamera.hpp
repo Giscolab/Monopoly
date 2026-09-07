@@ -50,6 +50,18 @@ namespace monopoly::pieces
         Count
     };
 
+    enum class BoardViewSelectionType : std::uint8_t
+    {
+        RollDice,
+        JailChoice
+    };
+
+    [[nodiscard]] BoardCameraView selectAppropriateView(
+        BoardViewSelectionType type,
+        BoardCameraView desired,
+        std::int32_t currentSquare,
+        std::int32_t variable = 1) noexcept;
+
     [[nodiscard]] BoardCameraView pickCameraFor3Squares(std::int32_t square) noexcept;
     [[nodiscard]] BoardCameraView pickCameraFor5Squares(std::int32_t square) noexcept;
     [[nodiscard]] BoardCameraView pickCameraFor15Squares(std::int32_t square) noexcept;

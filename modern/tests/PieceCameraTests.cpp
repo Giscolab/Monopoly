@@ -13,6 +13,8 @@ namespace
     using monopoly::pieces::pickCameraFor5Squares;
     using monopoly::pieces::pickCameraFor15Squares;
     using monopoly::pieces::pickGoodCamera;
+    using monopoly::pieces::selectAppropriateView;
+    using monopoly::pieces::BoardViewSelectionType;
     int failures{};
 
     void expect(bool value, std::string_view text)
@@ -66,6 +68,28 @@ namespace
             "ordinary straight run uses the 5-square view one square before destination");
     }
 
+    void testAppropriateViewSelection()
+    {
+        bool allRollViewsMatch = true;
+        for (std::int32_t square = 0; square < 40; ++square)
+        {
+            allRollViewsMatch = allRollViewsMatch &&
+                selectAppropriateView(BoardViewSelectionType::RollDice,
+                    BoardCameraView::TopDownSquare, square, 0) ==
+                pickCameraFor15Squares(square);
+        }
+        expect(allRollViewsMatch,
+            "UDBoard roll selection matches the 15-tile camera formula for board squares 0..39");
+        expect(selectAppropriateView(BoardViewSelectionType::RollDice,
+                BoardCameraView::TopDownSquare, 40, 0) == BoardCameraView::FifteenTiles04 &&
+            selectAppropriateView(BoardViewSelectionType::RollDice,
+                BoardCameraView::TopDownSquare, 41, -7) == BoardCameraView::FifteenTiles04,
+            "UDBoard roll selection maps jail/off-board squares above 39 to square 10");
+        expect(selectAppropriateView(BoardViewSelectionType::JailChoice,
+                BoardCameraView::FifteenTiles12, 37, 1) == BoardCameraView::CornerJail,
+            "UDBoard jail-choice selection always returns the historical jail corner camera");
+    }
+
     void testTextureIndexContract()
     {
         const auto names = monopoly::data::twoDimensionalBoardTextureNames();
@@ -83,6 +107,7 @@ int main()
 {
     testCameraTables();
     testGoodCameraSelection();
+    testAppropriateViewSelection();
     testTextureIndexContract();
     std::cout << (failures ? "Piece camera tests FAILED\n" : "Piece camera tests passed\n");
     return failures ? 1 : 0;
