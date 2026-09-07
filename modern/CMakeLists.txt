@@ -661,6 +661,8 @@ target_sources(
     PRIVATE
     src/UIMessages.cpp
     src/UserInterface.cpp
+    src/AuctionUI.cpp
+    src/AuctionPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -702,6 +704,57 @@ if(BUILD_TESTING)
         COMMAND MonopolyUserInterfaceRoutingTests
     )
 
+endif()
+
+# UDAuct.cpp notification projection and bill hit testing
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAuctionUITests
+        tests/AuctionUITests.cpp
+        src/AuctionUI.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyAuctionUITests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAuctionUITests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AuctionUI
+        COMMAND MonopolyAuctionUITests
+    )
+endif()
+
+# UDAuct.cpp static PAT/LANG2 sequence playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAuctionPlaybackTests
+        tests/AuctionPlaybackTests.cpp
+        src/AuctionPlayback.cpp
+        src/AuctionUI.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyAuctionPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyAuctionPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAuctionPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AuctionPlayback
+        COMMAND MonopolyAuctionPlaybackTests
+    )
 endif()
 
 target_sources(

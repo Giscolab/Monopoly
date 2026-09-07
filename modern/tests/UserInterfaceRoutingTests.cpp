@@ -6,6 +6,7 @@
 #include "RuleArchive.hpp"
 
 #include <iostream>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -20,6 +21,10 @@ namespace
     monopoly::rules::PlayerNumber capturedTradeB = monopoly::rules::NobodyPlayer;
     std::uint32_t capturedTradePending = 0;
     std::uint64_t routingTick = 0;
+    std::uint32_t localHumanMask = 0x3F;
+    std::optional<monopoly::auctionui::BidRequest> plannedAuctionBid;
+    monopoly::actions::Message capturedAuctionAction{};
+    bool capturedAuctionActionSent = false;
     monopoly::display::State routingDisplayState{};
     monopoly::display::Screen2D requestedBackdrop =
         monopoly::display::Screen2D::Invalid;
@@ -77,6 +82,12 @@ namespace monopoly::ui::localplayers
         ++localResetCount;
     }
 
+    bool slotIsLocalHumanPlayer(rules::PlayerNumber player)
+    {
+        return player < rules::MaxPlayers &&
+            (localHumanMask & (1u << player)) != 0;
+    }
+
     rules::PlayerNumber housingShortageIBarPlayer(
         const rules::GameState&,
         rules::PlayerNumber,
@@ -100,6 +111,50 @@ namespace monopoly::ui::localplayers
         const actions::Message&)
     {
         route.push_back("localplayers");
+    }
+}
+
+namespace monopoly::auctionui
+{
+    void reset(State&) noexcept
+    {
+    }
+
+    RuleUpdate processRuleMessage(
+        State&,
+        const rules::GameState&,
+        const actions::Message& message,
+        display::Screen2D) noexcept
+    {
+        if (message.action == actions::Type::NotifyAuctionGoing ||
+            message.action == actions::Type::NotifyNewHighBid ||
+            (message.action == actions::Type::NotifyAreYouThere &&
+             message.numberC == static_cast<std::int64_t>(
+                 actions::Type::NotifyNewHighBid)))
+            route.push_back("auction-rule");
+        return {};
+    }
+
+    std::optional<BidRequest> planBid(
+        const State&,
+        rules::PlayerNumber,
+        display::Screen2D,
+        const uimsg::Message&,
+        std::uint32_t) noexcept
+    {
+        route.push_back("auction-ui");
+        return plannedAuctionBid;
+    }
+}
+
+namespace monopoly::messaging
+{
+    bool sendAction(const actions::Message& message)
+    {
+        capturedAuctionAction = message;
+        capturedAuctionActionSent = true;
+        route.push_back("messaging");
+        return true;
     }
 }
 
@@ -161,6 +216,7 @@ namespace
     {
         using namespace monopoly;
         route.clear();
+        plannedAuctionBid.reset();
         runtime::reset();
         uimsg::Message message{};
         message.type = uimsg::Type::MouseMoved;
@@ -169,8 +225,49 @@ namespace
         expect(userinterface::processUIMessage(message),
             "ordinary UI message keeps game running");
         expect(route == std::vector<std::string_view>{
-                "board", "ibar-ui", "playerselection-ui"},
-            "UI routing preserves UDBoard then UDIBar then PlayerSelection order");
+                "auction-ui", "board", "ibar-ui", "playerselection-ui"},
+            "UI routing preserves UDAuct then UDBoard then UDIBar then PlayerSelection order");
+    }
+
+    void testAuctionBidRouting()
+    {
+        using namespace monopoly;
+        route.clear();
+        capturedAuctionActionSent = false;
+        plannedAuctionBid = auctionui::BidRequest{1, 620, 2};
+        routingDisplayState.desired2DView = display::Screen2D::Auction;
+
+        uimsg::Message message{};
+        message.type = uimsg::Type::MouseLeftDown;
+        message.numberA = 250;
+        message.numberB = 480;
+        expect(userinterface::processUIMessage(message),
+            "auction bill click keeps game running");
+        expect(route == std::vector<std::string_view>{
+                "auction-ui", "messaging", "board", "ibar-ui", "playerselection-ui"},
+            "auction bid is dispatched before later historical UI modules");
+        expect(capturedAuctionActionSent &&
+            capturedAuctionAction.action == actions::Type::Bid &&
+            capturedAuctionAction.fromPlayer == 1 &&
+            capturedAuctionAction.toPlayer == rules::BankPlayer &&
+            capturedAuctionAction.numberA == 620,
+            "auction bid plan becomes ACTION_BID(player -> bank, absolute bid)");
+        plannedAuctionBid.reset();
+    }
+
+    void testAuctionRuleRouting()
+    {
+        using namespace monopoly;
+        route.clear();
+        acceptRecipient = true;
+
+        actions::Message message{};
+        message.action = actions::Type::NotifyNewHighBid;
+        message.toPlayer = rules::AllPlayers;
+        userinterface::processRuleMessage(message);
+        expect(route == std::vector<std::string_view>{
+                "auction-rule", "localplayers", "playerselection"},
+            "auction rule notification reaches UDAuct projection before generic local/player setup projections");
     }
 
     void testLocalBoundary()
@@ -537,6 +634,8 @@ int main()
         << "====================================\n";
 
     testUiModuleOrder();
+    testAuctionBidRouting();
+    testAuctionRuleRouting();
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();

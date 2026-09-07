@@ -7,6 +7,7 @@
 #include "LocalPlayers.hpp"
 #include "PieceCamera.hpp"
 #include "RuleArchive.hpp"
+#include "Messaging.hpp"
 
 #include "RuntimeState.hpp"
 
@@ -20,11 +21,16 @@ namespace monopoly::userinterface
     {
         dice::PromptState dicePrompt;
         ibar::RuleProjection iBarRuleProjection;
+        auctionui::State auctionState;
     }
     dice::PromptState& dicePromptState() noexcept { return dicePrompt; }
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept
     {
         return iBarRuleProjection;
+    }
+    const auctionui::State& auctionStateReadOnly() noexcept
+    {
+        return auctionState;
     }
     namespace
     {
@@ -34,6 +40,17 @@ namespace monopoly::userinterface
         dice::Ingress diceIngress;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
+
+        [[nodiscard]] std::uint32_t localHumanPlayerMask() noexcept
+        {
+            std::uint32_t mask{};
+            const auto count = std::min<rules::PlayerNumber>(
+                uiRuleState.numberOfPlayers, rules::MaxPlayers);
+            for (rules::PlayerNumber player = 0; player < count; ++player)
+                if (ui::localplayers::slotIsLocalHumanPlayer(player))
+                    mask |= (1u << player);
+            return mask;
+        }
 
 
         void initializePlayerSetupProjection(
@@ -79,6 +96,7 @@ namespace monopoly::userinterface
         diceIngress.reset();
         dicePrompt = {};
         iBarRuleProjection.reset();
+        auctionui::reset(auctionState);
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -108,6 +126,10 @@ namespace monopoly::userinterface
 
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
+        const auto auctionUpdate = auctionui::processRuleMessage(
+            auctionState, uiRuleState, message, display::state().desired2DView);
+        if (auctionUpdate.requestedBackdrop)
+            display::setBackdrop(*auctionUpdate.requestedBackdrop);
         if (message.action == actions::Type::NotifyHousingShortage)
         {
             rules::PlayerNumber originalBuyer = rules::NobodyPlayer;
@@ -360,7 +382,19 @@ namespace monopoly::userinterface
         // le message aux modules UD actifs.
         //
         // Ordre historique des modules interactifs portes ici :
-        // UDBOARD_ProcessMessage, puis UDIBAR_ProcessMessage, puis UDPSEL.
+        // UDAUCT_ProcessMessage, UDBOARD_ProcessMessage, UDIBAR_ProcessMessage,
+        // puis UDPSEL_ProcessMessage (les modules non portes restent differes).
+        if (const auto bid = auctionui::planBid(
+                auctionState, uiRuleState.numberOfPlayers,
+                display::state().desired2DView, message, localHumanPlayerMask()))
+        {
+            actions::Message action{};
+            action.action = actions::Type::Bid;
+            action.fromPlayer = bid->player;
+            action.toPlayer = rules::BankPlayer;
+            action.numberA = bid->amount;
+            (void)messaging::sendAction(action);
+        }
         display::processBoardInput(message);
         ibar::processLibraryMessage(
             message
