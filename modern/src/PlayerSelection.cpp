@@ -31,11 +31,9 @@ namespace monopoly::playerselection
 
         bool hasPreviousPlayerLog()
         {
-            // L'original appelle udpsel_SelectScreen_ReadPlayerLog().
-            //
-            // Tant que le Player history log n'est pas porté,
-            // la liste est réellement vide.
-            return false;
+            // La lecture/persistance INI reste a porter, mais la logique
+            // SelectPlayer conserve maintenant les entrees deja chargees.
+            return setupFlowState.playerLogCount != 0;
         }
 
         std::wstring messageString(
@@ -444,6 +442,27 @@ namespace monopoly::playerselection
         {
             using ui::playersetup::Button;
             using ui::playersetup::Phase;
+
+
+            // SELECTPLAYER : seuls les slots presents et le bouton MORE
+            // avec plus de huit entrees sont hotspots.
+            if (setupFlowState.phase == Phase::SelectPlayer)
+            {
+                if (button == Button::SelectPlayerMore)
+                    return setupFlowState.playerLogCount >
+                        ui::playersetup::PlayerHistoryPageSize;
+
+                if (button >= Button::SelectPlayerCard1 &&
+                    button <= Button::SelectPlayerCard8)
+                {
+                    const std::size_t slot =
+                        static_cast<std::size_t>(
+                            static_cast<std::uint8_t>(button) -
+                            static_cast<std::uint8_t>(Button::SelectPlayerCard1));
+                    return setupFlowState.playerLogPageStart + slot <
+                        setupFlowState.playerLogCount;
+                }
+            }
 
 
             // SELECTTOKEN :
