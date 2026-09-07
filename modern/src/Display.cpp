@@ -124,6 +124,10 @@ namespace monopoly::display
         }
         void applyDesiredBoardCamera()
         {
+            // UDBoard.cpp:913-916 mirrors LE_REND3D_ClearBeforeRender.
+            // When full 3D is disabled, slot 1 must preserve the 2D board
+            // underneath instead of restoring the 3D background surface.
+            globalState.viewportBackgroundFillOn = globalState.game3DOn;
             const bool shouldBoard3DBeOn = globalState.game3DOn &&
                 isBoardVisible(globalState.desired2DView);
             const bool boardModeChanged = shouldBoard3DBeOn != globalState.board3DOn;

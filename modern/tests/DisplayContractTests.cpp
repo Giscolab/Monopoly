@@ -168,10 +168,14 @@ namespace
         showAll2();
         expect(!stateReadOnly().board3DOn,
             "Main keeps board3DOn off when game3DOn disables the 3D board");
+        expect(!stateReadOnly().viewportBackgroundFillOn,
+            "2D Main disables slot-1 background fill so the board backdrop remains underneath");
         state().game3DOn = true;
         showAll2();
         expect(stateReadOnly().board3DOn,
             "Main activates board3DOn when game3DOn is enabled");
+        expect(stateReadOnly().viewportBackgroundFillOn,
+            "full 3D Main enables the historical viewport background clear/fill");
 
         state().desiredBoardCamera = pieces::BoardCameraView::FifteenTiles12;
         showAll2();
