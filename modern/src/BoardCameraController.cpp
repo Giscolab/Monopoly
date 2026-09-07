@@ -68,6 +68,23 @@ namespace monopoly::boardcamera
                 a[2] + (b[2] - a[2]) * t};
         }
 
+        [[nodiscard]] std::array<float, 3> cubicBezier3(
+            const std::array<float, 3>& p0,
+            const std::array<float, 3>& p1,
+            const std::array<float, 3>& p2,
+            const std::array<float, 3>& p3, float t) noexcept
+        {
+            const float u = 1.0F - t;
+            const float a = u * u * u;
+            const float b = 3.0F * u * u * t;
+            const float c = 3.0F * u * t * t;
+            const float d = t * t * t;
+            return {
+                a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0],
+                a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1],
+                a * p0[2] + b * p1[2] + c * p2[2] + d * p3[2]};
+        }
+
         [[nodiscard]] std::array<float, 3> normalized(
             std::array<float, 3> v) noexcept
         {
@@ -87,20 +104,28 @@ namespace monopoly::boardcamera
     void Controller::reset(std::uint64_t tick) noexcept
     {
         current_ = preset(pieces::BoardCameraView::TopDownSquare);
-        move_ = Move{current_, current_, tick, tick, false, false};
+        move_ = Move{};
+        move_.start = current_;
+        move_.end = current_;
+        move_.startTick = tick;
+        move_.endTick = tick;
         waiting_.reset();
         manualMouseActive_ = false;
     }
 
     void Controller::startMove(const engine::World3DCamera& target,
-        std::uint64_t tick, bool instant, bool linear) noexcept
+        std::uint64_t tick, bool instant, bool linear, std::uint64_t duration) noexcept
     {
         move_.start = current_;
         move_.end = target;
         move_.startTick = tick;
-        move_.endTick = instant ? tick : tick + BaseMoveTicks;
+        move_.endTick = instant ? tick : tick + duration;
         move_.active = !instant;
         move_.linear = linear;
+        move_.interruptible = false;
+        move_.bezierPosition = false;
+        move_.control1 = {};
+        move_.control2 = {};
         if (instant) current_ = target;
     }
 
@@ -113,7 +138,10 @@ namespace monopoly::boardcamera
             static_cast<float>(move.endTick - move.startTick);
         const float ratio = move.linear ? linear : adjustedRatio(linear);
         auto result = move.start;
-        result.location = lerp3(move.start.location, move.end.location, ratio);
+        result.location = move.bezierPosition ?
+            cubicBezier3(move.start.location, move.control1, move.control2,
+                move.end.location, ratio) :
+            lerp3(move.start.location, move.end.location, ratio);
         result.forward = lerp3(move.start.forward, move.end.forward, ratio);
         result.up = lerp3(move.start.up, move.end.up, ratio);
         result.fieldOfView = move.start.fieldOfView +
@@ -138,7 +166,8 @@ namespace monopoly::boardcamera
                 update.completedMove = true;
             }
         }
-        if (!move_.active && waiting_ && !manualMouseActive_)
+        if (waiting_ && !manualMouseActive_ &&
+            (!move_.active || move_.interruptible))
         {
             const auto target = *waiting_;
             waiting_.reset();
@@ -183,10 +212,32 @@ namespace monopoly::boardcamera
         waiting_ = target;
     }
 
+    void Controller::requestDemoPreset(pieces::BoardCameraView view,
+        std::uint64_t tick, std::uint64_t duration) noexcept
+    {
+        waiting_.reset();
+        startMove(preset(view), tick, duration == 0, false, duration);
+    }
+
+    void Controller::requestFloatingIdle(std::uint64_t tick,
+        const std::array<float, 3>& previousVariation,
+        const std::array<float, 3>& nextVariation) noexcept
+    {
+        const auto anchor = current_;
+        startMove(anchor, tick, false, false, 100U);
+        move_.interruptible = true;
+        move_.bezierPosition = true;
+        for (std::size_t axis = 0; axis < 3; ++axis)
+        {
+            move_.control1[axis] = anchor.location[axis] - previousVariation[axis];
+            move_.control2[axis] = anchor.location[axis] + nextVariation[axis];
+        }
+    }
+
     bool Controller::requestManualMouseMove(std::int32_t deltaX,
         std::int32_t deltaY, bool verticalOrbit, std::uint64_t tick) noexcept
     {
-        if (!manualMouseActive_ && move_.active) return false;
+        if (!manualMouseActive_ && move_.active && !move_.interruptible) return false;
 
         constexpr float Pi = 3.14159265358979323846F;
         constexpr std::array<float, 3> Center{243.0F, 10.0F, 243.0F};
@@ -247,7 +298,12 @@ namespace monopoly::boardcamera
         else
         {
             current_ = target;
-            move_ = Move{target, target, tick, tick, false, true};
+            move_ = Move{};
+            move_.start = target;
+            move_.end = target;
+            move_.startTick = tick;
+            move_.endTick = tick;
+            move_.linear = true;
         }
         return true;
     }

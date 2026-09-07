@@ -5,6 +5,9 @@
 #include "IBar.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdlib>
 #include <limits>
 
 namespace monopoly::display
@@ -32,6 +35,8 @@ namespace monopoly::display
                 return;
             }
 
+
+            globalState.lastBoardActivityTick = boardCameraTick;
 
             switch (globalState.desired2DView)
             {
@@ -140,6 +145,120 @@ namespace monopoly::display
             }
             globalState.board3DOn = shouldBoard3DBeOn;
             globalState.worldCamera = boardCameraController.current();
+        }
+
+        [[nodiscard]] std::array<float, 3> normalized3(
+            std::array<float, 3> value) noexcept
+        {
+            const float length = std::sqrt(value[0] * value[0] +
+                value[1] * value[1] + value[2] * value[2]);
+            if (length <= 0.00001F) return {};
+            for (float& component : value) component /= length;
+            return value;
+        }
+
+        void startFloatingIdle()
+        {
+            const float cameraY = boardcamera::preset(
+                globalState.desiredBoardCamera).location[1];
+            const float minVariation = cameraY *
+                (globalState.tokenAnimationStackActive ? 0.07F : 0.08F);
+            const float randomVariation = cameraY *
+                (globalState.tokenAnimationStackActive ? 0.05F : 0.08F);
+
+            if (!globalState.floatingCameraActive)
+            {
+                const auto& start = boardCameraController.startCamera().location;
+                const auto& end = boardCameraController.endCamera().location;
+                std::array<float, 3> direction{
+                    start[0] - end[0], start[1] - end[1], start[2] - end[2]};
+                direction = normalized3(direction);
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    globalState.lastFloatingVariation[axis] =
+                        randomVariation * 0.33F * direction[axis];
+            }
+
+            std::array<float, 3> nextVariation{};
+            do
+            {
+                for (float& component : nextVariation)
+                    component = randomVariation *
+                        (static_cast<float>(std::rand() % 100) / 100.0F);
+            }
+            while (nextVariation[0] + nextVariation[1] + nextVariation[2] <
+                minVariation);
+
+            for (float& component : nextVariation)
+                component -= randomVariation * 0.5F;
+
+            boardCameraController.requestFloatingIdle(boardCameraTick,
+                globalState.lastFloatingVariation, nextVariation);
+            globalState.lastFloatingVariation = nextVariation;
+            globalState.cameraCanFloat = false;
+            globalState.floatingCameraActive = true;
+        }
+
+        void updateDemoMode(std::uint64_t numberOfTicks)
+        {
+            if (numberOfTicks == 0) return;
+
+            constexpr std::uint64_t DemoDelayTicks = 90U * 60U;
+            constexpr float DemoBaseMoveTicks = 85.0F;
+
+            if (globalState.lastBoardActivityTick + DemoDelayTicks <= boardCameraTick &&
+                (!globalState.board3DOn || !globalState.game3DOn))
+            {
+                globalState.lastBoardActivityTick = boardCameraTick;
+            }
+
+            const bool shouldDemo =
+                globalState.lastBoardActivityTick + DemoDelayTicks < boardCameraTick &&
+                globalState.board3DOn;
+
+            if (shouldDemo)
+            {
+                if (!globalState.demoModeDesired)
+                {
+                    globalState.cameraCanFloat = false;
+                    globalState.floatingCameraActive = false;
+                    globalState.demoStartCamera = globalState.desiredBoardCamera;
+                    globalState.demoCameraIndex =
+                        static_cast<std::uint8_t>(globalState.desiredBoardCamera);
+                    globalState.demoCycles = 0;
+                    globalState.demoWaitTicks = globalState.demoTicksPerMove;
+                    globalState.demoTicksPerMove = static_cast<std::uint32_t>(
+                        DemoBaseMoveTicks *
+                        (static_cast<float>(std::rand() % 800 + 600) / 1000.0F));
+                }
+
+                globalState.demoWaitTicks += static_cast<std::uint32_t>(numberOfTicks);
+                if (globalState.demoWaitTicks >= globalState.demoTicksPerMove)
+                {
+                    const auto startIndex =
+                        static_cast<std::uint8_t>(globalState.demoStartCamera);
+                    if (globalState.demoCameraIndex == startIndex)
+                    {
+                        ++globalState.demoCycles;
+                        if (globalState.demoCycles == 2)
+                            globalState.lastBoardActivityTick = boardCameraTick;
+                    }
+
+                    globalState.demoWaitTicks = 0;
+                    globalState.demoCameraIndex = static_cast<std::uint8_t>(
+                        (globalState.demoCameraIndex + 1U) % 39U);
+                    boardCameraController.requestDemoPreset(
+                        static_cast<pieces::BoardCameraView>(globalState.demoCameraIndex),
+                        boardCameraTick, globalState.demoTicksPerMove);
+                }
+                globalState.demoModeDesired = true;
+            }
+            else if (globalState.demoModeDesired)
+            {
+                globalState.lastBoardActivityTick = boardCameraTick;
+                globalState.demoModeDesired = false;
+                boardCameraController.requestDemoPreset(globalState.demoStartCamera,
+                    boardCameraTick, globalState.demoTicksPerMove);
+            }
         }
     }
 
@@ -272,8 +391,23 @@ namespace monopoly::display
         globalState.diceCameraControlActive = false;
     }
 
+    void noteBoardActivity() noexcept
+    {
+        globalState.lastBoardActivityTick = boardCameraTick;
+    }
+
+    void setTokenAnimationStackActive(bool active) noexcept
+    {
+        globalState.tokenAnimationStackActive = active;
+    }
+
     void processBoardInput(const uimsg::Message& message)
     {
+        if (message.type == uimsg::Type::MouseLeftDown ||
+            message.type == uimsg::Type::KeyboardPressed)
+        {
+            noteBoardActivity();
+        }
         switch (message.type)
         {
         case uimsg::Type::MouseLeftDown:
@@ -315,6 +449,9 @@ namespace monopoly::display
         {
             globalState.manualMouseCamLock = true;
             globalState.manualMouseCamTime = boardCameraTick;
+            globalState.cameraCanFloat = false;
+            globalState.floatingCameraActive = false;
+            globalState.lastBoardActivityTick = boardCameraTick;
             globalState.worldCamera = boardCameraController.current();
         }
     }
@@ -367,8 +504,22 @@ namespace monopoly::display
 
 
         boardCameraTick += numberOfTicks;
+        updateDemoMode(numberOfTicks);
         const auto cameraUpdate = boardCameraController.tick(boardCameraTick);
         globalState.worldCamera = cameraUpdate.camera;
+        if (cameraUpdate.startedWaitingMove)
+        {
+            globalState.cameraCanFloat = true;
+            globalState.floatingCameraActive = false;
+        }
+        if (globalState.cameraCanFloat && !boardCameraController.moving() &&
+            !globalState.demoModeDesired && globalState.board3DOn &&
+            globalState.game3DOn &&
+            globalState.desiredBoardCamera != pieces::BoardCameraView::TopDownSquare &&
+            !globalState.manualMouseCamLock)
+        {
+            startFloatingIdle();
+        }
         if (globalState.manualMouseCamLock &&
             boardCameraTick > globalState.manualMouseCamTime +
                 60U * 20U)

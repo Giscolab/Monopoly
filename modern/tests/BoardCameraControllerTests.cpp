@@ -197,6 +197,63 @@ namespace
         expect(!controller.manualMouseActive() && !controller.waiting(),
             "manual release clears lock and stale waiting preset before revalidation");
     }
+    void testDemoTimedPreset()
+    {
+        using namespace monopoly;
+        boardcamera::Controller controller;
+        controller.reset(0);
+        controller.requestPreset(pieces::BoardCameraView::CornerGo, 0);
+        expect(controller.waiting(),
+            "standard preset is waiting before demo override");
+        controller.requestDemoPreset(pieces::BoardCameraView::TopDownSoccer, 10, 51);
+        expect(!controller.waiting() && controller.moving(),
+            "demo preset replaces stale waiting move immediately");
+        (void)controller.tick(60);
+        expect(controller.moving(),
+            "demo move remains active one tick before custom duration");
+        const auto update = controller.tick(61);
+        expect(update.completedMove && !controller.moving() &&
+            controller.current() == boardcamera::preset(pieces::BoardCameraView::TopDownSoccer),
+            "demo preset completes exactly at requested 51-tick duration");
+    }
+
+    void testFloatingIdleBezierAndInterrupts()
+    {
+        using namespace monopoly;
+        boardcamera::Controller controller;
+        controller.reset(0);
+        controller.requestPreset(pieces::BoardCameraView::FifteenTiles01, 0, true);
+        const auto anchor = controller.current();
+
+        controller.requestFloatingIdle(10, {12.0F, 0.0F, 0.0F},
+            {0.0F, 18.0F, 0.0F});
+        expect(controller.floating() && controller.moving(),
+            "floating idle is an active interruptible Bezier move");
+        (void)controller.tick(60);
+        expect(controller.current().location != anchor.location,
+            "floating idle follows a visible Bezier arc away from fixed endpoint");
+        auto update = controller.tick(110);
+        expect(update.completedMove && controller.current() == anchor,
+            "floating idle returns exactly to its anchor after 100 ticks");
+
+        controller.requestFloatingIdle(120, {0.0F, 8.0F, 0.0F},
+            {8.0F, 0.0F, 0.0F});
+        (void)controller.tick(140);
+        controller.requestPreset(pieces::BoardCameraView::CornerGo, 140);
+        update = controller.tick(141);
+        expect(update.startedWaitingMove && !controller.floating() && controller.moving(),
+            "queued standard preset interrupts floating idle as though camera were idle");
+
+        (void)controller.tick(216);
+        controller.requestFloatingIdle(220, {4.0F, 0.0F, 0.0F},
+            {0.0F, 4.0F, 0.0F});
+        (void)controller.tick(230);
+        expect(controller.requestManualMouseMove(5, 0, false, 230) &&
+            controller.manualMouseActive() && !controller.floating(),
+            "manual mouse control can interrupt CameraIsFloatingIdle path immediately");
+        controller.releaseManualMouse();
+    }
+
 }
 
 int main()
@@ -209,6 +266,8 @@ int main()
     testDiceMoveUsesCurrentMoveDestination();
     testDiceRandomRange();
     testManualMouseCamera();
+    testDemoTimedPreset();
+    testFloatingIdleBezierAndInterrupts();
 
     if (failures != 0)
     {

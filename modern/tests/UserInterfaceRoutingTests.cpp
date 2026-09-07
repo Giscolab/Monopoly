@@ -50,6 +50,14 @@ namespace monopoly::display
         route.push_back("display");
     }
 
+    void noteBoardActivity() noexcept
+    {
+    }
+
+    void setTokenAnimationStackActive(bool) noexcept
+    {
+    }
+
     void processBoardInput(const uimsg::Message&)
     {
         route.push_back("board");

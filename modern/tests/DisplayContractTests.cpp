@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <string_view>
 #include <vector>
@@ -369,6 +370,111 @@ namespace
         expect(!stateReadOnly().initialized,
                "DISPLAY shutdown clears lifecycle state");
     }
+    void testBoardDemoMode()
+    {
+        using namespace monopoly;
+        using namespace monopoly::display;
+
+        std::srand(1);
+        expect(initialize(), "DISPLAY initializes for board demo test");
+        setBackdrop(Screen2D::Main);
+        state().game3DOn = true;
+        state().desiredBoardCamera = pieces::BoardCameraView::TopDownSoccer;
+        showAll2();
+        expect(stateReadOnly().board3DOn,
+            "demo test starts with 3D board visible");
+
+        tickActions(90U * 60U);
+        expect(!stateReadOnly().demoModeDesired,
+            "demo mode stays off at exactly 90 seconds of inactivity");
+        tickActions(1);
+        expect(stateReadOnly().demoModeDesired &&
+            stateReadOnly().demoStartCamera == pieces::BoardCameraView::TopDownSoccer &&
+            stateReadOnly().demoCameraIndex ==
+                static_cast<std::uint8_t>(pieces::BoardCameraView::TopDownSoccer),
+            "demo mode enters strictly after 90 seconds and remembers original camera");
+        expect(stateReadOnly().demoTicksPerMove >= 51U &&
+            stateReadOnly().demoTicksPerMove <= 118U,
+            "demo move duration preserves 85*(rand 600..1399)/1000 range");
+
+        const auto duration = stateReadOnly().demoTicksPerMove;
+        tickActions(duration - 1U);
+        expect(stateReadOnly().demoCameraIndex ==
+                (static_cast<std::uint8_t>(pieces::BoardCameraView::TopDownSoccer) + 1U) % 39U &&
+            stateReadOnly().demoCycles == 1U,
+            "first demo move advances sequentially and counts initial camera cycle");
+
+        noteBoardActivity();
+        tickActions(1);
+        expect(!stateReadOnly().demoModeDesired,
+            "new activity exits demo mode on next UDBoard tick");
+        tickActions(duration);
+        expect(sameCamera(stateReadOnly().worldCamera,
+            boardcamera::preset(pieces::BoardCameraView::TopDownSoccer)),
+            "demo exit returns to camera active when demo began");
+
+        shutdown();
+    }
+
+    void testBoardFloatingCamera()
+    {
+        using namespace monopoly;
+        using namespace monopoly::display;
+
+        std::srand(7);
+        expect(initialize(), "DISPLAY initializes for floating camera test");
+        setBackdrop(Screen2D::Main);
+        state().game3DOn = true;
+        showAll2();
+        state().desiredBoardCamera = pieces::BoardCameraView::FifteenTiles12;
+        showAll2();
+
+        tickActions(1);
+        expect(stateReadOnly().cameraCanFloat && !stateReadOnly().floatingCameraActive,
+            "starting a normal waiting camera arms exactly one legacy float");
+        setTokenAnimationStackActive(true);
+        tickActions(75);
+        const auto anchor = boardcamera::preset(pieces::BoardCameraView::FifteenTiles12);
+        expect(stateReadOnly().floatingCameraActive && !stateReadOnly().cameraCanFloat &&
+            sameCamera(stateReadOnly().worldCamera, anchor),
+            "normal camera completion immediately starts one floating idle at same anchor");
+
+        const float cameraY = anchor.location[1];
+        tickActions(50);
+        expect(!sameCamera(stateReadOnly().worldCamera, anchor),
+            "floating idle visibly traverses its 100-tick Bezier arc");
+        const auto& variation = stateReadOnly().lastFloatingVariation;
+        expect(std::fabs(variation[0]) <= cameraY * 0.0251F &&
+            std::fabs(variation[1]) <= cameraY * 0.0251F &&
+            std::fabs(variation[2]) <= cameraY * 0.0251F,
+            "active TokenAnimStack uses historical 5-percent random float amplitude");
+        tickActions(50);
+        expect(sameCamera(stateReadOnly().worldCamera, anchor),
+            "floating idle returns to the exact camera anchor after 100 ticks");
+        tickActions(100);
+        expect(sameCamera(stateReadOnly().worldCamera, anchor) &&
+            !stateReadOnly().cameraCanFloat,
+            "canFloat is consumed so no second spontaneous swoop starts");
+
+        state().desiredBoardCamera = pieces::BoardCameraView::CornerGo;
+        showAll2();
+        tickActions(1);
+        expect(!stateReadOnly().floatingCameraActive && stateReadOnly().cameraCanFloat,
+            "new standard camera interrupts CameraIsFloatingIdle state and rearms one float");
+        tickActions(75);
+        expect(stateReadOnly().floatingCameraActive,
+            "replacement standard camera gets its own single floating idle");
+
+        state().desiredBoardCamera = pieces::BoardCameraView::TopDownSquare;
+        showAll2();
+        tickActions(1);
+        tickActions(75);
+        expect(!stateReadOnly().floatingCameraActive && stateReadOnly().cameraCanFloat,
+            "TopDownSquare preserves canFloat flag but suppresses floating camera exactly like source");
+
+        shutdown();
+    }
+
 }
 
 int main()
@@ -379,6 +485,8 @@ int main()
 
     testEnumContract();
     testBoardCameraStateMachine();
+    testBoardDemoMode();
+    testBoardFloatingCamera();
     testManualMouseBoardCamera();
     testDisplayStateMachine();
 
