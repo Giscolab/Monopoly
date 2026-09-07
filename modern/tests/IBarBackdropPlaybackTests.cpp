@@ -229,6 +229,51 @@ namespace
     }
 
 
+    void testJailCardIntegration()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        state.players[0].colour = 0;
+        state.players[1].colour = 1;
+        state.cards[0].jailOwner = 1;
+        state.cards[1].jailOwner = rules::NobodyPlayer;
+        runtime::reset();
+
+        ibar::ActionButtonInputs inputs{};
+        inputs.ruleMode = ibar::RuleMode::OtherPlayer;
+        inputs.rulePlayer = 0;
+        inputs.trackRules = false;
+        inputs.desired2DView = display::Screen2D::Main;
+        const auto chance = ibar::jailCardSequence(0);
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(0) &&
+                backdrop.jailCardCurrent(0) == chance &&
+                playback.runtime().matching(
+                    chance, ibar::JailCardBasePriority, false).size() == 1,
+            "aggregate IBar shows inspected player's owned Chance jail card");
+
+        inputs.desired2DView = display::Screen2D::Portfolio;
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(1) &&
+                backdrop.jailCardCurrent(0) == data::EmptyDataId,
+            "Portfolio hides property-bar jail cards like DISPLAY_IsPropertyBarAvailable");
+
+        state.cards[1].jailOwner = 1;
+        inputs.desired2DView = display::Screen2D::Trade;
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(2) &&
+                backdrop.jailCardCurrent(0) == ibar::jailCardSequence(0) &&
+                backdrop.jailCardCurrent(1) == ibar::jailCardSequence(1),
+            "Trade restores both jail cards owned by inspected player");
+
+        require(backdrop.sync(state, true, rules::BankPlayer, playback, inputs) &&
+                playback.update(3) &&
+                backdrop.jailCardCurrent(0) == data::EmptyDataId &&
+                backdrop.jailCardCurrent(1) == data::EmptyDataId,
+            "Bank selection removes static jail cards and defers dynamic house/hotel counters");
+        runtime::reset();
+    }
+
     void testPropertyHoverIntegration()
     {
         SyntheticSequenceResources resources;
@@ -914,6 +959,7 @@ int main()
         testLifecycle();
         testBankHoverIntegration();
         testScoreStripIntegration();
+        testJailCardIntegration();
         testPropertyHoverIntegration();
         testCardPlaybackIntegration();
         testGlobalButtonPredicates();

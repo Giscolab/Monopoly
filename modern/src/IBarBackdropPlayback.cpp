@@ -390,6 +390,14 @@ namespace monopoly::ibar
         if (!propertyTitles)
             return propertyTitles;
 
+        const bool propertyBarAvailable = visible &&
+            (inputs.desired2DView == display::Screen2D::Main ||
+             inputs.desired2DView == display::Screen2D::Trade);
+        const auto jailCards = jailCards_.sync(
+            state, propertyBarAvailable, activePlayer, playback);
+        if (!jailCards)
+            return jailCards;
+
         const auto propertyHover = propertyHover_.sync(
             state, inputs.propertyTitles, inputs.propertyCurrentMouseOver,
             inputs.tick, playback);

@@ -6,6 +6,7 @@
 #include "IBarCardPlayback.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "IBarCurrentPlayerPlayback.hpp"
+#include "IBarJailCardPlayback.hpp"
 #include "IBarLayout.hpp"
 #include "IBarPropertyPlayback.hpp"
 #include "IBarRuleState.hpp"
@@ -13,6 +14,7 @@
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -114,6 +116,7 @@ namespace monopoly::ibar
             propertyTitles_.reset();
             propertyHover_.reset();
             card_.reset();
+            jailCards_.reset();
             scoreStrip_.reset();
             consumedPressedButton_.reset();
             bank_.reset();
@@ -148,6 +151,11 @@ namespace monopoly::ibar
         [[nodiscard]] data::DataId currentCardSequence() const noexcept
         {
             return card_.currentSequence();
+        }
+
+        [[nodiscard]] data::DataId jailCardCurrent(std::size_t deck) const noexcept
+        {
+            return jailCards_.current(deck);
         }
 
         [[nodiscard]] const ScoreStripPlayerRuntime& scorePlayerState(
@@ -232,6 +240,7 @@ namespace monopoly::ibar
         PropertyTitlePlayback propertyTitles_;
         PropertyHoverPlayback propertyHover_;
         CardPlayback card_;
+        JailCardPlayback jailCards_;
         ScoreStripPlayback scoreStrip_;
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;
