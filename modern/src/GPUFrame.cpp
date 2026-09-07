@@ -150,7 +150,8 @@ namespace monopoly::engine::gpuframe
             const legacyassets::Texture2D& background =
                 legacyassets::background3D();
 
-            if (background.texture != nullptr)
+            if (background.texture != nullptr &&
+                display::stateReadOnly().viewportBackgroundFillOn)
             {
                 const auto logicalView = display::worldViewport(
                     display::stateReadOnly().viewportInUse);
