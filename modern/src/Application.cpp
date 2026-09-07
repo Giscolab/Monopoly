@@ -6,6 +6,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cmath>
 #include <iostream>
 #include <optional>
 
@@ -38,7 +39,9 @@ namespace
         SDL_Window* window,
         monopoly::uimsg::Type type,
         float x,
-        float y)
+        float y,
+        float deltaX = 0.0F,
+        float deltaY = 0.0F)
     {
         const auto point = mouseToLogical(window, x, y);
 
@@ -56,11 +59,31 @@ namespace
             return;
         }
 
+        int width = 0;
+        int height = 0;
+        std::int64_t logicalDeltaX = 0;
+        std::int64_t logicalDeltaY = 0;
+        if (SDL_GetWindowSize(window, &width, &height))
+        {
+            const auto transform = monopoly::logicalviewport::makeTransform(width, height);
+            if (transform.valid())
+            {
+                logicalDeltaX = static_cast<std::int64_t>(
+                    std::lround(static_cast<double>(deltaX) / transform.scale));
+                logicalDeltaY = static_cast<std::int64_t>(
+                    std::lround(static_cast<double>(deltaY) / transform.scale));
+            }
+        }
+        const auto modifier = (SDL_GetModState() & SDL_KMOD_CTRL) != 0
+            ? monopoly::uimsg::MouseModifierControl : 0;
         (void)monopoly::uimsg::send(
             {
                 type,
                 static_cast<std::int64_t>(point->x),
-                static_cast<std::int64_t>(point->y)
+                static_cast<std::int64_t>(point->y),
+                logicalDeltaX,
+                logicalDeltaY,
+                modifier
             }
         );
     }
@@ -139,13 +162,37 @@ namespace monopoly
                             event.button.y
                         );
                     }
+                    else if (
+                        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                        event.button.button == SDL_BUTTON_RIGHT)
+                    {
+                        sendMouseMessage(
+                            window,
+                            uimsg::Type::MouseRightDown,
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
+                    else if (
+                        event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                        event.button.button == SDL_BUTTON_RIGHT)
+                    {
+                        sendMouseMessage(
+                            window,
+                            uimsg::Type::MouseRightUp,
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
                     else if (event.type == SDL_EVENT_MOUSE_MOTION)
                     {
                         sendMouseMessage(
                             window,
                             uimsg::Type::MouseMoved,
                             event.motion.x,
-                            event.motion.y
+                            event.motion.y,
+                            event.motion.xrel,
+                            event.motion.yrel
                         );
                     }
                     else if (event.type == SDL_EVENT_KEY_DOWN)

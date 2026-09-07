@@ -325,9 +325,9 @@ namespace monopoly::userinterface
         // ProcessLibraryMessage() original distribue ensuite
         // le message aux modules UD actifs.
         //
-        // UDPSEL est le premier module interactif porté.
-        // DISPLAY_UDIBAR / UDIBAR_ProcessMessage
-        // précède UDPSEL_ProcessMessage dans le source.
+        // Ordre historique des modules interactifs portes ici :
+        // UDBOARD_ProcessMessage, puis UDIBAR_ProcessMessage, puis UDPSEL.
+        display::processBoardInput(message);
         ibar::processLibraryMessage(
             message
         );

@@ -17,8 +17,12 @@ namespace monopoly::uimsg
         MouseMoved,
         MouseLeftDown,
         MouseLeftUp,
+        MouseRightDown,
+        MouseRightUp,
         Quit
     };
+
+    inline constexpr std::int64_t MouseModifierControl = 1;
 
     struct Message
     {
