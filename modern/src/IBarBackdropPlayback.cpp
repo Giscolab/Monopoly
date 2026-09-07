@@ -49,7 +49,7 @@ namespace monopoly::ibar
         const ActionButtonInputs& inputs) noexcept
     {
         RuleActionHitState result{};
-        if (!visible || activePlayer >= rules::MaxPlayers)
+        if (!visible || activePlayer > rules::BankPlayer)
             return result;
 
         const auto add = [&](layout::ActionButtonSlot slot)
@@ -135,6 +135,7 @@ namespace monopoly::ibar
         case RuleMode::Sell:
         case RuleMode::Mortgage:
         case RuleMode::UnMortgage:
+        case RuleMode::OtherPlayerRemote:
             add(layout::ActionButtonSlot::Main);
             break;
         default:
@@ -232,6 +233,7 @@ namespace monopoly::ibar
             case RuleMode::Mortgage:
             case RuleMode::UnMortgage:
             case RuleMode::OtherPlayer:
+            case RuleMode::OtherPlayerRemote:
             case RuleMode::DoneTurn:
             case RuleMode::DeedActive:
             case RuleMode::ViewingCard:

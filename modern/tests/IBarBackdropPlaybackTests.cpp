@@ -545,6 +545,18 @@ namespace
                   Slot::General4, Slot::Main}),
             "DeedActive exposes deed-specific BSSM slots plus Done/Main");
 
+        ibar::ActionButtonInputs remoteSelection{};
+        remoteSelection.ruleMode = ibar::RuleMode::OtherPlayerRemote;
+        const auto remoteHit = ibar::ruleActionHitState(true, 1, remoteSelection);
+        require(remoteHit.activeSlots == mask({Slot::Main}),
+            "OtherPlayerRemote exposes only local Done/Main");
+        ibar::ActionButtonInputs bankSelection{};
+        bankSelection.ruleMode = ibar::RuleMode::OtherPlayer;
+        const auto bankHit = ibar::ruleActionHitState(
+            true, rules::BankPlayer, bankSelection);
+        require(bankHit.activeSlots == mask({Slot::Main}),
+            "BankPlayer OtherPlayer selection remains clickable through Done/Main");
+
         ibar::ActionButtonInputs restricted{};
         restricted.ruleMode = ibar::RuleMode::DoneTurn;
         restricted.canSell = true;
@@ -589,7 +601,24 @@ namespace
                     hasActionIn(playback, ibar::SellButtonIndex) &&
                     hasActionIn(playback, ibar::MortgageButtonIndex) &&
                     hasActionIn(playback, ibar::UnmortButtonIndex),
-                "DoneTurn starts Done plus Build/Sell/Mortgage/Unmort at legacy priorities");
+              "DoneTurn starts Done plus Build/Sell/Mortgage/Unmort at legacy priorities");
+        }
+
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            ibar::BackdropPlayback backdrop;
+            ibar::ActionButtonInputs inputs{};
+            inputs.ruleMode = ibar::RuleMode::OtherPlayerRemote;
+            inputs.rulePlayer = 0;
+            inputs.trackRules = false;
+            inputs.aiButtonRemoteState = false;
+            require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(0) &&
+                    hasActionIn(playback, ibar::DoneButtonIndex, false) &&
+                    !hasActionIn(playback, ibar::DoneButtonIndex, true) &&
+                    !hasAnyActionIn(playback, ibar::BuildButtonIndex) &&
+                    !hasAnyActionIn(playback, ibar::SellButtonIndex),
+                "OtherPlayerRemote renders only full-colour local Done feedback");
         }
 
         {

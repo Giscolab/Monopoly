@@ -54,6 +54,7 @@ namespace monopoly::ibar
         rules::PlayerNumber projectedRulePlayer{rules::NobodyPlayer};
         bool localRuleModeActive{};
         RuleMode localRuleMode{RuleMode::Nothing};
+        rules::PlayerNumber localRulePlayer{rules::NobodyPlayer};
         std::optional<std::uint8_t> selectedDeed;
         std::optional<std::uint8_t> pendingPressedButton;
         std::optional<std::uint8_t> desiredCardIndex;
@@ -93,6 +94,10 @@ namespace monopoly::ibar
 
     [[nodiscard]] RuleMode resolveRuleMode(
         RuleMode projectedMode,
+        rules::PlayerNumber projectedPlayer
+    ) noexcept;
+
+    [[nodiscard]] rules::PlayerNumber resolveRulePlayer(
         rules::PlayerNumber projectedPlayer
     ) noexcept;
 
