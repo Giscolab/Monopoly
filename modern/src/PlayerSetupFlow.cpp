@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace monopoly::ui::playersetup
 {
@@ -35,6 +36,20 @@ namespace monopoly::ui::playersetup
             468,
             470
         };
+
+
+        constexpr std::array<ButtonRect, 10> SelectPlayerButtons{{
+            { Button::SelectPlayerNew,   { 547, 241, 676, 388 } },
+            { Button::SelectPlayerMore,  { 506, 400, 726, 462 } },
+            { Button::SelectPlayerCard1, { 35, 253, 132, 363 } },
+            { Button::SelectPlayerCard2, { 141, 253, 238, 363 } },
+            { Button::SelectPlayerCard3, { 241, 253, 338, 363 } },
+            { Button::SelectPlayerCard4, { 344, 253, 441, 363 } },
+            { Button::SelectPlayerCard5, { 36, 370, 133, 480 } },
+            { Button::SelectPlayerCard6, { 141, 371, 238, 481 } },
+            { Button::SelectPlayerCard7, { 242, 371, 339, 481 } },
+            { Button::SelectPlayerCard8, { 345, 372, 442, 482 } }
+        }};
 
 
         constexpr std::array<
@@ -237,6 +252,23 @@ namespace monopoly::ui::playersetup
         }
 
 
+        bool selectPlayerCardSlot(
+            Button button,
+            std::size_t& slot)
+        {
+            if (button < Button::SelectPlayerCard1 ||
+                button > Button::SelectPlayerCard8)
+            {
+                return false;
+            }
+
+            slot = static_cast<std::size_t>(
+                static_cast<std::uint8_t>(button) -
+                static_cast<std::uint8_t>(Button::SelectPlayerCard1));
+            return true;
+        }
+
+
         void startPhase(
             State& state,
             const GameState& uiState,
@@ -391,8 +423,55 @@ namespace monopoly::ui::playersetup
         State& state,
         bool available)
     {
-        state.hasPlayerLogEntries =
-            available;
+        state.hasPlayerLogEntries = available;
+
+        if (!available)
+        {
+            state.playerLogCount = 0;
+            state.playerLogPageStart = 0;
+            state.playerLog = {};
+        }
+    }
+
+
+    void setPlayerLogEntries(
+        State& state,
+        const rules::GameState& uiState,
+        std::span<const std::wstring> entries)
+    {
+        state.playerLog = {};
+        state.playerLogCount = 0;
+        state.playerLogPageStart = 0;
+
+        for (const auto& sourceName : entries)
+        {
+            if (sourceName.empty() ||
+                state.playerLogCount >= state.playerLog.size())
+            {
+                continue;
+            }
+
+            std::wstring candidate = sourceName;
+            if (candidate.size() > MaximumEnteredNameLength)
+                candidate.resize(MaximumEnteredNameLength);
+
+            bool alreadySelected = false;
+            for (rules::PlayerNumber player = 0;
+                 player < uiState.numberOfPlayers;
+                 ++player)
+            {
+                if (uiState.players[player].name == candidate)
+                {
+                    alreadySelected = true;
+                    break;
+                }
+            }
+
+            if (!alreadySelected)
+                state.playerLog[state.playerLogCount++] = std::move(candidate);
+        }
+
+        state.hasPlayerLogEntries = state.playerLogCount != 0;
     }
 
 
@@ -655,6 +734,17 @@ namespace monopoly::ui::playersetup
     {
         switch (phase)
         {
+            case Phase::SelectPlayer:
+            {
+                for (const auto& entry : SelectPlayerButtons)
+                {
+                    if (entry.rect.contains(x, y))
+                        return entry.button;
+                }
+                break;
+            }
+
+
             case Phase::EnterName:
             {
                 if (
@@ -796,6 +886,47 @@ namespace monopoly::ui::playersetup
 
         if (button == Button::None)
         {
+            return command;
+        }
+
+
+        // ----------------------------------------------------
+        // SELECT PLAYER
+        // ----------------------------------------------------
+
+        if (state.phase == Phase::SelectPlayer)
+        {
+            if (button == Button::SelectPlayerNew)
+            {
+                state.aiLevel = 0;
+                requestPhase(state, uiState, Phase::EnterName);
+                return command;
+            }
+
+            if (button == Button::SelectPlayerMore)
+            {
+                if (state.playerLogCount > PlayerHistoryPageSize)
+                {
+                    state.playerLogPageStart += PlayerHistoryPageSize;
+                    if (state.playerLogPageStart >= state.playerLogCount)
+                        state.playerLogPageStart = 0;
+                }
+                return command;
+            }
+
+            std::size_t slot = 0;
+            if (selectPlayerCardSlot(button, slot))
+            {
+                const std::size_t entry = state.playerLogPageStart + slot;
+                if (entry < state.playerLogCount)
+                {
+                    state.name = state.playerLog[entry];
+                    state.aiLevel = 0;
+                    requestPhase(state, uiState, Phase::SelectToken);
+                }
+                return command;
+            }
+
             return command;
         }
 

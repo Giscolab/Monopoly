@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -35,6 +36,17 @@ namespace monopoly::ui::playersetup
         None = 0,
 
         EnterNameNext,
+
+        SelectPlayerNew,
+        SelectPlayerMore,
+        SelectPlayerCard1,
+        SelectPlayerCard2,
+        SelectPlayerCard3,
+        SelectPlayerCard4,
+        SelectPlayerCard5,
+        SelectPlayerCard6,
+        SelectPlayerCard7,
+        SelectPlayerCard8,
 
         TokenGun,
         TokenIron,
@@ -145,6 +157,10 @@ namespace monopoly::ui::playersetup
     };
 
 
+    inline constexpr std::size_t PlayerHistoryMaximumEntries = 100;
+    inline constexpr std::size_t PlayerHistoryPageSize = 8;
+
+
     struct State
     {
         Phase phase =
@@ -180,6 +196,12 @@ namespace monopoly::ui::playersetup
 
         bool hasPlayerLogEntries =
             false;
+
+        std::array<std::wstring, PlayerHistoryMaximumEntries>
+            playerLog{};
+
+        std::size_t playerLogCount = 0;
+        std::size_t playerLogPageStart = 0;
 
 
         std::array<
@@ -223,6 +245,13 @@ namespace monopoly::ui::playersetup
     void setPlayerLogAvailable(
         State& state,
         bool available
+    );
+
+
+    void setPlayerLogEntries(
+        State& state,
+        const rules::GameState& uiState,
+        std::span<const std::wstring> entries
     );
 
 

@@ -1,6 +1,7 @@
 #include "PlayerSetupFlow.hpp"
 #include "RuleTypes.hpp"
 
+#include <array>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
@@ -430,6 +431,82 @@ namespace
     }
 
 
+    void testSelectPlayerHistory()
+    {
+        using namespace monopoly;
+        using namespace monopoly::ui::playersetup;
+
+        expect(
+            buttonAt(Phase::SelectPlayer, 547, 241) == Button::SelectPlayerNew &&
+            buttonAt(Phase::SelectPlayer, 675, 387) == Button::SelectPlayerNew &&
+            buttonAt(Phase::SelectPlayer, 676, 387) == Button::None,
+            "SelectPlayer New rectangle is exact");
+        expect(
+            buttonAt(Phase::SelectPlayer, 506, 400) == Button::SelectPlayerMore &&
+            buttonAt(Phase::SelectPlayer, 725, 461) == Button::SelectPlayerMore,
+            "SelectPlayer More rectangle is exact");
+        expect(
+            buttonAt(Phase::SelectPlayer, 35, 253) == Button::SelectPlayerCard1 &&
+            buttonAt(Phase::SelectPlayer, 131, 362) == Button::SelectPlayerCard1 &&
+            buttonAt(Phase::SelectPlayer, 345, 372) == Button::SelectPlayerCard8 &&
+            buttonAt(Phase::SelectPlayer, 441, 481) == Button::SelectPlayerCard8,
+            "SelectPlayer card rectangles preserve retail asymmetry");
+
+        rules::GameState uiState{};
+        uiState.numberOfPlayers = 1;
+        uiState.players[0].name = L"Existing";
+
+        std::array<std::wstring, 11> history{{
+            L"Alice", L"Existing", L"ChristopherX", L"Dana", L"Eve",
+            L"Frank", L"Grace", L"Heidi", L"Ivan", L"Judy", L"Karl"
+        }};
+
+        State state{};
+        initialize(state, true);
+        setPlayerLogEntries(state, uiState, history);
+        expect(
+            state.hasPlayerLogEntries && state.playerLogCount == 10 &&
+            state.playerLogPageStart == 0 &&
+            state.playerLog[0] == L"Alice" &&
+            state.playerLog[1] == L"Christophe",
+            "SelectPlayer log filters current players and truncates names to 10");
+
+        requestPhase(state, uiState, Phase::SelectPlayer);
+        expect(state.phase == Phase::SelectPlayer,
+            "SelectPlayer stays visible when history entries exist");
+
+        (void)clickButton(state, uiState, Button::SelectPlayerMore);
+        expect(state.playerLogPageStart == 8,
+            "SelectPlayer More advances by eight");
+        expect(
+            clickButton(state, uiState, Button::SelectPlayerCard3).type ==
+                CommandType::None && state.phase == Phase::SelectPlayer,
+            "SelectPlayer absent card on partial page is ignored");
+
+        (void)clickButton(state, uiState, Button::SelectPlayerMore);
+        expect(state.playerLogPageStart == 0,
+            "SelectPlayer More wraps at end of history");
+        (void)clickButton(state, uiState, Button::SelectPlayerMore);
+        (void)clickButton(state, uiState, Button::SelectPlayerCard1);
+        expect(
+            state.name == L"Judy" && state.aiLevel == 0 &&
+            state.phase == Phase::SelectToken,
+            "SelectPlayer card copies name and advances directly to SelectToken");
+
+        State fresh{};
+        initialize(fresh, true);
+        requestPhase(fresh, uiState, Phase::SelectPlayer);
+        expect(fresh.phase == Phase::EnterName,
+            "SelectPlayer skips to EnterName when history is empty");
+
+        setPlayerLogEntries(fresh, uiState, history);
+        requestPhase(fresh, uiState, Phase::SelectPlayer);
+        (void)clickButton(fresh, uiState, Button::SelectPlayerNew);
+        expect(fresh.phase == Phase::EnterName && fresh.name == L"_",
+            "SelectPlayer New starts a fresh human name");
+    }
+
+
     void testHotspots()
     {
         using namespace
@@ -789,6 +866,7 @@ int main()
     testTokenOrder();
     testHumanFlow();
     testAIFlow();
+    testSelectPlayerHistory();
     testHotspots();
     testCitySelection();
     testRulesChoice();
