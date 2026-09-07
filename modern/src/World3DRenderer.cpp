@@ -17,13 +17,29 @@ namespace monopoly::engine
         struct alignas(16) VertexUniforms
         {
             std::array<float, 16> worldViewProjection{};
+            std::array<float, 16> world{};
         };
 
         struct alignas(16) FragmentUniforms
         {
             std::array<float, 4> materialDiffuse{};
-            std::array<float, 4> sceneAmbient{0.53F, 0.53F, 0.53F, 1.0F};
+            std::array<float, 4> sceneAmbient{};
+            std::array<float, 4> boardReflectionColorEnabled{};
+            std::array<float, 4> boardReflectionDirection{};
+            std::array<float, 4> sunColorEnabled{};
+            std::array<float, 4> sunDirection{};
+            std::array<float, 4> spotlightColorEnabled{};
+            std::array<float, 4> spotlightPositionRange{};
+            std::array<float, 4> spotlightDirectionFalloff{};
+            std::array<float, 4> spotlightAttenuationTheta{};
+            std::array<float, 4> spotlightPhi{};
         };
+
+        [[nodiscard]] std::array<float, 4> vector4(
+            const std::array<float, 3>& value, float w = 0.0F) noexcept
+        {
+            return {value[0], value[1], value[2], w};
+        }
 
         bool validViewport(const SDL_GPUViewport& viewport,
             std::uint32_t width, std::uint32_t height) noexcept
@@ -161,6 +177,8 @@ namespace monopoly::engine
         depthTarget_ = std::exchange(other.depthTarget_, nullptr);
         depthWidth_ = std::exchange(other.depthWidth_, 0U);
         depthHeight_ = std::exchange(other.depthHeight_, 0U);
+        lighting_ = other.lighting_;
+        other.lighting_ = {};
         return *this;
     }
 
@@ -191,6 +209,7 @@ namespace monopoly::engine
         releaseSamplingResources();
         pipeline_.reset();
         device_ = nullptr;
+        lighting_ = {};
     }
 
     bool World3DRenderer::ensureDepthTarget(
@@ -341,9 +360,30 @@ namespace monopoly::engine
 
             VertexUniforms vertexUniforms;
             vertexUniforms.worldViewProjection = worldViewProjection.values;
+            vertexUniforms.world = batch.worldTransform.values;
 
             FragmentUniforms fragmentUniforms;
             fragmentUniforms.materialDiffuse = batch.material.diffuse;
+            fragmentUniforms.sceneAmbient = vector4(lighting_.ambient, 1.0F);
+            fragmentUniforms.boardReflectionColorEnabled = vector4(
+                lighting_.boardReflection.color,
+                lighting_.boardReflection.enabled ? 1.0F : 0.0F);
+            fragmentUniforms.boardReflectionDirection = vector4(
+                lighting_.boardReflection.direction);
+            fragmentUniforms.sunColorEnabled = vector4(
+                lighting_.sun.color, lighting_.sun.enabled ? 1.0F : 0.0F);
+            fragmentUniforms.sunDirection = vector4(lighting_.sun.direction);
+            fragmentUniforms.spotlightColorEnabled = vector4(
+                lighting_.spotlight.color,
+                lighting_.spotlight.enabled ? 1.0F : 0.0F);
+            fragmentUniforms.spotlightPositionRange = vector4(
+                lighting_.spotlight.position, lighting_.spotlight.range);
+            fragmentUniforms.spotlightDirectionFalloff = vector4(
+                lighting_.spotlight.direction, lighting_.spotlight.falloff);
+            fragmentUniforms.spotlightAttenuationTheta = vector4(
+                lighting_.spotlight.attenuation, lighting_.spotlight.theta);
+            fragmentUniforms.spotlightPhi =
+                {lighting_.spotlight.phi, 0.0F, 0.0F, 0.0F};
 
             SDL_PushGPUVertexUniformData(commandBuffer, 0U,
                 &vertexUniforms, static_cast<Uint32>(sizeof(vertexUniforms)));
