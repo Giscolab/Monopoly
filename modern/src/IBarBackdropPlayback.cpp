@@ -394,11 +394,15 @@ namespace monopoly::ibar
         if (!propertyHover)
             return propertyHover;
 
+        const auto scoreStrip = scoreStrip_.sync(inputs.scoreStrip, playback);
+        if (!scoreStrip)
+            return scoreStrip;
+
         // UDIBar.cpp shows the bank during DISPLAY_UDIBAR_Show(), before
         // DISPLAY_UDPIECES_Show() starts the dice at the same priority.
-        // Main-screen bank hover tracking is not wired yet, so engine
-        // integration deliberately starts from the non-hovered source state.
-        const auto bank = bank_.sync(visible, false, playback);
+        // Bank hover follows IBarPlayerCurrentMouseOver == RULE_MAX_PLAYERS
+        // and moves the existing priority-256 sequence down by one pixel.
+        const auto bank = bank_.sync(visible, inputs.bankHovered, playback);
         if (!bank)
         {
             return bank;

@@ -150,6 +150,85 @@ namespace
     }
 
 
+    void testBankHoverIntegration()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 0;
+
+        ibar::ActionButtonInputs inputs{};
+        inputs.bankHovered = true;
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0),
+            "aggregate IBar accepts BankPlayer hover on the first visible frame");
+
+        const auto matches = playback.runtime().matching(
+            ibar::bankSequence(), ibar::BankPriority, false);
+        require(matches.size() == 1,
+            "aggregate bank hover keeps one bank sequence at priority 256");
+        const auto* bankObject = playback.world2D().find(matches.front());
+        require(bankObject && bankObject->worldTransform.values[6] == 755.0F &&
+                bankObject->worldTransform.values[7] == 561.0F,
+            "aggregate bank hover reaches Overlay2D at exact StartXY/MoveXY(755,561)");
+
+        inputs.bankHovered = false;
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(1),
+            "aggregate bank hover exit queues and executes MoveXY");
+        bankObject = playback.world2D().find(matches.front());
+        require(bankObject && bankObject->worldTransform.values[7] == 560.0F,
+            "aggregate bank hover exit restores DISPLAY_ScoreY 560");
+    }
+
+
+    void testScoreStripIntegration()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        state.players[0].colour = 3;
+        state.players[0].token = 2;
+        state.players[0].cash = 1500;
+        state.players[0].name = L"ScorePlayer";
+        state.players[0].currentSquare = 40;
+
+        ibar::ScoreStripInputs scoreInputs{};
+        scoreInputs.visiblePlayers[0] = true;
+        scoreInputs.gameInProgress = true;
+        scoreInputs.hoveredPlayer = 0;
+        scoreInputs.tick = 100;
+        const auto scorePlan = ibar::planScoreStrip(state, scoreInputs);
+        require(scorePlan.has_value(),
+            "aggregate score strip plan resolves for visible jailed player");
+
+        ibar::ActionButtonInputs inputs{};
+        inputs.scoreStrip = *scorePlan;
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(100),
+            "aggregate IBar publishes score strip through normal Overlay2D sync");
+
+        const auto& runtimeState = backdrop.scorePlayerState(0);
+        require(runtimeState.visible && runtimeState.jailBars && runtimeState.hovered &&
+                runtimeState.x == 285,
+            "aggregate score runtime preserves visibility, jail, hover and scoreX");
+        const auto token = data::packDataId(data::LegacyGroupId::Main, 0x01C2);
+        const auto colour = data::packDataId(data::LegacyGroupId::Main, 0x01CE);
+        const auto jail = data::packDataId(data::LegacyGroupId::Main, 0x01BF);
+        require(playback.runtime().matching(token, 305, false).size() == 1 &&
+                playback.runtime().matching(colour, 257, false).size() == 1 &&
+                playback.runtime().matching(jail, 306, false).size() == 1,
+            "aggregate score strip reaches token/color/jail legacy priorities");
+
+        const auto& text = backdrop.scoreTextState(0);
+        require(text.displayedCash == 1500 && text.printedName == L"ScorePlayer" &&
+                text.lastCashUpdateTick == 100 &&
+                text.lastCashChange == ibar::ScoreCashChange::Up,
+            "aggregate exposes cash/name snapshot for future font renderer without fake text surface");
+    }
+
+
     void testPropertyHoverIntegration()
     {
         SyntheticSequenceResources resources;
@@ -804,6 +883,8 @@ int main()
     {
         testResolution();
         testLifecycle();
+        testBankHoverIntegration();
+        testScoreStripIntegration();
         testPropertyHoverIntegration();
         testCardPlaybackIntegration();
         testGlobalButtonPredicates();

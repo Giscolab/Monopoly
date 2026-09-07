@@ -158,6 +158,46 @@ namespace
     }
 
 
+    void testPlayerScoreMouseOverTracking()
+    {
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::ruleState.numberOfPlayers = 1;
+        ibar::show();
+        const auto rect = ibar::stateReadOnly().players[0].rect;
+        ibar::processLibraryMessage({uimsg::Type::MouseMoved,
+            rect.left + 1, rect.top + 1});
+        require(ibar::stateReadOnly().playerCurrentMouseOver == 0,
+            "gameplay mousemove over visible score box tracks exact player index");
+
+        ibar::processLibraryMessage({uimsg::Type::MouseMoved, 755, 560});
+        require(ibar::stateReadOnly().playerLastMouseOver == 0 &&
+                ibar::stateReadOnly().playerCurrentMouseOver ==
+                    static_cast<int>(rules::BankPlayer),
+            "moving from player score box to bank preserves legacy shared hover state");
+    }
+
+
+    void testBankMouseOverTracking()
+    {
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        ibar::processLibraryMessage({uimsg::Type::MouseMoved, 755, 560});
+        require(ibar::stateReadOnly().playerCurrentMouseOver ==
+                    static_cast<int>(rules::BankPlayer),
+            "mousemove over [755,800)x[560,592) tracks legacy BankPlayer hover");
+
+        ibar::show();
+        require(ibar::stateReadOnly().playerCurrentMouseOver ==
+                    static_cast<int>(rules::BankPlayer),
+            "IBar show preserves bank hover while a gameplay IBar view is visible");
+
+        ibar::processLibraryMessage({uimsg::Type::MouseMoved, 754, 559});
+        require(ibar::stateReadOnly().playerLastMouseOver ==
+                    static_cast<int>(rules::BankPlayer) &&
+                ibar::stateReadOnly().playerCurrentMouseOver == -1,
+            "moving outside bank rectangle records BankPlayer as last hover and clears current");
+    }
+
+
     void testPropertyMouseOverTracking()
     {
         ibar::setPropertyHitState(ibar::layout::propertyBit(1));
@@ -483,6 +523,8 @@ int main()
         test_support::ruleState.numberOfPlayers = 1;
         monopoly::ibar::initialize();
         testMaskedHitFiltering();
+        testPlayerScoreMouseOverTracking();
+        testBankMouseOverTracking();
         testPropertyMouseOverTracking();
         testBuyAuctionAndTax();
         testJailVariants();
