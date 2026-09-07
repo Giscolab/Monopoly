@@ -153,10 +153,10 @@ namespace monopoly::engine
                 return {};
             }
 
-            // DISPLAY_UDBOARD_Initialize starts with city=0. Until city/render
-            // options are ported, UDBoard.cpp therefore selects HMD_boardmed.
+            // UDBoard.cpp:992-995 selects the medium classic mesh for city 0
+            // and the medium city mesh for every non-zero USA city.
             const auto desired = data::boardMeshDataId(
-                data::BoardMeshKind::ClassicMedium);
+                data::usaBoardMeshForCity(state.city));
             if (activeBoardSequence == desired) return {};
             if (activeBoardSequence)
             {

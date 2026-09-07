@@ -189,6 +189,18 @@ namespace monopoly::data
     }
 
 
+    // UDBoard.cpp:992-995 (USA_VERSION): city 0 uses HMD_boardmed;
+    // every non-zero city, including the future custom sentinel, uses
+    // HMD_board_citymed. The source always selects the medium board here.
+    [[nodiscard]] constexpr BoardMeshKind usaBoardMeshForCity(
+        int city) noexcept
+    {
+        return city == 0
+            ? BoardMeshKind::ClassicMedium
+            : BoardMeshKind::CityMedium;
+    }
+
+
     [[nodiscard]] constexpr bool isCityMesh(
         BoardMeshKind mesh) noexcept
     {
