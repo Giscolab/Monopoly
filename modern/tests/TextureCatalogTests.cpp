@@ -85,6 +85,19 @@ namespace
             "HMD_boardmed maps to DAT_3D tag 3"
         );
         expect(
+            usaBoardMeshForCity(0) == BoardMeshKind::ClassicMedium,
+            "USA city 0 selects HMD_boardmed"
+        );
+        expect(
+            usaBoardMeshForCity(1) == BoardMeshKind::CityMedium &&
+            usaBoardMeshForCity(10) == BoardMeshKind::CityMedium,
+            "USA cities 1..10 select HMD_board_citymed"
+        );
+        expect(
+            usaBoardMeshForCity(-1) == BoardMeshKind::CityMedium,
+            "legacy non-zero custom city sentinel also selects HMD_board_citymed"
+        );
+        expect(
             textureDimensions(TextureResolution::Pixels128) ==
                 TextureDimensions{128, 128},
             "128 texture resolution has explicit 128x128 dimensions"
