@@ -95,6 +95,9 @@ namespace monopoly::userinterface
             return;
         }
 
+        // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
+        display::noteBoardActivity();
+
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
         if (message.action == actions::Type::NotifyHousingShortage)

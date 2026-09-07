@@ -631,6 +631,8 @@ namespace monopoly::engine
             if (!pieceSync)
                 return SDL_SetError("Piece move playback: %s",
                     pieceSync.error().c_str());
+            // UDBoard.cpp uses TokenAnimStackIndex only to choose floating-camera amplitude.
+            display::setTokenAnimationStackActive(pieceMovePlayback.active());
             const auto idleSync = syncPieceIdlePlayback(*session);
             if (!idleSync)
                 return SDL_SetError("Piece idle playback: %s",

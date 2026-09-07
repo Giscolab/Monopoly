@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include "World3DProjection.hpp"
@@ -102,6 +103,17 @@ namespace monopoly::display
         bool mouseRightPressed = false;
         bool manualMouseCamLock = false;
         std::uint64_t manualMouseCamTime = 0;
+        std::uint64_t lastBoardActivityTick = 0;
+        bool demoModeDesired = false;
+        pieces::BoardCameraView demoStartCamera = pieces::BoardCameraView::TopDownSquare;
+        std::uint8_t demoCameraIndex = 0;
+        std::uint32_t demoWaitTicks = 0;
+        std::uint32_t demoTicksPerMove = 0;
+        std::uint8_t demoCycles = 0;
+        bool tokenAnimationStackActive = false;
+        bool cameraCanFloat = false;
+        bool floatingCameraActive = false;
+        std::array<float, 3> lastFloatingVariation{};
         bool desiredCameraInvalidatedLock = false;
         bool desiredCameraClearToValidate = false;
 
@@ -137,6 +149,8 @@ namespace monopoly::display
     void endDiceCameraOverrideEarly();
     void cancelDiceCameraOverride();
 
+    void noteBoardActivity() noexcept;
+    void setTokenAnimationStackActive(bool active) noexcept;
     void processBoardInput(const uimsg::Message& message);
     void tickActions(std::uint64_t numberOfTicks);
 
