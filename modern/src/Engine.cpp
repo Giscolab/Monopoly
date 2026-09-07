@@ -19,6 +19,7 @@
 #include "PieceIdlePlayback.hpp"
 #include "PieceIdleDisplay.hpp"
 #include "PieceBuildingDisplay.hpp"
+#include "PieceShadowDisplay.hpp"
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
@@ -53,6 +54,7 @@ namespace monopoly::engine
         pieces::PieceIdlePlayback pieceIdlePlayback;
         pieces::PieceIdleDisplay pieceIdleDisplay;
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
+        pieces::PieceShadowDisplay pieceShadowDisplay;
         boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
         boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
         boarddisplay::BoardLightingController boardLightingController;
@@ -231,6 +233,53 @@ namespace monopoly::engine
 
             const auto synced = pieceIdleDisplay.sync(
                 state, userinterface::pieceIdleStateReadOnly(), context, session);
+            if (!synced) return std::unexpected(synced.error());
+            return {};
+        }
+
+        [[nodiscard]] std::expected<void, std::string> syncPieceShadows(
+            SequencePlayback& session, const rules::GameState& ruleState,
+            const display::State& displayState, bool boardVisible)
+        {
+            pieces::PieceShadowDisplayContext context{};
+            context.boardVisible = boardVisible;
+            context.lightingOn = displayState.optionLightingOn;
+            context.game3DOn = displayState.game3DOn;
+            context.paddywagonPlayer = pieceJailPlayback.playerInPaddywagon();
+            context.goingToJailStatus = pieceJailPlayback.state();
+            context.currentUIPlayer = ui::localplayers::currentUIPlayer();
+
+            for (rules::PlayerNumber player = 0;
+                 player < rules::MaxPlayers; ++player)
+            {
+                const auto idle = pieceIdleDisplay.shownSequence(player);
+                if (idle != data::EmptyDataId)
+                    context.runtimeSources.idleSequences[player] = idle;
+            }
+
+            const auto moving = pieceMovePlayback.currentSequence();
+            if (moving != data::EmptyDataId)
+            {
+                context.runtimeSources.movingSequence = moving;
+                context.currentPlayerTokenSequenceActive = true;
+            }
+
+            context.runtimeSources.playerMovingOut = pieceIdlePlayback.movingOutPlayer();
+            const auto movingOut = pieceIdlePlayback.movingOutSequence();
+            if (movingOut != data::EmptyDataId)
+                context.runtimeSources.playerMovingOutSequence = movingOut;
+
+            context.runtimeSources.playerMovingIn = pieceIdlePlayback.movingInPlayer();
+            const auto movingIn = pieceIdlePlayback.movingInSequence();
+            if (movingIn != data::EmptyDataId)
+                context.runtimeSources.playerMovingInSequence = movingIn;
+
+            const auto jailToken = pieceJailPlayback.activeTokenSequence();
+            if (jailToken != data::EmptyDataId)
+                context.runtimeSources.jailTokenAnimation = jailToken;
+
+            const auto synced = pieceShadowDisplay.sync(
+                ruleState, context, session);
             if (!synced) return std::unexpected(synced.error());
             return {};
         }
@@ -714,6 +763,11 @@ namespace monopoly::engine
             if (!persistentIdleSync)
                 return SDL_SetError("Persistent piece idle: %s",
                     persistentIdleSync.error().c_str());
+            const auto shadowSync = syncPieceShadows(
+                *session, ruleState, displayState, boardVisible);
+            if (!shadowSync)
+                return SDL_SetError("Piece shadow display: %s",
+                    shadowSync.error().c_str());
             const auto buildingSync = syncPieceBuildings(*session, boardVisible);
             if (!buildingSync)
                 return SDL_SetError("Piece building display: %s",
@@ -796,6 +850,7 @@ namespace monopoly::engine
         pieceIdlePlayback = {};
         pieceIdleDisplay.reset();
         pieceBuildingDisplay.reset();
+        pieceShadowDisplay.reset();
         boardBackdropPlayback.reset();
         ownershipHighlightPlayback.reset();
         boardLightingController.reset();

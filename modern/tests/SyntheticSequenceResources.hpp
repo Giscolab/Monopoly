@@ -184,7 +184,7 @@ struct SyntheticSequenceResources
                     packDataId(LegacyGroupId::ThreeD, 0)});
                 // Sparse synthetic DAT_3D: tags 0..3 remain HMD fixtures.
                 // GoToJail plus center/resting transition tags are finite CNKs.
-                items.resize(0x05CD);
+                items.resize(0x05D8);
                 for (int tag = 0; tag <= 5; ++tag)
                     items[tag] = {LegacyDataType::Hmd, mesh};
                 for (std::uint32_t tag = 0x00E9U; tag <= 0x00F4U; ++tag)
@@ -193,6 +193,9 @@ struct SyntheticSequenceResources
                          0x05C9, 0x05CA, 0x05CB, 0x05CC})
                     items[tag] = {LegacyDataType::Chunky, finite};
                 for (std::uint32_t tag = 0x0537U; tag <= 0x05C6U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finite};
+                // UDPieces.cpp CNK_shadowa..CNK_shadowk persistent token shadows.
+                for (std::uint32_t tag = 0x05CDU; tag <= 0x05D7U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finite};
                 for (std::uint32_t token = 0; token < monopoly::rules::MaxTokens; ++token)
                     items[0x010DU + 0x63U * token] =

@@ -35,6 +35,8 @@ namespace monopoly::pieces
         [[nodiscard]] std::uint8_t state() const noexcept { return state_; }
         [[nodiscard]] std::optional<rules::PlayerNumber> playerInPaddywagon() const noexcept
         { return playerInPaddywagon_; }
+        [[nodiscard]] data::DataId activeTokenSequence() const noexcept
+        { return tokenSequence_; }
 
     private:
         PieceMoveSpecialRequest request_{};

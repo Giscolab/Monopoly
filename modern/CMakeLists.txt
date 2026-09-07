@@ -937,6 +937,7 @@ target_sources(
     src/PieceIdlePlayback.cpp
     src/PieceIdleDisplay.cpp
     src/PieceBuildingDisplay.cpp
+    src/PieceShadowDisplay.cpp
     src/DiceIngress.cpp
     src/DiceDisplay.cpp
     src/BoardCameraController.cpp
@@ -1870,6 +1871,33 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.PieceBuildingDisplay
         COMMAND MonopolyPieceBuildingDisplayTests
+    )
+endif()
+
+# UDPieces.cpp persistent token shadows
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyPieceShadowDisplayTests
+        tests/PieceShadowDisplayTests.cpp
+        src/PieceShadowDisplay.cpp
+        src/PieceRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyPieceShadowDisplayTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyPieceShadowDisplayTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyPieceShadowDisplayTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.PieceShadowDisplay
+        COMMAND MonopolyPieceShadowDisplayTests
     )
 endif()
 
