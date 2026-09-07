@@ -138,16 +138,71 @@ namespace monopoly::ibar
         {
             globalState.localRuleModeActive = false;
             globalState.localRuleMode = RuleMode::Nothing;
+            globalState.localRulePlayer = rules::NobodyPlayer;
             globalState.selectedDeed.reset();
         }
 
 
-        void enterLocalRuleMode(RuleMode mode) noexcept
+        [[nodiscard]] RuleMode otherPlayerMode(rules::PlayerNumber player) noexcept
         {
+            if (player == rules::BankPlayer ||
+                (player < rules::MaxPlayers &&
+                 ui::localplayers::slotIsLocalHumanPlayer(player)))
+            {
+                return RuleMode::OtherPlayer;
+            }
+            return RuleMode::OtherPlayerRemote;
+        }
+
+
+        void enterLocalRuleMode(
+            RuleMode mode,
+            rules::PlayerNumber player = rules::NobodyPlayer) noexcept
+        {
+            if (player <= rules::BankPlayer)
+            {
+                globalState.localRulePlayer = player;
+            }
+            else if (!globalState.localRuleModeActive)
+            {
+                globalState.localRulePlayer = globalState.actionPlayer;
+            }
+
             globalState.localRuleModeActive = true;
             globalState.localRuleMode = mode;
             if (mode != RuleMode::DeedActive)
                 globalState.selectedDeed.reset();
+        }
+
+
+        void returnFromLocalDetail() noexcept
+        {
+            if (globalState.localRulePlayer == globalState.projectedRulePlayer)
+            {
+                leaveLocalRuleMode();
+                return;
+            }
+
+            globalState.localRuleModeActive = true;
+            globalState.localRuleMode = otherPlayerMode(globalState.localRulePlayer);
+            globalState.selectedDeed.reset();
+        }
+
+
+        bool handlePlayerOrBankClick(int hit) noexcept
+        {
+            if (hit < 0 || hit > static_cast<int>(rules::BankPlayer))
+                return false;
+
+            const auto selected = static_cast<rules::PlayerNumber>(hit);
+            if (selected == globalState.projectedRulePlayer)
+            {
+                leaveLocalRuleMode();
+                return true;
+            }
+
+            enterLocalRuleMode(otherPlayerMode(selected), selected);
+            return true;
         }
 
 
@@ -224,13 +279,34 @@ namespace monopoly::ibar
             switch (globalState.actionRuleMode)
             {
             case RuleMode::StartTurn:
-            case RuleMode::OtherPlayer:
             case RuleMode::DoneTurn:
             case RuleMode::FreeUnmortgage:
                 if (slot == Slot::General1) return enterBssm(RuleMode::Build, BuildButtonIndex);
                 if (slot == Slot::General2) return enterBssm(RuleMode::Sell, SellButtonIndex);
                 if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage, MortgageButtonIndex);
                 if (slot == Slot::General4) return enterBssm(RuleMode::UnMortgage, UnmortButtonIndex);
+                break;
+
+            case RuleMode::OtherPlayer:
+                if (slot == Slot::General1) return enterBssm(RuleMode::Build, BuildButtonIndex);
+                if (slot == Slot::General2) return enterBssm(RuleMode::Sell, SellButtonIndex);
+                if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage, MortgageButtonIndex);
+                if (slot == Slot::General4) return enterBssm(RuleMode::UnMortgage, UnmortButtonIndex);
+                if (slot == Slot::Main)
+                {
+                    globalState.pendingPressedButton = DoneButtonIndex;
+                    leaveLocalRuleMode();
+                    return true;
+                }
+                break;
+
+            case RuleMode::OtherPlayerRemote:
+                if (slot == Slot::Main)
+                {
+                    globalState.pendingPressedButton = DoneButtonIndex;
+                    leaveLocalRuleMode();
+                    return true;
+                }
                 break;
 
             case RuleMode::RaiseMoney:
@@ -245,7 +321,7 @@ namespace monopoly::ibar
                 if (slot == Slot::Main)
                 {
                     globalState.pendingPressedButton = DoneButtonIndex;
-                    leaveLocalRuleMode();
+                    returnFromLocalDetail();
                     return true;
                 }
                 break;
@@ -254,7 +330,7 @@ namespace monopoly::ibar
                 if (slot == Slot::Main)
                 {
                     globalState.pendingPressedButton = DoneButtonIndex;
-                    leaveLocalRuleMode();
+                    returnFromLocalDetail();
                     return true;
                 }
                 if (!globalState.selectedDeed) break;
@@ -617,10 +693,18 @@ namespace monopoly::ibar
             static_cast<int>(message.numberA),
             static_cast<int>(message.numberB),
             globalState.visiblePropertySlots);
-        if (!property) return;
+        if (property)
+        {
+            globalState.propertyCurrentMouseOver = *property;
+            (void)handlePropertyClick(*property);
+            return;
+        }
 
-        globalState.propertyCurrentMouseOver = *property;
-        (void)handlePropertyClick(*property);
+        const int playerOrBank = playerOrBankHit(
+            static_cast<int>(message.numberA),
+            static_cast<int>(message.numberB));
+        if (playerOrBank >= 0)
+            (void)handlePlayerOrBankClick(playerOrBank);
     }
 
 
@@ -717,17 +801,22 @@ namespace monopoly::ibar
         RuleMode projectedMode,
         rules::PlayerNumber projectedPlayer) noexcept
     {
-        if (globalState.projectedRuleMode != projectedMode ||
-            globalState.projectedRulePlayer != projectedPlayer)
-        {
-            globalState.projectedRuleMode = projectedMode;
-            globalState.projectedRulePlayer = projectedPlayer;
-            leaveLocalRuleMode();
-        }
+        globalState.projectedRuleMode = projectedMode;
+        globalState.projectedRulePlayer = projectedPlayer;
 
         return globalState.localRuleModeActive
             ? globalState.localRuleMode
             : projectedMode;
+    }
+
+
+    rules::PlayerNumber resolveRulePlayer(
+        rules::PlayerNumber projectedPlayer) noexcept
+    {
+        return globalState.localRuleModeActive &&
+               globalState.localRulePlayer <= rules::BankPlayer
+            ? globalState.localRulePlayer
+            : projectedPlayer;
     }
 
 

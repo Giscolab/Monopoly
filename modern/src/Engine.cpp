@@ -505,11 +505,15 @@ namespace monopoly::engine
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
             const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
-            const rules::PlayerNumber iBarActivePlayer =
+            const rules::PlayerNumber projectedIBarPlayer =
                 iBarRules.player < ruleState.numberOfPlayers &&
                 iBarRules.player < rules::MaxPlayers
                     ? iBarRules.player
                     : ruleState.currentPlayer;
+            const auto effectiveRuleMode = ibar::resolveRuleMode(
+                iBarRules.mode, projectedIBarPlayer);
+            const rules::PlayerNumber iBarActivePlayer =
+                ibar::resolveRulePlayer(projectedIBarPlayer);
             const bool activePlayerCanTrade =
                 iBarActivePlayer < ruleState.numberOfPlayers &&
                 iBarActivePlayer < rules::MaxPlayers &&
@@ -517,8 +521,6 @@ namespace monopoly::engine
             const bool tradeEligible = activePlayerCanTrade &&
                 ui::localplayers::tradeSourcePlayer(
                     ruleState, iBarActivePlayer) != rules::MaxPlayers;
-            const auto effectiveRuleMode = ibar::resolveRuleMode(
-                iBarRules.mode, iBarRules.player);
             const auto bssmAvailability =
                 iBarBSSMAvailability(ruleState, iBarActivePlayer);
             const auto& iBarState = ibar::stateReadOnly();
@@ -530,7 +532,8 @@ namespace monopoly::engine
             ibar::ActionButtonInputs iBarInputs{};
             iBarInputs.desired2DView = displayState.desired2DView;
             iBarInputs.ruleMode = effectiveRuleMode;
-            iBarInputs.rulePlayer = iBarRules.player;
+            iBarInputs.rulePlayer = projectedIBarPlayer;
+            iBarInputs.trackRules = !ibar::stateReadOnly().localRuleModeActive;
             iBarInputs.tradeEligible = tradeEligible;
             iBarInputs.rollDiceDesired = dicePrompt.currentStartTurn;
             iBarInputs.raiseCashCanBankrupt = iBarRules.raiseCashCanBankrupt;
@@ -548,7 +551,10 @@ namespace monopoly::engine
                 ? (bssmAvailability.unmortgageProperties & selectedBit) != 0
                 : bssmAvailability.unmortgageProperties != 0;
             iBarInputs.aiButtonRemoteState =
-                !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
+                effectiveRuleMode == ibar::RuleMode::OtherPlayerRemote
+                    ? false
+                    : iBarActivePlayer != rules::BankPlayer &&
+                      !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
             iBarInputs.bankHovered =
                 iBarState.playerCurrentMouseOver ==
                     static_cast<int>(rules::BankPlayer);

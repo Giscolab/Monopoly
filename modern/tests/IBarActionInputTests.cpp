@@ -7,6 +7,7 @@
 #include "PlayerSelection.hpp"
 #include "UserInterface.hpp"
 
+#include <array>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -18,6 +19,7 @@ namespace test_support
     monopoly::rules::GameState ruleState{};
     std::vector<monopoly::actions::Message> sent;
     std::optional<monopoly::rules::PlayerNumber> clickedPlayer;
+    std::array<bool, monopoly::rules::MaxPlayers> localHuman{{true, true, true, true, true, true}};
 }
 
 namespace monopoly::display
@@ -28,7 +30,10 @@ namespace monopoly::display
 namespace monopoly::ui::localplayers
 {
     bool slotIsLocalPlayer(rules::PlayerNumber) { return true; }
-    bool slotIsLocalHumanPlayer(rules::PlayerNumber) { return true; }
+    bool slotIsLocalHumanPlayer(rules::PlayerNumber player)
+    {
+        return player < rules::MaxPlayers && test_support::localHuman[player];
+    }
     bool slotIsLocalAIPlayer(rules::PlayerNumber) { return false; }
 }
 
@@ -176,6 +181,78 @@ namespace
             "moving from player score box to bank preserves legacy shared hover state");
     }
 
+
+  void testPlayerBankSelectionTracking()
+    {
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::ruleState.numberOfPlayers = 2;
+        test_support::localHuman[0] = true;
+        test_support::localHuman[1] = true;
+        ibar::show();
+
+        require(ibar::resolveRuleMode(ibar::RuleMode::DoneTurn, 0) ==
+                    ibar::RuleMode::DoneTurn &&
+                ibar::resolveRulePlayer(0) == 0,
+            "IBar initially tracks projected RULE player");
+
+        const auto player1Rect = ibar::stateReadOnly().players[1].rect;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            player1Rect.left + 1, player1Rect.top + 1});
+        require(ibar::stateReadOnly().localRuleModeActive &&
+                ibar::stateReadOnly().localRuleMode == ibar::RuleMode::OtherPlayer &&
+                ibar::stateReadOnly().localRulePlayer == 1 &&
+                ibar::resolveRuleMode(ibar::RuleMode::DoneTurn, 0) == ibar::RuleMode::OtherPlayer &&
+                ibar::resolveRulePlayer(0) == 1,
+            "clicking another local human enters persistent OtherPlayer selection");
+
+        require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::OtherPlayer &&
+                ibar::resolveRulePlayer(0) == 1,
+            "wandering player selection survives subsequent RULE state change");
+
+        ibar::setRuleActionHitState(Layout::General,
+            mask({Slot::General1, Slot::Main}), ibar::RuleMode::OtherPlayer, 1, false);
+        click(Slot::General1, Layout::General);
+        require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::Build &&
+                ibar::resolveRulePlayer(0) == 1,
+            "BSSM entered while wandering preserves selected player");
+        ibar::setRuleActionHitState(Layout::General, mask({Slot::Main}),
+            ibar::RuleMode::Build, 1, false);
+        click(Slot::Main, Layout::General);
+        require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::OtherPlayer &&
+                ibar::resolveRulePlayer(0) == 1,
+            "Done from BSSM returns to inspected local player before tracking");
+        ibar::setRuleActionHitState(Layout::General, mask({Slot::Main}),
+            ibar::RuleMode::OtherPlayer, 1, false);
+        click(Slot::Main, Layout::General);
+        require(!ibar::stateReadOnly().localRuleModeActive &&
+                ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::StartTurn &&
+                ibar::resolveRulePlayer(0) == 0,
+            "Done from OtherPlayer restores tracking of latest RULE player");
+
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, 755, 560});
+        require(ibar::stateReadOnly().localRuleMode == ibar::RuleMode::OtherPlayer &&
+                ibar::resolveRulePlayer(0) == rules::BankPlayer,
+            "clicking Bank enters local OtherPlayer mode for RULE_MAX_PLAYERS");
+        ibar::setRuleActionHitState(Layout::General, mask({Slot::Main}),
+            ibar::RuleMode::OtherPlayer, rules::BankPlayer, false);
+        click(Slot::Main, Layout::General);
+        require(!ibar::stateReadOnly().localRuleModeActive && ibar::resolveRulePlayer(0) == 0,
+            "Bank OtherPlayer Done returns to RULE tracking");
+
+        test_support::localHuman[1] = false;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            player1Rect.left + 1, player1Rect.top + 1});
+        require(ibar::stateReadOnly().localRuleMode == ibar::RuleMode::OtherPlayerRemote &&
+                ibar::resolveRulePlayer(0) == 1,
+            "clicking non-local player enters OtherPlayerRemote");
+        ibar::setRuleActionHitState(Layout::General, mask({Slot::Main}),
+            ibar::RuleMode::OtherPlayerRemote, 1, false);
+        click(Slot::Main, Layout::General);
+        require(!ibar::stateReadOnly().localRuleModeActive &&
+                ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::StartTurn,
+            "OtherPlayerRemote Done is local and restores tracking");
+        test_support::localHuman[1] = true;
+    }
 
     void testBankMouseOverTracking()
     {
@@ -437,10 +514,16 @@ namespace
                     ibar::RuleMode::Sell,
             "Sell button enters local Sell substate");
         require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) ==
-                    ibar::RuleMode::StartTurn,
-            "RULE mode change cancels local BSSM override automatically");
+                    ibar::RuleMode::Sell,
+            "local BSSM override survives RULE mode change while IBar tracking is off");
+        setHit(ibar::RuleMode::Sell, Layout::General, mask({Slot::Main}));
+        click(Slot::Main, Layout::General);
+        require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) ==
+                    ibar::RuleMode::StartTurn &&
+                ibar::resolveRulePlayer(0) == 0,
+            "Done returns tracked player to latest projected RULE state");
 
-        setHit(ibar::RuleMode::DoneTurn, Layout::General, mask({Slot::Main}));
+        setHit(ibar::RuleMode::StartTurn, Layout::General, mask({Slot::Main}));
         ibar::setPropertyHitState(
             ibar::layout::propertyBit(1) | ibar::layout::propertyBit(3));
         clickProperty(3);
@@ -524,6 +607,7 @@ int main()
         monopoly::ibar::initialize();
         testMaskedHitFiltering();
         testPlayerScoreMouseOverTracking();
+        testPlayerBankSelectionTracking();
         testBankMouseOverTracking();
         testPropertyMouseOverTracking();
         testBuyAuctionAndTax();
