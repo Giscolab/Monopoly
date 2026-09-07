@@ -23,15 +23,20 @@ namespace monopoly::engine
         SequenceWorld2DSyncStats stats;
         for (const auto& item : items)
         {
-            auto asset = cache.resolve(item.contentsDataId, item.metadata.type, item.bytes);
-            if (!asset) return std::unexpected(asset.error().detail);
+            auto asset = item.runtimeAsset;
+            if (!asset)
+            {
+                auto decoded = cache.resolve(item.contentsDataId, item.metadata.type, item.bytes);
+                if (!decoded) return std::unexpected(decoded.error().detail);
+                asset = *decoded;
+            }
             const auto* old = find(item.node);
             if (!old) ++stats.started;
-            else if (old->asset != *asset || old->priority != item.priority ||
+            else if (old->asset != asset || old->priority != item.priority ||
                 old->worldTransform.values != item.worldTransform.values) ++stats.moved;
             else ++stats.unchanged;
             next.emplace(item.node, SequenceWorld2DObject{item.node, item.contentsDataId,
-                item.priority, item.clock, item.worldTransform, *asset});
+                item.priority, item.clock, item.worldTransform, asset});
             order.push_back(item.node);
         }
         for (const auto& [id, object] : objects_)

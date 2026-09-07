@@ -7,6 +7,7 @@
 #include "Display.hpp"
 #include "BoardRules.hpp"
 #include "BoardOwnershipHighlight.hpp"
+#include "BoardBackdropPlayback.hpp"
 #include "RuleBuildings.hpp"
 #include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
@@ -50,6 +51,7 @@ namespace monopoly::engine
         pieces::PieceIdlePlayback pieceIdlePlayback;
         pieces::PieceIdleDisplay pieceIdleDisplay;
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
+        boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
         boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
         dice::Playback dicePlayback;
         dice::TwoDPlayback dice2DPlayback;
@@ -140,7 +142,7 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> syncBoardPlayback(
             SequencePlayback& session, const display::State& state)
         {
-            const bool shouldRun = display::isBoardVisible(state.desired2DView);
+            const bool shouldRun = state.board3DOn;
             if (!shouldRun)
             {
                 if (!activeBoardSequence) return {};
@@ -642,6 +644,14 @@ namespace monopoly::engine
             if (!buildingSync)
                 return SDL_SetError("Piece building display: %s",
                     buildingSync.error().c_str());
+            const boarddisplay::BoardBackdropInputs backdropInputs{
+                displayState.desired2DView, displayState.game3DOn,
+                displayState.desiredBoardCamera, static_cast<std::uint32_t>(tick)};
+            const auto boardBackdropSync = boardBackdropPlayback.sync(
+                backdropInputs, *session);
+            if (!boardBackdropSync)
+                return SDL_SetError("Board backdrop playback: %s",
+                    boardBackdropSync.error().c_str());
             const auto boardSync = syncBoardPlayback(*session, displayState);
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
@@ -707,6 +717,7 @@ namespace monopoly::engine
         pieceIdlePlayback = {};
         pieceIdleDisplay.reset();
         pieceBuildingDisplay.reset();
+        boardBackdropPlayback.reset();
         ownershipHighlightPlayback.reset();
         if (diceQueueLockHeld) userinterface::unlockGameQueue();
         diceQueueLockHeld = false;

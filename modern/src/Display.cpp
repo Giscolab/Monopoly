@@ -116,7 +116,8 @@ namespace monopoly::display
         }
         void applyDesiredBoardCamera()
         {
-            const bool shouldBoard3DBeOn = isBoardVisible(globalState.desired2DView);
+            const bool shouldBoard3DBeOn = globalState.game3DOn &&
+                isBoardVisible(globalState.desired2DView);
             const bool boardModeChanged = shouldBoard3DBeOn != globalState.board3DOn;
             const bool cameraChanged = !globalState.currentBoardCamera ||
                 *globalState.currentBoardCamera != globalState.desiredBoardCamera;

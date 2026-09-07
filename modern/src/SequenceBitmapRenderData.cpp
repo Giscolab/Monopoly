@@ -1,4 +1,5 @@
 #include "SequenceBitmapRenderData.hpp"
+#include "RuntimeBitmapSurface.hpp"
 
 namespace monopoly::sequence
 {
@@ -17,7 +18,8 @@ namespace monopoly::sequence
     std::expected<std::vector<SequenceBitmapRenderItem>,
         SequenceBitmapRenderDataError> collectSequenceBitmapRenderData(
             const SequenceRuntime& runtime,
-            std::shared_ptr<const data::ResourceSnapshot> resources)
+            std::shared_ptr<const data::ResourceSnapshot> resources,
+            const data::RuntimeBitmapStore* runtimeBitmaps)
     {
         if (!resources)
             return std::unexpected(error(
@@ -27,6 +29,19 @@ namespace monopoly::sequence
         std::vector<SequenceBitmapRenderItem> result;
         for (const auto& instance : runtime.bitmapInstances())
         {
+            if (runtimeBitmaps)
+            {
+                if (auto runtimeAsset = runtimeBitmaps->asset(instance.contentsDataId))
+                {
+                    const auto& image = runtimeAsset->image;
+                    result.push_back({instance.node, instance.contentsDataId,
+                        instance.priority, instance.clock, instance.worldTransform,
+                        {data::LegacyDataType::Native, image.width, image.height, 0, 0, 32},
+                        {}, std::move(runtimeAsset)});
+                    continue;
+                }
+            }
+
             const auto metadata = resources->banks().metadata(instance.contentsDataId);
             if (!metadata)
                 return std::unexpected(error(

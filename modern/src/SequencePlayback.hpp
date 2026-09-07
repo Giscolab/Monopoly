@@ -3,6 +3,7 @@
 #include "SequenceCommands.hpp"
 #include "SequenceWorld3DSlot.hpp"
 #include "SequenceWorld2DSlot.hpp"
+#include "RuntimeBitmapSurface.hpp"
 
 namespace monopoly::engine
 {
@@ -17,6 +18,10 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> startXY(
             data::DataId id, std::uint16_t priority,
             std::int32_t x, std::int32_t y, bool dropFrames = false);
+        [[nodiscard]] std::expected<void, std::string> transitionXY(
+            std::optional<data::DataId> previousId, data::DataId id,
+            std::uint16_t priority, std::int32_t x, std::int32_t y,
+            bool dropFrames = false);
         [[nodiscard]] std::expected<void, std::string> setEndingAction(
             data::DataId id, std::uint16_t priority, std::uint8_t action);
         [[nodiscard]] std::expected<void, std::string> startMoved(
@@ -43,10 +48,16 @@ namespace monopoly::engine
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }
         SequenceWorld3DSlot& world() noexcept { return world_; }
         SequenceWorld2DSlot& world2D() noexcept { return world2D_; }
+        data::RuntimeBitmapStore& runtimeBitmaps() noexcept { return runtimeBitmaps_; }
+        const data::RuntimeBitmapStore& runtimeBitmaps() const noexcept { return runtimeBitmaps_; }
         std::shared_ptr<const data::ResourceSnapshot> resources() const noexcept
         { return meshes_.resources(); }
     private:
+        [[nodiscard]] std::expected<std::shared_ptr<const sequence::SequenceProgram>, std::string>
+            loadProgram(data::DataId id);
+
         data::MeshRuntimeCache meshes_;
+        data::RuntimeBitmapStore runtimeBitmaps_;
         sequence::SequenceRuntime runtime_;
         sequence::SequenceCommandQueue commands_;
         SequenceWorld3DSlot world_;

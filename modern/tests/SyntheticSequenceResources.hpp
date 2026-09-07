@@ -143,8 +143,25 @@ struct SyntheticSequenceResources
             }
             else if (i == 2)
             {
-                // Test-only UDBoard normal ownership UAP for camera 1, property 0, colour 2.
                 items.resize(0x0405);
+                // Test-only USA UDBoard DataBMP backdrops: 39 Main views followed
+                // by the 39 Trade/Portfolio views. Pixel 0 encodes the camera.
+                for (std::uint32_t camera = 0; camera < 39; ++camera)
+                {
+                    auto mainBoard = bitmap24();
+                    mainBoard[62] = std::byte{0};
+                    mainBoard[63] = std::byte{0};
+                    mainBoard[64] = static_cast<std::byte>(camera + 1U);
+                    items[camera] = {LegacyDataType::Bitmap, std::move(mainBoard)};
+
+                    auto tradeBoard = bitmap24();
+                    tradeBoard[62] = std::byte{0};
+                    tradeBoard[63] = static_cast<std::byte>(camera + 1U);
+                    tradeBoard[64] = std::byte{0};
+                    items[0x01ADU + camera] =
+                        {LegacyDataType::Bitmap, std::move(tradeBoard)};
+                }
+                // Test-only UDBoard normal ownership UAP for camera 1, property 0, colour 2.
                 items[0x0404] = {LegacyDataType::Uap, uap8()};
             }
             else if (i == 3)

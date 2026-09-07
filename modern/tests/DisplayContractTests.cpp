@@ -163,9 +163,14 @@ namespace
             "camera is forced instantly while 3D board is off");
 
         setBackdrop(Screen2D::Main);
+        state().game3DOn = false;
+        showAll2();
+        expect(!stateReadOnly().board3DOn,
+            "Main keeps board3DOn off when game3DOn disables the 3D board");
+        state().game3DOn = true;
         showAll2();
         expect(stateReadOnly().board3DOn,
-            "Main activates historical board3DOn state");
+            "Main activates board3DOn when game3DOn is enabled");
 
         state().desiredBoardCamera = pieces::BoardCameraView::FifteenTiles12;
         showAll2();

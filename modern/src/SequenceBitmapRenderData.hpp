@@ -9,6 +9,12 @@
 #include <string>
 #include <vector>
 
+namespace monopoly::data
+{
+    class RuntimeBitmapStore;
+    struct BitmapRuntimeAsset;
+}
+
 namespace monopoly::sequence
 {
     enum class SequenceBitmapRenderDataErrorCode
@@ -46,10 +52,12 @@ namespace monopoly::sequence
         Matrix2D worldTransform{};
         SequenceBitmapMetadata metadata{};
         data::SharedDataBytes bytes;
+        std::shared_ptr<const data::BitmapRuntimeAsset> runtimeAsset;
     };
 
     [[nodiscard]] std::expected<std::vector<SequenceBitmapRenderItem>,
         SequenceBitmapRenderDataError> collectSequenceBitmapRenderData(
             const SequenceRuntime& runtime,
-            std::shared_ptr<const data::ResourceSnapshot> resources);
+            std::shared_ptr<const data::ResourceSnapshot> resources,
+            const data::RuntimeBitmapStore* runtimeBitmaps = nullptr);
 }
