@@ -61,7 +61,12 @@ namespace monopoly::ui::playersetup
 
         AIEasy,
         AIMedium,
-        AIHard
+        AIHard,
+
+        CityClassic,
+        CityLeft,
+        CityRight,
+        CityNext
     };
 
 
@@ -94,7 +99,8 @@ namespace monopoly::ui::playersetup
 
         AddLocalPlayer,
         RemoveLocalPlayer,
-        StartGame
+        StartGame,
+        CommitCity
     };
 
 
@@ -112,6 +118,8 @@ namespace monopoly::ui::playersetup
         std::uint8_t colour = 0;
 
         std::uint8_t aiLevel = 0;
+
+        int city = 0;
 
 
         rules::PlayerNumber player =
@@ -136,6 +144,8 @@ namespace monopoly::ui::playersetup
         std::uint8_t token = 0;
 
         std::uint8_t aiLevel = 0;
+
+        int citySelected = 0;
 
 
         bool customRulesDesired =

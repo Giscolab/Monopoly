@@ -514,6 +514,53 @@ namespace
     }
 
 
+    void testCitySelection()
+    {
+        using namespace monopoly;
+        using namespace monopoly::ui::playersetup;
+
+        expect(buttonAt(Phase::SelectCity, 73, 214) == Button::CityClassic &&
+            buttonAt(Phase::SelectCity, 292, 275) == Button::CityClassic &&
+            buttonAt(Phase::SelectCity, 293, 275) == Button::None,
+            "SelectCity Classic rectangle is exact");
+        expect(buttonAt(Phase::SelectCity, 320, 408) == Button::CityLeft &&
+            buttonAt(Phase::SelectCity, 342, 420) == Button::CityLeft,
+            "SelectCity Left rectangle is exact");
+        expect(buttonAt(Phase::SelectCity, 458, 408) == Button::CityRight &&
+            buttonAt(Phase::SelectCity, 480, 420) == Button::CityRight,
+            "SelectCity Right rectangle is exact");
+        expect(buttonAt(Phase::SelectCity, 341, 434) == Button::CityNext &&
+            buttonAt(Phase::SelectCity, 467, 469) == Button::CityNext,
+            "SelectCity Next rectangle is exact");
+
+        rules::GameState uiState{};
+        State state{};
+        initialize(state, true);
+        requestPhase(state, uiState, Phase::SelectCity);
+
+        expect(clickButton(state, uiState, Button::CityLeft).type == CommandType::None &&
+            state.citySelected == 10,
+            "SelectCity Left wraps city 0 to city 10");
+        expect(clickButton(state, uiState, Button::CityRight).type == CommandType::None &&
+            state.citySelected == 0,
+            "SelectCity Right wraps city 10 to city 0");
+
+        state.citySelected = 7;
+        const auto classic = clickButton(state, uiState, Button::CityClassic);
+        expect(classic.type == CommandType::CommitCity && classic.city == 0 &&
+            state.citySelected == 0 &&
+            state.phase == Phase::StandardOrCustomRules,
+            "SelectCity Classic commits city 0 then advances");
+
+        requestPhase(state, uiState, Phase::SelectCity);
+        state.citySelected = 10;
+        const auto next = clickButton(state, uiState, Button::CityNext);
+        expect(next.type == CommandType::CommitCity && next.city == 10 &&
+            state.phase == Phase::StandardOrCustomRules,
+            "SelectCity Next commits the selected city then advances");
+    }
+
+
     void testStartGame()
     {
         using namespace monopoly;
@@ -650,6 +697,7 @@ int main()
     testHumanFlow();
     testAIFlow();
     testHotspots();
+    testCitySelection();
     testStartGame();
     testRemovePlayer();
 

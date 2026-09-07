@@ -647,7 +647,7 @@ namespace monopoly::engine
                 return SDL_SetError("Piece building display: %s",
                     buildingSync.error().c_str());
             const boarddisplay::BoardBackdropInputs backdropInputs{
-                displayState.desired2DView, displayState.game3DOn,
+                displayState.desired2DView, displayState.game3DOn, displayState.city,
                 displayState.desiredBoardCamera, static_cast<std::uint32_t>(tick)};
             const auto boardBackdropSync = boardBackdropPlayback.sync(
                 backdropInputs, *session);

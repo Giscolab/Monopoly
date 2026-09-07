@@ -321,6 +321,10 @@ namespace monopoly::playerselection
                     .startButtonPressed;
 
 
+            setupFlowState.citySelected =
+                globalState.playerInfo.citySelected;
+
+
             setupFlowState.serverMode =
                 messaging::serverMode();
 
@@ -346,6 +350,10 @@ namespace monopoly::playerselection
 
             globalState.playerInfo.startButtonPressed =
                 setupFlowState.startButtonPressed;
+
+
+            globalState.playerInfo.citySelected =
+                setupFlowState.citySelected;
         }
 
 
@@ -572,6 +580,15 @@ namespace monopoly::playerselection
                         );
                     }
 
+                    break;
+                }
+
+
+                case ui::playersetup::
+                    CommandType::CommitCity:
+                {
+                    globalState.playerInfo.citySelected = command.city;
+                    display::state().city = command.city;
                     break;
                 }
 

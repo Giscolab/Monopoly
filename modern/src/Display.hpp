@@ -97,6 +97,7 @@ namespace monopoly::display
         pieces::BoardCameraView desiredBoardCamera =
             pieces::BoardCameraView::TopDownSoccer;
         std::optional<pieces::BoardCameraView> currentBoardCamera;
+        int city = 0;
         bool game3DOn = true;
         bool board3DOn = false;
         bool mouseLeftPressed = false;
