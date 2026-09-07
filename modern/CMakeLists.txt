@@ -1418,6 +1418,7 @@ if(BUILD_TESTING)
         tests/DisplayContractTests.cpp
         src/Display.cpp
         src/BoardCameraController.cpp
+        src/PieceCamera.cpp
     )
 
     target_include_directories(

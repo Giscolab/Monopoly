@@ -27,7 +27,8 @@ namespace monopoly::boardcamera
         void reset(std::uint64_t tick = 0) noexcept;
         [[nodiscard]] Update tick(std::uint64_t tick) noexcept;
         void requestPreset(pieces::BoardCameraView view,
-            std::uint64_t tick, bool forceInterrupt = false) noexcept;
+            std::uint64_t tick, bool forceInterrupt = false,
+            bool manualRequest = false) noexcept;
         void requestDiceMove(std::uint64_t tick,
             std::uint8_t randomFourteen) noexcept;
         void requestDemoPreset(pieces::BoardCameraView view,
@@ -76,5 +77,6 @@ namespace monopoly::boardcamera
         std::optional<engine::World3DCamera> waiting_;
         engine::World3DCamera current_{};
         bool manualMouseActive_{};
+        bool manualPresetRequested_{};
     };
 }

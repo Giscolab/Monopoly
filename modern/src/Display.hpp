@@ -102,6 +102,7 @@ namespace monopoly::display
         bool mouseLeftPressed = false;
         bool mouseRightPressed = false;
         bool manualMouseCamLock = false;
+        bool manualCameraRequested = false;
         std::uint64_t manualMouseCamTime = 0;
         std::uint64_t lastBoardActivityTick = 0;
         bool demoModeDesired = false;
@@ -150,6 +151,7 @@ namespace monopoly::display
     void cancelDiceCameraOverride();
 
     void noteBoardActivity() noexcept;
+    void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept;
     void setTokenAnimationStackActive(bool active) noexcept;
     void processBoardInput(const uimsg::Message& message);
     void tickActions(std::uint64_t numberOfTicks);
