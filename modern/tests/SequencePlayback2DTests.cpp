@@ -14,6 +14,42 @@ namespace
         if (!condition) ++failures;
     }
 
+    void testRawUapStartAndOrigin()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto raw = data::packDataId(data::LegacyGroupId::Main, 0x00A2);
+        const auto bytes = resources.service.snapshot()->banks().load(raw);
+        const auto metadata = bytes ? data::inspectLegacyUap(**bytes) :
+            std::expected<data::LegacyUapMetadata, data::BitmapError>(
+                std::unexpected(data::BitmapError{data::BitmapErrorCode::ReadFailed, {},
+                    "raw UAP fixture did not load"}));
+        expect(metadata && metadata->originX == -7 && metadata->originY == 13,
+            "raw UAP fixture exposes StartCXYSlot origin (-7,13)");
+        if (!metadata) return;
+
+        expect(playback.startXY(raw, 12, metadata->originX, metadata->originY).has_value(),
+            "StartCXYSlot equivalent queues raw UAP at its embedded origin");
+        expect(playback.update(0).has_value(),
+            "raw UAP executes through SequencePlayback and Overlay2D sync");
+        const auto instances = playback.runtime().bitmapInstances();
+        expect(instances.size() == 1 && instances.front().contentsDataId == raw &&
+            instances.front().priority == 12 &&
+            instances.front().worldTransform.values[6] == -7.0F &&
+            instances.front().worldTransform.values[7] == 13.0F,
+            "raw UAP runtime publishes exact origin transform at board priority");
+        const auto* object = instances.empty() ? nullptr :
+            playback.world2D().find(instances.front().node);
+        expect(object && object->asset &&
+            object->asset->sourceType == data::LegacyDataType::Uap &&
+            object->asset->image.width == 3 && object->asset->image.height == 2,
+            "raw UAP reaches Overlay2D as decoded immutable RGBA8");
+        expect(playback.update(600).has_value() &&
+            playback.runtime().matching(raw, 12, false).size() == 1,
+            "raw UAP synthetic sequence remains infinite across later parent ticks");
+    }
+
     void testFixedAndBobbingDice2D()
     {
         using namespace monopoly;
@@ -61,7 +97,7 @@ int main()
 {
     std::cout << "Monopoly SequencePlayback 2D tests\n"
               << "==================================\n";
-    try { testFixedAndBobbingDice2D(); }
+    try { testRawUapStartAndOrigin(); testFixedAndBobbingDice2D(); }
     catch (const std::exception& e)
     {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << '\n';

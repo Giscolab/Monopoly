@@ -32,25 +32,50 @@ namespace monopoly::sequence
                 return std::unexpected(error(
                     SequenceBitmapRenderDataErrorCode::MetadataFailed,
                     instance.node, instance.contentsDataId, metadata.error().detail));
-            if (metadata->type != data::LegacyDataType::Bitmap)
+            if (metadata->type != data::LegacyDataType::Bitmap &&
+                metadata->type != data::LegacyDataType::Uap)
                 return std::unexpected(error(
                     SequenceBitmapRenderDataErrorCode::TypeMismatch,
                     instance.node, instance.contentsDataId,
-                    "2D sequence content is not LE_DATA_DataBMP"));
+                    "2D sequence content is neither LE_DATA_DataBMP nor LE_DATA_DataUAP"));
 
             const auto bytes = resources->banks().load(instance.contentsDataId);
             if (!bytes)
                 return std::unexpected(error(
                     SequenceBitmapRenderDataErrorCode::LoadFailed,
                     instance.node, instance.contentsDataId, bytes.error().detail));
-            const auto bitmap = data::inspectLegacyBitmap(**bytes);
-            if (!bitmap)
-                return std::unexpected(error(
-                    SequenceBitmapRenderDataErrorCode::InvalidBitmap,
-                    instance.node, instance.contentsDataId, bitmap.error().detail));
+
+            SequenceBitmapMetadata renderMetadata{};
+            renderMetadata.type = metadata->type;
+            if (metadata->type == data::LegacyDataType::Bitmap)
+            {
+                const auto bitmap = data::inspectLegacyBitmap(**bytes);
+                if (!bitmap)
+                    return std::unexpected(error(
+                        SequenceBitmapRenderDataErrorCode::InvalidBitmap,
+                        instance.node, instance.contentsDataId, bitmap.error().detail));
+                renderMetadata.width = static_cast<std::uint32_t>(bitmap->width);
+                renderMetadata.height = static_cast<std::uint32_t>(
+                    bitmap->topDown() ? -static_cast<std::int64_t>(bitmap->height) : bitmap->height);
+                renderMetadata.bitsPerPixel = bitmap->bitsPerPixel;
+            }
+            else
+            {
+                const auto bitmap = data::inspectLegacyUap(**bytes);
+                if (!bitmap)
+                    return std::unexpected(error(
+                        SequenceBitmapRenderDataErrorCode::InvalidBitmap,
+                        instance.node, instance.contentsDataId, bitmap.error().detail));
+                renderMetadata.width = bitmap->width;
+                renderMetadata.height = bitmap->height;
+                renderMetadata.originX = bitmap->originX;
+                renderMetadata.originY = bitmap->originY;
+                renderMetadata.bitsPerPixel = 8;
+            }
+
             result.push_back({instance.node, instance.contentsDataId,
                 instance.priority, instance.clock, instance.worldTransform,
-                *bitmap, *bytes});
+                renderMetadata, *bytes});
         }
         return result;
     }

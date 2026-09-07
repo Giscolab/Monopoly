@@ -23,7 +23,7 @@ namespace monopoly::engine
         SequenceWorld2DSyncStats stats;
         for (const auto& item : items)
         {
-            auto asset = cache.resolve(item.contentsDataId, item.bytes);
+            auto asset = cache.resolve(item.contentsDataId, item.metadata.type, item.bytes);
             if (!asset) return std::unexpected(asset.error().detail);
             const auto* old = find(item.node);
             if (!old) ++stats.started;

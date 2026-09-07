@@ -1,5 +1,6 @@
 #include "LegacyBitmap.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <limits>
 #include <utility>
@@ -101,6 +102,7 @@ namespace monopoly::data
         {
         case BitmapErrorCode::InvalidPalette: return "InvalidPalette";
         case BitmapErrorCode::DecodeBudgetExceeded: return "DecodeBudgetExceeded";
+        case BitmapErrorCode::UnsupportedDataType: return "UnsupportedDataType";
         case BitmapErrorCode::None: return "None";
         case BitmapErrorCode::FileOpenFailed: return "FileOpenFailed";
         case BitmapErrorCode::ReadFailed: return "ReadFailed";
@@ -120,6 +122,128 @@ namespace monopoly::data
         }
 
         return "InvalidBitmapErrorCode";
+    }
+
+
+    std::expected<LegacyUapMetadata, BitmapError> inspectLegacyUap(
+        std::span<const std::byte> bytes)
+    {
+        constexpr std::size_t HeaderSize = 16;
+        constexpr std::size_t PaletteEntrySize = 8;
+        if (bytes.size() < HeaderSize)
+            return std::unexpected(error(BitmapErrorCode::HeaderTruncated,
+                "UAP requires a complete 16-byte NEWBITMAPHEADER"));
+
+        LegacyUapMetadata metadata{};
+        metadata.width = readU16Le(bytes.data());
+        metadata.height = readU16Le(bytes.data() + 2);
+        metadata.originX = static_cast<std::int16_t>(readU16Le(bytes.data() + 4));
+        metadata.originY = static_cast<std::int16_t>(readU16Le(bytes.data() + 6));
+        metadata.flags = readU32Le(bytes.data() + 8);
+        metadata.colourCount = readU16Le(bytes.data() + 12);
+        metadata.alphaCount = readU16Le(bytes.data() + 14);
+
+        if (metadata.width == 0 || metadata.height == 0)
+            return std::unexpected(error(BitmapErrorCode::InvalidDimensions,
+                "UAP dimensions must be non-zero"));
+        if (metadata.colourCount == 0 || metadata.colourCount > 256 ||
+            metadata.alphaCount > metadata.colourCount)
+            return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                "UAP palette must contain 1..256 entries and bound nAlpha"));
+
+        std::uint64_t paletteBytes{};
+        std::uint64_t pixelOffset{};
+        if (!checkedMultiply(metadata.colourCount, PaletteEntrySize, paletteBytes) ||
+            !checkedAdd(HeaderSize, paletteBytes, pixelOffset) ||
+            pixelOffset > bytes.size())
+            return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                "UAP palette exceeds immutable payload bounds"));
+
+        metadata.pixelDataOffset = static_cast<std::size_t>(pixelOffset);
+        metadata.rowStride = (static_cast<std::size_t>(metadata.width) + 3U) & ~std::size_t{3U};
+        std::uint64_t rasterBytes{};
+        std::uint64_t rasterEnd{};
+        if (!checkedMultiply(metadata.rowStride, metadata.height, rasterBytes) ||
+            !checkedAdd(pixelOffset, rasterBytes, rasterEnd) || rasterEnd > bytes.size())
+            return std::unexpected(error(BitmapErrorCode::PixelDataOutOfRange,
+                "UAP top-down DWORD-padded raster is truncated"));
+
+        constexpr std::uint32_t AlphaChannel = 0x02U;
+        if ((metadata.flags & AlphaChannel) != 0 && metadata.alphaCount == 0)
+            return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                "UAP alpha-channel flag requires at least one alpha palette entry"));
+        return metadata;
+    }
+
+
+    std::expected<LegacyBitmapRGBA8, BitmapError> decodeLegacyUapRGBA8(
+        std::span<const std::byte> bytes, std::size_t maxPixels)
+    {
+        const auto inspected = inspectLegacyUap(bytes);
+        if (!inspected) return std::unexpected(inspected.error());
+        const auto& m = *inspected;
+        const std::uint64_t count =
+            static_cast<std::uint64_t>(m.width) * m.height;
+        if (count > maxPixels || count > std::numeric_limits<std::size_t>::max() / 4U)
+            return std::unexpected(error(BitmapErrorCode::DecodeBudgetExceeded,
+                "decoded UAP exceeds pixel allocation budget"));
+
+        constexpr std::uint32_t NoTransparency = 0x01U;
+        constexpr std::uint32_t AlphaChannel = 0x02U;
+        const bool solid = (m.flags & NoTransparency) != 0;
+        const bool alphaChannel = (m.flags & AlphaChannel) != 0;
+        constexpr std::size_t HeaderSize = 16;
+        constexpr std::size_t PaletteEntrySize = 8;
+        LegacyBitmapRGBA8 result{m.width, m.height, {}};
+        result.pixels.resize(static_cast<std::size_t>(count) * 4U);
+
+        for (std::uint32_t y = 0; y < m.height; ++y)
+        {
+            const auto* row = bytes.data() + m.pixelDataOffset +
+                static_cast<std::size_t>(y) * m.rowStride;
+            for (std::uint32_t x = 0; x < m.width; ++x)
+            {
+                const auto index = std::to_integer<std::uint8_t>(row[x]);
+                if (index >= m.colourCount)
+                    return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                        "UAP raster references an absent palette entry"));
+                const auto* entry = bytes.data() + HeaderSize +
+                    static_cast<std::size_t>(index) * PaletteEntrySize;
+                const auto storedBlue = std::to_integer<std::uint8_t>(entry[0]);
+                const auto storedGreen = std::to_integer<std::uint8_t>(entry[1]);
+                const auto storedRed = std::to_integer<std::uint8_t>(entry[2]);
+
+                std::uint32_t alpha = 255;
+                if (alphaChannel && index < m.alphaCount)
+                {
+                    alpha = readU32Le(entry + 4);
+                    if (alpha > 255)
+                        return std::unexpected(error(BitmapErrorCode::InvalidPalette,
+                            "UAP alpha palette value exceeds 8-bit ArtLib range"));
+                }
+                else if (!alphaChannel && !solid && index == 0)
+                {
+                    alpha = 0;
+                }
+
+                const auto straight = [alpha](std::uint8_t premultiplied) -> std::uint8_t
+                {
+                    if (alpha == 0) return 0;
+                    if (alpha >= 255) return premultiplied;
+                    const auto value =
+                        (static_cast<std::uint32_t>(premultiplied) * 255U + alpha / 2U) / alpha;
+                    return static_cast<std::uint8_t>(std::min(value, 255U));
+                };
+                const bool premultiplied = alphaChannel && index < m.alphaCount;
+                const auto offset =
+                    (static_cast<std::size_t>(y) * m.width + x) * 4U;
+                result.pixels[offset] = premultiplied ? straight(storedRed) : storedRed;
+                result.pixels[offset + 1] = premultiplied ? straight(storedGreen) : storedGreen;
+                result.pixels[offset + 2] = premultiplied ? straight(storedBlue) : storedBlue;
+                result.pixels[offset + 3] = static_cast<std::uint8_t>(alpha);
+            }
+        }
+        return result;
     }
 
 

@@ -41,18 +41,41 @@ int main()
     check(!data::decodeLegacyBitmapRGBA8(palette), "invalid palette index rejected");
     palette[46]=std::byte{3};
     check(!data::decodeLegacyBitmapRGBA8(palette), "palette overlap rejected");
+    const auto uapBytes = SyntheticSequenceResources::uap8();
+    const auto uapMeta = data::inspectLegacyUap(uapBytes);
+    check(uapMeta && uapMeta->width == 3 && uapMeta->height == 2 &&
+            uapMeta->originX == -7 && uapMeta->originY == 13 &&
+            uapMeta->rowStride == 4,
+        "UAP NEWBITMAPHEADER preserves dimensions, signed origin and DWORD stride");
+    const auto uapImage = data::decodeLegacyUapRGBA8(uapBytes);
+    check(uapImage && uapImage->pixels == std::vector<std::uint8_t>{
+        0,0,0,0, 255,0,0,128, 0,255,0,255,
+        0,0,255,255, 0,255,0,255, 255,0,0,128},
+        "UAP decodes top-down palette, colour key and premultiplied alpha to straight RGBA8");
+    check(!data::decodeLegacyUapRGBA8(uapBytes, 5),
+        "UAP pixel budget rejects before allocation");
+    auto badUap = uapBytes; badUap.pop_back();
+    check(!data::inspectLegacyUap(badUap),
+        "truncated UAP padded raster is rejected");
+
     data::BitmapRuntimeCache cache;
     auto source = std::make_shared<const data::DataBytes>(SyntheticSequenceResources::bitmap24());
-    auto first = cache.resolve(7, source);
-    auto same = cache.resolve(7, source);
+    auto first = cache.resolve(7, data::LegacyDataType::Bitmap, source);
+    auto same = cache.resolve(7, data::LegacyDataType::Bitmap, source);
     check(first && same && *first == *same && cache.size()==1, "immutable bitmap cache reuse");
-    auto invalid = cache.resolve(7, std::make_shared<const data::DataBytes>());
-    check(!invalid && cache.resolve(7, source).value()==first.value(), "failed replacement preserves old cache asset");
-    auto replacement = cache.resolve(7, std::make_shared<const data::DataBytes>(*source));
+    auto invalid = cache.resolve(7, data::LegacyDataType::Bitmap, std::make_shared<const data::DataBytes>());
+    check(!invalid && cache.resolve(7, data::LegacyDataType::Bitmap, source).value()==first.value(), "failed replacement preserves old cache asset");
+    auto replacement = cache.resolve(7, data::LegacyDataType::Bitmap, std::make_shared<const data::DataBytes>(*source));
     check(replacement && *replacement != *first && (*first)->image.pixels==expected,
         "same DataId new snapshot payload replaces cache while old lease survives");
+    auto uapSource = std::make_shared<const data::DataBytes>(uapBytes);
+    auto uapAsset = cache.resolve(8, data::LegacyDataType::Uap, uapSource);
+    check(uapAsset && (*uapAsset)->sourceType == data::LegacyDataType::Uap &&
+            (*uapAsset)->image.width == 3 && (*uapAsset)->image.height == 2,
+        "bitmap runtime cache decodes and identifies immutable DataUAP assets");
     engine::SequenceWorld2DSlot slot;
-    sequence::SequenceBitmapRenderItem item{1,7,257,0,sequence::translate2D(-11,0),{},source};
+    sequence::SequenceBitmapRenderItem item{1,7,257,0,sequence::translate2D(-11,0),
+        {data::LegacyDataType::Bitmap,2,2,0,0,24},source};
     auto low=item; low.node=2; low.priority=256; low.worldTransform=sequence::translate2D(-35,0);
     auto stats=slot.sync({item,low},cache);
     check(stats && stats->started==2 && slot.order()==std::vector<sequence::SequenceNodeId>{1,2},

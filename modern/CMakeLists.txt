@@ -891,6 +891,7 @@ target_sources(
     PRIVATE
     src/BoardRules.cpp
     src/BoardGeometry.cpp
+    src/BoardOwnershipHighlight.cpp
     src/PiecePlacement.cpp
     src/PieceRuntime.cpp
     src/PieceCamera.cpp
@@ -1889,6 +1890,34 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TimeStepLock
         COMMAND MonopolyTimeStepLockTests
+    )
+endif()
+
+# UDBoard.cpp ownership/mortgage highlights, including raw DataUAP Main fallback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyBoardOwnershipHighlightTests
+        tests/BoardOwnershipHighlightTests.cpp
+        src/BoardOwnershipHighlight.cpp
+        src/BoardGeometry.cpp
+        src/BoardRules.cpp
+    )
+    target_include_directories(
+        MonopolyBoardOwnershipHighlightTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyBoardOwnershipHighlightTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyBoardOwnershipHighlightTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.BoardOwnershipHighlight
+        COMMAND MonopolyBoardOwnershipHighlightTests
     )
 endif()
 

@@ -6,6 +6,7 @@
 #include "ExtendedInitialization.hpp"
 #include "Display.hpp"
 #include "BoardRules.hpp"
+#include "BoardOwnershipHighlight.hpp"
 #include "RuleBuildings.hpp"
 #include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
@@ -49,6 +50,7 @@ namespace monopoly::engine
         pieces::PieceIdlePlayback pieceIdlePlayback;
         pieces::PieceIdleDisplay pieceIdleDisplay;
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
+        boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
         dice::Playback dicePlayback;
         dice::TwoDPlayback dice2DPlayback;
         ibar::BackdropPlayback iBarBackdropPlayback;
@@ -644,6 +646,17 @@ namespace monopoly::engine
             if (!boardSync)
                 return SDL_SetError("Board sequence playback: %s",
                     boardSync.error().c_str());
+            const auto ownershipPlan = boarddisplay::planOwnershipHighlights(
+                ruleState, displayState.desired2DView, displayState.board3DOn,
+                displayState.desiredBoardCamera);
+            if (!ownershipPlan)
+                return SDL_SetError("Board ownership plan: %s",
+                    ownershipPlan.error().c_str());
+            const auto ownershipSync = ownershipHighlightPlayback.sync(
+                *ownershipPlan, *session);
+            if (!ownershipSync)
+                return SDL_SetError("Board ownership playback: %s",
+                    ownershipSync.error().c_str());
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             const auto viewport = display::worldViewport(displayState.viewportInUse);
@@ -694,6 +707,7 @@ namespace monopoly::engine
         pieceIdlePlayback = {};
         pieceIdleDisplay.reset();
         pieceBuildingDisplay.reset();
+        ownershipHighlightPlayback.reset();
         if (diceQueueLockHeld) userinterface::unlockGameQueue();
         diceQueueLockHeld = false;
         dicePlayback.reset();

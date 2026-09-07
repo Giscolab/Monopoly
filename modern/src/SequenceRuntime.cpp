@@ -133,13 +133,39 @@ namespace monopoly::sequence
                 "description depth must be 1..128 and node budget nonzero"));
 
         // L_Seqncr.cpp:3637-3663, 4260-4275. LE_SEQNCR_Start accepts a raw
-        // MESHX/HMD DataID by synthesizing an infinite 3D mesh sequence with
+        // raw bitmap/mesh DataID by synthesizing the corresponding infinite
+        // sequence. DataUAP is handled below; MESHX/HMD uses a 3D mesh with
         // the ArtLib basic cadence (60 Hz), StayAtEnd, and modelDataID=DataID.
-        // This is the path used by UDBoard for CurrentBoard.
+        // These are the paths used by UDBoard for raw overlays and CurrentBoard.
         auto metadata = registry.metadata(id);
         if (!metadata)
             return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 id, offset, metadata.error()));
+        if (metadata->type == data::LegacyDataType::Uap)
+        {
+            // L_Seqncr.cpp:3648-3658. Raw DataUAP starts as an infinite
+            // 2D bitmap sequence at the ArtLib basic 60 Hz cadence.
+            if (offset != 0)
+                return std::unexpected(error(RuntimeErrorCode::DecodeFailure,
+                    id, offset, "raw UAP sequence must start at offset zero"));
+            auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
+            data::LegacySequenceHeader header{};
+            header.timeMultiple = 60;
+            header.endingAction = 2; // LE_SEQNCR_EndingActionStayAtEnd.
+            data::LegacySequenceRecord record{
+                data::ChunkInfo{3, 0, 0, 0, 0}, header,
+                data::SequenceBitmapData{id}, 0};
+            auto children = SequenceChildSchedule::read({}, id,
+                limits.maximumReferences);
+            if (!children)
+                return std::unexpected(std::visit([&](const auto& cause) {
+                    return caused(RuntimeErrorCode::DecodeFailure, id, offset, cause);
+                }, children.error()));
+            program->descriptions_.push_back({id, std::move(record),
+                std::move(*children), {}, id, {}});
+            return std::shared_ptr<const SequenceProgram>(std::move(program));
+        }
+
         if (metadata->type == data::LegacyDataType::Hmd)
         {
             if (offset != 0)

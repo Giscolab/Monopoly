@@ -41,6 +41,37 @@ struct SyntheticSequenceResources
             bytes.push_back(static_cast<std::byte>(value));
         return bytes;
     }
+    static monopoly::data::DataBytes uap8()
+    {
+        monopoly::data::DataBytes bytes;
+        const auto u16 = [&](std::uint16_t value) {
+            bytes.push_back(static_cast<std::byte>(value & 255U));
+            bytes.push_back(static_cast<std::byte>((value >> 8U) & 255U));
+        };
+        const auto u32 = [&](std::uint32_t value) {
+            for (unsigned shift = 0; shift < 32; shift += 8)
+                bytes.push_back(static_cast<std::byte>((value >> shift) & 255U));
+        };
+        // NEWBITMAPHEADER: 3x2, origin (-7,13), alpha palette, four colours.
+        u16(3); u16(2); u16(static_cast<std::uint16_t>(-7)); u16(13);
+        u32(0x02); u16(4); u16(3);
+        const auto entry = [&](std::uint8_t b, std::uint8_t g, std::uint8_t r,
+                               std::uint32_t alpha) {
+            bytes.push_back(static_cast<std::byte>(b));
+            bytes.push_back(static_cast<std::byte>(g));
+            bytes.push_back(static_cast<std::byte>(r));
+            bytes.push_back(std::byte{0});
+            u32(alpha);
+        };
+        entry(255,0,255,0);    // transparent index 0
+        entry(0,0,128,128);    // premultiplied half-alpha red
+        entry(0,255,0,255);    // opaque green
+        entry(255,0,0,0);      // index >= nAlpha => solid blue
+        for (const auto value : {0U,1U,2U,0U, 3U,2U,1U,0U})
+            bytes.push_back(static_cast<std::byte>(value));
+        return bytes;
+    }
+
     explicit SyntheticSequenceResources(bool anchoredBitmaps = false)
     {
         using namespace monopoly::data;
@@ -96,6 +127,8 @@ struct SyntheticSequenceResources
                 // Active UDIBar backdrop sequences: TAB_indsbg0..TAB_indsbg7.
                 // They deliberately reuse the synthetic bitmap payload above.
                 items.resize(0x01D7);
+                // Test-only raw DataUAP root used to prove LE_SEQNCR_StartUpSequence.
+                items[0x00A2] = {LegacyDataType::Uap, uap8()};
                 // UDIBar current-player token sequences: CNK_indstra + token.
                 for (std::uint32_t tag = 0x005FU; tag < 0x005FU + monopoly::rules::MaxTokens; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
@@ -108,6 +141,18 @@ struct SyntheticSequenceResources
                 for (std::uint32_t tag = 0x01BFU; tag <= 0x01D6U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
             }
+            else if (i == 2)
+            {
+                // Test-only UDBoard normal ownership UAP for camera 1, property 0, colour 2.
+                items.resize(0x0405);
+                items[0x0404] = {LegacyDataType::Uap, uap8()};
+            }
+            else if (i == 3)
+            {
+                // Test-only UDBoard mortgaged UAP for camera 1, property 1, colour 5.
+                items.resize(0x00B4);
+                items[0x00B3] = {LegacyDataType::Uap, uap8()};
+            }
             else if (i == 4)
             {
                 const auto mesh = words({0x01020304,0,6,2,11,0,1,3,0x80000011,0x80000014,0x8000001A,
@@ -119,6 +164,8 @@ struct SyntheticSequenceResources
                 // GoToJail plus center/resting transition tags are finite CNKs.
                 items.resize(0x05CD);
                 for (int tag = 0; tag <= 5; ++tag)
+                    items[tag] = {LegacyDataType::Hmd, mesh};
+                for (std::uint32_t tag = 0x00E9U; tag <= 0x00F4U; ++tag)
                     items[tag] = {LegacyDataType::Hmd, mesh};
                 for (const auto tag : {0x0157, 0x0158, 0x05C7, 0x05C8,
                          0x05C9, 0x05CA, 0x05CB, 0x05CC})
