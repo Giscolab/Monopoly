@@ -131,11 +131,14 @@ namespace monopoly::display
                 *globalState.currentBoardCamera != globalState.desiredBoardCamera;
             const bool revalidate = globalState.desiredCameraInvalidatedLock &&
                 globalState.desiredCameraClearToValidate;
-            if (cameraChanged || boardModeChanged || revalidate)
+            if (cameraChanged || boardModeChanged || revalidate ||
+                globalState.manualCameraRequested)
             {
                 const bool forceInterrupt = !globalState.board3DOn;
                 boardCameraController.requestPreset(
-                    globalState.desiredBoardCamera, boardCameraTick, forceInterrupt);
+                    globalState.desiredBoardCamera, boardCameraTick, forceInterrupt,
+                    globalState.manualCameraRequested);
+                globalState.manualCameraRequested = false;
                 globalState.currentBoardCamera = globalState.desiredBoardCamera;
                 if (revalidate)
                 {
@@ -396,6 +399,49 @@ namespace monopoly::display
         globalState.lastBoardActivityTick = boardCameraTick;
     }
 
+    void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept
+    {
+        static std::uint8_t topView = 0;
+        using pieces::BoardCameraView;
+
+        const auto current = globalState.desiredBoardCamera;
+        const int currentIndex = static_cast<int>(current);
+        BoardCameraView desired = current;
+
+        if (sequential)
+        {
+            desired = static_cast<BoardCameraView>(
+                (currentIndex + 1) % static_cast<int>(BoardCameraView::Count));
+        }
+        else
+        {
+            int category = 0;
+            if (currentIndex >= static_cast<int>(BoardCameraView::ThreeTiles01)) ++category;
+            if (currentIndex >= static_cast<int>(BoardCameraView::CornerGo)) ++category;
+            if (currentIndex >= static_cast<int>(BoardCameraView::FiveTiles01)) ++category;
+            if (currentIndex >= static_cast<int>(BoardCameraView::FifteenTiles01)) ++category;
+
+            switch ((category + 1) % 5)
+            {
+            case 0:
+                desired = static_cast<BoardCameraView>(topView++ % 3U);
+                break;
+            case 1:
+                desired = pieces::pickCameraFor3Squares(currentSquare);
+                break;
+            default:
+                desired = pieces::pickCameraFor15Squares(currentSquare);
+                if (desired == BoardCameraView::CornerJail)
+                    desired = static_cast<BoardCameraView>(topView++ % 3U);
+                break;
+            }
+        }
+
+        globalState.desiredBoardCamera = desired;
+        if (globalState.manualMouseCamLock)
+            globalState.manualCameraRequested = true;
+    }
+
     void setTokenAnimationStackActive(bool active) noexcept
     {
         globalState.tokenAnimationStackActive = active;
@@ -507,6 +553,9 @@ namespace monopoly::display
         updateDemoMode(numberOfTicks);
         const auto cameraUpdate = boardCameraController.tick(boardCameraTick);
         globalState.worldCamera = cameraUpdate.camera;
+        if (globalState.manualMouseCamLock &&
+            !boardCameraController.manualMouseActive())
+            globalState.manualMouseCamLock = false;
         if (cameraUpdate.startedWaitingMove)
         {
             globalState.cameraCanFloat = true;

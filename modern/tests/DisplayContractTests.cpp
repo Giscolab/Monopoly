@@ -475,6 +475,58 @@ namespace
         shutdown();
     }
 
+    void testIBarCameraCycle()
+    {
+        using namespace monopoly::display;
+        using monopoly::pieces::BoardCameraView;
+
+        expect(initialize(), "DISPLAY initializes for IBar camera cycle test");
+        setBackdrop(Screen2D::Main);
+        state().game3DOn = true;
+        showAll2();
+
+        state().desiredBoardCamera = BoardCameraView::TopDownSoccer;
+        cycleIBarCamera(12, false);
+        expect(stateReadOnly().desiredBoardCamera ==
+                monopoly::pieces::pickCameraFor3Squares(12),
+            "normal Camera click advances Top category to exact 3-tile camera");
+        cycleIBarCamera(12, false);
+        expect(stateReadOnly().desiredBoardCamera ==
+                monopoly::pieces::pickCameraFor15Squares(12),
+            "normal Camera click advances 3-tile category to exact 15-tile camera");
+        cycleIBarCamera(12, false);
+        expect(stateReadOnly().desiredBoardCamera == BoardCameraView::TopDownSquare,
+            "15-tile category cycles back to first historical top view");
+
+        cycleIBarCamera(12, false);
+        cycleIBarCamera(12, false);
+        cycleIBarCamera(12, false);
+        expect(stateReadOnly().desiredBoardCamera == BoardCameraView::TopDownSoccer,
+            "topview static counter advances through the three top-down views");
+
+        state().desiredBoardCamera = BoardCameraView::ThreeTiles01;
+        cycleIBarCamera(40, false);
+        expect(stateReadOnly().desiredBoardCamera == BoardCameraView::TopDownStarWars,
+            "jail duplicate 15-tile camera falls back to next top view exactly like source");
+
+        state().desiredBoardCamera = BoardCameraView::FifteenTiles12;
+        cycleIBarCamera(7, true);
+        expect(stateReadOnly().desiredBoardCamera == BoardCameraView::TopDownSquare,
+            "right/Ctrl Camera path wraps camera index modulo 39");
+
+        state().manualMouseCamLock = true;
+        state().manualCameraRequested = false;
+        cycleIBarCamera(7, true);
+        expect(stateReadOnly().desiredBoardCamera == BoardCameraView::TopDownSoccer &&
+                stateReadOnly().manualCameraRequested,
+            "Camera click under manual mouse lock records one-shot manual camera request");
+        showAll2();
+        expect(!stateReadOnly().manualCameraRequested,
+            "UDBoard show consumes one-shot manual camera request after queuing preset");
+
+        shutdown();
+    }
+
 }
 
 int main()
@@ -488,6 +540,7 @@ int main()
     testBoardDemoMode();
     testBoardFloatingCamera();
     testManualMouseBoardCamera();
+    testIBarCameraCycle();
     testDisplayStateMachine();
 
     if (failures != 0)

@@ -154,11 +154,22 @@ namespace monopoly::ibar
             int x,
             int y) noexcept
         {
-            return layout::actionButtonHit(
+            const auto ruleButton = layout::actionButtonHit(
                 x,
                 y,
                 globalState.actionButtonLayout,
                 globalState.activeActionButtonSlots);
+            if (ruleButton)
+                return ruleButton;
+
+            if (display::isIBarVisible(display::stateReadOnly().desired2DView) &&
+                layout::actionButtonRect(
+                    layout::ActionButtonSlot::Camera,
+                    globalState.actionButtonLayout).contains(x, y))
+            {
+                return layout::ActionButtonSlot::Camera;
+            }
+            return std::nullopt;
         }
 
 
@@ -183,6 +194,35 @@ namespace monopoly::ibar
                 numberB,
                 numberC,
                 numberD);
+        }
+
+        bool handleGlobalAction(
+            layout::ActionButtonSlot slot,
+            const uimsg::Message& message) noexcept
+        {
+            if (slot != layout::ActionButtonSlot::Camera)
+                return false;
+
+            const auto& uiState = userinterface::ruleStateReadOnly();
+            auto cameraPlayer = resolveRulePlayer(globalState.projectedRulePlayer);
+            const auto validPlayer = [&](rules::PlayerNumber player) noexcept {
+                return player < rules::MaxPlayers &&
+                    player < uiState.numberOfPlayers;
+            };
+            if (!validPlayer(cameraPlayer))
+                cameraPlayer = globalState.projectedRulePlayer;
+            if (!validPlayer(cameraPlayer))
+                cameraPlayer = uiState.currentPlayer;
+
+            const std::int32_t currentSquare = validPlayer(cameraPlayer)
+                ? static_cast<std::int32_t>(uiState.players[cameraPlayer].currentSquare)
+                : 0;
+            const bool sequential = display::stateReadOnly().mouseRightPressed ||
+                (message.numberE & uimsg::MouseModifierControl) != 0;
+
+            display::cycleIBarCamera(currentSquare, sequential);
+            globalState.pendingPressedButton = CameraButtonIndex;
+            return true;
         }
 
 
@@ -736,6 +776,7 @@ namespace monopoly::ibar
         {
             globalState.actionButtonCurrentMouseOver =
                 static_cast<int>(*action);
+            if (handleGlobalAction(*action, message)) return;
             if (handleLocalRuleAction(*action)) return;
             (void)dispatchDirectRuleAction(*action);
             return;

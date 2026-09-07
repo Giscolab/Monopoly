@@ -197,6 +197,28 @@ namespace
         expect(!controller.manualMouseActive() && !controller.waiting(),
             "manual release clears lock and stale waiting preset before revalidation");
     }
+    void testManualPresetRequest()
+    {
+        using namespace monopoly;
+        boardcamera::Controller controller;
+        controller.reset(0);
+        controller.requestPreset(pieces::BoardCameraView::TopDownSoccer, 0, true);
+        expect(controller.requestManualMouseMove(12, 0, false, 0) &&
+            controller.manualMouseActive() && controller.moving(),
+            "manual preset fixture starts a 75-tick mouse move");
+
+        controller.requestPreset(pieces::BoardCameraView::CornerGo, 1, false, true);
+        auto update = controller.tick(74);
+        expect(controller.manualMouseActive() && controller.waiting() &&
+            !update.startedWaitingMove,
+            "IBar manual preset request waits for current mouse interpolation");
+
+        update = controller.tick(75);
+        expect(update.startedWaitingMove && !controller.manualMouseActive() &&
+            controller.moving() && !controller.waiting() &&
+            controller.endCamera() == boardcamera::preset(pieces::BoardCameraView::CornerGo),
+            "IBar manual preset starts at mouse completion and clears manual lock");
+    }
     void testDemoTimedPreset()
     {
         using namespace monopoly;
@@ -266,6 +288,7 @@ int main()
     testDiceMoveUsesCurrentMoveDestination();
     testDiceRandomRange();
     testManualMouseCamera();
+    testManualPresetRequest();
     testDemoTimedPreset();
     testFloatingIdleBezierAndInterrupts();
 

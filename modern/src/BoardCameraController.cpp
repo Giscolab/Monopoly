@@ -111,6 +111,7 @@ namespace monopoly::boardcamera
         move_.endTick = tick;
         waiting_.reset();
         manualMouseActive_ = false;
+        manualPresetRequested_ = false;
     }
 
     void Controller::startMove(const engine::World3DCamera& target,
@@ -166,11 +167,16 @@ namespace monopoly::boardcamera
                 update.completedMove = true;
             }
         }
-        if (waiting_ && !manualMouseActive_ &&
+        if (waiting_ && (!manualMouseActive_ || manualPresetRequested_) &&
             (!move_.active || move_.interruptible))
         {
             const auto target = *waiting_;
             waiting_.reset();
+            if (manualPresetRequested_)
+            {
+                manualMouseActive_ = false;
+                manualPresetRequested_ = false;
+            }
             startMove(target, tick, false);
             update.startedWaitingMove = true;
         }
@@ -179,16 +185,18 @@ namespace monopoly::boardcamera
     }
 
     void Controller::requestPreset(pieces::BoardCameraView view,
-        std::uint64_t tick, bool forceInterrupt) noexcept
+        std::uint64_t tick, bool forceInterrupt, bool manualRequest) noexcept
     {
         const auto& target = preset(view);
         if (forceInterrupt)
         {
             waiting_.reset();
+            manualPresetRequested_ = false;
             startMove(target, tick, true);
             return;
         }
         waiting_ = target;
+        manualPresetRequested_ = manualRequest;
     }
 
     void Controller::requestDiceMove(std::uint64_t tick,
@@ -210,12 +218,14 @@ namespace monopoly::boardcamera
         target.nearPlane = engine::MonopolyBoardNearPlane;
         target.farPlane = engine::MonopolyBoardFarPlane;
         waiting_ = target;
+        manualPresetRequested_ = false;
     }
 
     void Controller::requestDemoPreset(pieces::BoardCameraView view,
         std::uint64_t tick, std::uint64_t duration) noexcept
     {
         waiting_.reset();
+        manualPresetRequested_ = false;
         startMove(preset(view), tick, duration == 0, false, duration);
     }
 
@@ -224,6 +234,7 @@ namespace monopoly::boardcamera
         const std::array<float, 3>& nextVariation) noexcept
     {
         const auto anchor = current_;
+        manualPresetRequested_ = false;
         startMove(anchor, tick, false, false, 100U);
         move_.interruptible = true;
         move_.bezierPosition = true;
@@ -291,6 +302,7 @@ namespace monopoly::boardcamera
         {
             manualMouseActive_ = true;
             waiting_.reset();
+            manualPresetRequested_ = false;
             startMove(target, tick, false, true);
         }
         else if (move_.active)
@@ -312,5 +324,6 @@ namespace monopoly::boardcamera
     {
         manualMouseActive_ = false;
         waiting_.reset();
+        manualPresetRequested_ = false;
     }
 }

@@ -20,11 +20,20 @@ namespace test_support
     std::vector<monopoly::actions::Message> sent;
     std::optional<monopoly::rules::PlayerNumber> clickedPlayer;
     std::array<bool, monopoly::rules::MaxPlayers> localHuman{{true, true, true, true, true, true}};
+    int cameraCycleCount = 0;
+    std::int32_t lastCameraSquare = -1;
+    bool lastCameraSequential = false;
 }
 
 namespace monopoly::display
 {
     const State& stateReadOnly() { return test_support::displayState; }
+    void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept
+    {
+        ++test_support::cameraCycleCount;
+        test_support::lastCameraSquare = currentSquare;
+        test_support::lastCameraSequential = sequential;
+    }
 }
 
 namespace monopoly::ui::localplayers
@@ -626,6 +635,79 @@ namespace
     }
 
 
+    void testGlobalCameraButton()
+    {
+        ibar::initialize();
+        test_support::displayState = {};
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::ruleState = {};
+        test_support::ruleState.numberOfPlayers = 2;
+        test_support::ruleState.currentPlayer = 0;
+        test_support::ruleState.players[0].currentSquare = 7;
+        test_support::ruleState.players[1].currentSquare = 23;
+        test_support::localHuman[0] = true;
+        test_support::localHuman[1] = true;
+        test_support::cameraCycleCount = 0;
+        test_support::lastCameraSquare = -1;
+        test_support::lastCameraSequential = false;
+
+        (void)ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0);
+        ibar::show();
+        ibar::setRuleActionHitState(Layout::General, 0,
+            ibar::RuleMode::StartTurn, 0, false);
+
+        const auto cameraRect = ibar::layout::actionButtonRect(
+            Slot::Camera, Layout::General);
+        const int cameraX = (cameraRect.left + cameraRect.right) / 2;
+        const int cameraY = (cameraRect.top + cameraRect.bottom) / 2;
+        ibar::processLibraryMessage({uimsg::Type::MouseMoved, cameraX, cameraY});
+        require(ibar::stateReadOnly().actionButtonCurrentMouseOver ==
+                static_cast<int>(Slot::Camera),
+            "Camera hover remains active independently of RULE action mask");
+
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, cameraX, cameraY});
+        require(test_support::cameraCycleCount == 1 &&
+                test_support::lastCameraSquare == 7 &&
+                !test_support::lastCameraSequential &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::CameraButtonIndex,
+            "Camera click uses tracked RULE player and requests Pressed feedback");
+        ibar::clearPendingPressedButton(ibar::CameraButtonIndex);
+
+        const auto player1Rect = ibar::stateReadOnly().players[1].rect;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            player1Rect.left + 1, player1Rect.top + 1});
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, cameraX, cameraY});
+        require(test_support::cameraCycleCount == 2 &&
+                test_support::lastCameraSquare == 23,
+            "Camera click follows locally inspected IBar player");
+
+        test_support::displayState.mouseRightPressed = true;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, cameraX, cameraY});
+        require(test_support::cameraCycleCount == 3 &&
+                test_support::lastCameraSequential,
+            "right-button state selects sequential camera path");
+        test_support::displayState.mouseRightPressed = false;
+
+        uimsg::Message controlClick{uimsg::Type::MouseLeftDown, cameraX, cameraY};
+        controlClick.numberE = uimsg::MouseModifierControl;
+        ibar::processLibraryMessage(controlClick);
+        require(test_support::cameraCycleCount == 4 &&
+                test_support::lastCameraSequential,
+            "Ctrl modifier selects same sequential camera path as right mouse");
+
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, 755, 560});
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, cameraX, cameraY});
+        require(test_support::cameraCycleCount == 5 &&
+                test_support::lastCameraSquare == 7,
+            "Bank inspection safely falls back to projected RULE player camera square");
+
+        test_support::displayState.desired2DView = display::Screen2D::Options;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown, cameraX, cameraY});
+        require(test_support::cameraCycleCount == 5,
+            "Camera physical hit is disabled when legacy IBar is not visible");
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+    }
+
     void testRemoteAndPlayerSelectGuards()
     {
         setHit(ibar::RuleMode::BuyAuction, Layout::BuyAuction,
@@ -665,6 +747,7 @@ int main()
         testBuyAuctionPopupNotificationState();
         testCardNotificationState();
         testBSSMSubstatesAndDeeds();
+        testGlobalCameraButton();
         testRemoteAndPlayerSelectGuards();
         monopoly::ibar::shutdown();
         return 0;
