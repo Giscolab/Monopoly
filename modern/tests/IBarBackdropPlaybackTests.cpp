@@ -274,6 +274,68 @@ namespace
         runtime::reset();
     }
 
+    void testBuyAuctionPopupIntegration()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        state.currentPlayer = 0;
+        state.players[0].colour = 0;
+        state.players[0].token = 0;
+        state.players[0].currentSquare = 1;
+        state.players[1].colour = 1;
+        state.players[1].currentSquare = 3;
+        runtime::reset();
+
+        ibar::ActionButtonInputs inputs{};
+        inputs.ruleMode = ibar::RuleMode::BuyAuction;
+        inputs.rulePlayer = 0;
+        inputs.desired2DView = display::Screen2D::Main;
+        inputs.desiredBuyAuctionSquare = static_cast<std::uint8_t>(1);
+        const auto deed1 = ibar::propertyHoverDataId(1, false);
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(0) &&
+                backdrop.buyAuctionPopupDeed() == deed1 &&
+                backdrop.buyAuctionPopupOnLeft(),
+            "aggregate Buy/Auction popup uses RULE current-player square, not inspected player");
+        const auto leftMatches = playback.runtime().matching(
+            deed1, ibar::BuyAuctionPopupPriority, false);
+        const auto* leftObject = leftMatches.empty()
+            ? nullptr : playback.world2D().find(leftMatches.front());
+        require(leftObject &&
+                leftObject->worldTransform.values[6] == 20.0F &&
+                leftObject->worldTransform.values[7] == 110.0F,
+            "aggregate Main Buy/Auction popup reaches exact left StartXY");
+
+        inputs.desired2DView = display::Screen2D::Portfolio;
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(1) &&
+                backdrop.buyAuctionPopupDeed() == deed1 &&
+                backdrop.buyAuctionPopupOnLeft(),
+            "aggregate same deed keeps legacy position across view change");
+
+        inputs.desiredBuyAuctionSquare = static_cast<std::uint8_t>(3);
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(2) &&
+                !backdrop.buyAuctionPopupOnLeft(),
+            "aggregate new deed in Portfolio recomputes Trade/Portfolio placement");
+        const auto deed3 = ibar::propertyHoverDataId(3, false);
+        const auto tradeMatches = playback.runtime().matching(
+            deed3, ibar::BuyAuctionPopupPriority, false);
+        const auto* tradeObject = tradeMatches.empty()
+            ? nullptr : playback.world2D().find(tradeMatches.front());
+        require(tradeObject &&
+                tradeObject->worldTransform.values[6] == 594.0F &&
+                tradeObject->worldTransform.values[7] == 110.0F,
+            "aggregate Portfolio Buy/Auction popup reaches exact StartXY(594,110)");
+
+        inputs.desiredBuyAuctionSquare.reset();
+        require(backdrop.sync(state, true, 1, playback, inputs) && playback.update(3) &&
+                backdrop.buyAuctionPopupDeed() == data::EmptyDataId,
+            "aggregate cleared Buy/Auction desired state stops floating deed");
+        runtime::reset();
+    }
+
+
     void testPropertyHoverIntegration()
     {
         SyntheticSequenceResources resources;
@@ -960,6 +1022,7 @@ int main()
         testBankHoverIntegration();
         testScoreStripIntegration();
         testJailCardIntegration();
+        testBuyAuctionPopupIntegration();
         testPropertyHoverIntegration();
         testCardPlaybackIntegration();
         testGlobalButtonPredicates();

@@ -398,6 +398,19 @@ namespace monopoly::ibar
         if (!jailCards)
             return jailCards;
 
+        const int ruleCurrentSquare =
+            state.currentPlayer < state.numberOfPlayers &&
+            state.currentPlayer < rules::MaxPlayers
+                ? state.players[state.currentPlayer].currentSquare
+                : -1;
+        const auto buyAuctionPopup = buyAuctionPopup_.sync(
+            inputs.desiredBuyAuctionSquare,
+            inputs.desired2DView,
+            ruleCurrentSquare,
+            playback);
+        if (!buyAuctionPopup)
+            return buyAuctionPopup;
+
         const auto propertyHover = propertyHover_.sync(
             state, inputs.propertyTitles, inputs.propertyCurrentMouseOver,
             inputs.tick, playback);

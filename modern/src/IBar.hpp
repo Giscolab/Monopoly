@@ -58,6 +58,7 @@ namespace monopoly::ibar
         std::optional<std::uint8_t> selectedDeed;
         std::optional<std::uint8_t> pendingPressedButton;
         std::optional<std::uint8_t> desiredCardIndex;
+        std::optional<std::uint8_t> desiredBuyAuctionSquare;
 
 
         bool initialized = false;
