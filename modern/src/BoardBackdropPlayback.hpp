@@ -17,6 +17,8 @@ namespace monopoly::boarddisplay
     inline constexpr data::DataTag TradeBoardBitmapBaseTag = 0x01AD;
     inline constexpr std::size_t MainBoardBufferCount = 4;
     inline constexpr std::uint32_t BoardCameraCount = 39;
+    inline constexpr std::uint32_t UsaCityCount = 11;
+    inline constexpr std::uint32_t BoardsPerCity = 39;
     inline constexpr std::uint32_t MainBoardWidth = 800;
     inline constexpr std::uint32_t MainBoardHeight = 450;
     inline constexpr std::uint32_t TradeBoardWidth = 400;
@@ -26,12 +28,14 @@ namespace monopoly::boarddisplay
     {
         display::Screen2D view{display::Screen2D::Invalid};
         bool game3DOn{true};
+        int city{};
         pieces::BoardCameraView camera{pieces::BoardCameraView::TopDownSoccer};
         std::uint32_t tick{};
     };
     struct BoardBackdropBuffer
     {
         data::DataId surface{data::EmptyDataId};
+        int cityLoaded{-1};
         int viewLoaded{-1};
         std::uint32_t timeLoaded{};
     };
@@ -62,7 +66,7 @@ namespace monopoly::boarddisplay
             data::DataId surface, data::DataId source,
             engine::SequencePlayback& playback) const;
         [[nodiscard]] std::expected<data::DataId, std::string> selectBackdrop(
-            display::Screen2D view, pieces::BoardCameraView camera,
+            display::Screen2D view, int city, pieces::BoardCameraView camera,
             std::uint32_t tick, engine::SequencePlayback& playback);
 
         std::array<BoardBackdropBuffer, MainBoardBufferCount> mainBuffers_{};
@@ -70,6 +74,7 @@ namespace monopoly::boarddisplay
         std::optional<std::size_t> currentMainBuffer_;
         data::DataId activeBackdrop_{data::EmptyDataId};
         display::Screen2D currentView_{display::Screen2D::Invalid};
+        std::optional<int> currentCity_;
         std::optional<pieces::BoardCameraView> currentCamera_;
         bool surfacesReady_{};
     };

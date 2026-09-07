@@ -158,6 +158,19 @@ namespace monopoly::ui::playersetup
         }};
 
 
+        inline constexpr int UsaCityCount = 11;
+
+        constexpr std::array<
+            ButtonRect,
+            4
+        > CityButtons{{
+            { Button::CityClassic, { 73, 214, 293, 276 } },
+            { Button::CityLeft,    { 320, 408, 343, 421 } },
+            { Button::CityRight,   { 458, 408, 481, 421 } },
+            { Button::CityNext,    { 341, 434, 468, 470 } }
+        }};
+
+
         std::uint8_t tokenForButton(
             Button button)
         {
@@ -721,6 +734,17 @@ namespace monopoly::ui::playersetup
             }
 
 
+            case Phase::SelectCity:
+            {
+                for (const auto& entry : CityButtons)
+                {
+                    if (entry.rect.contains(x, y))
+                        return entry.button;
+                }
+                break;
+            }
+
+
             default:
                 break;
         }
@@ -1008,6 +1032,41 @@ namespace monopoly::ui::playersetup
 
 
             return command;
+        }
+
+
+        if (
+            state.phase ==
+            Phase::SelectCity)
+        {
+            switch (button)
+            {
+                case Button::CityLeft:
+                    state.citySelected = state.citySelected > 0
+                        ? state.citySelected - 1 : UsaCityCount - 1;
+                    return command;
+
+                case Button::CityRight:
+                    state.citySelected = state.citySelected < UsaCityCount - 1
+                        ? state.citySelected + 1 : 0;
+                    return command;
+
+                case Button::CityClassic:
+                    state.citySelected = 0;
+                    command.type = CommandType::CommitCity;
+                    command.city = 0;
+                    requestPhase(state, uiState, Phase::StandardOrCustomRules);
+                    return command;
+
+                case Button::CityNext:
+                    command.type = CommandType::CommitCity;
+                    command.city = state.citySelected;
+                    requestPhase(state, uiState, Phase::StandardOrCustomRules);
+                    return command;
+
+                default:
+                    return command;
+            }
         }
 
 

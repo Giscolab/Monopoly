@@ -26,9 +26,10 @@ namespace
         monopoly::display::Screen2D view,
         bool game3DOn,
         monopoly::pieces::BoardCameraView camera,
-        std::uint32_t tick)
+        std::uint32_t tick,
+        int city = 0)
     {
-        return {view, game3DOn, camera, tick};
+        return {view, game3DOn, city, camera, tick};
     }
     void testMainBuffersAndPlayback()
     {
@@ -48,6 +49,7 @@ namespace
             pieces::BoardCameraView::TopDownSoccer, 10), playback).has_value() &&
             playback.runtimeBitmaps().size() == 5 &&
             backdrop.currentMainBuffer() == 0 &&
+            backdrop.mainBuffers()[0].cityLoaded == 0 &&
             backdrop.mainBuffers()[0].viewLoaded == 1 &&
             backdrop.mainBuffers()[0].timeLoaded == 10 &&
             playback.commands().pendingCount() == 2,
@@ -118,6 +120,62 @@ namespace
             playback.runtimeBitmaps().asset(cachedCamera2Surface) == cachedCamera2Asset,
             "Main cache hit reuses compiled surface without refreshing TimeLoaded");
         expect(playback.update(60).has_value(), "cached Main backdrop transition executes");
+    }
+
+    void testCityAddressingAndCache()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        boarddisplay::BoardBackdropPlayback backdrop;
+
+        expect(backdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 10, 0), playback).has_value() &&
+            playback.update(10).has_value(),
+            "city 0 Main backdrop starts");
+        const auto city0Surface = backdrop.activeBackdrop();
+        const auto city0Asset = playback.runtimeBitmaps().asset(city0Surface);
+        expect(city0Asset && city0Asset->image.pixels[0] == 2 &&
+            city0Asset->image.pixels[1] == 0 &&
+            backdrop.mainBuffers()[0].cityLoaded == 0,
+            "city 0 uses camera + 39*0");
+
+        expect(backdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 20, 1), playback).has_value() &&
+            playback.update(20).has_value() && backdrop.currentMainBuffer() == 1,
+            "same camera in city 1 misses the city 0 cache entry");
+        const auto city1Asset = playback.runtimeBitmaps().asset(backdrop.activeBackdrop());
+        expect(city1Asset && city1Asset->image.pixels[0] == 2 &&
+            city1Asset->image.pixels[1] == 1 &&
+            backdrop.mainBuffers()[1].cityLoaded == 1,
+            "city 1 uses camera + 39*1");
+
+        expect(backdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 30, 10), playback).has_value() &&
+            playback.update(30).has_value() && backdrop.currentMainBuffer() == 2,
+            "same camera in city 10 gets a third cache identity");
+        const auto city10Asset = playback.runtimeBitmaps().asset(backdrop.activeBackdrop());
+        expect(city10Asset && city10Asset->image.pixels[0] == 2 &&
+            city10Asset->image.pixels[1] == 10 &&
+            backdrop.mainBuffers()[2].cityLoaded == 10,
+            "city 10 uses camera + 39*10");
+
+        expect(backdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 40, 0), playback).has_value() &&
+            backdrop.currentMainBuffer() == 0 &&
+            backdrop.mainBuffers()[0].timeLoaded == 10 &&
+            playback.runtimeBitmaps().asset(city0Surface) == city0Asset &&
+            playback.update(40).has_value(),
+            "returning to city 0 reuses only the matching city/camera cache entry");
+
+        expect(backdrop.sync(input(display::Screen2D::Trade, false,
+            pieces::BoardCameraView::TopDownStarWars, 50, 10), playback).has_value() &&
+            playback.update(50).has_value(),
+            "Trade backdrop accepts city 10");
+        const auto* trade = only2D(playback);
+        expect(trade && trade->asset->image.pixels[0] == 10 &&
+            trade->asset->image.pixels[1] == 3,
+            "Trade also uses camera + 39*city addressing");
     }
 
     void testTradePortfolioAndStop()
@@ -194,6 +252,24 @@ namespace
             invalidPlayback.commands().pendingCount() == 0 &&
             invalidBackdrop.activeBackdrop() == data::EmptyDataId,
             "camera 39 is rejected without publishing a partial sequence transition");
+
+        engine::SequencePlayback negativeCityPlayback(resources.service.snapshot());
+        boarddisplay::BoardBackdropPlayback negativeCityBackdrop;
+        expect(!negativeCityBackdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 1, -1), negativeCityPlayback) &&
+            negativeCityPlayback.commands().pendingCount() == 0 &&
+            negativeCityPlayback.runtimeBitmaps().size() == 0 &&
+            negativeCityBackdrop.activeBackdrop() == data::EmptyDataId,
+            "city -1 is rejected before allocating or queuing any backdrop state");
+
+        engine::SequencePlayback highCityPlayback(resources.service.snapshot());
+        boarddisplay::BoardBackdropPlayback highCityBackdrop;
+        expect(!highCityBackdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 1, 11), highCityPlayback) &&
+            highCityPlayback.commands().pendingCount() == 0 &&
+            highCityPlayback.runtimeBitmaps().size() == 0 &&
+            highCityBackdrop.activeBackdrop() == data::EmptyDataId,
+            "city 11 is rejected transactionally");
     }
 }
 
@@ -202,6 +278,7 @@ int main()
     std::cout << "Monopoly UDBoard backdrop playback tests\n"
               << "=======================================\n";
     testMainBuffersAndPlayback();
+    testCityAddressingAndCache();
     testTradePortfolioAndStop();
     testFailuresAreTransactional();
     std::cout << "Board backdrop failures: " << failures << '\n';

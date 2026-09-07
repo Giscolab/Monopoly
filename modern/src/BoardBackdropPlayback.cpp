@@ -19,11 +19,20 @@ namespace monopoly::boarddisplay
             return value;
         }
 
-        [[nodiscard]] data::DataId boardBitmapId(
-            data::DataTag base, std::uint32_t camera) noexcept
+        [[nodiscard]] std::expected<std::uint32_t, std::string> cityIndex(
+            int city)
         {
+            if (city < 0 || city >= static_cast<int>(UsaCityCount))
+                return std::unexpected("UDBoard backdrop city is outside 0..10");
+            return static_cast<std::uint32_t>(city);
+        }
+
+        [[nodiscard]] data::DataId boardBitmapId(
+            data::DataTag base, std::uint32_t city, std::uint32_t camera) noexcept
+        {
+            const auto boardIndex = city * BoardsPerCity + camera;
             return data::packDataId(data::LegacyGroupId::Board,
-                static_cast<data::DataTag>(base + camera));
+                static_cast<data::DataTag>(base + boardIndex));
         }
 
         [[nodiscard]] data::LegacyBitmapRGBA8 opaqueBlack(
@@ -66,6 +75,7 @@ namespace monopoly::boarddisplay
                 return std::unexpected(created.error());
             }
             buffer.surface = *created;
+            buffer.cityLoaded = -1;
             buffer.viewLoaded = -1;
             buffer.timeLoaded = 0;
             allocated.push_back(*created);
@@ -119,9 +129,11 @@ namespace monopoly::boarddisplay
     }
 
     std::expected<data::DataId, std::string> BoardBackdropPlayback::selectBackdrop(
-        display::Screen2D view, pieces::BoardCameraView camera,
+        display::Screen2D view, int city, pieces::BoardCameraView camera,
         std::uint32_t tick, engine::SequencePlayback& playback)
     {
+        const auto cityValue = cityIndex(city);
+        if (!cityValue) return std::unexpected(cityValue.error());
         const auto index = cameraIndex(camera);
         if (!index) return std::unexpected(index.error());
 
@@ -137,7 +149,8 @@ namespace monopoly::boarddisplay
                     oldest = mainBuffers_[i].timeLoaded;
                     oldestIndex = i;
                 }
-                if (mainBuffers_[i].viewLoaded == static_cast<int>(*index))
+                if (mainBuffers_[i].cityLoaded == city &&
+                    mainBuffers_[i].viewLoaded == static_cast<int>(*index))
                     found = i;
             }
 
@@ -147,10 +160,12 @@ namespace monopoly::boarddisplay
                 return mainBuffers_[*found].surface;
             }
 
-            const auto source = boardBitmapId(MainBoardBitmapBaseTag, *index);
+            const auto source = boardBitmapId(
+                MainBoardBitmapBaseTag, *cityValue, *index);
             const auto compiled = compileInto(
                 mainBuffers_[oldestIndex].surface, source, playback);
             if (!compiled) return std::unexpected(compiled.error());
+            mainBuffers_[oldestIndex].cityLoaded = city;
             mainBuffers_[oldestIndex].viewLoaded = static_cast<int>(*index);
             mainBuffers_[oldestIndex].timeLoaded = tick;
             currentMainBuffer_ = oldestIndex;
@@ -160,7 +175,8 @@ namespace monopoly::boarddisplay
         if (view == display::Screen2D::Portfolio ||
             view == display::Screen2D::Trade)
         {
-            const auto source = boardBitmapId(TradeBoardBitmapBaseTag, *index);
+            const auto source = boardBitmapId(
+                TradeBoardBitmapBaseTag, *cityValue, *index);
             const auto compiled = compileInto(tradeSurface_, source, playback);
             if (!compiled) return std::unexpected(compiled.error());
             return tradeSurface_;
@@ -183,12 +199,18 @@ namespace monopoly::boarddisplay
             if (!stopped) return stopped;
             activeBackdrop_ = data::EmptyDataId;
             currentView_ = display::Screen2D::Invalid;
+            currentCity_.reset();
             currentCamera_.reset();
             return {};
         }
 
+        const auto cityValue = cityIndex(inputs.city);
+        if (!cityValue) return std::unexpected(cityValue.error());
+
         if (activeBackdrop_ != data::EmptyDataId &&
-            currentView_ == inputs.view && currentCamera_ == inputs.camera)
+            currentView_ == inputs.view &&
+            currentCity_ == inputs.city &&
+            currentCamera_ == inputs.camera)
             return {};
 
         const std::size_t required =
@@ -200,7 +222,7 @@ namespace monopoly::boarddisplay
         const auto surfaces = ensureSurfaces(playback);
         if (!surfaces) return surfaces;
         const auto selected = selectBackdrop(
-            inputs.view, inputs.camera, inputs.tick, playback);
+            inputs.view, inputs.city, inputs.camera, inputs.tick, playback);
         if (!selected) return std::unexpected(selected.error());
 
         const auto [x, y] = backdropPosition(inputs.view);
@@ -213,6 +235,7 @@ namespace monopoly::boarddisplay
 
         activeBackdrop_ = *selected;
         currentView_ = inputs.view;
+        currentCity_ = inputs.city;
         currentCamera_ = inputs.camera;
         return {};
     }
@@ -224,6 +247,7 @@ namespace monopoly::boarddisplay
         currentMainBuffer_.reset();
         activeBackdrop_ = data::EmptyDataId;
         currentView_ = display::Screen2D::Invalid;
+        currentCity_.reset();
         currentCamera_.reset();
         surfacesReady_ = false;
     }
