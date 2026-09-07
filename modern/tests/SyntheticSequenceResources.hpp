@@ -167,6 +167,9 @@ struct SyntheticSequenceResources
                 // USA deed pop-ups used by UDIBar property mouseover. City 0 only:
                 // TAB_iyb00x00 (mortgaged) and TAB_iyf00x00 (normal), 28 deeds each.
                 items.resize(0x0CEC);
+                // Player property-bar Get Out of Jail cards: Chance / Community.
+                for (std::uint32_t tag = 0x0992U; tag <= 0x0993U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 for (std::uint32_t tag = 0x0B53U; tag <= 0x0B6EU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
                 for (std::uint32_t tag = 0x0CD0U; tag <= 0x0CEBU; ++tag)

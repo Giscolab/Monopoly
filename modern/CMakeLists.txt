@@ -1117,6 +1117,7 @@ target_sources(
     src/IBarLayout.cpp
     src/IBarBackdropPlayback.cpp
     src/IBarCardPlayback.cpp
+    src/IBarJailCardPlayback.cpp
     src/IBarScoreStripPlayback.cpp
     src/IBarPropertyPlayback.cpp
     src/IBarCurrentPlayerPlayback.cpp
@@ -1184,6 +1185,7 @@ if(BUILD_TESTING)
         tests/IBarBackdropPlaybackTests.cpp
         src/IBarBackdropPlayback.cpp
         src/IBarCardPlayback.cpp
+        src/IBarJailCardPlayback.cpp
         src/IBarScoreStripPlayback.cpp
         src/IBarPropertyPlayback.cpp
         src/IBarLayout.cpp
@@ -1210,6 +1212,31 @@ if(BUILD_TESTING)
         COMMAND MonopolyIBarBackdropPlaybackTests
     )
 
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyIBarJailCardPlaybackTests
+        tests/IBarJailCardPlaybackTests.cpp
+        src/IBarJailCardPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyIBarJailCardPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyIBarJailCardPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyIBarJailCardPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.IBarJailCardPlayback
+        COMMAND MonopolyIBarJailCardPlaybackTests
+    )
 endif()
 
 if(BUILD_TESTING)
