@@ -678,6 +678,8 @@ if(BUILD_TESTING)
         src/DiceIngress.cpp
         src/PiecePlacement.cpp
         src/BoardGeometry.cpp
+        src/RuleArchive.cpp
+        src/RuleOptions.cpp
     )
 
     target_include_directories(
@@ -945,6 +947,7 @@ target_sources(
     PRIVATE
     src/RuleRandom.cpp
     src/CardDecks.cpp
+    src/RuleConfiguration.cpp
     src/RuleGameStart.cpp
 )
 
@@ -1030,6 +1033,7 @@ if(BUILD_TESTING)
         src/PhaseStack.cpp
         src/RuleArchive.cpp
         src/RuleOptions.cpp
+        src/RuleConfiguration.cpp
     )
 
     target_include_directories(

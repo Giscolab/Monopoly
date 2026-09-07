@@ -125,6 +125,8 @@ namespace monopoly::rules
         int recordingHz = 11025;
         int recordingBits = 8;
         std::wstring compressorName = L"GSM 6.10";
+
+        bool operator==(const VoiceChatOptions&) const = default;
     };
 
     struct GameOptions
@@ -175,6 +177,8 @@ namespace monopoly::rules
         int stopAtNthBankruptcy = 0;
 
         VoiceChatOptions voiceChat;
+
+        bool operator==(const GameOptions&) const = default;
     };
 
     struct SquareState

@@ -561,6 +561,39 @@ namespace
     }
 
 
+    void testRulesChoice()
+    {
+        using namespace monopoly;
+        using namespace monopoly::ui::playersetup;
+
+        expect(buttonAt(Phase::StandardOrCustomRules, 75, 254) == Button::RulesStandard &&
+            buttonAt(Phase::StandardOrCustomRules, 294, 315) == Button::RulesStandard &&
+            buttonAt(Phase::StandardOrCustomRules, 295, 315) == Button::None,
+            "RulesChoice Standard rectangle is exact");
+        expect(buttonAt(Phase::StandardOrCustomRules, 507, 254) == Button::RulesCustom &&
+            buttonAt(Phase::StandardOrCustomRules, 726, 315) == Button::RulesCustom &&
+            buttonAt(Phase::StandardOrCustomRules, 727, 315) == Button::None,
+            "RulesChoice Custom rectangle is exact");
+
+        rules::GameState uiState{};
+        State state{};
+        initialize(state, true);
+        requestPhase(state, uiState, Phase::StandardOrCustomRules);
+
+        const auto standard = clickButton(state, uiState, Button::RulesStandard);
+        expect(standard.type == CommandType::AcceptStandardRules &&
+            state.phase == Phase::StandardOrCustomRules &&
+            !state.customRulesDesired,
+            "Standard emits final configuration command without inventing a phase transition");
+
+        const auto custom = clickButton(state, uiState, Button::RulesCustom);
+        expect(custom.type == CommandType::None &&
+            state.phase == Phase::CustomizeRules &&
+            state.customRulesDesired,
+            "Custom records intent and advances to CustomizeRules");
+    }
+
+
     void testStartGame()
     {
         using namespace monopoly;
@@ -698,6 +731,7 @@ int main()
     testAIFlow();
     testHotspots();
     testCitySelection();
+    testRulesChoice();
     testStartGame();
     testRemovePlayer();
 

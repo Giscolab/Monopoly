@@ -6,6 +6,7 @@
 #include "Timers.hpp"
 #include "LocalPlayers.hpp"
 #include "PieceCamera.hpp"
+#include "RuleArchive.hpp"
 
 #include "RuntimeState.hpp"
 
@@ -97,6 +98,13 @@ namespace monopoly::userinterface
 
         // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
         display::noteBoardActivity();
+
+        if (message.action == actions::Type::NotifyProposedConfiguration)
+        {
+            rules::GameOptions received = uiRuleState.options;
+            if (rules::archive::decodeOptions(message.binaryDataA, received))
+                uiRuleState.options = std::move(received);
+        }
 
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
