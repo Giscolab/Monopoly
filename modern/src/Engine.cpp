@@ -7,6 +7,7 @@
 #include "Display.hpp"
 #include "BoardRules.hpp"
 #include "RuleBuildings.hpp"
+#include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
@@ -520,7 +521,8 @@ namespace monopoly::engine
                 iBarRules.mode, iBarRules.player);
             const auto bssmAvailability =
                 iBarBSSMAvailability(ruleState, iBarActivePlayer);
-            const auto selectedDeed = ibar::stateReadOnly().selectedDeed;
+            const auto& iBarState = ibar::stateReadOnly();
+            const auto selectedDeed = iBarState.selectedDeed;
             const auto selectedBit = selectedDeed
                 ? ibar::layout::propertyBit(*selectedDeed)
                 : 0u;
@@ -547,11 +549,25 @@ namespace monopoly::engine
                 : bssmAvailability.unmortgageProperties != 0;
             iBarInputs.aiButtonRemoteState =
                 !ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
+            iBarInputs.bankHovered =
+                iBarState.playerCurrentMouseOver ==
+                    static_cast<int>(rules::BankPlayer);
             iBarInputs.pressedButtonIndex =
-                ibar::stateReadOnly().pendingPressedButton;
+                iBarState.pendingPressedButton;
             iBarInputs.desiredCardIndex =
-                ibar::stateReadOnly().desiredCardIndex;
+                iBarState.desiredCardIndex;
             iBarInputs.desiredBoardCamera = displayState.desiredBoardCamera;
+
+            ibar::ScoreStripInputs scoreInputs{};
+            scoreInputs.gameInProgress = runtime::state().gameInProgress;
+            scoreInputs.hoveredPlayer = iBarState.playerCurrentMouseOver;
+            scoreInputs.tick = static_cast<std::uint32_t>(tick);
+            for (std::size_t player = 0; player < iBarState.players.size(); ++player)
+                scoreInputs.visiblePlayers[player] = iBarState.players[player].visible;
+            const auto scorePlan = ibar::planScoreStrip(ruleState, scoreInputs);
+            if (!scorePlan)
+                return SDL_SetError("IBar score strip plan: %s", scorePlan.error().c_str());
+            iBarInputs.scoreStrip = *scorePlan;
 
             ibar::PropertyTitleInputs titleInputs{};
             titleInputs.available = iBarVisible &&
@@ -570,7 +586,7 @@ namespace monopoly::engine
             iBarInputs.propertyTitles = ibar::planPropertyTitles(ruleState, titleInputs);
             ibar::setPropertyHitState(iBarInputs.propertyTitles.visibleProperties);
             iBarInputs.propertyCurrentMouseOver =
-                ibar::stateReadOnly().propertyCurrentMouseOver;
+                iBarState.propertyCurrentMouseOver;
             iBarInputs.tick = tick;
 
             const auto actionHitState = ibar::ruleActionHitState(

@@ -56,6 +56,13 @@ namespace
             "DISPLAY_IBAR_BankWidth == 45"
         );
 
+        const auto bank = bankHitRect();
+        expect(bank.left == 755 && bank.top == 560 &&
+                bank.right == 800 && bank.bottom == 592 &&
+                bank.contains(755, 560) && bank.contains(799, 591) &&
+                !bank.contains(800, 591) && !bank.contains(799, 592),
+            "bank hit rectangle preserves [755,800)x[560,592) Win32 bounds");
+
 
         expect(
             ScoreBoxLargeWidth == 184,

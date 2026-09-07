@@ -89,6 +89,11 @@ namespace monopoly::ibar::layout
         int numberOfPlayers
     ) noexcept;
 
+    [[nodiscard]] constexpr Rect bankHitRect() noexcept
+    {
+        return {VirtualWidth - BankWidth, ScoreY, VirtualWidth, ScoreY + 32};
+    }
+
 
     [[nodiscard]]
     Rect actionButtonRect(

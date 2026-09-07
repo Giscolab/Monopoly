@@ -88,6 +88,16 @@ namespace monopoly::ibar
         }
 
 
+        int playerOrBankHit(int x, int y)
+        {
+            const int player = playerHit(x, y);
+            if (player >= 0) return player;
+            if (layout::bankHitRect().contains(x, y))
+                return static_cast<int>(rules::BankPlayer);
+            return -1;
+        }
+
+
         std::optional<layout::ActionButtonSlot> actionHit(
             int x,
             int y) noexcept
@@ -483,8 +493,15 @@ namespace monopoly::ibar
 
         // Si le joueur sous la souris vient d'être masqué,
         // retirer le hover.
-        if (
-            globalState.playerCurrentMouseOver >= 0)
+        if (globalState.playerCurrentMouseOver ==
+                static_cast<int>(rules::BankPlayer) &&
+            !display::isIBarVisible(displayState.desired2DView))
+        {
+            globalState.playerCurrentMouseOver = -1;
+        }
+        else if (
+            globalState.playerCurrentMouseOver >= 0 &&
+            globalState.playerCurrentMouseOver != static_cast<int>(rules::BankPlayer))
         {
             const auto index =
                 static_cast<std::size_t>(
@@ -554,6 +571,12 @@ namespace monopoly::ibar
 
         if (message.type == uimsg::Type::MouseMoved)
         {
+            globalState.playerLastMouseOver =
+                globalState.playerCurrentMouseOver;
+            globalState.playerCurrentMouseOver = playerOrBankHit(
+                static_cast<int>(message.numberA),
+                static_cast<int>(message.numberB));
+
             globalState.actionButtonLastMouseOver =
                 globalState.actionButtonCurrentMouseOver;
             const auto action = actionHit(
