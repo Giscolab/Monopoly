@@ -4,6 +4,7 @@
 #include <optional>
 #include "World3DProjection.hpp"
 #include "PieceCamera.hpp"
+#include "UIMessages.hpp"
 
 namespace monopoly::display
 {
@@ -97,6 +98,10 @@ namespace monopoly::display
         std::optional<pieces::BoardCameraView> currentBoardCamera;
         bool game3DOn = true;
         bool board3DOn = false;
+        bool mouseLeftPressed = false;
+        bool mouseRightPressed = false;
+        bool manualMouseCamLock = false;
+        std::uint64_t manualMouseCamTime = 0;
         bool desiredCameraInvalidatedLock = false;
         bool desiredCameraClearToValidate = false;
 
@@ -132,6 +137,7 @@ namespace monopoly::display
     void endDiceCameraOverrideEarly();
     void cancelDiceCameraOverride();
 
+    void processBoardInput(const uimsg::Message& message);
     void tickActions(std::uint64_t numberOfTicks);
 
     void showAll2();

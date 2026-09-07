@@ -87,18 +87,20 @@ namespace monopoly::boardcamera
     void Controller::reset(std::uint64_t tick) noexcept
     {
         current_ = preset(pieces::BoardCameraView::TopDownSquare);
-        move_ = Move{current_, current_, tick, tick, false};
+        move_ = Move{current_, current_, tick, tick, false, false};
         waiting_.reset();
+        manualMouseActive_ = false;
     }
 
     void Controller::startMove(const engine::World3DCamera& target,
-        std::uint64_t tick, bool instant) noexcept
+        std::uint64_t tick, bool instant, bool linear) noexcept
     {
         move_.start = current_;
         move_.end = target;
         move_.startTick = tick;
         move_.endTick = instant ? tick : tick + BaseMoveTicks;
         move_.active = !instant;
+        move_.linear = linear;
         if (instant) current_ = target;
     }
 
@@ -109,7 +111,7 @@ namespace monopoly::boardcamera
         const auto clamped = std::clamp(tick, move.startTick, move.endTick);
         const float linear = static_cast<float>(clamped - move.startTick) /
             static_cast<float>(move.endTick - move.startTick);
-        const float ratio = adjustedRatio(linear);
+        const float ratio = move.linear ? linear : adjustedRatio(linear);
         auto result = move.start;
         result.location = lerp3(move.start.location, move.end.location, ratio);
         result.forward = lerp3(move.start.forward, move.end.forward, ratio);
@@ -136,7 +138,7 @@ namespace monopoly::boardcamera
                 update.completedMove = true;
             }
         }
-        if (!move_.active && waiting_)
+        if (!move_.active && waiting_ && !manualMouseActive_)
         {
             const auto target = *waiting_;
             waiting_.reset();
@@ -179,5 +181,80 @@ namespace monopoly::boardcamera
         target.nearPlane = engine::MonopolyBoardNearPlane;
         target.farPlane = engine::MonopolyBoardFarPlane;
         waiting_ = target;
+    }
+
+    bool Controller::requestManualMouseMove(std::int32_t deltaX,
+        std::int32_t deltaY, bool verticalOrbit, std::uint64_t tick) noexcept
+    {
+        if (!manualMouseActive_ && move_.active) return false;
+
+        constexpr float Pi = 3.14159265358979323846F;
+        constexpr std::array<float, 3> Center{243.0F, 10.0F, 243.0F};
+        auto target = manualMouseActive_ ? move_.end : current_;
+
+        auto relative = std::array<float, 3>{
+            target.location[0] - Center[0],
+            target.location[1] - Center[1],
+            target.location[2] - Center[2]};
+        const float horizontal = std::sqrt(relative[0] * relative[0] +
+            relative[2] * relative[2]);
+        if (horizontal > 0.0000001F)
+        {
+            if (deltaX > 40) deltaX = 50;
+            else if (deltaX < -40) deltaX = -50;
+            float angle = std::atan2(relative[0], relative[2]);
+            angle += static_cast<float>(deltaX) / 300.0F * Pi;
+            target.location[0] = horizontal * std::sin(angle) + Center[0];
+            target.location[2] = horizontal * std::cos(angle) + Center[2];
+        }
+
+        relative = {target.location[0] - Center[0],
+            target.location[1] - Center[1], target.location[2] - Center[2]};
+        float magnitude = std::sqrt(relative[0] * relative[0] +
+            relative[1] * relative[1] + relative[2] * relative[2]);
+        if (verticalOrbit)
+        {
+            deltaY = std::clamp(deltaY, -50, 50);
+            if (magnitude > 1.0F)
+            {
+                relative[1] += static_cast<float>(deltaY) * magnitude / 300.0F;
+                relative[1] = std::clamp(relative[1], -50.0F, 0.98F * magnitude);
+                const auto direction = normalized(relative);
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    target.location[axis] = Center[axis] + direction[axis] * magnitude;
+            }
+        }
+        else if (magnitude > 0.00001F)
+        {
+            deltaY = std::clamp(deltaY, -42, 42);
+            magnitude = std::clamp(magnitude + static_cast<float>(deltaY) / 0.47F,
+                100.0F, 1200.0F);
+            const auto direction = normalized(relative);
+            for (std::size_t axis = 0; axis < 3; ++axis)
+                target.location[axis] = Center[axis] + direction[axis] * magnitude;
+        }
+
+        target.forward = normalized({Center[0] - target.location[0],
+            Center[1] - target.location[1], Center[2] - target.location[2]});
+        if (!manualMouseActive_)
+        {
+            manualMouseActive_ = true;
+            waiting_.reset();
+            startMove(target, tick, false, true);
+        }
+        else if (move_.active)
+            move_.end = target;
+        else
+        {
+            current_ = target;
+            move_ = Move{target, target, tick, tick, false, true};
+        }
+        return true;
+    }
+
+    void Controller::releaseManualMouse() noexcept
+    {
+        manualMouseActive_ = false;
+        waiting_.reset();
     }
 }

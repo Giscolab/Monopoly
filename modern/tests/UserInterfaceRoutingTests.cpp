@@ -49,6 +49,11 @@ namespace monopoly::display
         requestedBackdrop = screen;
         route.push_back("display");
     }
+
+    void processBoardInput(const uimsg::Message&)
+    {
+        route.push_back("board");
+    }
 }
 
 namespace monopoly::ui::localplayers
@@ -98,6 +103,7 @@ namespace monopoly::playerselection
 
     void processLibraryMessage(const uimsg::Message&)
     {
+        route.push_back("playerselection-ui");
     }
 }
 
@@ -105,6 +111,7 @@ namespace monopoly::ibar
 {
     void processLibraryMessage(const uimsg::Message&)
     {
+        route.push_back("ibar-ui");
     }
 
     void processRuleMessage(const actions::Message&, RuleMode) noexcept
@@ -141,6 +148,22 @@ namespace monopoly::userinterface
 
 namespace
 {
+    void testUiModuleOrder()
+    {
+        using namespace monopoly;
+        route.clear();
+        runtime::reset();
+        uimsg::Message message{};
+        message.type = uimsg::Type::MouseMoved;
+        message.numberA = 100;
+        message.numberB = 100;
+        expect(userinterface::processUIMessage(message),
+            "ordinary UI message keeps game running");
+        expect(route == std::vector<std::string_view>{
+                "board", "ibar-ui", "playerselection-ui"},
+            "UI routing preserves UDBoard then UDIBar then PlayerSelection order");
+    }
+
     void testLocalBoundary()
     {
         using namespace monopoly;
@@ -458,6 +481,7 @@ int main()
         << "Monopoly UserInterface routing tests\n"
         << "====================================\n";
 
+    testUiModuleOrder();
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();

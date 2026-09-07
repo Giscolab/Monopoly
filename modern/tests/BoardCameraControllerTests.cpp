@@ -144,6 +144,59 @@ namespace
         expect(high.endCamera().location[1] < low.endCamera().location[1],
             "larger dice ratio moves high top-down camera farther toward y=300");
     }
+
+    float centerDistance(const monopoly::engine::World3DCamera& camera)
+    {
+        const float x = camera.location[0] - 243.0F;
+        const float y = camera.location[1] - 10.0F;
+        const float z = camera.location[2] - 243.0F;
+        return std::sqrt(x * x + y * y + z * z);
+    }
+
+    void testManualMouseCamera()
+    {
+        using namespace monopoly;
+        boardcamera::Controller controller;
+        controller.reset(0);
+        controller.requestPreset(pieces::BoardCameraView::TopDownSoccer, 0);
+        (void)controller.tick(0);
+        expect(!controller.requestManualMouseMove(10, 0, false, 1),
+            "manual mouse waits for an active standard camera move to complete");
+        (void)controller.tick(75);
+
+        const auto before = controller.current();
+        const float beforeDistance = centerDistance(before);
+        expect(controller.requestManualMouseMove(10, 0, false, 75) &&
+            controller.manualMouseActive() && controller.moving(),
+            "manual mouse starts a 75-tick linear move after camera becomes idle");
+        expect(!near(controller.endCamera().location[0], before.location[0]) &&
+            near(centerDistance(controller.endCamera()), beforeDistance, 0.02F),
+            "horizontal mouse delta orbits around historical board center");
+
+        controller.requestPreset(pieces::BoardCameraView::CornerGo, 80);
+        (void)controller.tick(150);
+        expect(controller.manualMouseActive() && controller.waiting() &&
+            controller.current() == controller.endCamera(),
+            "manual lock blocks a queued standard preset after manual move completes");
+
+        const float distanceBeforeZoom = centerDistance(controller.current());
+        expect(controller.requestManualMouseMove(0, 100, false, 150),
+            "continued manual input applies after the initial interpolation");
+        expect(centerDistance(controller.current()) > distanceBeforeZoom &&
+            centerDistance(controller.current()) <= 1200.01F,
+            "manual zoom clamps delta and historical distance to 100..1200");
+
+        const float radius = centerDistance(controller.current());
+        const float oldY = controller.current().location[1];
+        expect(controller.requestManualMouseMove(0, -25, true, 151) &&
+            !near(controller.current().location[1], oldY) &&
+            near(centerDistance(controller.current()), radius, 0.02F),
+            "right-button mode changes vertical orbit while preserving radius");
+
+        controller.releaseManualMouse();
+        expect(!controller.manualMouseActive() && !controller.waiting(),
+            "manual release clears lock and stale waiting preset before revalidation");
+    }
 }
 
 int main()
@@ -155,6 +208,7 @@ int main()
     testWaitingReplacement();
     testDiceMoveUsesCurrentMoveDestination();
     testDiceRandomRange();
+    testManualMouseCamera();
 
     if (failures != 0)
     {

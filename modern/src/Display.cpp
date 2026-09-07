@@ -4,6 +4,9 @@
 #include "PlayerSelection.hpp"
 #include "IBar.hpp"
 
+#include <algorithm>
+#include <limits>
+
 namespace monopoly::display
 {
     namespace
@@ -269,6 +272,53 @@ namespace monopoly::display
         globalState.diceCameraControlActive = false;
     }
 
+    void processBoardInput(const uimsg::Message& message)
+    {
+        switch (message.type)
+        {
+        case uimsg::Type::MouseLeftDown:
+            globalState.mouseLeftPressed = true;
+            return;
+        case uimsg::Type::MouseLeftUp:
+            globalState.mouseLeftPressed = false;
+            return;
+        case uimsg::Type::MouseRightDown:
+            globalState.mouseRightPressed = true;
+            return;
+        case uimsg::Type::MouseRightUp:
+            globalState.mouseRightPressed = false;
+            return;
+        default:
+            break;
+        }
+
+        if (message.type != uimsg::Type::MouseMoved ||
+            !globalState.mouseLeftPressed || !globalState.board3DOn ||
+            globalState.viewportInUse == Viewport3D::Off)
+            return;
+
+        const auto rect = worldViewport(globalState.viewportInUse);
+        if (message.numberA < rect.left || message.numberA > rect.right ||
+            message.numberB < rect.top || message.numberB > rect.bottom)
+            return;
+
+        const auto clampDelta = [](std::int64_t value) noexcept {
+            return static_cast<std::int32_t>(std::clamp<std::int64_t>(value,
+                std::numeric_limits<std::int32_t>::min(),
+                std::numeric_limits<std::int32_t>::max()));
+        };
+        const bool verticalOrbit = globalState.mouseRightPressed ||
+            (message.numberE & uimsg::MouseModifierControl) != 0;
+        if (boardCameraController.requestManualMouseMove(
+                clampDelta(message.numberC), clampDelta(message.numberD),
+                verticalOrbit, boardCameraTick))
+        {
+            globalState.manualMouseCamLock = true;
+            globalState.manualMouseCamTime = boardCameraTick;
+            globalState.worldCamera = boardCameraController.current();
+        }
+    }
+
     void showAll2()
     {
         // ====================================================
@@ -319,6 +369,15 @@ namespace monopoly::display
         boardCameraTick += numberOfTicks;
         const auto cameraUpdate = boardCameraController.tick(boardCameraTick);
         globalState.worldCamera = cameraUpdate.camera;
+        if (globalState.manualMouseCamLock &&
+            boardCameraTick > globalState.manualMouseCamTime +
+                60U * 20U)
+        {
+            globalState.manualMouseCamLock = false;
+            boardCameraController.releaseManualMouse();
+            globalState.desiredCameraInvalidatedLock = true;
+            globalState.desiredCameraClearToValidate = true;
+        }
 
         // DISPLAY_UDIBAR_TickActions().
         ibar::tickActions(

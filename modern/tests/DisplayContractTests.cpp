@@ -229,6 +229,67 @@ namespace
         shutdown();
     }
 
+    void testManualMouseBoardCamera()
+    {
+        using namespace monopoly;
+        using namespace monopoly::display;
+
+        expect(initialize(), "DISPLAY initializes for manual mouse camera test");
+        showAll2();
+        setBackdrop(Screen2D::Main);
+        state().game3DOn = true;
+        showAll2();
+        expect(stateReadOnly().board3DOn,
+            "manual camera test starts with visible 3D board");
+
+        processBoardInput({uimsg::Type::MouseLeftDown, 400, 200});
+        processBoardInput({uimsg::Type::MouseMoved, 900, 200, 10, 0});
+        expect(!stateReadOnly().manualMouseCamLock,
+            "left drag outside active viewport does not capture board camera");
+
+        const auto presetBefore = stateReadOnly().worldCamera;
+        processBoardInput({uimsg::Type::MouseMoved, 400, 200, 10, 0});
+        expect(stateReadOnly().manualMouseCamLock &&
+            stateReadOnly().manualMouseCamTime == 0,
+            "left drag inside viewport acquires manual mouse camera lock");
+        processBoardInput({uimsg::Type::MouseLeftUp, 400, 200});
+        expect(stateReadOnly().manualMouseCamLock && !stateReadOnly().mouseLeftPressed,
+            "releasing left button preserves timed manual camera lock");
+
+        tickActions(boardcamera::BaseMoveTicks);
+        expect(!sameCamera(stateReadOnly().worldCamera, presetBefore),
+            "manual orbit reaches changed camera after 75 ticks");
+
+        processBoardInput({uimsg::Type::MouseRightDown, 400, 200});
+        processBoardInput({uimsg::Type::MouseLeftDown, 400, 200});
+        const float yBeforeRightOrbit = stateReadOnly().worldCamera.location[1];
+        processBoardInput({uimsg::Type::MouseMoved, 400, 200, 0, -25});
+        expect(!near(stateReadOnly().worldCamera.location[1], yBeforeRightOrbit),
+            "right-button left drag selects vertical orbit mode");
+        processBoardInput({uimsg::Type::MouseRightUp, 400, 200});
+
+        const float yBeforeControlOrbit = stateReadOnly().worldCamera.location[1];
+        processBoardInput({uimsg::Type::MouseMoved, 400, 200, 0, 15,
+            uimsg::MouseModifierControl});
+        expect(!near(stateReadOnly().worldCamera.location[1], yBeforeControlOrbit),
+            "Ctrl modifier selects the same vertical orbit path as right mouse");
+        processBoardInput({uimsg::Type::MouseLeftUp, 400, 200});
+
+        tickActions(60U * 20U);
+        expect(stateReadOnly().manualMouseCamLock,
+            "manual mouse camera remains locked at exactly 20 seconds");
+        tickActions(1);
+        expect(!stateReadOnly().manualMouseCamLock,
+            "manual mouse camera releases strictly after 20 seconds");
+
+        tickActions(1);
+        tickActions(boardcamera::BaseMoveTicks);
+        expect(sameCamera(stateReadOnly().worldCamera,
+                boardcamera::preset(stateReadOnly().desiredBoardCamera)),
+            "release revalidates and returns to desired standard camera preset");
+        shutdown();
+    }
+
     void testDisplayStateMachine()
     {
         using namespace monopoly::display;
@@ -318,6 +379,7 @@ int main()
 
     testEnumContract();
     testBoardCameraStateMachine();
+    testManualMouseBoardCamera();
     testDisplayStateMachine();
 
     if (failures != 0)
