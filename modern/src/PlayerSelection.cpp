@@ -5,7 +5,7 @@
 #include "LocalPlayers.hpp"
 #include "PlayerSetupFlow.hpp"
 #include "UserInterface.hpp"
-#include "RuleArchive.hpp"
+#include "RuleConfiguration.hpp"
 #include "RuleOptions.hpp"
 
 #include <SDL3/SDL.h>
@@ -506,6 +506,14 @@ namespace monopoly::playerselection
             }
 
 
+            if (
+                setupFlowState.phase == Phase::CustomizeRules &&
+                button == Button::RulesOkay)
+            {
+                return messaging::serverMode();
+            }
+
+
             // ENTERNAME :
             // le bouton NEXT n'existe qu'avec au moins
             // un caractère + le curseur "_".
@@ -520,6 +528,60 @@ namespace monopoly::playerselection
 
 
             return true;
+        }
+
+
+        rules::PlayerNumber firstLocalHuman(
+            const rules::GameState& uiState)
+        {
+            for (rules::PlayerNumber player = 0;
+                 player < uiState.numberOfPlayers;
+                 ++player)
+            {
+                if (ui::localplayers::slotIsLocalHumanPlayer(player))
+                    return player;
+            }
+
+            return rules::NobodyPlayer;
+        }
+
+
+        bool sendSetupConfiguration(
+            const rules::GameState& uiState,
+            bool interim)
+        {
+            rules::PlayerNumber sender = rules::NobodyPlayer;
+
+            if (interim)
+            {
+                const auto current =
+                    ui::localplayers::currentUIPlayer();
+
+                if (current < uiState.numberOfPlayers &&
+                    ui::localplayers::slotIsLocalHumanPlayer(current))
+                {
+                    sender = current;
+                }
+            }
+            else
+            {
+                sender = firstLocalHuman(uiState);
+            }
+
+            if (sender == rules::NobodyPlayer)
+                return false;
+
+            actions::Message acceptance{};
+            if (!rules::configuration::acceptedConfigurationMessage(
+                    uiState.options,
+                    sender,
+                    interim,
+                    acceptance))
+            {
+                return false;
+            }
+
+            return messaging::sendAction(acceptance);
         }
 
 
@@ -609,33 +671,55 @@ namespace monopoly::playerselection
                 {
                     auto& mutableState = userinterface::ruleState();
                     rules::options::setStandardMonopolyRules(mutableState.options);
+                    globalState.forcedRefresh = true;
+                    (void)sendSetupConfiguration(mutableState, false);
+                    break;
+                }
 
-                    rules::PlayerNumber localHuman = rules::NobodyPlayer;
-                    for (rules::PlayerNumber player = 0;
-                         player < mutableState.numberOfPlayers;
-                         ++player)
+
+                case ui::playersetup::
+                    CommandType::AcceptCustomRules:
+                {
+                    (void)sendSetupConfiguration(
+                        userinterface::ruleStateReadOnly(),
+                        false);
+                    break;
+                }
+
+
+                case ui::playersetup::
+                    CommandType::RestoreStandardRules:
+                {
+                    auto& mutableState = userinterface::ruleState();
+                    rules::options::setStandardMonopolyRules(mutableState.options);
+                    globalState.forcedRefresh = true;
+                    (void)sendSetupConfiguration(mutableState, true);
+                    break;
+                }
+
+
+                case ui::playersetup::
+                    CommandType::ApplyShortGameRules:
+                {
+                    auto& mutableState = userinterface::ruleState();
+                    rules::options::setShortGameRules(mutableState.options);
+                    globalState.forcedRefresh = true;
+                    (void)sendSetupConfiguration(mutableState, true);
+                    break;
+                }
+
+
+                case ui::playersetup::
+                    CommandType::ApplyCustomRule:
+                {
+                    auto& mutableState = userinterface::ruleState();
+                    if (rules::options::applySetupRuleChoice(
+                            mutableState.options,
+                            command.setupRule,
+                            command.ruleChoice))
                     {
-                        if (ui::localplayers::slotIsLocalHumanPlayer(player))
-                        {
-                            localHuman = player;
-                            break;
-                        }
-                    }
-
-                    if (localHuman != rules::NobodyPlayer)
-                    {
-                        actions::Message acceptance{};
-                        acceptance.action = actions::Type::AcceptConfiguration;
-                        acceptance.fromPlayer = localHuman;
-                        acceptance.toPlayer = rules::BankPlayer;
-                        acceptance.numberC = 1;
-
-                        if (rules::archive::encodeOptions(
-                                mutableState.options,
-                                acceptance.binaryDataA))
-                        {
-                            messaging::sendAction(acceptance);
-                        }
+                        globalState.forcedRefresh = true;
+                        (void)sendSetupConfiguration(mutableState, true);
                     }
                     break;
                 }

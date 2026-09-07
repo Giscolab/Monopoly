@@ -5,6 +5,7 @@
 #include "RuleOptions.hpp"
 #include "RuleTypes.hpp"
 
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <iostream>
@@ -403,6 +404,128 @@ namespace
             options.gameOverTimeLimit == 0,
             "time limit < 60 disabled"
         );
+    }
+
+
+    void testSetupRuleControls()
+    {
+        using namespace monopoly::rules;
+        using monopoly::rules::options::SetupRule;
+
+        auto checkFourChoices = [&](
+            SetupRule rule,
+            int GameOptions::* field,
+            const std::array<int, 4>& expected,
+            std::string_view description)
+        {
+            bool allMatch =
+                options::setupRuleChoiceCount(rule) == 4;
+
+            for (std::uint8_t choice = 0; choice < 4; ++choice)
+            {
+                GameOptions value{};
+                options::setDefaults(value);
+                allMatch =
+                    options::applySetupRuleChoice(value, rule, choice) &&
+                    value.*field == expected[choice] &&
+                    allMatch;
+            }
+
+            expect(allMatch, description);
+        };
+
+        {
+            GameOptions value{};
+            options::setDefaults(value);
+            const bool first = options::applySetupRuleChoice(
+                value, SetupRule::HousesPerHotel, 0) &&
+                value.housesPerHotel == 4;
+            const bool second = options::applySetupRuleChoice(
+                value, SetupRule::HousesPerHotel, 1) &&
+                value.housesPerHotel == 5;
+            expect(
+                options::setupRuleChoiceCount(SetupRule::HousesPerHotel) == 2 &&
+                first && second,
+                "CustomizeRules houses-per-hotel choices 4/5");
+        }
+
+        checkFourChoices(SetupRule::MaximumHouses, &GameOptions::maximumHouses,
+            {12, 32, 60, 88}, "CustomizeRules maximum houses choices");
+        checkFourChoices(SetupRule::MaximumHotels, &GameOptions::maximumHotels,
+            {4, 12, 16, 22}, "CustomizeRules maximum hotels choices");
+        checkFourChoices(SetupRule::FreeParkingSeed, &GameOptions::freeParkingSeed,
+            {0, 250, 500, 750}, "CustomizeRules free-parking seed choices");
+        checkFourChoices(SetupRule::InitialCash, &GameOptions::initialCash,
+            {500, 1000, 1500, 2000}, "CustomizeRules initial cash choices");
+        checkFourChoices(SetupRule::PassingGoAmount, &GameOptions::passingGoAmount,
+            {0, 100, 200, 400}, "CustomizeRules salary choices");
+        checkFourChoices(SetupRule::TaxRate, &GameOptions::taxRate,
+            {0, 5, 10, 15}, "CustomizeRules income-tax rate choices");
+        checkFourChoices(SetupRule::FlatTaxFee, &GameOptions::flatTaxFee,
+            {0, 100, 200, 400}, "CustomizeRules flat-tax choices");
+        checkFourChoices(SetupRule::LuxuryTaxAmount, &GameOptions::luxuryTaxAmount,
+            {0, 75, 150, 300}, "CustomizeRules luxury-tax choices");
+        checkFourChoices(SetupRule::MaximumTurnsInJail, &GameOptions::maximumTurnsInJail,
+            {1, 2, 3, 4}, "CustomizeRules jail-turn choices");
+        checkFourChoices(SetupRule::GetOutOfJailFee, &GameOptions::getOutOfJailFee,
+            {0, 50, 100, 200}, "CustomizeRules jail-fee choices");
+        checkFourChoices(SetupRule::HouseShortageLevel, &GameOptions::houseShortageLevel,
+            {0, 1, 6, 12}, "CustomizeRules house-shortage choices");
+        checkFourChoices(SetupRule::HotelShortageLevel, &GameOptions::hotelShortageLevel,
+            {0, 1, 3, 6}, "CustomizeRules hotel-shortage choices");
+        checkFourChoices(SetupRule::InterestRate, &GameOptions::interestRate,
+            {0, 5, 10, 20}, "CustomizeRules mortgage-rate choices");
+        checkFourChoices(SetupRule::AuctionDelay, &GameOptions::auctionGoingTimeDelay,
+            {3, 4, 5, 10}, "CustomizeRules auction-delay choices");
+        checkFourChoices(SetupRule::DealNPropertiesAtStartup, &GameOptions::dealNPropertiesAtStartup,
+            {0, 2, 4, 28}, "CustomizeRules dealt-property choices");
+
+        GameOptions toggles{};
+        options::setStandardMonopolyRules(toggles);
+        const bool evenBefore = toggles.evenBuildRule;
+        const bool doubleBefore = toggles.doubleSalaryOnGo;
+        const bool parkingBefore = toggles.freeParkingPot;
+        const bool futureBefore = toggles.futureRentTradingAllowed;
+        const bool immunityBefore = toggles.immunitiesTradingAllowed;
+        const bool freeDealtBefore = toggles.dealFreePropertiesAtStartup;
+
+        const bool toggled =
+            options::applySetupRuleChoice(toggles, SetupRule::EvenBuildRule, 0) &&
+            options::applySetupRuleChoice(toggles, SetupRule::DoubleSalaryOnGo, 0) &&
+            options::applySetupRuleChoice(toggles, SetupRule::FreeParkingPot, 0) &&
+            options::applySetupRuleChoice(toggles, SetupRule::FuturesAndImmunities, 0) &&
+            options::applySetupRuleChoice(toggles, SetupRule::DealFreePropertiesAtStartup, 0);
+        expect(
+            toggled &&
+            toggles.evenBuildRule != evenBefore &&
+            toggles.doubleSalaryOnGo != doubleBefore &&
+            toggles.freeParkingPot != parkingBefore &&
+            toggles.futureRentTradingAllowed != futureBefore &&
+            toggles.immunitiesTradingAllowed != immunityBefore &&
+            toggles.dealFreePropertiesAtStartup != freeDealtBefore,
+            "CustomizeRules five toggle buttons preserve retail semantics");
+
+        GameOptions shortGame{};
+        options::setDefaults(shortGame);
+        shortGame.hideCash = true;
+        options::setShortGameRules(shortGame);
+        expect(
+            shortGame.housesPerHotel == 4 &&
+            shortGame.dealFreePropertiesAtStartup &&
+            shortGame.dealNPropertiesAtStartup == 2 &&
+            shortGame.houseShortageLevel == 6 &&
+            shortGame.hideCash,
+            "Short Game = Standard + housesPerHotel 4 + two free dealt properties");
+
+        GameOptions rejected{};
+        options::setDefaults(rejected);
+        const GameOptions before = rejected;
+        expect(
+            !options::applySetupRuleChoice(
+                rejected, SetupRule::InitialCash, 4) &&
+            rejected == before &&
+            options::setupRuleChoiceCount(SetupRule::Count) == 0,
+            "CustomizeRules rejects invalid choice transactionally");
     }
 
 
@@ -952,6 +1075,36 @@ namespace
         expect(archive::encodeOptions(proposed, blob),
             "configuration proposal options encode");
 
+        actions::Message builtFinal{};
+        const bool builtFinalOkay = configuration::acceptedConfigurationMessage(
+            proposed, 0, false, builtFinal);
+        GameOptions builtFinalOptions{};
+        const bool builtFinalDecoded =
+            archive::decodeOptions(builtFinal.binaryDataA, builtFinalOptions);
+        expect(
+            builtFinalOkay &&
+            builtFinal.action == actions::Type::AcceptConfiguration &&
+            builtFinal.fromPlayer == 0 && builtFinal.toPlayer == BankPlayer &&
+            builtFinal.numberC == 1 && builtFinal.numberD == 0 &&
+            builtFinalDecoded && builtFinalOptions == proposed,
+            "final setup acceptance uses protocol v1, numberD=0 and exact options blob");
+
+        actions::Message builtInterim{};
+        expect(
+            configuration::acceptedConfigurationMessage(
+                proposed, 1, true, builtInterim) &&
+            builtInterim.numberC == 1 && builtInterim.numberD == 1 &&
+            builtInterim.fromPlayer == 1 && builtInterim.toPlayer == BankPlayer,
+            "interim setup acceptance uses numberD=1");
+
+        actions::Message rejectedBuild{};
+        rejectedBuild.action = actions::Type::Tick;
+        expect(
+            !configuration::acceptedConfigurationMessage(
+                proposed, MaxPlayers, false, rejectedBuild) &&
+            rejectedBuild.action == actions::Type::Tick,
+            "acceptance message rejects invalid player transactionally");
+
         actions::Message accept{};
         accept.action = actions::Type::AcceptConfiguration;
         accept.fromPlayer = 0;
@@ -1011,6 +1164,7 @@ int main()
     testBoard();
     testOptions();
     testStandardRulesPreset();
+    testSetupRuleControls();
     testConfigurationAcceptance();
     testPhaseStack();
     testArchive();

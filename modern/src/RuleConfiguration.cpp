@@ -2,6 +2,8 @@
 
 #include "RuleArchive.hpp"
 
+#include <utility>
+
 namespace monopoly::rules::configuration
 {
     void clearAcceptConfiguration(GameState& state) noexcept
@@ -61,6 +63,30 @@ namespace monopoly::rules::configuration
 
         return update;
     }
+
+    bool acceptedConfigurationMessage(
+        const GameOptions& options,
+        PlayerNumber fromPlayer,
+        bool interim,
+        actions::Message& result)
+    {
+        if (fromPlayer >= MaxPlayers)
+            return false;
+
+        actions::Message message{};
+        message.action = actions::Type::AcceptConfiguration;
+        message.fromPlayer = fromPlayer;
+        message.toPlayer = BankPlayer;
+        message.numberC = 1;
+        message.numberD = interim ? 1 : 0;
+
+        if (!archive::encodeOptions(options, message.binaryDataA))
+            return false;
+
+        result = std::move(message);
+        return true;
+    }
+
 
     actions::Message proposedConfigurationMessage(const GameState& state)
     {
