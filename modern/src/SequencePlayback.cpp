@@ -2,11 +2,26 @@
 
 namespace monopoly::engine
 {
+    std::expected<std::shared_ptr<const sequence::SequenceProgram>, std::string>
+    SequencePlayback::loadProgram(data::DataId id)
+    {
+        if (runtimeBitmaps_.contains(id))
+        {
+            auto program = sequence::SequenceProgram::rawBitmap(
+                id, data::LegacyDataType::Native);
+            if (!program) return std::unexpected(program.error().detail);
+            return *program;
+        }
+        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
+        if (!program) return std::unexpected(program.error().detail);
+        return *program;
+    }
+
     std::expected<void, std::string> SequencePlayback::start(
         data::DataId id, std::uint16_t priority)
     {
-        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
-        if (!program) return std::unexpected(program.error().detail);
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
         const auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority});
         if (!queued)
             return std::unexpected("sequence command queue capacity exceeded");
@@ -17,8 +32,8 @@ namespace monopoly::engine
         data::DataId id, std::uint16_t priority,
         std::int32_t x, std::int32_t y, bool dropFrames)
     {
-        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
-        if (!program) return std::unexpected(program.error().detail);
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
         if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - 2)
             return std::unexpected("sequence command queue capacity exceeded");
         sequence::ClockStartOptions options{};
@@ -30,6 +45,31 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::transitionXY(
+        std::optional<data::DataId> previousId, data::DataId id,
+        std::uint16_t priority, std::int32_t x, std::int32_t y,
+        bool dropFrames)
+    {
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
+        const std::size_t required = previousId ? 3U : 2U;
+        if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - required)
+            return std::unexpected("sequence command queue capacity exceeded");
+        if (previousId)
+        {
+            const auto stopped = commands_.enqueue(
+                sequence::StopSequenceCommand{*previousId, priority});
+            if (!stopped) return std::unexpected("sequence command queue capacity exceeded");
+        }
+        sequence::ClockStartOptions options{};
+        options.dropFrames = dropFrames;
+        auto queued = commands_.enqueue(
+            sequence::StartSequenceCommand{*program, priority, options});
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        queued = commands_.enqueue(sequence::makeMoveXY(id, priority, x, y));
+        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
+        return {};
+    }
     std::expected<void, std::string> SequencePlayback::setEndingAction(
         data::DataId id, std::uint16_t priority, std::uint8_t action)
     {
@@ -45,8 +85,8 @@ namespace monopoly::engine
         data::DataId id, std::uint16_t priority,
         sequence::SequenceTransform transform)
     {
-        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
-        if (!program) return std::unexpected(program.error().detail);
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
         if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - 2)
             return std::unexpected("sequence command queue capacity exceeded");
         auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority});
@@ -81,8 +121,8 @@ namespace monopoly::engine
         std::uint16_t priority, sequence::SequenceTransform transform,
         std::uint8_t endingAction)
     {
-        auto program = sequence::SequenceProgram::load(meshes_.resources(), id);
-        if (!program) return std::unexpected(program.error().detail);
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
         if (endingAction == 0 || endingAction > 3)
             return std::unexpected("invalid sequence ending action");
 
@@ -152,7 +192,8 @@ namespace monopoly::engine
         auto items = sequence::collectSequenceMeshRenderData(runtime_, meshes_);
         if (!items)
         { world_.clear(); world2D_.clear(); return std::unexpected(items.error().cause.detail); }
-        const auto bitmapItems = sequence::collectSequenceBitmapRenderData(runtime_, meshes_.resources());
+        const auto bitmapItems = sequence::collectSequenceBitmapRenderData(
+            runtime_, meshes_.resources(), &runtimeBitmaps_);
         if (!bitmapItems)
         { world_.clear(); world2D_.clear(); return std::unexpected(bitmapItems.error().detail); }
         const auto bitmapPublished = world2D_.sync(*bitmapItems, bitmaps_);

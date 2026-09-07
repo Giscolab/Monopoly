@@ -124,6 +124,36 @@ namespace monopoly::sequence
     }
 
     std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
+    SequenceProgram::rawBitmap(data::DataId id, data::LegacyDataType sourceType,
+        DescriptionLimits limits)
+    {
+        if (limits.maximumDepth == 0 || limits.maximumDepth > 128 ||
+            limits.maximumDescriptions == 0)
+            return std::unexpected(error(RuntimeErrorCode::InvalidLimits, id, 0,
+                "description depth must be 1..128 and node budget nonzero"));
+        if (sourceType != data::LegacyDataType::Uap &&
+            sourceType != data::LegacyDataType::Native)
+            return std::unexpected(error(RuntimeErrorCode::UnsupportedType, id, 0,
+                "raw bitmap sequence supports only DataUAP and DataNative"));
+
+        auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
+        data::LegacySequenceHeader header{};
+        header.timeMultiple = 60;
+        header.endingAction = 2;
+        data::LegacySequenceRecord record{
+            data::ChunkInfo{3, 0, 0, 0, 0}, header,
+            data::SequenceBitmapData{id}, 0};
+        auto children = SequenceChildSchedule::read({}, id, limits.maximumReferences);
+        if (!children)
+            return std::unexpected(std::visit([&](const auto& cause) {
+                return caused(RuntimeErrorCode::DecodeFailure, id, 0, cause);
+            }, children.error()));
+        program->descriptions_.push_back({id, std::move(record),
+            std::move(*children), {}, id, {}});
+        return std::shared_ptr<const SequenceProgram>(std::move(program));
+    }
+
+    std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
     SequenceProgram::load(const data::DataBankRegistry& registry, data::DataId id,
         std::size_t offset, DescriptionLimits limits)
     {
@@ -148,22 +178,7 @@ namespace monopoly::sequence
             if (offset != 0)
                 return std::unexpected(error(RuntimeErrorCode::DecodeFailure,
                     id, offset, "raw UAP sequence must start at offset zero"));
-            auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
-            data::LegacySequenceHeader header{};
-            header.timeMultiple = 60;
-            header.endingAction = 2; // LE_SEQNCR_EndingActionStayAtEnd.
-            data::LegacySequenceRecord record{
-                data::ChunkInfo{3, 0, 0, 0, 0}, header,
-                data::SequenceBitmapData{id}, 0};
-            auto children = SequenceChildSchedule::read({}, id,
-                limits.maximumReferences);
-            if (!children)
-                return std::unexpected(std::visit([&](const auto& cause) {
-                    return caused(RuntimeErrorCode::DecodeFailure, id, offset, cause);
-                }, children.error()));
-            program->descriptions_.push_back({id, std::move(record),
-                std::move(*children), {}, id, {}});
-            return std::shared_ptr<const SequenceProgram>(std::move(program));
+            return rawBitmap(id, metadata->type, limits);
         }
 
         if (metadata->type == data::LegacyDataType::Hmd)

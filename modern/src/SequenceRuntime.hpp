@@ -61,7 +61,9 @@ namespace monopoly::sequence
             std::size_t offset = 0, DescriptionLimits limits = {});
         [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
         load(std::shared_ptr<const data::ResourceSnapshot> resources, data::DataId id,
-            std::size_t offset = 0, DescriptionLimits limits = {});
+            std::size_t offset = 0, DescriptionLimits limits = {});        [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
+        rawBitmap(data::DataId id, data::LegacyDataType sourceType,
+            DescriptionLimits limits = {});
         [[nodiscard]] std::span<const SequenceDescription> descriptions() const noexcept;
         [[nodiscard]] std::shared_ptr<const data::ResourceSnapshot> resources() const noexcept;
     private:

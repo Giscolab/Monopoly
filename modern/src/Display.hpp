@@ -95,6 +95,7 @@ namespace monopoly::display
         pieces::BoardCameraView desiredBoardCamera =
             pieces::BoardCameraView::TopDownSoccer;
         std::optional<pieces::BoardCameraView> currentBoardCamera;
+        bool game3DOn = true;
         bool board3DOn = false;
         bool desiredCameraInvalidatedLock = false;
         bool desiredCameraClearToValidate = false;

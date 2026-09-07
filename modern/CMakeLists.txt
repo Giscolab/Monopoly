@@ -146,6 +146,7 @@ add_library(
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
     src/BitmapRuntime.cpp
+    src/RuntimeBitmapSurface.cpp
     src/SequenceWorld2DSlot.cpp
     src/World3DProjection.cpp
     src/SequenceWorld3DSlot.cpp
@@ -2010,4 +2011,28 @@ if(BUILD_TESTING)
     target_include_directories(MonopolyDice2DPlaybackTests PRIVATE src tests)
     target_link_libraries(MonopolyDice2DPlaybackTests PRIVATE MonopolyDataCore)
     add_test(NAME Monopoly.Dice2DPlayback COMMAND MonopolyDice2DPlaybackTests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyRuntimeBitmapSurfaceTests tests/RuntimeBitmapSurfaceTests.cpp)
+    target_include_directories(MonopolyRuntimeBitmapSurfaceTests PRIVATE src tests)
+    target_link_libraries(MonopolyRuntimeBitmapSurfaceTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyRuntimeBitmapSurfaceTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.RuntimeBitmapSurface COMMAND MonopolyRuntimeBitmapSurfaceTests)
+endif()
+
+target_sources(MonopolyModern PRIVATE src/BoardBackdropPlayback.cpp)
+
+if(BUILD_TESTING)
+    add_executable(MonopolyBoardBackdropPlaybackTests
+        tests/BoardBackdropPlaybackTests.cpp
+        src/BoardBackdropPlayback.cpp)
+    target_include_directories(MonopolyBoardBackdropPlaybackTests PRIVATE src tests)
+    target_link_libraries(MonopolyBoardBackdropPlaybackTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyBoardBackdropPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.BoardBackdropPlayback COMMAND MonopolyBoardBackdropPlaybackTests)
 endif()
