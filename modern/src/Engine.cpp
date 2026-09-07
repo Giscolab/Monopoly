@@ -20,6 +20,7 @@
 #include "PieceIdleDisplay.hpp"
 #include "PieceBuildingDisplay.hpp"
 #include "PieceShadowDisplay.hpp"
+#include "AuctionPlayback.hpp"
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
@@ -55,6 +56,7 @@ namespace monopoly::engine
         pieces::PieceIdleDisplay pieceIdleDisplay;
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
         pieces::PieceShadowDisplay pieceShadowDisplay;
+        auctionui::Playback auctionPlayback;
         boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
         boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
         boarddisplay::BoardLightingController boardLightingController;
@@ -627,6 +629,11 @@ namespace monopoly::engine
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
             const auto& ruleState = userinterface::ruleStateReadOnly();
+            const auto auctionSync = auctionPlayback.sync(
+                userinterface::auctionStateReadOnly(), ruleState,
+                displayState.desired2DView, displayState.city, *session);
+            if (!auctionSync)
+                return SDL_SetError("Auction playback: %s", auctionSync.error().c_str());
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
             const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
@@ -851,6 +858,7 @@ namespace monopoly::engine
         pieceIdleDisplay.reset();
         pieceBuildingDisplay.reset();
         pieceShadowDisplay.reset();
+        auctionPlayback.reset();
         boardBackdropPlayback.reset();
         ownershipHighlightPlayback.reset();
         boardLightingController.reset();

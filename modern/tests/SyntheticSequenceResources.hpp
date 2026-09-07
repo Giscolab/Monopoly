@@ -141,6 +141,19 @@ struct SyntheticSequenceResources
                 for (std::uint32_t tag = 0x01BFU; tag <= 0x01D6U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
             }
+            else if (i == 1)
+            {
+                // Test-only UDAuct PAT sequences and one shared bitmap leaf.
+                // Covers player tokens, player backdrops, bottom bar and bill trays.
+                const auto auctionSequence = words({
+                    0x03000014, 0, 0x04000000, 2, 0x000003A0});
+                items.resize(0x03A1);
+                for (std::uint32_t tag = 0x0003U; tag <= 0x000DU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, auctionSequence};
+                for (std::uint32_t tag = 0x036FU; tag <= 0x0384U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, auctionSequence};
+                items[0x03A0] = {LegacyDataType::Bitmap, bitmap24()};
+            }
             else if (i == 2)
             {
                 items.resize(0x0405);
@@ -238,7 +251,13 @@ struct SyntheticSequenceResources
                 items[0x02F6] = {LegacyDataType::Bitmap, bitmap24()};
                 // USA deed pop-ups used by UDIBar property mouseover. City 0 only:
                 // TAB_iyb00x00 (mortgaged) and TAB_iyf00x00 (normal), 28 deeds each.
-                items.resize(0x0CEC);
+                items.resize(0x0E00);
+                // UDAuct property-for-sale deeds. USA regular deeds are 28 per city;
+                // house and hotel use fixed language-graphics tags.
+                items[0x090C] = {LegacyDataType::Chunky, finiteButton};
+                items[0x090D] = {LegacyDataType::Chunky, finiteButton};
+                for (std::uint32_t tag = 0x0CD0U; tag <= 0x0DFFU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // Player property-bar Get Out of Jail cards: Chance / Community.
                 for (std::uint32_t tag = 0x0992U; tag <= 0x0993U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
