@@ -1084,6 +1084,7 @@ if(BUILD_TESTING)
         MonopolyPlayerSetupTests
         tests/PlayerSetupFlowTests.cpp
         src/PlayerSetupFlow.cpp
+        src/RuleOptions.cpp
     )
 
     target_include_directories(

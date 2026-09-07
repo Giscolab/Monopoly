@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RuleOptions.hpp"
 #include "RuleTypes.hpp"
 
 #include <array>
@@ -69,7 +70,11 @@ namespace monopoly::ui::playersetup
         CityNext,
 
         RulesStandard,
-        RulesCustom
+        RulesCustom,
+
+        RulesOkay,
+        RulesRestoreStandard,
+        RulesShortGame
     };
 
 
@@ -104,7 +109,11 @@ namespace monopoly::ui::playersetup
         RemoveLocalPlayer,
         StartGame,
         CommitCity,
-        AcceptStandardRules
+        AcceptStandardRules,
+        AcceptCustomRules,
+        RestoreStandardRules,
+        ApplyShortGameRules,
+        ApplyCustomRule
     };
 
 
@@ -124,6 +133,11 @@ namespace monopoly::ui::playersetup
         std::uint8_t aiLevel = 0;
 
         int city = 0;
+
+        rules::options::SetupRule setupRule =
+            rules::options::SetupRule::HousesPerHotel;
+
+        std::uint8_t ruleChoice = 0;
 
 
         rules::PlayerNumber player =
@@ -276,6 +290,15 @@ namespace monopoly::ui::playersetup
         const rules::GameState& uiState,
         int x,
         int y
+    );
+
+
+    [[nodiscard]]
+    Command customRuleChoice(
+        State& state,
+        const rules::GameState& uiState,
+        rules::options::SetupRule rule,
+        std::uint8_t choice
     );
 
 

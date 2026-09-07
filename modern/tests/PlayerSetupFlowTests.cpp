@@ -594,6 +594,66 @@ namespace
     }
 
 
+    void testCustomizeRulesCommands()
+    {
+        using namespace monopoly;
+        using namespace monopoly::ui::playersetup;
+
+        expect(
+            buttonAt(Phase::CustomizeRules, 337, 450) == Button::RulesOkay &&
+            buttonAt(Phase::CustomizeRules, 463, 485) == Button::RulesOkay &&
+            buttonAt(Phase::CustomizeRules, 464, 485) == Button::None,
+            "CustomizeRules Okay rectangle is exact");
+
+        rules::GameState uiState{};
+        State host{};
+        initialize(host, true);
+        requestPhase(host, uiState, Phase::CustomizeRules);
+
+        expect(
+            clickButton(host, uiState, Button::RulesOkay).type ==
+                CommandType::AcceptCustomRules,
+            "host Okay emits final custom-rules acceptance");
+
+        expect(
+            clickButton(host, uiState, Button::RulesRestoreStandard).type ==
+                CommandType::RestoreStandardRules,
+            "Restore Standard emits interim preset command");
+
+        expect(
+            clickButton(host, uiState, Button::RulesShortGame).type ==
+                CommandType::ApplyShortGameRules,
+            "Short Game emits interim preset command");
+
+        const auto choice = customRuleChoice(
+            host,
+            uiState,
+            rules::options::SetupRule::InitialCash,
+            3);
+        expect(
+            choice.type == CommandType::ApplyCustomRule &&
+            choice.setupRule == rules::options::SetupRule::InitialCash &&
+            choice.ruleChoice == 3,
+            "custom rule choice preserves rule and option index");
+
+        expect(
+            customRuleChoice(
+                host, uiState, rules::options::SetupRule::InitialCash, 4).type ==
+                CommandType::None,
+            "out-of-range custom rule choice is rejected");
+
+        State client{};
+        initialize(client, false);
+        requestPhase(client, uiState, Phase::CustomizeRules);
+        expect(
+            clickButton(client, uiState, Button::RulesOkay).type == CommandType::None &&
+            customRuleChoice(
+                client, uiState, rules::options::SetupRule::InitialCash, 0).type ==
+                CommandType::None,
+            "client cannot finalize or directly edit host-only rule controls");
+    }
+
+
     void testStartGame()
     {
         using namespace monopoly;
@@ -732,6 +792,7 @@ int main()
     testHotspots();
     testCitySelection();
     testRulesChoice();
+    testCustomizeRulesCommands();
     testStartGame();
     testRemovePlayer();
 

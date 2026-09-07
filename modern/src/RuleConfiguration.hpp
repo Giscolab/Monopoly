@@ -22,6 +22,12 @@ namespace monopoly::rules::configuration
         GameState& state,
         const actions::Message& message);
 
+    [[nodiscard]] bool acceptedConfigurationMessage(
+        const GameOptions& options,
+        PlayerNumber fromPlayer,
+        bool interim,
+        actions::Message& result);
+
     [[nodiscard]] actions::Message proposedConfigurationMessage(
         const GameState& state);
 }

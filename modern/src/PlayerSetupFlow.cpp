@@ -178,6 +178,11 @@ namespace monopoly::ui::playersetup
             { Button::RulesCustom,   { 507, 254, 727, 316 } }
         }};
 
+        // Fixed retail rectangle. The remaining CustomizeRules controls are
+        // positioned from localized font metrics and stay abstract until that
+        // backend exists.
+        constexpr Rect RulesOkayRect{ 337, 450, 464, 486 };
+
 
         std::uint8_t tokenForButton(
             Button button)
@@ -764,6 +769,14 @@ namespace monopoly::ui::playersetup
             }
 
 
+            case Phase::CustomizeRules:
+            {
+                if (RulesOkayRect.contains(x, y))
+                    return Button::RulesOkay;
+                break;
+            }
+
+
             default:
                 break;
         }
@@ -1109,6 +1122,29 @@ namespace monopoly::ui::playersetup
         }
 
 
+        if (state.phase == Phase::CustomizeRules)
+        {
+            switch (button)
+            {
+                case Button::RulesOkay:
+                    if (state.serverMode)
+                        command.type = CommandType::AcceptCustomRules;
+                    return command;
+
+                case Button::RulesRestoreStandard:
+                    command.type = CommandType::RestoreStandardRules;
+                    return command;
+
+                case Button::RulesShortGame:
+                    command.type = CommandType::ApplyShortGameRules;
+                    return command;
+
+                default:
+                    return command;
+            }
+        }
+
+
         return command;
     }
 
@@ -1129,6 +1165,27 @@ namespace monopoly::ui::playersetup
                     y
                 )
             );
+    }
+
+
+    Command customRuleChoice(
+        State& state,
+        const GameState&,
+        rules::options::SetupRule rule,
+        std::uint8_t choice)
+    {
+        Command command{};
+
+        if (state.phase != Phase::CustomizeRules || !state.serverMode)
+            return command;
+
+        if (choice >= rules::options::setupRuleChoiceCount(rule))
+            return command;
+
+        command.type = CommandType::ApplyCustomRule;
+        command.setupRule = rule;
+        command.ruleChoice = choice;
+        return command;
     }
 
 
