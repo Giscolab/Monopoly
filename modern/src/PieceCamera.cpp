@@ -73,6 +73,39 @@ namespace monopoly::pieces
         }
     }
 
+    BoardCameraView selectAppropriateView(
+        BoardViewSelectionType type,
+        BoardCameraView desired,
+        std::int32_t currentSquare,
+        std::int32_t variable) noexcept
+    {
+        // Source/monopoly/UDBoard.cpp::UDBOARD_SelectAppropriateView.
+        // `variable` survives the public contract, but the only random branch
+        // that used it is commented out in the shipped source.
+        if (variable <= 0) variable = 1;
+        (void)variable;
+
+        switch (type)
+        {
+        case BoardViewSelectionType::RollDice:
+        {
+            std::int32_t square = currentSquare;
+            if (square > 39) square = 10;
+
+            std::int32_t view = 3 * (square / 10);
+            square %= 10;
+            --square;
+            if (square < 0) square = 0;
+            view += square / 3;
+            view += static_cast<std::int32_t>(BoardCameraView::FifteenTiles01);
+            return static_cast<BoardCameraView>(view);
+        }
+        case BoardViewSelectionType::JailChoice:
+            return BoardCameraView::CornerJail;
+        }
+        return desired;
+    }
+
     BoardCameraView pickCameraFor3Squares(std::int32_t square) noexcept
     {
         return tableLookup(Camera3, square);

@@ -169,9 +169,32 @@ namespace monopoly::userinterface
 
         if (message.action == actions::Type::NotifyPleaseRollDice)
         {
+            // UDIBar.cpp:3397-3403 selects the 15-tile roll view from the
+            // authoritative current player's square before exposing StartTurn.
+            if (uiRuleState.currentPlayer < uiRuleState.numberOfPlayers &&
+                uiRuleState.currentPlayer < rules::MaxPlayers)
+            {
+                auto& displayState = display::state();
+                displayState.desiredBoardCamera = pieces::selectAppropriateView(
+                    pieces::BoardViewSelectionType::RollDice,
+                    displayState.desiredBoardCamera,
+                    uiRuleState.players[uiRuleState.currentPlayer].currentSquare,
+                    0);
+            }
             // UDIBar.cpp sets GameInProgress before leaving the roll prompt.
             runtime::state().gameInProgress = true;
             runtime::state().gamePaused = false;
+        }
+
+        if (message.action == actions::Type::NotifyJailExitChoice)
+        {
+            // UDIBar.cpp:3640-3643 always selects VIEW2D17_CORNER_JAIL.
+            auto& displayState = display::state();
+            displayState.desiredBoardCamera = pieces::selectAppropriateView(
+                pieces::BoardViewSelectionType::JailChoice,
+                displayState.desiredBoardCamera,
+                0,
+                1);
         }
 
         if (

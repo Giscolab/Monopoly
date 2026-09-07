@@ -373,6 +373,11 @@ namespace
         userinterface::resetRuleProjection();
         runtime::reset();
         runtime::state().gamePaused = true;
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 1;
+        uiState.currentPlayer = 0;
+        uiState.players[0].currentSquare = 41;
+        routingDisplayState.desiredBoardCamera = pieces::BoardCameraView::TopDownSquare;
         actions::Message prompt{};
         prompt.action=actions::Type::NotifyPleaseRollDice;
         prompt.toPlayer=rules::AllPlayers;
@@ -386,6 +391,18 @@ namespace
             "local PLEASE_ROLL_DICE routes the bobbing prompt and notification");
         expect(runtime::state().gameInProgress && !runtime::state().gamePaused,
             "NotifyPleaseRollDice sets GameInProgress and clears GamePaused");
+        expect(routingDisplayState.desiredBoardCamera ==
+                pieces::BoardCameraView::FifteenTiles04,
+            "NotifyPleaseRollDice applies UDBoard roll selection including off-board fallback to square 10");
+
+        actions::Message jail{};
+        jail.action = actions::Type::NotifyJailExitChoice;
+        jail.toPlayer = rules::AllPlayers;
+        jail.numberA = 0;
+        userinterface::processRuleMessage(jail);
+        expect(routingDisplayState.desiredBoardCamera == pieces::BoardCameraView::CornerJail,
+            "NotifyJailExitChoice applies the fixed UDBoard jail corner camera");
+
         actions::Message roll{};
         roll.action=actions::Type::NotifyDiceRolled;roll.toPlayer=rules::AllPlayers;
         roll.numberA=1;roll.numberB=2;
