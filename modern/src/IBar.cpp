@@ -19,6 +19,58 @@ namespace monopoly::ibar
         State globalState;
 
 
+        [[nodiscard]] bool clearsBuyAuctionPopup(actions::Type action) noexcept
+        {
+            switch (action)
+            {
+            case actions::Type::NotifyNamePlayer:
+            case actions::Type::NotifyAddLocalPlayer:
+            case actions::Type::NotifyPlayerDeleted:
+            case actions::Type::NotifyPleaseAddPlayers:
+            case actions::Type::NotifyNumberOfPlayers:
+            case actions::Type::NotifyProposedConfiguration:
+            case actions::Type::NotifyAuctionGoing:
+            case actions::Type::NotifyNewHighBid:
+            case actions::Type::NotifyPleaseRollDice:
+            case actions::Type::NotifyEndTurn:
+            case actions::Type::NotifyStartTurn:
+            case actions::Type::NotifyDiceRolled:
+            case actions::Type::NotifyBuyOrAuctionDecision:
+            case actions::Type::NotifyMoveForwards:
+            case actions::Type::NotifyMoveBackwards:
+            case actions::Type::NotifyJumpToSquare:
+            case actions::Type::NotifyCashAmount:
+            case actions::Type::NotifyPassedGo:
+            case actions::Type::NotifyPleasePay:
+            case actions::Type::NotifyJailExitChoice:
+            case actions::Type::NotifyPickedUpCard:
+            case actions::Type::NotifyPutAwayCard:
+            case actions::Type::NotifySquareOwnership:
+            case actions::Type::NotifySquareMortgage:
+            case actions::Type::NotifyFreeUnmortgaging:
+            case actions::Type::NotifySquareHouses:
+            case actions::Type::NotifyJailCardOwnership:
+            case actions::Type::NotifyHousingShortage:
+            case actions::Type::NotifyFlatOrFractionTaxDecision:
+            case actions::Type::NotifyPlaceBuilding:
+            case actions::Type::NotifyDecomposeSale:
+            case actions::Type::NotifyPlayerBuySellMort:
+            case actions::Type::NotifyImmunityCount:
+            case actions::Type::NotifyFutureRentCount:
+            case actions::Type::NotifyFreeParkingPot:
+            case actions::Type::NotifyCashAnimation:
+            case actions::Type::NotifyTradeFinished:
+            case actions::Type::NotifyTradeStarted:
+            case actions::Type::NotifyTradeEditor:
+            case actions::Type::NotifyTradeAcceptanceDecision:
+            case actions::Type::NotifyTradeItem:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+
         bool playerSelectVisible()
         {
             const auto view =
@@ -712,6 +764,21 @@ namespace monopoly::ibar
         const actions::Message& message,
         RuleMode projectedMode) noexcept
     {
+        if (clearsBuyAuctionPopup(message.action))
+            globalState.desiredBuyAuctionSquare.reset();
+
+        if (message.action == actions::Type::NotifyBuyOrAuctionDecision)
+        {
+            const int square = static_cast<int>(message.numberB);
+            if (square >= 0 && square < static_cast<int>(rules::SquareCount) &&
+                layout::propertyIndex(square) >= 0)
+            {
+                globalState.desiredBuyAuctionSquare =
+                    static_cast<std::uint8_t>(square);
+            }
+            return;
+        }
+
         if (message.action == actions::Type::NotifyPickedUpCard)
         {
             const auto deck = message.numberB;

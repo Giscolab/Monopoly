@@ -210,6 +210,111 @@ namespace
     }
 
 
+    void testBuyAuctionPopupPlayback()
+    {
+        require(data::dataTag(ibar::propertyHoverDataId(1, false)) == 0x0CD0 &&
+                ibar::BuyAuctionPopupPriority == 1002 &&
+                ibar::BuyAuctionPopupXLeft == 20 &&
+                ibar::BuyAuctionPopupXRight == 560 &&
+                ibar::BuyAuctionPopupXTrade == 594 &&
+                ibar::BuyAuctionPopupY == 110,
+            "Buy/Auction popup reuses normal deed atlas with exact legacy priority/offsets");
+
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BuyAuctionPopupPlayback popup;
+        const auto deed1 = ibar::propertyHoverDataId(1, false);
+        const auto deed3 = ibar::propertyHoverDataId(3, false);
+
+        require(popup.sync(static_cast<std::uint8_t>(1), display::Screen2D::Main,
+                    1, playback) &&
+                playback.commands().pendingCount() == 2 && playback.update(0),
+            "Main Buy/Auction popup starts deed when desired ID first appears");
+        require(popup.currentDeed() == deed1 && popup.onLeft() &&
+                playback.runtime().matching(
+                    deed1, ibar::BuyAuctionPopupPriority, false).size() == 1,
+            "Main square modulo rule places popup on legacy left side");
+        const auto leftNode = playback.world2D().order().front();
+        const auto* leftObject = playback.world2D().find(leftNode);
+        require(leftObject && leftObject->priority == ibar::BuyAuctionPopupPriority &&
+                leftObject->worldTransform.values[6] == 20.0F &&
+                leftObject->worldTransform.values[7] == 110.0F,
+            "left popup preserves StartXY(20,110) at priority 1002");
+
+        require(popup.sync(static_cast<std::uint8_t>(1), display::Screen2D::Portfolio,
+                    1, playback) && playback.commands().pendingCount() == 0 &&
+                popup.onLeft(),
+            "same popup ID does not reposition when view changes, matching legacy ID gate");
+
+        require(popup.sync(static_cast<std::uint8_t>(3), display::Screen2D::Portfolio,
+                    1, playback) &&
+                playback.commands().pendingCount() == 3 && playback.update(1),
+            "new popup deed in Portfolio performs Stop then StartXY");
+        require(popup.currentDeed() == deed3 && !popup.onLeft(),
+            "Portfolio/Trade popup records legacy right-side state");
+        const auto portfolioMatches = playback.runtime().matching(
+            deed3, ibar::BuyAuctionPopupPriority, false);
+        require(portfolioMatches.size() == 1,
+            "Portfolio popup replaces old deed without duplicate priority roots");
+        const auto* portfolioObject = playback.world2D().find(portfolioMatches.front());
+        require(portfolioObject &&
+                portfolioObject->worldTransform.values[6] == 594.0F &&
+                portfolioObject->worldTransform.values[7] == 110.0F,
+            "Portfolio/Trade popup preserves StartXY(594,110)");
+
+        require(popup.sync(std::nullopt, display::Screen2D::Portfolio, 1, playback) &&
+                playback.commands().pendingCount() == 1 && playback.update(2) &&
+                popup.currentDeed() == data::EmptyDataId && popup.onLeft(),
+            "clearing desired popup stops deed and resets legacy on-left flag");
+
+        require(popup.sync(static_cast<std::uint8_t>(5), display::Screen2D::Main,
+                    3, playback) && playback.update(3),
+            "Main right-side placement starts for square modulo branch zero");
+        const auto deed5 = ibar::propertyHoverDataId(5, false);
+        const auto rightMatches = playback.runtime().matching(
+            deed5, ibar::BuyAuctionPopupPriority, false);
+        const auto* rightObject = rightMatches.empty()
+            ? nullptr : playback.world2D().find(rightMatches.front());
+        require(rightObject && !popup.onLeft() &&
+                rightObject->worldTransform.values[6] == 560.0F &&
+                rightObject->worldTransform.values[7] == 110.0F,
+            "Main modulo-zero branch preserves StartXY(560,110)");
+
+        require(popup.sync(std::nullopt, display::Screen2D::Main, 3, playback) &&
+                playback.update(4),
+            "popup can be removed before hidden-view check");
+        require(popup.sync(static_cast<std::uint8_t>(1), display::Screen2D::Options,
+                    1, playback) && popup.currentDeed() == data::EmptyDataId &&
+                playback.commands().pendingCount() == 0,
+            "popup stays hidden outside DISPLAY_IsBoardVisible views");
+
+        engine::SequencePlayback missing(nullptr);
+        ibar::BuyAuctionPopupPlayback missingPopup;
+        const auto unavailable = missingPopup.sync(
+            static_cast<std::uint8_t>(1), display::Screen2D::Main, 1, missing);
+        require(!unavailable && missingPopup.currentDeed() == data::EmptyDataId &&
+                missing.commands().pendingCount() == 0,
+            "missing Buy/Auction deed resource queues no partial transition");
+
+        engine::SequencePlayback fullPlayback(resources.service.snapshot());
+        ibar::BuyAuctionPopupPlayback fullPopup;
+        require(fullPopup.sync(static_cast<std::uint8_t>(1), display::Screen2D::Main,
+                    1, fullPlayback) && fullPlayback.update(0),
+            "FIFO popup fixture starts initial deed");
+        for (std::size_t count = 0;
+             count < sequence::SequenceCommandQueue::Capacity - 2; ++count)
+        {
+            if (!fullPlayback.commands().enqueue(
+                    sequence::StopSequenceCommand{1, 0, false}))
+                throw std::runtime_error("FIFO setup failed");
+        }
+        const auto noRoom = fullPopup.sync(
+            static_cast<std::uint8_t>(3), display::Screen2D::Trade, 1, fullPlayback);
+        require(!noRoom && fullPopup.currentDeed() == deed1 && fullPopup.onLeft(),
+            "insufficient FIFO preserves complete Buy/Auction popup state");
+    }
+
+
     void testHoverFailureIsTransactional()
     {
         auto state = baseState();
@@ -251,6 +356,7 @@ int main()
         testPlans();
         testDataIdsAndPlayback();
         testHoverDataIdsAndDelay();
+        testBuyAuctionPopupPlayback();
         testHoverFailureIsTransactional();
         return 0;
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DataBanks.hpp"
+#include "Display.hpp"
 #include "IBarLayout.hpp"
 #include "IBarRuleState.hpp"
 #include "RuleTypes.hpp"
@@ -24,6 +25,11 @@ namespace monopoly::ibar
     inline constexpr std::int32_t PropertyHoverX = 540;
     inline constexpr std::int32_t PropertyHoverY = 130;
     inline constexpr std::uint64_t PropertyHoverDelayTicks = 36;
+    inline constexpr std::uint16_t BuyAuctionPopupPriority = 1002;
+    inline constexpr std::int32_t BuyAuctionPopupXLeft = 20;
+    inline constexpr std::int32_t BuyAuctionPopupXRight = 560;
+    inline constexpr std::int32_t BuyAuctionPopupXTrade = 594;
+    inline constexpr std::int32_t BuyAuctionPopupY = 110;
 
     enum class PropertyTitleStyle : std::uint8_t
     {
@@ -76,6 +82,28 @@ namespace monopoly::ibar
 
     [[nodiscard]] data::DataId propertyHoverDataId(
         int square, bool mortgaged) noexcept;
+
+    class BuyAuctionPopupPlayback final
+    {
+    public:
+        [[nodiscard]] std::expected<void, std::string> sync(
+            std::optional<std::uint8_t> desiredSquare,
+            display::Screen2D view,
+            int currentPlayerSquare,
+            engine::SequencePlayback& playback);
+        void reset() noexcept;
+
+        [[nodiscard]] data::DataId currentDeed() const noexcept
+        {
+            return currentDeed_;
+        }
+        [[nodiscard]] bool onLeft() const noexcept { return onLeft_; }
+
+    private:
+        data::DataId currentDeed_{data::EmptyDataId};
+        bool onLeft_{true};
+    };
+
 
     class PropertyHoverPlayback final
     {

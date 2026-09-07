@@ -439,6 +439,54 @@ namespace
             "TradeAccept acknowledgement does not invent legacy Pressed feedback");
     }
 
+    void testBuyAuctionPopupNotificationState()
+    {
+        ibar::state().desiredBuyAuctionSquare.reset();
+        actions::Message message{};
+        message.action = actions::Type::NotifyBuyOrAuctionDecision;
+        message.numberA = 0;
+        message.numberB = 1;
+        ibar::processRuleMessage(message, ibar::RuleMode::Nothing);
+        require(ibar::stateReadOnly().desiredBuyAuctionSquare == 1,
+            "NotifyBuyOrAuctionDecision records exact ownable square for popup deed");
+
+        message = {};
+        message.action = actions::Type::NotifyActionCompleted;
+        message.numberA = static_cast<std::int64_t>(actions::Type::BuyOrAuctionDecision);
+        message.numberB = 1;
+        message.numberD = 1;
+        ibar::processRuleMessage(message, ibar::RuleMode::BuyAuction);
+        require(ibar::stateReadOnly().desiredBuyAuctionSquare == 1,
+            "NotifyActionCompleted alone does not clear legacy Buy/Auction popup desired state");
+
+        message = {};
+        message.action = actions::Type::NotifyCashAmount;
+        ibar::processRuleMessage(message, ibar::RuleMode::BuyAuction);
+        require(!ibar::stateReadOnly().desiredBuyAuctionSquare,
+            "routed UDIBar notification clears Buy/Auction popup before processing");
+
+        message = {};
+        message.action = actions::Type::NotifyBuyOrAuctionDecision;
+        message.numberB = 3;
+        ibar::processRuleMessage(message, ibar::RuleMode::Nothing);
+        require(ibar::stateReadOnly().desiredBuyAuctionSquare == 3,
+            "subsequent Buy/Auction notification replaces popup with new square");
+
+        message = {};
+        message.action = actions::Type::NotifyAuctionGoing;
+        ibar::processRuleMessage(message, ibar::RuleMode::BuyAuction);
+        require(!ibar::stateReadOnly().desiredBuyAuctionSquare,
+            "auction-screen notification clears Buy/Auction popup like Userifce.cpp");
+
+        message = {};
+        message.action = actions::Type::NotifyBuyOrAuctionDecision;
+        message.numberB = 0;
+        ibar::processRuleMessage(message, ibar::RuleMode::Nothing);
+        require(!ibar::stateReadOnly().desiredBuyAuctionSquare,
+            "non-ownable square cannot create Buy/Auction popup state");
+    }
+
+
     void testCardNotificationState()
     {
         ibar::state().desiredCardIndex.reset();
@@ -614,6 +662,7 @@ int main()
         testJailVariants();
         testTradeAndSpecialDirectActions();
         testPressedAcknowledgements();
+        testBuyAuctionPopupNotificationState();
         testCardNotificationState();
         testBSSMSubstatesAndDeeds();
         testRemoteAndPlayerSelectGuards();

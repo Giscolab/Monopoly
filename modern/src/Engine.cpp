@@ -562,6 +562,8 @@ namespace monopoly::engine
                 iBarState.pendingPressedButton;
             iBarInputs.desiredCardIndex =
                 iBarState.desiredCardIndex;
+            iBarInputs.desiredBuyAuctionSquare =
+                iBarState.desiredBuyAuctionSquare;
             iBarInputs.desiredBoardCamera = displayState.desiredBoardCamera;
 
             ibar::ScoreStripInputs scoreInputs{};

@@ -58,6 +58,7 @@ namespace monopoly::ibar
         bool bankHovered{};
         std::optional<std::uint8_t> pressedButtonIndex;
         std::optional<std::uint8_t> desiredCardIndex;
+        std::optional<std::uint8_t> desiredBuyAuctionSquare;
         pieces::BoardCameraView desiredBoardCamera{pieces::BoardCameraView::TopDownSoccer};
         ScoreStripPlan scoreStrip{};
         PropertyTitlePlan propertyTitles{};
@@ -117,6 +118,7 @@ namespace monopoly::ibar
             propertyHover_.reset();
             card_.reset();
             jailCards_.reset();
+            buyAuctionPopup_.reset();
             scoreStrip_.reset();
             consumedPressedButton_.reset();
             bank_.reset();
@@ -156,6 +158,16 @@ namespace monopoly::ibar
         [[nodiscard]] data::DataId jailCardCurrent(std::size_t deck) const noexcept
         {
             return jailCards_.current(deck);
+        }
+
+        [[nodiscard]] data::DataId buyAuctionPopupDeed() const noexcept
+        {
+            return buyAuctionPopup_.currentDeed();
+        }
+
+        [[nodiscard]] bool buyAuctionPopupOnLeft() const noexcept
+        {
+            return buyAuctionPopup_.onLeft();
         }
 
         [[nodiscard]] const ScoreStripPlayerRuntime& scorePlayerState(
@@ -241,6 +253,7 @@ namespace monopoly::ibar
         PropertyHoverPlayback propertyHover_;
         CardPlayback card_;
         JailCardPlayback jailCards_;
+        BuyAuctionPopupPlayback buyAuctionPopup_;
         ScoreStripPlayback scoreStrip_;
         BankPlayback bank_;
         CurrentPlayerPlayback currentPlayer_;

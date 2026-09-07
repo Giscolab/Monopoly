@@ -228,6 +228,98 @@ namespace monopoly::ibar
     }
 
 
+    std::expected<void, std::string> BuyAuctionPopupPlayback::sync(
+        std::optional<std::uint8_t> desiredSquare,
+        display::Screen2D view,
+        int currentPlayerSquare,
+        engine::SequencePlayback& playback)
+    {
+        data::DataId desired = data::EmptyDataId;
+        if (desiredSquare && display::isBoardVisible(view))
+            desired = propertyHoverDataId(*desiredSquare, false);
+
+        if (desired == currentDeed_)
+            return {};
+
+        bool nextOnLeft = true;
+        std::int32_t x = BuyAuctionPopupXRight;
+        if (desired != data::EmptyDataId)
+        {
+            if (view == display::Screen2D::Trade ||
+                view == display::Screen2D::Portfolio)
+            {
+                x = BuyAuctionPopupXTrade;
+                nextOnLeft = false;
+            }
+            else if (((currentPlayerSquare % 10) % 3) != 0)
+            {
+                x = BuyAuctionPopupXLeft;
+                nextOnLeft = true;
+            }
+            else
+            {
+                x = BuyAuctionPopupXRight;
+                nextOnLeft = false;
+            }
+        }
+
+        std::shared_ptr<const sequence::SequenceProgram> program;
+        if (desired != data::EmptyDataId)
+        {
+            auto loaded = sequence::SequenceProgram::load(
+                playback.resources(), desired);
+            if (!loaded)
+                return std::unexpected(loaded.error().detail);
+            program = std::move(*loaded);
+        }
+
+        std::vector<sequence::SequenceCommand> commands;
+        if (currentDeed_ != data::EmptyDataId)
+        {
+            commands.push_back(sequence::StopSequenceCommand{
+                currentDeed_, BuyAuctionPopupPriority, false});
+        }
+        if (desired != data::EmptyDataId)
+        {
+            commands.push_back(sequence::StartSequenceCommand{
+                std::move(program), BuyAuctionPopupPriority, {}});
+            commands.push_back(sequence::makeMoveXY(
+                desired, BuyAuctionPopupPriority, x, BuyAuctionPopupY));
+        }
+
+        if (commands.size() >
+            sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
+        {
+            return std::unexpected(
+                "sequence command queue cannot fit IBar Buy/Auction popup transition");
+        }
+
+        for (auto& command : commands)
+        {
+            const auto queued = std::visit(
+                [&](auto value)
+                {
+                    return playback.commands().enqueue(std::move(value));
+                },
+                std::move(command));
+            if (!queued)
+                return std::unexpected(
+                    "validated IBar Buy/Auction popup command rejected");
+        }
+
+        currentDeed_ = desired;
+        onLeft_ = nextOnLeft;
+        return {};
+    }
+
+
+    void BuyAuctionPopupPlayback::reset() noexcept
+    {
+        currentDeed_ = data::EmptyDataId;
+        onLeft_ = true;
+    }
+
+
     std::expected<void, std::string> PropertyHoverPlayback::sync(
         const rules::GameState& state,
         const PropertyTitlePlan& titles,
