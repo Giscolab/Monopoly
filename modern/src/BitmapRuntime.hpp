@@ -9,6 +9,7 @@ namespace monopoly::data
     struct BitmapRuntimeAsset
     {
         DataId dataId{};
+        LegacyDataType sourceType{LegacyDataType::Unknown};
         SharedDataBytes source;
         LegacyBitmapRGBA8 image;
     };
@@ -18,7 +19,7 @@ namespace monopoly::data
     {
     public:
         [[nodiscard]] std::expected<std::shared_ptr<const BitmapRuntimeAsset>, BitmapError>
-            resolve(DataId id, SharedDataBytes bytes);
+            resolve(DataId id, LegacyDataType sourceType, SharedDataBytes bytes);
         void clear() noexcept { assets_.clear(); }
         [[nodiscard]] std::size_t size() const noexcept { return assets_.size(); }
     private:

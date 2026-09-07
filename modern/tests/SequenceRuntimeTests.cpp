@@ -820,6 +820,48 @@ namespace
             "parsed but unexecuted attributes are refused instead of silently ignored");
     }
 
+    void testRawUapStartContract()
+    {
+        Fixture fixture;
+        const DataBytes uap{
+            std::byte{1},std::byte{0}, std::byte{1},std::byte{0},
+            std::byte{0},std::byte{0}, std::byte{0},std::byte{0},
+            std::byte{1},std::byte{0},std::byte{0},std::byte{0},
+            std::byte{1},std::byte{0}, std::byte{0},std::byte{0},
+            std::byte{0},std::byte{0},std::byte{255},std::byte{0},
+            std::byte{0},std::byte{0},std::byte{0},std::byte{0},
+            std::byte{0},std::byte{0},std::byte{0},std::byte{0}};
+        const std::array items{ArchiveBuildItem{LegacyDataType::Uap, uap}};
+        DataBankRegistry registry;
+        (void)archive(fixture.root / "raw-uap.dat", items, registry,
+            legacyGroupValue(LegacyGroupId::Board));
+        const auto id = packDataId(LegacyGroupId::Board, 0);
+        auto executable = SequenceProgram::load(registry, id);
+        expect(executable && (*executable)->descriptions().size() == 1,
+            "raw UAP DataID is accepted as a legacy sequencer root");
+        if (!executable) return;
+        const auto& description = (*executable)->descriptions().front();
+        expect(description.record.chunk.id == 3 &&
+            description.record.header.timeMultiple == 60 &&
+            description.record.header.endingAction == 2 &&
+            description.contentsDataId == id,
+            "raw UAP synthesizes the source 2D bitmap cadence/hold contract");
+        SequenceRuntime runtime;
+        auto root = runtime.start(*executable, 12);
+        expect(root.has_value(), "raw UAP synthetic sequence starts at board highlight priority");
+        if (!root) return;
+        const auto view = runtime.inspect(*root);
+        expect(view && view->dimensionality == 2 && view->timeMultiple == 60 &&
+            std::holds_alternative<Matrix2D>(view->worldTransform),
+            "raw UAP runtime is a persistent identity 2D node");
+        expect(runtime.update(0).has_value() && runtime.update(600).has_value() &&
+            runtime.bitmapInstances().size() == 1,
+            "raw UAP remains renderable until an explicit Stop command");
+        const auto badOffset = SequenceProgram::load(registry, id, 4);
+        expect(!badOffset && badOffset.error().code == RuntimeErrorCode::DecodeFailure,
+            "raw UAP rejects nonzero sequence offsets instead of inventing chunks");
+    }
+
     void testRawHmdStartContract()
     {
         Fixture fixture;
@@ -932,6 +974,7 @@ int main()
         testForceRedrawRuntimeContract();
         testCommandsAndFailureLimits();
         testProgramCyclesDepthAndAttributes();
+        testRawUapStartContract();
         testRawHmdStartContract();
         testSnapshotReplacementLifetime();
     }

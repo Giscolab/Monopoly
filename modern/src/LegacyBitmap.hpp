@@ -26,7 +26,8 @@ namespace monopoly::data
         PixelDataOutOfRange,
         DeclaredSizeOutOfRange,
         InvalidPalette,
-        DecodeBudgetExceeded
+        DecodeBudgetExceeded,
+        UnsupportedDataType
     };
 
 
@@ -65,6 +66,28 @@ namespace monopoly::data
         std::uint32_t height{};
         std::vector<std::uint8_t> pixels; // top-down, straight RGBA8
     };
+
+    struct LegacyUapMetadata
+    {
+        std::uint16_t width{};
+        std::uint16_t height{};
+        std::int16_t originX{};
+        std::int16_t originY{};
+        std::uint32_t flags{};
+        std::uint16_t colourCount{};
+        std::uint16_t alphaCount{};
+        std::size_t pixelDataOffset{};
+        std::size_t rowStride{};
+    };
+
+    // NEWBITMAPHEADER / DataUAP contract from L_Type.h. UAP raster is
+    // top-down and each 8-bit row is DWORD padded.
+    [[nodiscard]] std::expected<LegacyUapMetadata, BitmapError>
+    inspectLegacyUap(std::span<const std::byte> bytes);
+
+    [[nodiscard]] std::expected<LegacyBitmapRGBA8, BitmapError>
+    decodeLegacyUapRGBA8(std::span<const std::byte> bytes,
+        std::size_t maxPixels = 16U * 1024U * 1024U);
 
     // BI_RGB 8/24 only. BMP reserved palette bytes are not alpha.
     // L_Data.cpp:7490 sets BITMAP_NOTRANSPARENCY for DataBMP.

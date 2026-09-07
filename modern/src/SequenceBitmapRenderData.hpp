@@ -27,6 +27,16 @@ namespace monopoly::sequence
         data::DataId contentsDataId{};
         std::string detail;
     };
+    struct SequenceBitmapMetadata
+    {
+        data::LegacyDataType type{data::LegacyDataType::Unknown};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::int32_t originX{};
+        std::int32_t originY{};
+        std::uint16_t bitsPerPixel{};
+    };
+
     struct SequenceBitmapRenderItem
     {
         SequenceNodeId node{};
@@ -34,7 +44,7 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
         Matrix2D worldTransform{};
-        data::LegacyBitmapMetadata metadata{};
+        SequenceBitmapMetadata metadata{};
         data::SharedDataBytes bytes;
     };
 
