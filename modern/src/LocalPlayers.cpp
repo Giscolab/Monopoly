@@ -714,6 +714,24 @@ namespace monopoly::ui::localplayers
     }
 
 
+    void setCurrentUIPlayerFromPlayerSet(
+        const GameState& uiState,
+        std::uint32_t playerSet)
+    {
+        // Userifce.cpp::SetCurrentUIPlayerFromPlayerSet.
+        selectedUIPlayer = NobodyPlayer;
+
+        for (PlayerNumber player = 0; player < uiState.numberOfPlayers; ++player)
+        {
+            if ((playerSet & (1u << player)) != 0 && localHumanSlots[player])
+            {
+                selectedUIPlayer = player;
+                break;
+            }
+        }
+    }
+
+
     PlayerNumber anyLocalPlayer(
         const GameState& uiState)
     {

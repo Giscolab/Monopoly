@@ -1,6 +1,7 @@
 #include "BoardRules.hpp"
 #include "PhaseStack.hpp"
 #include "RuleArchive.hpp"
+#include "RuleConfiguration.hpp"
 #include "RuleOptions.hpp"
 #include "RuleTypes.hpp"
 
@@ -894,6 +895,108 @@ namespace
             "complete GameOptions roundtrip"
         );
     }
+
+    void testStandardRulesPreset()
+    {
+        using namespace monopoly::rules;
+
+        GameOptions options{};
+        monopoly::rules::options::setDefaults(options);
+        options.hideCash = true;
+        options.rollDiceToDecideStartingOrder = true;
+        options.mortgagedCountsInGroupRent = false;
+        options.houseShortageLevel = 1;
+
+        monopoly::rules::options::setStandardMonopolyRules(options);
+
+        expect(options.housesPerHotel == 5 &&
+            options.maximumHouses == 32 && options.maximumHotels == 12 &&
+            options.interestRate == 10 && options.initialCash == 1500 &&
+            options.passingGoAmount == 200 && options.luxuryTaxAmount == 75 &&
+            options.taxRate == 10 && options.flatTaxFee == 200 &&
+            options.freeParkingSeed == 500 && !options.freeParkingPot &&
+            !options.doubleSalaryOnGo && options.evenBuildRule &&
+            !options.futureRentTradingAllowed && !options.immunitiesTradingAllowed &&
+            !options.dealFreePropertiesAtStartup && options.dealNPropertiesAtStartup == 0 &&
+            options.maximumTurnsInJail == 3 && options.getOutOfJailFee == 50 &&
+            options.houseShortageLevel == 6 && options.hotelShortageLevel == 3 &&
+            options.auctionGoingTimeDelay == 5,
+            "UDPsel standard preset reproduces all 22 historical assignments");
+
+        expect(options.hideCash && options.rollDiceToDecideStartingOrder &&
+            !options.mortgagedCountsInGroupRent,
+            "UDPsel standard preset preserves GameOptions fields it never touched");
+    }
+
+
+    void testConfigurationAcceptance()
+    {
+        using namespace monopoly;
+        using namespace monopoly::rules;
+
+        GameState state{};
+        state.numberOfPlayers = 2;
+        state.players[0].aiPlayerLevel = 0;
+        state.players[1].aiPlayerLevel = 0;
+        options::setDefaults(state.options);
+        configuration::clearAcceptConfiguration(state);
+
+        expect(!state.players[0].acceptedConfiguration &&
+            state.players[1].acceptedConfiguration,
+            "configuration reset pre-approves everyone except the first human host");
+
+        GameOptions proposed = state.options;
+        proposed.initialCash = 1777;
+        proposed.houseShortageLevel = 6;
+        std::vector<std::uint8_t> blob;
+        expect(archive::encodeOptions(proposed, blob),
+            "configuration proposal options encode");
+
+        actions::Message accept{};
+        accept.action = actions::Type::AcceptConfiguration;
+        accept.fromPlayer = 0;
+        accept.toPlayer = BankPlayer;
+        accept.numberC = 1;
+        accept.binaryDataA = blob;
+
+        const auto update = configuration::applyAcceptedConfiguration(state, accept);
+        expect(update.optionsChanged && update.acceptanceChanged && update.restartNeeded() &&
+            state.options == proposed && state.configurationProposer == 0 &&
+            state.players[0].acceptedConfiguration && state.players[1].acceptedConfiguration,
+            "final changed configuration resets votes, applies options, records proposer and accepts host");
+
+        const GameOptions beforeGarbage = state.options;
+        state.players[0].acceptedConfiguration = false;
+        accept.binaryDataA = {0x01, 0x02, 0x03};
+        const auto garbage = configuration::applyAcceptedConfiguration(state, accept);
+        expect(!garbage.optionsChanged && garbage.acceptanceChanged &&
+            state.options == beforeGarbage && state.players[0].acceptedConfiguration,
+            "garbage configuration blob transactionally falls back to current options");
+
+        state.options.futureRentTradingAllowed = true;
+        state.options.immunitiesTradingAllowed = true;
+        accept.binaryDataA.clear();
+        accept.numberC = 0;
+        accept.numberD = 1;
+        const auto oldClient = configuration::applyAcceptedConfiguration(state, accept);
+        expect(oldClient.optionsChanged && !oldClient.acceptanceChanged &&
+            !state.options.futureRentTradingAllowed &&
+            !state.options.immunitiesTradingAllowed,
+            "pre-v1 interim acceptance disables futures/immunities without final acceptance");
+
+        state.players[0].acceptedConfiguration = true;
+        state.players[1].acceptedConfiguration = false;
+        state.configurationProposer = 1;
+        const auto notification = configuration::proposedConfigurationMessage(state);
+        GameOptions decoded = {};
+        const bool decodedOkay = archive::decodeOptions(notification.binaryDataA, decoded);
+        expect(notification.action == actions::Type::NotifyProposedConfiguration &&
+            notification.fromPlayer == BankPlayer && notification.toPlayer == AllPlayers &&
+            notification.numberA == 1 && notification.numberB == (1u << 1) &&
+            notification.numberC == 1 && decodedOkay && decoded == state.options,
+            "proposed configuration notification carries player mask, protocol version and exact options blob");
+    }
+
 }
 
 
@@ -907,6 +1010,8 @@ int main()
     testRuleConstants();
     testBoard();
     testOptions();
+    testStandardRulesPreset();
+    testConfigurationAcceptance();
     testPhaseStack();
     testArchive();
 

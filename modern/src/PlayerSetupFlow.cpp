@@ -170,6 +170,14 @@ namespace monopoly::ui::playersetup
             { Button::CityNext,    { 341, 434, 468, 470 } }
         }};
 
+        constexpr std::array<
+            ButtonRect,
+            2
+        > RulesChoiceButtons{{
+            { Button::RulesStandard, { 75, 254, 295, 316 } },
+            { Button::RulesCustom,   { 507, 254, 727, 316 } }
+        }};
+
 
         std::uint8_t tokenForButton(
             Button button)
@@ -745,6 +753,17 @@ namespace monopoly::ui::playersetup
             }
 
 
+            case Phase::StandardOrCustomRules:
+            {
+                for (const auto& entry : RulesChoiceButtons)
+                {
+                    if (entry.rect.contains(x, y))
+                        return entry.button;
+                }
+                break;
+            }
+
+
             default:
                 break;
         }
@@ -1062,6 +1081,26 @@ namespace monopoly::ui::playersetup
                     command.type = CommandType::CommitCity;
                     command.city = state.citySelected;
                     requestPhase(state, uiState, Phase::StandardOrCustomRules);
+                    return command;
+
+                default:
+                    return command;
+            }
+        }
+
+
+        if (state.phase == Phase::StandardOrCustomRules)
+        {
+            switch (button)
+            {
+                case Button::RulesCustom:
+                    state.customRulesDesired = true;
+                    requestPhase(state, uiState, Phase::CustomizeRules);
+                    return command;
+
+                case Button::RulesStandard:
+                    state.customRulesDesired = false;
+                    command.type = CommandType::AcceptStandardRules;
                     return command;
 
                 default:

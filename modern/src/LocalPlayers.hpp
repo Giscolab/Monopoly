@@ -54,6 +54,12 @@ namespace monopoly::ui::localplayers
     );
 
 
+    void setCurrentUIPlayerFromPlayerSet(
+        const rules::GameState& uiState,
+        std::uint32_t playerSet
+    );
+
+
     rules::PlayerNumber anyLocalPlayer(
         const rules::GameState& uiState
     );

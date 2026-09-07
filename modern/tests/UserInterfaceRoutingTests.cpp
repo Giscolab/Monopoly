@@ -3,6 +3,7 @@
 #include "RuntimeState.hpp"
 #include "UserInterface.hpp"
 #include "PieceCamera.hpp"
+#include "RuleArchive.hpp"
 
 #include <iostream>
 #include <string_view>
@@ -449,6 +450,35 @@ namespace
         queueLockDepth = 0;
     }
 
+    void testProposedConfigurationProjection()
+    {
+        using namespace monopoly;
+
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        rules::GameOptions proposed = uiState.options;
+        proposed.initialCash = 2222;
+        proposed.houseShortageLevel = 6;
+        proposed.futureRentTradingAllowed = true;
+
+        actions::Message notification{};
+        notification.action = actions::Type::NotifyProposedConfiguration;
+        notification.toPlayer = rules::AllPlayers;
+        const bool encoded = rules::archive::encodeOptions(
+            proposed, notification.binaryDataA);
+        expect(encoded, "NotifyProposedConfiguration fixture encodes options");
+
+        userinterface::processRuleMessage(notification);
+        expect(userinterface::ruleStateReadOnly().options == proposed,
+            "NotifyProposedConfiguration replaces the UI options from its validated blob");
+
+        const auto beforeGarbage = userinterface::ruleStateReadOnly().options;
+        notification.binaryDataA = {0x42, 0x00};
+        userinterface::processRuleMessage(notification);
+        expect(userinterface::ruleStateReadOnly().options == beforeGarbage,
+            "invalid proposed configuration blob leaves the UI options unchanged");
+    }
+
     void testFirstNonZeroPlayerProjection()
     {
         using namespace monopoly;
@@ -514,6 +544,7 @@ int main()
     testTradeAcceptanceProjectionRouting();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
+    testProposedConfigurationProjection();
     testFirstNonZeroPlayerProjection();
     testPausedAndNewGameProjection();
 

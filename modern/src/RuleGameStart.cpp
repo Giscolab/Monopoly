@@ -7,6 +7,7 @@
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
 #include "RuleRandom.hpp"
+#include "RuleConfiguration.hpp"
 
 #include <array>
 #include <cstddef>
@@ -113,39 +114,6 @@ namespace monopoly::rules::gamestart
                 BankPlayer,
                 BankPlayer
             );
-        }
-
-
-        void clearAcceptConfiguration(
-            GameState& state)
-        {
-            // RULE_PLAYERSVOTEONRULES == 0 dans le source.
-            //
-            // Tous sont pré-approuvés, puis le premier joueur
-            // HUMAIN LOCAL (host) doit confirmer.
-
-            for (PlayerState& player : state.players)
-            {
-                player.acceptedConfiguration = true;
-            }
-
-            // Notre runtime actuel est local uniquement.
-            // Le premier humain correspond donc au premier slot
-            // local non-AI recherché par le source.
-
-            for (PlayerNumber playerNo = 0;
-                 playerNo < state.numberOfPlayers;
-                 ++playerNo)
-            {
-                if (state.players[playerNo]
-                        .aiPlayerLevel == 0)
-                {
-                    state.players[playerNo]
-                        .acceptedConfiguration = false;
-
-                    break;
-                }
-            }
         }
 
 
@@ -439,7 +407,7 @@ namespace monopoly::rules::gamestart
         );
 
 
-        clearAcceptConfiguration(state);
+        configuration::clearAcceptConfiguration(state);
 
 
         messaging::sendAction(
@@ -454,63 +422,28 @@ namespace monopoly::rules::gamestart
         GameState& state,
         const actions::Message& message)
     {
-        // ActionAcceptConfiguration() original.
-
-        if (phases::current(state).phase !=
-            GamePhase::Configuration)
+        // Rule.cpp::ActionAcceptConfiguration. Phase/player validation and
+        // completion notification stay here; the deterministic configuration
+        // transition is isolated in RuleConfiguration for direct tests.
+        if (phases::current(state).phase != GamePhase::Configuration)
         {
             wrongPhase(state, message);
             return;
         }
 
-        if (message.fromPlayer >=
-            state.numberOfPlayers)
+        if (message.fromPlayer >= state.numberOfPlayers)
         {
             wrongPlayer(state, message);
             return;
         }
 
+        notifyActionCompleted(message, true);
 
-        notifyActionCompleted(
-            message,
-            true
-        );
+        const auto update =
+            configuration::applyAcceptedConfiguration(state, message);
 
-
-        // RULE_ConvertFileToGameOptions() n'est pas encore
-        // porté.
-        //
-        // L'original initialise OptionsReceived avec les
-        // options courantes AVANT de tenter le décodage.
-        //
-        // Donc une action sans blob signifie bien :
-        // accepter la configuration actuelle.
-
-
-        // Client version < 1 :
-        // futures / immunités indisponibles.
-
-        if (message.numberC < 1)
+        if (update.restartNeeded())
         {
-            state.options.futureRentTradingAllowed =
-                false;
-
-            state.options.immunitiesTradingAllowed =
-                false;
-        }
-
-
-        // NumberD == 0 : acceptation finale.
-
-        if (message.numberD == 0 &&
-            !state.players[
-                message.fromPlayer
-            ].acceptedConfiguration)
-        {
-            state.players[
-                message.fromPlayer
-            ].acceptedConfiguration = true;
-
             messaging::sendAction(
                 actions::Type::RestartPhase,
                 BankPlayer,
@@ -533,38 +466,13 @@ namespace monopoly::rules::gamestart
     void restartConfiguration(
         GameState& state)
     {
-        std::uint32_t playerSet = 0;
+        const actions::Message proposal =
+            configuration::proposedConfigurationMessage(state);
 
-        for (PlayerNumber playerNo = 0;
-             playerNo < state.numberOfPlayers;
-             ++playerNo)
-        {
-            if (!state.players[playerNo]
-                    .acceptedConfiguration)
-            {
-                playerSet |=
-                    (1u << playerNo);
-            }
-        }
+        const auto playerSet =
+            static_cast<std::uint32_t>(proposal.numberB);
 
-
-        // NOTIFY_PROPOSED_CONFIGURATION.
-        //
-        // numberA : proposer
-        // numberB : joueurs n'ayant pas accepté
-        // numberC : version host = 1
-        //
-        // Le blob RIFF des GameOptions sera ajouté avec
-        // RULE_ConvertFileToGameOptions.
-
-        messaging::sendAction(
-            actions::Type::NotifyProposedConfiguration,
-            BankPlayer,
-            AllPlayers,
-            state.configurationProposer,
-            playerSet,
-            1
-        );
+        messaging::sendAction(proposal);
 
 
         if (playerSet != 0)

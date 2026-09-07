@@ -206,6 +206,15 @@ namespace
         );
 
 
+        ui::localplayers::setCurrentUIPlayerFromPlayerSet(uiState, 1u << 0);
+        expect(ui::localplayers::currentUIPlayer() == 0,
+            "player-set selection chooses the first local human in the mask");
+
+        ui::localplayers::setCurrentUIPlayerFromPlayerSet(uiState, 1u << 1);
+        expect(ui::localplayers::currentUIPlayer() == rules::NobodyPlayer,
+            "player-set selection returns Nobody when the mask has no local human");
+
+
         expect(
             ui::localplayers::isLocalRecipient(
                 rules::AllPlayers

@@ -66,7 +66,10 @@ namespace monopoly::ui::playersetup
         CityClassic,
         CityLeft,
         CityRight,
-        CityNext
+        CityNext,
+
+        RulesStandard,
+        RulesCustom
     };
 
 
@@ -100,7 +103,8 @@ namespace monopoly::ui::playersetup
         AddLocalPlayer,
         RemoveLocalPlayer,
         StartGame,
-        CommitCity
+        CommitCity,
+        AcceptStandardRules
     };
 
 

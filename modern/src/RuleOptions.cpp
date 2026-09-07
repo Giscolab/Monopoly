@@ -119,6 +119,37 @@ namespace monopoly::rules::options
     }
 
 
+    void setStandardMonopolyRules(
+        GameOptions& options)
+    {
+        // UDPsel.cpp::udpsel_SetStandardRules. Keep the historical distinction
+        // from ActionNewGame defaults: houseShortageLevel is 6 here, not 5,
+        // and fields absent from this preset are intentionally preserved.
+        options.housesPerHotel = 5;
+        options.maximumHouses = 32;
+        options.maximumHotels = 12;
+        options.interestRate = 10;
+        options.initialCash = 1500;
+        options.passingGoAmount = 200;
+        options.luxuryTaxAmount = 75;
+        options.taxRate = 10;
+        options.flatTaxFee = 200;
+        options.freeParkingSeed = 500;
+        options.freeParkingPot = false;
+        options.doubleSalaryOnGo = false;
+        options.evenBuildRule = true;
+        options.futureRentTradingAllowed = false;
+        options.immunitiesTradingAllowed = false;
+        options.dealFreePropertiesAtStartup = false;
+        options.dealNPropertiesAtStartup = 0;
+        options.maximumTurnsInJail = 3;
+        options.getOutOfJailFee = 50;
+        options.houseShortageLevel = 6;
+        options.hotelShortageLevel = 3;
+        options.auctionGoingTimeDelay = 5;
+    }
+
+
     void validate(
         GameOptions& options)
     {
