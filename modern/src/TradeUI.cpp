@@ -123,6 +123,8 @@ namespace monopoly::tradeui
             state.cashOriginalOffers = {state.cashDesired[2], state.cashDesired[3]};
             state.cashDialogSide = side;
             state.cashTradeAmount = 0;
+            state.cashDialogFeedback = CashDialogFeedback::None;
+            state.cashDialogClosing = false;
             state.cashDialogVisible = true;
         }
 
@@ -562,6 +564,8 @@ namespace monopoly::tradeui
         state.cashDialogSide = 0;
         state.cashTradeAmount = 0;
         state.cashOriginalOffers = {};
+        state.cashDialogFeedback = CashDialogFeedback::None;
+        state.cashDialogClosing = false;
         state.contractDialogVisible = false;
         state.contractDialogKind = rules::TradeItemKind::FutureRent;
         state.contractDialogMode = 0;
@@ -929,6 +933,12 @@ namespace monopoly::tradeui
             return result;
         }
 
+        if (state.cashDialogClosing)
+        {
+            result.consumed = true;
+            return result;
+        }
+
         if (state.cashDialogVisible &&
             (message.type == uimsg::Type::MouseLeftDown ||
              message.type == uimsg::Type::TextInput ||
@@ -963,6 +973,8 @@ namespace monopoly::tradeui
                     state.cashDesired[(1u - state.cashDialogSide) + 2u] = 0;
                     (void)writeCashItem(state, gameState, state.cashDialogSide, state.cashTradeAmount);
                     recomputeCash(state, gameState);
+                    state.cashDialogFeedback = CashDialogFeedback::Okay;
+                    state.cashDialogClosing = true;
                     state.cashDialogVisible = false;
                     return result;
                 }
@@ -972,6 +984,7 @@ namespace monopoly::tradeui
                     (void)removeFirstItem(state, rules::TradeItemKind::Cash);
                     state.cashDesired[state.cashDialogSide + 2u] = 0;
                     recomputeCash(state, gameState);
+                    state.cashDialogFeedback = CashDialogFeedback::Clear;
                     return result;
                 }
                 if (cashPopupRect(state.cashDialogSide, {129, 43, 179, 59}).contains(x, y))
@@ -995,6 +1008,8 @@ namespace monopoly::tradeui
                     state.cashDesired[2] = state.cashOriginalOffers[0];
                     state.cashDesired[3] = state.cashOriginalOffers[1];
                     recomputeCash(state, gameState);
+                    state.cashDialogFeedback = CashDialogFeedback::Cancel;
+                    state.cashDialogClosing = true;
                     state.cashDialogVisible = false;
                     return result;
                 }
@@ -1017,6 +1032,8 @@ namespace monopoly::tradeui
                 state.cashDesired[(1u - state.cashDialogSide) + 2u] = 0;
                 (void)writeCashItem(state, gameState, state.cashDialogSide, state.cashTradeAmount);
                 recomputeCash(state, gameState);
+                state.cashDialogFeedback = CashDialogFeedback::Okay;
+                state.cashDialogClosing = true;
                 state.cashDialogVisible = false;
             }
             return result;

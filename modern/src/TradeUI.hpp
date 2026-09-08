@@ -92,6 +92,14 @@ namespace monopoly::tradeui
         bool operator==(const PropertyMoveRequest&) const = default;
     };
 
+    enum class CashDialogFeedback : std::uint8_t
+    {
+        None,
+        Clear,
+        Okay,
+        Cancel
+    };
+
     struct State
     {
         rules::PlayerNumber playerA{rules::MaxPlayers};
@@ -112,6 +120,8 @@ namespace monopoly::tradeui
         std::uint8_t cashDialogSide{};
         std::int64_t cashTradeAmount{};
         std::array<std::int64_t, 2> cashOriginalOffers{};
+        CashDialogFeedback cashDialogFeedback{CashDialogFeedback::None};
+        bool cashDialogClosing{};
         bool contractDialogVisible{};
         rules::TradeItemKind contractDialogKind{rules::TradeItemKind::FutureRent};
         std::uint8_t contractDialogMode{};

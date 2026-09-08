@@ -24,6 +24,7 @@
 #include "AuctionPennyBagsPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
 #include "TradeOfferIconPlayback.hpp"
+#include "TradeCashDialogPlayback.hpp"
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
@@ -63,6 +64,7 @@ namespace monopoly::engine
         auctionui::PennyBagsPlayback auctionPennyBagsPlayback;
         tradeui::PropertyPlayback tradePropertyPlayback;
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
+        tradeui::CashDialogPlayback tradeCashDialogPlayback;
         boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
         boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
         boarddisplay::BoardLightingController boardLightingController;
@@ -666,6 +668,12 @@ namespace monopoly::engine
             if (!tradeIconSync)
                 return SDL_SetError("Trade offer-icon playback: %s",
                     tradeIconSync.error().c_str());
+            const auto tradeCashDialogSync = tradeCashDialogPlayback.sync(
+                userinterface::tradeState(),
+                displayState.desired2DView, tick, *session);
+            if (!tradeCashDialogSync)
+                return SDL_SetError("Trade cash-dialog playback: %s",
+                    tradeCashDialogSync.error().c_str());
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
             const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
@@ -894,6 +902,7 @@ namespace monopoly::engine
         auctionPennyBagsPlayback.reset();
         tradePropertyPlayback.reset();
         tradeOfferIconPlayback.reset();
+        tradeCashDialogPlayback.reset();
         boardBackdropPlayback.reset();
         ownershipHighlightPlayback.reset();
         boardLightingController.reset();

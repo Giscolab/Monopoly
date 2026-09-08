@@ -667,6 +667,7 @@ target_sources(
     src/TradeUI.cpp
     src/TradePropertyPlayback.cpp
     src/TradeOfferIconPlayback.cpp
+    src/TradeCashDialogPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -786,6 +787,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeOfferIconPlayback
         COMMAND MonopolyTradeOfferIconPlaybackTests
+    )
+endif()
+
+# UDTrade.cpp persistent cash-dialog sequence playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeCashDialogPlaybackTests
+        tests/TradeCashDialogPlaybackTests.cpp
+        src/TradeCashDialogPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyTradeCashDialogPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeCashDialogPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeCashDialogPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeCashDialogPlayback
+        COMMAND MonopolyTradeCashDialogPlaybackTests
     )
 endif()
 
