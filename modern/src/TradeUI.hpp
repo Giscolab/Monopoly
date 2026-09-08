@@ -80,6 +80,20 @@ namespace monopoly::tradeui
         std::vector<actions::Message> items;
     };
 
+    using PropertyMask = std::uint32_t;
+
+    struct PropertyProjection
+    {
+        std::array<PropertyMask, 2> before{};
+        std::array<PropertyMask, 2> beforeMortgaged{};
+        std::array<PropertyMask, 2> offered{};
+        std::array<PropertyMask, 2> offeredMortgaged{};
+        std::array<PropertyMask, 2> after{};
+        std::array<PropertyMask, 2> afterMortgaged{};
+        std::array<std::array<Rect, rules::SquareCount>, 4> hitRects{};
+        std::array<std::array<int, rules::SquareCount>, 4> priorities{};
+    };
+
     struct InputUpdate
     {
         bool consumed{};
@@ -114,6 +128,15 @@ namespace monopoly::tradeui
         State& state,
         const rules::GameState& gameState,
         rules::PlayerNumber player) noexcept;
+
+    [[nodiscard]] PropertyProjection projectProperties(
+        const State& state,
+        const rules::GameState& gameState) noexcept;
+
+    [[nodiscard]] std::optional<int> propertyHit(
+        const PropertyProjection& projection,
+        int x,
+        int y) noexcept;
 
     [[nodiscard]] InputUpdate processInput(
         State& state,

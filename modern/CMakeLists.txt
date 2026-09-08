@@ -685,6 +685,7 @@ if(BUILD_TESTING)
         src/RuleArchive.cpp
         src/RuleOptions.cpp
         src/TradeUI.cpp
+        src/IBarLayout.cpp
     )
 
     target_include_directories(
@@ -715,6 +716,7 @@ if(BUILD_TESTING)
         MonopolyTradeUITests
         tests/TradeUITests.cpp
         src/TradeUI.cpp
+        src/IBarLayout.cpp
     )
     target_include_directories(
         MonopolyTradeUITests PRIVATE
