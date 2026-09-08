@@ -1,5 +1,7 @@
 #include "TradeUI.hpp"
 
+#include "IBarLayout.hpp"
+
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -387,6 +389,127 @@ namespace
             "after-A cash remove hotspot zeroes the existing item without removing its slot");
     }
 
+    void testPropertyProjectionLayoutAndPriority()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.squares[5].owner = 0;
+        game.squares[15].owner = 0;
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0),
+            "property projection fixture initializes a two-player trade");
+
+        const auto projection = tradeui::projectProperties(state, game);
+        expect(projection.hitRects[0][5] == tradeui::Rect{17, 285, 53, 327} &&
+                projection.hitRects[0][15] == tradeui::Rect{11, 265, 47, 307},
+            "before-A property layout preserves legacy 36x42 card geometry and fixed spacing");
+        expect(projection.priorities[0][5] == 32 &&
+                projection.priorities[0][15] == 30,
+            "property priorities preserve the legacy within-column front/back swap");
+        expect(tradeui::propertyHit(projection, 20, 290) == 5,
+            "UDTrade_MouseinProp hit order selects frontmost square 5 over overlapping square 15");
+    }
+
+    void testPropertySetsMortgageAndAfterProjection()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.squares[1].owner = 0;
+        game.squares[3].owner = 0;
+        game.squares[3].mortgaged = true;
+        game.squares[6].owner = 1;
+        game.squares[8].owner = 1;
+        game.squares[8].mortgaged = true;
+
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0),
+            "property set fixture initializes trade");
+        expect(tradeui::addTradeItem(
+                    state, game, tradeItem(0, 1, rules::TradeItemKind::Square, 1)) &&
+                tradeui::addTradeItem(
+                    state, game, tradeItem(1, 0, rules::TradeItemKind::Square, 8)),
+            "property set fixture records offers in both directions");
+
+        const auto bit1 = ibar::layout::propertyBit(1);
+        const auto bit3 = ibar::layout::propertyBit(3);
+        const auto bit6 = ibar::layout::propertyBit(6);
+        const auto bit8 = ibar::layout::propertyBit(8);
+        const auto projection = tradeui::projectProperties(state, game);
+
+        expect(projection.before[0] == 0 &&
+                projection.beforeMortgaged[0] == bit3 &&
+                projection.before[1] == bit6 &&
+                projection.beforeMortgaged[1] == 0,
+            "offered deeds are removed from before sets while untouched mortgage state is retained");
+        expect(projection.offered[0] == bit1 &&
+                projection.offeredMortgaged[0] == 0 &&
+                projection.offered[1] == 0 &&
+                projection.offeredMortgaged[1] == bit8,
+            "offered property sets keep normal and mortgaged deeds distinct");
+        expect(projection.after[0] == 0 &&
+                projection.afterMortgaged[0] == (bit3 | bit8) &&
+                projection.after[1] == (bit6 | bit1) &&
+                projection.afterMortgaged[1] == 0,
+            "A/B after sets apply (before | opposite offered) & ~own offered for both mortgage classes");
+        expect(projection.hitRects[2][1] == tradeui::Rect{217, 309, 253, 351} &&
+                projection.hitRects[3][8] == tradeui::Rect{414, 299, 450, 341},
+            "offered boxes compact occupied IBAR columns using exact legacy origins");
+    }
+
+    void testPropertyClicksAddRemoveAndMortgage()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.squares[5].owner = 0;
+        game.squares[15].owner = 0;
+        game.squares[3].owner = 0;
+        game.squares[3].mortgaged = true;
+        game.squares[6].owner = 1;
+
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0),
+            "property click fixture initializes trade");
+
+        uimsg::Message click{};
+        click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = 20;
+        click.numberB = 290;
+        auto update =
+            tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(update.consumed && state.items.size() == 1 &&
+                state.items[0].numberA == 0 && state.items[0].numberB == 1 &&
+                state.items[0].numberC ==
+                    static_cast<std::int64_t>(rules::TradeItemKind::Square) &&
+                state.items[0].numberD == 5,
+            "before property click adds the frontmost TIK_SQUARE with owner-to-partner direction");
+
+        auto projection = tradeui::projectProperties(state, game);
+        const auto offered5 = projection.hitRects[2][5];
+        click.numberA = offered5.left + 1;
+        click.numberB = offered5.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.items.empty(),
+            "offered property click removes the first matching TIK_SQUARE");
+
+        projection = tradeui::projectProperties(state, game);
+        const auto mortgaged3 = projection.hitRects[0][3];
+        click.numberA = mortgaged3.left + 1;
+        click.numberB = mortgaged3.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        projection = tradeui::projectProperties(state, game);
+        const auto bit3 = ibar::layout::propertyBit(3);
+        expect(state.items.size() == 1 &&
+                (projection.offeredMortgaged[0] & bit3) != 0 &&
+                (projection.offered[0] & bit3) == 0,
+            "mortgaged before click adds TIK_SQUARE and preserves mortgage classification");
+
+        click.numberA = mortgaged3.left + 1;
+        click.numberB = mortgaged3.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.items.size() == 1,
+            "a deed already offered no longer has a before hit target and cannot be duplicated");
+    }
+
     void testJailCardsProposeCancelAndSubmission()
     {
         using namespace monopoly;
@@ -472,6 +595,9 @@ int main()
     testRestartedRemoteTradeClearsStaleEditorItems();
     testInvalidRuleItemIsTransactional();
     testCashDialogAndOuterCashControls();
+    testPropertyProjectionLayoutAndPriority();
+    testPropertySetsMortgageAndAfterProjection();
+    testPropertyClicksAddRemoveAndMortgage();
     testJailCardsProposeCancelAndSubmission();
     return failures == 0 ? 0 : 1;
 }

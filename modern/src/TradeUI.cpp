@@ -1,5 +1,7 @@
 #include "TradeUI.hpp"
 
+#include "IBarLayout.hpp"
+
 #include <algorithm>
 #include <limits>
 
@@ -122,6 +124,111 @@ namespace monopoly::tradeui
             state.cashDialogSide = side;
             state.cashTradeAmount = 0;
             state.cashDialogVisible = true;
+        }
+
+        constexpr int TradePropertyBasicWidth = 205;
+        constexpr int TradePropertyButtonWidth = 60;
+        constexpr int TradePropertyCardWidth = 36;
+        constexpr int TradePropertyCardHeight = 42;
+        constexpr int TradePropertyDeltaX = 3;
+        constexpr int TradePropertyDeltaY = 10;
+        constexpr std::array<std::array<int, 2>, 4> TradePropertyBoxOrigins{{
+            {{0, 225}}, {{600, 225}}, {{200, 244}}, {{400, 244}}
+        }};
+        constexpr std::array<int, 4> TradePropertyTopY{{40, 40, 45, 45}};
+        constexpr std::array<int, 28> TradePropertyHitOrder{{
+            5, 15, 25, 35, 12, 28, 1, 3,
+            6, 8, 9, 11, 13, 14, 16, 18,
+            19, 21, 23, 24, 26, 27, 29, 31,
+            32, 34, 37, 39
+        }};
+
+        void layoutPropertyBox(
+            PropertyProjection& projection,
+            int box,
+            PropertyMask visible) noexcept
+        {
+            if (box < 0 || box >= static_cast<int>(TradePropertyBoxOrigins.size())) return;
+
+            std::array<bool, 11> columns{};
+            int columnCount = 0;
+            for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
+            {
+                const auto bit = ibar::layout::propertyBit(square);
+                if (bit == 0 || (visible & bit) == 0) continue;
+                const int order = ibar::layout::propertyBarOrder(square);
+                if (order < 0) continue;
+                const int column = order / 3;
+                if (!columns[static_cast<std::size_t>(column)])
+                {
+                    columns[static_cast<std::size_t>(column)] = true;
+                    ++columnCount;
+                }
+            }
+
+            std::array<int, 11> compactColumns{};
+            compactColumns.fill(-1);
+            int compact = 0;
+            for (std::size_t column = 0; column < columns.size(); ++column)
+            {
+                if (columns[column]) compactColumns[column] = compact++;
+            }
+
+            int widthApart = 0;
+            if (columnCount != 0)
+            {
+                if (box <= 1)
+                {
+                    widthApart = (TradePropertyBasicWidth - (TradePropertyDeltaX * 2) -
+                        TradePropertyCardWidth) / 6;
+                }
+                else
+                {
+                    widthApart = (TradePropertyBasicWidth -
+                        (((TradePropertyBasicWidth - TradePropertyButtonWidth) / 12) / 2) -
+                        TradePropertyCardWidth) / columnCount;
+                }
+            }
+
+            for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
+            {
+                const auto bit = ibar::layout::propertyBit(square);
+                if (bit == 0 || (visible & bit) == 0) continue;
+                const int order = ibar::layout::propertyBarOrder(square);
+                if (order < 0) continue;
+
+                const int row = order % 3;
+                const int column = order / 3;
+                int x = 11 + TradePropertyDeltaX * row;
+                int y = TradePropertyTopY[static_cast<std::size_t>(box)] +
+                    TradePropertyDeltaY * row;
+                if (box <= 1)
+                {
+                    x += column * widthApart;
+                    if (order > 14)
+                    {
+                        x = 11 + (column - 5) * widthApart + TradePropertyDeltaX * row;
+                        y += 65;
+                    }
+                }
+                else
+                {
+                    x += compactColumns[static_cast<std::size_t>(column)] * widthApart;
+                }
+
+                const auto& origin = TradePropertyBoxOrigins[static_cast<std::size_t>(box)];
+                const int left = origin[0] + x;
+                const int top = origin[1] + y;
+                projection.hitRects[static_cast<std::size_t>(box)]
+                    [static_cast<std::size_t>(square)] =
+                    {left, top, left + TradePropertyCardWidth, top + TradePropertyCardHeight};
+
+                int priorityOrder = order;
+                if ((priorityOrder % 3) == 0) priorityOrder += 2;
+                else if (((priorityOrder - 2) % 3) == 0) priorityOrder -= 2;
+                projection.priorities[static_cast<std::size_t>(box)]
+                    [static_cast<std::size_t>(square)] = 32 - priorityOrder;
+            }
         }
 
         [[nodiscard]] bool validTradeItemForProjection(
@@ -301,6 +408,110 @@ namespace monopoly::tradeui
         return true;
     }
 
+    PropertyProjection projectProperties(
+        const State& state,
+        const rules::GameState& gameState) noexcept
+    {
+        PropertyProjection projection{};
+        if (!validPlayer(gameState, state.playerA) ||
+            !validPlayer(gameState, state.playerB))
+            return projection;
+
+        for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
+        {
+            const auto bit = ibar::layout::propertyBit(square);
+            if (bit == 0) continue;
+            const auto& squareState =
+                gameState.squares[static_cast<std::size_t>(square)];
+            std::optional<std::size_t> side;
+            if (squareState.owner == state.playerA) side = 0;
+            else if (squareState.owner == state.playerB) side = 1;
+            if (!side) continue;
+
+            if (squareState.mortgaged)
+                projection.beforeMortgaged[*side] |= bit;
+            else
+                projection.before[*side] |= bit;
+        }
+
+        for (const auto& item : state.items)
+        {
+            if (item.numberC != static_cast<std::int64_t>(rules::TradeItemKind::Square) ||
+                item.numberD < 0 ||
+                item.numberD >= static_cast<std::int64_t>(rules::SquareCount))
+                continue;
+
+            std::optional<std::size_t> side;
+            if (item.numberA == state.playerA) side = 0;
+            else if (item.numberA == state.playerB) side = 1;
+            if (!side) continue;
+
+            const int square = static_cast<int>(item.numberD);
+            const auto bit = ibar::layout::propertyBit(square);
+            if (bit == 0) continue;
+            projection.before[*side] &= ~bit;
+            projection.beforeMortgaged[*side] &= ~bit;
+            if (gameState.squares[static_cast<std::size_t>(square)].mortgaged)
+                projection.offeredMortgaged[*side] |= bit;
+            else
+                projection.offered[*side] |= bit;
+        }
+
+        projection.after[0] =
+            (projection.before[0] | projection.offered[1]) & ~projection.offered[0];
+        projection.after[1] =
+            (projection.before[1] | projection.offered[0]) & ~projection.offered[1];
+        projection.afterMortgaged[0] =
+            (projection.beforeMortgaged[0] | projection.offeredMortgaged[1]) &
+            ~projection.offeredMortgaged[0];
+        projection.afterMortgaged[1] =
+            (projection.beforeMortgaged[1] | projection.offeredMortgaged[0]) &
+            ~projection.offeredMortgaged[1];
+
+        layoutPropertyBox(
+            projection, 0, projection.before[0] | projection.beforeMortgaged[0]);
+        layoutPropertyBox(
+            projection, 1, projection.before[1] | projection.beforeMortgaged[1]);
+        layoutPropertyBox(
+            projection, 2, projection.offered[0] | projection.offeredMortgaged[0]);
+        layoutPropertyBox(
+            projection, 3, projection.offered[1] | projection.offeredMortgaged[1]);
+        return projection;
+    }
+
+    std::optional<int> propertyHit(
+        const PropertyProjection& projection,
+        int x,
+        int y) noexcept
+    {
+        int box = -1;
+        for (std::size_t candidate = 0;
+             candidate < TradePropertyBoxOrigins.size();
+             ++candidate)
+        {
+            const auto& origin = TradePropertyBoxOrigins[candidate];
+            const Rect bounds{
+                origin[0], origin[1], origin[0] + 200, origin[1] + 225};
+            if (bounds.contains(x, y))
+            {
+                box = static_cast<int>(candidate);
+                break;
+            }
+        }
+        if (box < 0) return std::nullopt;
+
+        for (const int square : TradePropertyHitOrder)
+        {
+            const auto& rect =
+                projection.hitRects[static_cast<std::size_t>(box)]
+                    [static_cast<std::size_t>(square)];
+            if (rect.right > rect.left && rect.bottom > rect.top &&
+                rect.contains(x, y))
+                return box * 100 + square;
+        }
+        return std::nullopt;
+    }
+
     InputUpdate processInput(
         State& state,
         const rules::GameState& gameState,
@@ -444,6 +655,36 @@ namespace monopoly::tradeui
         if (inEither(CashTradeBM1, CashTradeBM2, x, y))
         {
             zeroCash(state.playerB, 3);
+            return result;
+        }
+
+        const auto propertyProjection = projectProperties(state, gameState);
+        if (const auto hit = propertyHit(propertyProjection, x, y))
+        {
+            const int box = *hit / 100;
+            const int square = *hit % 100;
+            const auto bit = ibar::layout::propertyBit(square);
+            if (box == 0 || box == 1)
+            {
+                const std::size_t side = static_cast<std::size_t>(box);
+                if (((propertyProjection.after[side] |
+                      propertyProjection.afterMortgaged[side]) & bit) != 0)
+                {
+                    actions::Message item{};
+                    item.numberA =
+                        gameState.squares[static_cast<std::size_t>(square)].owner;
+                    item.numberB = side == 0 ? state.playerB : state.playerA;
+                    item.numberC =
+                        static_cast<std::int64_t>(rules::TradeItemKind::Square);
+                    item.numberD = square;
+                    (void)addTradeItem(state, gameState, item);
+                }
+            }
+            else
+            {
+                (void)removeFirstItem(
+                    state, rules::TradeItemKind::Square, square);
+            }
             return result;
         }
 
