@@ -318,6 +318,148 @@ namespace
                 game.squares[6].offeredInTradeTo == beforeSquareOwner,
             "invalid trade item is rejected before UI or GameState mutation");
     }
+    void testCashDialogAndOuterCashControls()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0) &&
+                state.playerB == 1 && state.showPropose &&
+                state.cashDesired[0] == 1500 && state.cashDesired[1] == 1500,
+            "two-player Trade initializes cash projections and enables Propose presentation");
+
+        uimsg::Message click{};
+        click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = 20; click.numberB = 400;
+        auto update = tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(update.consumed && state.cashDialogVisible && state.cashDialogSide == 0 &&
+                state.cashOriginalOffers == std::array<std::int64_t, 2>{0, 0},
+            "cash before-A hotspot opens retail cash dialog and snapshots both offers");
+
+        click.numberA = 12; click.numberB = 335;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.cashTradeAmount == 500 && state.cashDesired[2] == 500 &&
+                state.cashDesired[0] == 1000 && state.cashDesired[1] == 2000 &&
+                state.items.size() == 1 && state.items[0].numberA == 0 &&
+                state.items[0].numberB == 1 && state.items[0].numberD == 500,
+            "cash $500 button updates editor item and both projected final cash values");
+
+        click.numberA = 73; click.numberB = 368;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.cashTradeAmount == 0 && state.items.empty() && state.cashDesired[2] == 0,
+            "cash Clear removes first legacy cash item and leaves the popup open");
+
+        uimsg::Message key{};
+        key.type = uimsg::Type::TextInput;
+        key.text = "1";
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        key.text = "2";
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        expect(state.cashTradeAmount == 12 && state.items.size() == 1 &&
+                state.items[0].numberD == 12,
+            "cash keyboard entry appends decimal digits through Trade_AddItem");
+
+        click.numberA = 12; click.numberB = 368;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(!state.cashDialogVisible && state.cashDesired[2] == 12 &&
+                state.cashDesired[3] == 0 && state.cashDesired[0] == 1488 &&
+                state.cashDesired[1] == 1512,
+            "cash Okay commits selected side and clears opposite offer exactly");
+
+        click.numberA = 620; click.numberB = 400;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        click.numberA = 612; click.numberB = 335;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.cashDialogVisible && state.cashDesired[3] == 500 &&
+                state.items[0].numberA == 1,
+            "cash B popup temporarily replaces the single global cash item");
+        click.numberA = 734; click.numberB = 368;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(!state.cashDialogVisible && state.cashDesired[2] == 12 &&
+                state.cashDesired[3] == 0 && state.items[0].numberA == 0 &&
+                state.items[0].numberD == 12,
+            "cash Cancel restores original amount and original direction");
+
+        click.numberA = 220; click.numberB = 360;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.cashDesired[2] == 0 && state.items.size() == 1 &&
+                state.items[0].numberD == 0 && state.cashDesired[0] == 1500,
+            "after-A cash remove hotspot zeroes the existing item without removing its slot");
+    }
+
+    void testJailCardsProposeCancelAndSubmission()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.cards[0].jailOwner = 0;
+        game.cards[1].jailOwner = 1;
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0) &&
+                state.jailCardDesired[0] == 1 && state.jailCardDesired[1] == 2,
+            "jail-card desired bits start from authoritative deck owners");
+
+        uimsg::Message click{}; click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = 67; click.numberB = 396;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.jailCardDesired[0] == 4 && state.items.size() == 1 &&
+                state.items[0].numberA == 0 && state.items[0].numberB == 1 &&
+                state.items[0].numberC == static_cast<std::int64_t>(rules::TradeItemKind::JailCard) &&
+                state.items[0].numberD == 0,
+            "Chance card click moves A-before to A-after and adds deck-0 trade item");
+        click.numberA = 267; click.numberB = 359;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.jailCardDesired[0] == 1 && state.items.empty(),
+            "Chance after-card click restores before slot and shift-removes deck item");
+
+        click.numberA = 667; click.numberB = 421;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.jailCardDesired[1] == 8 && state.items.size() == 1 &&
+                state.items[0].numberA == 1 && state.items[0].numberB == 0 &&
+                state.items[0].numberD == 1,
+            "Community card click moves B-before to B-after with deck-1 direction");
+        click.numberA = 467; click.numberB = 384;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.jailCardDesired[1] == 2 && state.items.empty(),
+            "Community B-after click returns card and removes matching deck item");
+
+        auto give = tradeItem(0, 1, rules::TradeItemKind::Square, 6);
+        auto get = tradeItem(1, 0, rules::TradeItemKind::Square, 8);
+        expect(tradeui::addTradeItem(state, game, give) &&
+                tradeui::addTradeItem(state, game, get),
+            "proposal fixture has meaningful give and get sides");
+        click.numberA = 203; click.numberB = 421;
+        auto proposed = tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(proposed.outgoing.size() == 1 &&
+                proposed.outgoing[0].action == actions::Type::StartTradeEditing &&
+                proposed.outgoing[0].fromPlayer == 0 &&
+                proposed.outgoing[0].toPlayer == rules::BankPlayer &&
+                proposed.outgoing[0].numberA == 1,
+            "Propose emits ACTION_START_TRADE_EDITING private-edit request only for give+get");
+
+        const auto batch = tradeui::planEditorSubmission(state, 0, 0b01);
+        expect(batch.size() == state.items.size() + 1 &&
+                batch[0].action == actions::Type::TradeItem &&
+                batch[1].action == actions::Type::TradeItem &&
+                batch.back().action == actions::Type::TradeEditingDone &&
+                batch.back().fromPlayer == 0 && batch.back().toPlayer == rules::BankPlayer &&
+                batch.back().numberA == 0 && batch.back().numberB == 1,
+            "local editor submission preserves item order then sends private TradeEditingDone(0,TRUE)");
+        expect(tradeui::planEditorSubmission(state, 0, 0b10).empty(),
+            "non-local editor does not emit Trade_SendItems batch");
+
+        state.items.erase(state.items.begin() + 1);
+        proposed = tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(proposed.outgoing.empty(),
+            "Propose with only one side offering emits no action");
+
+        click.numberA = 307; click.numberB = 421;
+        const auto cancelled = tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(cancelled.requestedBackdrop == display::Screen2D::Main &&
+                state.playerA == rules::MaxPlayers && state.playerB == rules::MaxPlayers &&
+                state.tradeFrom == rules::MaxPlayers && state.items.empty(),
+            "Cancel clears local editor and requests Main without fabricating a RULE action");
+    }
+
 }
 
 int main()
@@ -329,5 +471,7 @@ int main()
     testRuleProjectionAndCounterOffer();
     testRestartedRemoteTradeClearsStaleEditorItems();
     testInvalidRuleItemIsTransactional();
+    testCashDialogAndOuterCashControls();
+    testJailCardsProposeCancelAndSubmission();
     return failures == 0 ? 0 : 1;
 }

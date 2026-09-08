@@ -39,6 +39,24 @@ namespace monopoly::tradeui
         bool operator==(const Rect&) const = default;
     };
 
+    inline constexpr Rect CashTradeAT1{19, 395, 52, 425};
+    inline constexpr Rect CashTradeAT2{9, 425, 61, 440};
+    inline constexpr Rect CashTradeBT1{619, 395, 652, 425};
+    inline constexpr Rect CashTradeBT2{609, 425, 661, 440};
+    inline constexpr Rect CashTradeAM1{219, 358, 252, 388};
+    inline constexpr Rect CashTradeAM2{209, 388, 261, 403};
+    inline constexpr Rect CashTradeBM1{419, 358, 452, 388};
+    inline constexpr Rect CashTradeBM2{409, 388, 461, 403};
+    inline constexpr Rect ProposeRect{202, 420, 303, 450};
+    inline constexpr Rect CancelRect{306, 420, 407, 450};
+
+    inline constexpr std::array<Rect, 4> ChanceJailRects{{
+        {66, 395, 99, 414}, {666, 395, 699, 414},
+        {266, 358, 299, 377}, {466, 358, 499, 377}}};
+    inline constexpr std::array<Rect, 4> CommunityJailRects{{
+        {66, 420, 99, 439}, {666, 420, 699, 439},
+        {266, 383, 299, 402}, {466, 383, 499, 402}}};
+
     struct State
     {
         rules::PlayerNumber playerA{rules::MaxPlayers};
@@ -55,7 +73,18 @@ namespace monopoly::tradeui
         std::array<std::int64_t, 4> cashDesired{};
         std::array<std::uint8_t, 2> jailCardDesired{};
         std::array<std::uint8_t, 2> immunityFutureDesired{};
+        bool cashDialogVisible{};
+        std::uint8_t cashDialogSide{};
+        std::int64_t cashTradeAmount{};
+        std::array<std::int64_t, 2> cashOriginalOffers{};
         std::vector<actions::Message> items;
+    };
+
+    struct InputUpdate
+    {
+        bool consumed{};
+        std::optional<display::Screen2D> requestedBackdrop;
+        std::vector<actions::Message> outgoing;
     };
 
     struct RuleUpdate
@@ -85,6 +114,17 @@ namespace monopoly::tradeui
         State& state,
         const rules::GameState& gameState,
         rules::PlayerNumber player) noexcept;
+
+    [[nodiscard]] InputUpdate processInput(
+        State& state,
+        const rules::GameState& gameState,
+        display::Screen2D desiredView,
+        const uimsg::Message& message);
+
+    [[nodiscard]] std::vector<actions::Message> planEditorSubmission(
+        const State& state,
+        rules::PlayerNumber editor,
+        std::uint32_t localHumanMask);
 
     [[nodiscard]] bool addTradeItem(
         State& state,

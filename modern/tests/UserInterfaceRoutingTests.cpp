@@ -429,6 +429,67 @@ namespace
         runtime::reset();
     }
 
+    void testTradeEditorSubmissionPreflightsQueue()
+    {
+        using namespace monopoly;
+
+        userinterface::resetRuleProjection();
+        acceptRecipient = true;
+        acceptMessaging = true;
+        localHumanMask = 0x01u;
+        localPlayerMask = 0x01u;
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 2;
+        uiState.players[0].currentSquare = 0;
+        uiState.players[1].currentSquare = 1;
+
+        auto& trade = userinterface::tradeState();
+        trade.playerA = 0;
+        trade.playerB = 1;
+        trade.tradeFrom = 0;
+        actions::Message first{};
+        first.action = actions::Type::TradeItem;
+        first.fromPlayer = 0;
+        first.toPlayer = rules::BankPlayer;
+        first.numberA = 0;
+        first.numberB = 1;
+        first.numberC = static_cast<std::int64_t>(rules::TradeItemKind::Cash);
+        first.numberD = 25;
+        actions::Message second = first;
+        second.numberC = static_cast<std::int64_t>(rules::TradeItemKind::Square);
+        second.numberD = 6;
+        trade.items = {first, second};
+
+        actions::Message editor{};
+        editor.action = actions::Type::NotifyTradeEditor;
+        editor.toPlayer = rules::AllPlayers;
+        editor.numberA = 0;
+
+        capturedMessages.clear();
+        simulatedQueuedActions = messaging::MessageQueueCapacity - 2;
+        userinterface::processRuleMessage(editor);
+        expect(capturedMessages.empty() &&
+                simulatedQueuedActions == messaging::MessageQueueCapacity - 2,
+            "Trade_SendItems preflights the whole item+done batch before emitting anything");
+
+        capturedMessages.clear();
+        simulatedQueuedActions = messaging::MessageQueueCapacity - 3;
+        userinterface::processRuleMessage(editor);
+        expect(capturedMessages.size() == 3 &&
+                capturedMessages[0].action == actions::Type::TradeItem &&
+                capturedMessages[1].action == actions::Type::TradeItem &&
+                capturedMessages[2].action == actions::Type::TradeEditingDone &&
+                capturedMessages[2].numberA == 0 &&
+                capturedMessages[2].numberB == 1 &&
+                simulatedQueuedActions == messaging::MessageQueueCapacity,
+            "Trade_SendItems emits the ordered retail batch when the FIFO has exact capacity");
+
+        simulatedQueuedActions = 0;
+        capturedMessages.clear();
+        localHumanMask = 0x3Fu;
+        localPlayerMask = 0x3Fu;
+    }
+
     void testLocalBoundary()
     {
         using namespace monopoly;
@@ -797,6 +858,7 @@ int main()
     testAuctionRuleRouting();
     testAuctionReadyResponses();
     testTradeEntryAndPartnerRouting();
+    testTradeEditorSubmissionPreflightsQueue();
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();

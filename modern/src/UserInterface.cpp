@@ -143,6 +143,20 @@ namespace monopoly::userinterface
     }
 
 
+    [[nodiscard]] bool dispatchTradeBatch(
+        const std::vector<actions::Message>& batch)
+    {
+        if (batch.empty()) return true;
+        const auto queued = messaging::queuedActionCount();
+        if (queued > messaging::MessageQueueCapacity ||
+            batch.size() > messaging::MessageQueueCapacity - queued)
+            return false;
+        for (const auto& action : batch)
+            if (!messaging::sendAction(action)) return false;
+        return true;
+    }
+
+
     bool beginTradeFromIBar(rules::PlayerNumber iBarPlayer) noexcept
     {
         if (!runtime::state().gameInProgress ||
@@ -251,6 +265,14 @@ namespace monopoly::userinterface
             display::state().desired2DView, localHumanPlayerMask());
         if (tradeUpdate.requestedBackdrop)
             display::setBackdrop(*tradeUpdate.requestedBackdrop);
+        if (message.action == actions::Type::NotifyTradeEditor &&
+            message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+        {
+            const auto batch = tradeui::planEditorSubmission(
+                tradeProjection, static_cast<rules::PlayerNumber>(message.numberA),
+                localHumanPlayerMask());
+            (void)dispatchTradeBatch(batch);
+        }
 
         if (message.action == actions::Type::NotifyDiceRolled)
         {
@@ -479,7 +501,7 @@ namespace monopoly::userinterface
         //
         // Ordre historique des modules interactifs portes ici :
         // UDAUCT_ProcessMessage, UDBOARD_ProcessMessage, UDIBAR_ProcessMessage,
-        // puis UDPSEL_ProcessMessage (les modules non portes restent differes).
+        // UDPSEL_ProcessMessage puis UDTRADE_ProcessMessage.
         if (const auto bid = auctionui::planBid(
                 auctionProjection, uiRuleState.numberOfPlayers,
                 display::state().desired2DView, message, localHumanPlayerMask()))
@@ -498,11 +520,20 @@ namespace monopoly::userinterface
 
 
         playerselection::processLibraryMessage(message);
+        const bool tradePartnerDialogWasVisible = tradeProjection.playerSelectVisible;
         if (const auto partner = tradeui::planPartnerSelection(
                 tradeProjection, uiRuleState, display::state().desired2DView,
                 message))
         {
             (void)tradeui::selectPartner(tradeProjection, uiRuleState, *partner);
+        }
+        if (!tradePartnerDialogWasVisible)
+        {
+            const auto tradeInput = tradeui::processInput(
+                tradeProjection, uiRuleState, display::state().desired2DView, message);
+            if (tradeInput.requestedBackdrop)
+                display::setBackdrop(*tradeInput.requestedBackdrop);
+            (void)dispatchTradeBatch(tradeInput.outgoing);
         }
         update();
 
