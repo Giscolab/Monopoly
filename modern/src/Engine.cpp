@@ -23,6 +23,7 @@
 #include "AuctionPlayback.hpp"
 #include "AuctionPennyBagsPlayback.hpp"
 #include "TradeBackdropPlayback.hpp"
+#include "TradeTokenPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
 #include "TradeOfferIconPlayback.hpp"
 #include "TradeCashDialogPlayback.hpp"
@@ -65,6 +66,7 @@ namespace monopoly::engine
         auctionui::Playback auctionPlayback;
         auctionui::PennyBagsPlayback auctionPennyBagsPlayback;
         tradeui::BackdropPlayback tradeBackdropPlayback;
+        tradeui::TokenPlayback tradeTokenPlayback;
         tradeui::PropertyPlayback tradePropertyPlayback;
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
         tradeui::CashDialogPlayback tradeCashDialogPlayback;
@@ -666,6 +668,12 @@ namespace monopoly::engine
             if (!tradeBackdropSync)
                 return SDL_SetError("Trade backdrop playback: %s",
                     tradeBackdropSync.error().c_str());
+            const auto tradeTokenSync = tradeTokenPlayback.sync(
+                userinterface::tradeStateReadOnly(), ruleState,
+                displayState.desired2DView, *session);
+            if (!tradeTokenSync)
+                return SDL_SetError("Trade token playback: %s",
+                    tradeTokenSync.error().c_str());
             const auto tradePropertySync = tradePropertyPlayback.sync(
                 userinterface::tradeState(), ruleState,
                 displayState.desired2DView, tick, *session);
@@ -917,6 +925,7 @@ namespace monopoly::engine
         auctionPlayback.reset();
         auctionPennyBagsPlayback.reset();
         tradeBackdropPlayback.reset();
+        tradeTokenPlayback.reset();
         tradePropertyPlayback.reset();
         tradeOfferIconPlayback.reset();
         tradeCashDialogPlayback.reset();
