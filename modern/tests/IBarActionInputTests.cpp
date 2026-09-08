@@ -26,6 +26,8 @@ namespace test_support
     int tradeBeginCount = 0;
     monopoly::rules::PlayerNumber tradeBeginPlayer = monopoly::rules::NobodyPlayer;
     bool tradeBeginAccepted = true;
+    int optionsBeginCount = 0;
+    bool optionsBeginAccepted = true;
 }
 
 namespace monopoly::display
@@ -69,6 +71,12 @@ namespace monopoly::userinterface
         ++test_support::tradeBeginCount;
         test_support::tradeBeginPlayer = player;
         return test_support::tradeBeginAccepted;
+    }
+
+    bool beginOptionsFromIBar() noexcept
+    {
+        ++test_support::optionsBeginCount;
+        return test_support::optionsBeginAccepted;
     }
 }
 
@@ -718,6 +726,27 @@ namespace
         test_support::displayState.desired2DView = display::Screen2D::Main;
     }
 
+    void testGlobalOptionsButton()
+    {
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::optionsBeginCount = 0;
+        test_support::optionsBeginAccepted = true;
+        setHit(ibar::RuleMode::StartTurn, Layout::General,
+            mask({Slot::Options}));
+        click(Slot::Options, Layout::General);
+        require(test_support::optionsBeginCount == 1 &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::OptionsButtonIndex,
+            "Options global button delegates to UDOpts flow and requests Pressed feedback");
+        ibar::clearPendingPressedButton(ibar::OptionsButtonIndex);
+
+        test_support::optionsBeginAccepted = false;
+        click(Slot::Options, Layout::General);
+        require(test_support::optionsBeginCount == 2 &&
+                !ibar::stateReadOnly().pendingPressedButton,
+            "Options button does not fake Pressed feedback when Options entry is rejected");
+        test_support::optionsBeginAccepted = true;
+    }
+
     void testGlobalTradeButton()
     {
         test_support::displayState.desired2DView = display::Screen2D::Main;
@@ -801,6 +830,7 @@ int main()
         testCardNotificationState();
         testBSSMSubstatesAndDeeds();
         testGlobalCameraButton();
+        testGlobalOptionsButton();
         testGlobalTradeButton();
         testRemoteAndPlayerSelectGuards();
         monopoly::ibar::shutdown();

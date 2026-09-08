@@ -23,6 +23,7 @@ namespace monopoly::userinterface
         ibar::RuleProjection iBarRuleProjection;
         auctionui::State auctionProjection;
         tradeui::State tradeProjection;
+        optionsui::State optionsProjection;
     }
     dice::PromptState& dicePromptState() noexcept { return dicePrompt; }
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept
@@ -44,6 +45,14 @@ namespace monopoly::userinterface
     const tradeui::State& tradeStateReadOnly() noexcept
     {
         return tradeProjection;
+    }
+    optionsui::State& optionsState() noexcept
+    {
+        return optionsProjection;
+    }
+    const optionsui::State& optionsStateReadOnly() noexcept
+    {
+        return optionsProjection;
     }
     namespace
     {
@@ -189,6 +198,22 @@ namespace monopoly::userinterface
         display::setBackdrop(display::Screen2D::Trade);
         return true;
     }
+    bool beginOptionsFromIBar() noexcept
+    {
+        if (!runtime::state().gameInProgress)
+            return false;
+
+        const auto& displayState = display::state();
+        auto previousView = displayState.current2DView;
+        if (!display::isIBarVisible(previousView))
+            previousView = displayState.desired2DView;
+        if (!optionsui::beginFromIBar(optionsProjection, previousView))
+            return false;
+
+        display::setBackdrop(display::Screen2D::Options);
+        return true;
+    }
+
 
 
     void resetRuleProjection()
@@ -201,6 +226,7 @@ namespace monopoly::userinterface
         iBarRuleProjection.reset();
         auctionui::reset(auctionProjection);
         tradeui::reset(tradeProjection);
+        optionsui::reset(optionsProjection);
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -517,6 +543,10 @@ namespace monopoly::userinterface
         ibar::processLibraryMessage(
             message
         );
+        const auto optionsInput = optionsui::processInput(
+            optionsProjection, display::state().desired2DView, message);
+        if (optionsInput.requestedBackdrop)
+            display::setBackdrop(*optionsInput.requestedBackdrop);
 
 
         playerselection::processLibraryMessage(message);

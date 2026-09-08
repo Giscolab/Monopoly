@@ -675,6 +675,20 @@ namespace
         require(ibar::ruleActionHitState(false, 0, restricted).activeSlots == 0 &&
                 ibar::ruleActionHitState(true, rules::NobodyPlayer, restricted).activeSlots == 0,
             "hidden or invalid-player IBar has no RULE-action hit slots");
+
+        ibar::ActionButtonInputs globals{};
+        globals.gameInProgress = true;
+        globals.tradeEligible = true;
+        const auto globalMain = ibar::ruleActionHitState(true, 0, globals);
+        require(globalMain.activeSlots == mask({Slot::Options, Slot::Trade}),
+            "runtime hit mask exposes visible global Options and Trade buttons");
+        globals.desired2DView = display::Screen2D::Trade;
+        const auto globalTrade = ibar::ruleActionHitState(true, 0, globals);
+        require(globalTrade.activeSlots == mask({Slot::Options}),
+            "Trade view keeps Options hit but suppresses self-Trade hit");
+        globals.gameInProgress = false;
+        require(ibar::ruleActionHitState(true, 0, globals).activeSlots == 0,
+            "global Options/Trade hits are disabled when no game is in progress");
     }
 
     void testRuleModeActionButtons()
