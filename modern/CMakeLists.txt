@@ -670,6 +670,7 @@ target_sources(
     src/TradeCashDialogPlayback.cpp
     src/TradeContractDialogPlayback.cpp
     src/TradeBackdropPlayback.cpp
+    src/TradeTokenPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -867,6 +868,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeBackdropPlayback
         COMMAND MonopolyTradeBackdropPlaybackTests
+    )
+endif()
+
+# UDTrade.cpp player token playback with measured bitmap width
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeTokenPlaybackTests
+        tests/TradeTokenPlaybackTests.cpp
+        src/TradeTokenPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyTradeTokenPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeTokenPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeTokenPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeTokenPlayback
+        COMMAND MonopolyTradeTokenPlaybackTests
     )
 endif()
 
