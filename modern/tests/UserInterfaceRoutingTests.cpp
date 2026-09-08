@@ -4,6 +4,7 @@
 #include "UserInterface.hpp"
 #include "PieceCamera.hpp"
 #include "RuleArchive.hpp"
+#include "Messaging.hpp"
 
 #include <iostream>
 #include <optional>
@@ -22,6 +23,10 @@ namespace
     std::uint32_t capturedTradePending = 0;
     std::uint64_t routingTick = 0;
     std::uint32_t localHumanMask = 0x3F;
+    std::uint32_t localPlayerMask = 0x3F;
+    std::size_t simulatedQueuedActions = 0;
+    bool acceptMessaging = true;
+    std::vector<monopoly::actions::Message> capturedMessages;
     std::optional<monopoly::auctionui::BidRequest> plannedAuctionBid;
     monopoly::actions::Message capturedAuctionAction{};
     bool capturedAuctionActionSent = false;
@@ -80,6 +85,12 @@ namespace monopoly::ui::localplayers
     void reset()
     {
         ++localResetCount;
+    }
+
+    bool slotIsLocalPlayer(rules::PlayerNumber player)
+    {
+        return player < rules::MaxPlayers &&
+            (localPlayerMask & (1u << player)) != 0;
     }
 
     bool slotIsLocalHumanPlayer(rules::PlayerNumber player)
@@ -151,10 +162,39 @@ namespace monopoly::messaging
 {
     bool sendAction(const actions::Message& message)
     {
+        if (!acceptMessaging) return false;
         capturedAuctionAction = message;
         capturedAuctionActionSent = true;
+        capturedMessages.push_back(message);
+        ++simulatedQueuedActions;
         route.push_back("messaging");
         return true;
+    }
+
+    bool sendAction(
+        actions::Type action,
+        rules::PlayerNumber fromPlayer,
+        rules::PlayerNumber toPlayer,
+        std::int64_t numberA,
+        std::int64_t numberB,
+        std::int64_t numberC,
+        std::int64_t numberD,
+        std::wstring_view)
+    {
+        actions::Message message{};
+        message.action = action;
+        message.fromPlayer = fromPlayer;
+        message.toPlayer = toPlayer;
+        message.numberA = numberA;
+        message.numberB = numberB;
+        message.numberC = numberC;
+        message.numberD = numberD;
+        return sendAction(message);
+    }
+
+    std::size_t queuedActionCount()
+    {
+        return simulatedQueuedActions;
     }
 }
 
@@ -268,6 +308,42 @@ namespace
         expect(route == std::vector<std::string_view>{
                 "auction-rule", "localplayers", "playerselection"},
             "auction rule notification reaches UDAuct projection before generic local/player setup projections");
+    }
+
+    void testAuctionReadyResponses()
+    {
+        using namespace monopoly;
+        route.clear();
+        capturedMessages.clear();
+        simulatedQueuedActions = 0;
+        acceptMessaging = true;
+        localPlayerMask = 0b0101;
+        localHumanMask = 0b0001;
+        userinterface::ruleState().numberOfPlayers = 4;
+
+        const auto sent = userinterface::sendAuctionReadyResponses(0b1111, 77);
+        expect(sent && capturedMessages.size() == 2 &&
+                capturedMessages[0].action == actions::Type::IAmHere &&
+                capturedMessages[0].fromPlayer == 0 &&
+                capturedMessages[0].toPlayer == rules::BankPlayer &&
+                capturedMessages[0].numberA == 77 &&
+                capturedMessages[1].action == actions::Type::IAmHere &&
+                capturedMessages[1].fromPlayer == 2 &&
+                capturedMessages[1].toPlayer == rules::BankPlayer &&
+                capturedMessages[1].numberA == 77,
+            "auction Begin answers roll-call for every local player, including local AI");
+
+        capturedMessages.clear();
+        simulatedQueuedActions = messaging::MessageQueueCapacity - 1;
+        const auto full = userinterface::sendAuctionReadyResponses(0b0101, 91);
+        expect(!full && capturedMessages.empty() &&
+                simulatedQueuedActions == messaging::MessageQueueCapacity - 1,
+            "auction roll-call preflights FIFO capacity before sending any I_AM_HERE");
+
+        localPlayerMask = 0x3F;
+        localHumanMask = 0x3F;
+        simulatedQueuedActions = 0;
+        capturedMessages.clear();
     }
 
     void testLocalBoundary()
@@ -636,6 +712,7 @@ int main()
     testUiModuleOrder();
     testAuctionBidRouting();
     testAuctionRuleRouting();
+    testAuctionReadyResponses();
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();

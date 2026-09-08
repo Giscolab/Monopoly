@@ -9,13 +9,20 @@
 #include "IBarRuleState.hpp"
 #include "AuctionUI.hpp"
 
+#include <cstdint>
+#include <expected>
 #include <optional>
+#include <string>
 
 namespace monopoly::userinterface
 {
     dice::PromptState& dicePromptState() noexcept;
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept;
+    auctionui::State& auctionState() noexcept;
     const auctionui::State& auctionStateReadOnly() noexcept;
+    [[nodiscard]] std::expected<void, std::string> sendAuctionReadyResponses(
+        std::uint32_t playerMask,
+        std::int64_t serial);
     // Repart d'une projection UI neuve et réarme l'initialisation spéciale
     // déclenchée par la première notification du nombre de joueurs.
     void resetRuleProjection();
