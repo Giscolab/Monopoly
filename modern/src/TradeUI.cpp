@@ -63,6 +63,67 @@ namespace monopoly::tradeui
             return static_cast<rules::TradeItemKind>(value);
         }
 
+        void recomputeCash(State& state, const rules::GameState& gameState) noexcept
+        {
+            if (!validPlayer(gameState, state.playerA) ||
+                !validPlayer(gameState, state.playerB))
+            {
+                state.cashDesired[0] = 0;
+                state.cashDesired[1] = 0;
+                return;
+            }
+            state.cashDesired[0] = gameState.players[state.playerA].cash -
+                state.cashDesired[2] + state.cashDesired[3];
+            state.cashDesired[1] = gameState.players[state.playerB].cash -
+                state.cashDesired[3] + state.cashDesired[2];
+        }
+
+        [[nodiscard]] bool inEither(const Rect& a, const Rect& b, int x, int y) noexcept
+        {
+            return a.contains(x, y) || b.contains(x, y);
+        }
+
+        [[nodiscard]] Rect cashPopupRect(std::uint8_t side, const Rect& local) noexcept
+        {
+            const int x = 4 + static_cast<int>(side) * 600;
+            constexpr int y = 324;
+            return {local.left + x, local.top + y, local.right + x, local.bottom + y};
+        }
+
+        [[nodiscard]] bool removeFirstItem(
+            State& state, rules::TradeItemKind kind, std::optional<std::int64_t> value = std::nullopt)
+        {
+            const auto rawKind = static_cast<std::int64_t>(kind);
+            const auto it = std::find_if(state.items.begin(), state.items.end(),
+                [&](const actions::Message& item) {
+                    return item.numberC == rawKind && (!value || item.numberD == *value);
+                });
+            if (it == state.items.end()) return false;
+            state.items.erase(it);
+            return true;
+        }
+
+        [[nodiscard]] bool writeCashItem(
+            State& state, const rules::GameState& gameState, std::uint8_t side, std::int64_t amount)
+        {
+            if (side > 1 || !validPlayer(gameState, state.playerA) ||
+                !validPlayer(gameState, state.playerB)) return false;
+            actions::Message item{};
+            item.numberA = side ? state.playerB : state.playerA;
+            item.numberB = side ? state.playerA : state.playerB;
+            item.numberC = static_cast<std::int64_t>(rules::TradeItemKind::Cash);
+            item.numberD = amount;
+            return addTradeItem(state, gameState, item);
+        }
+
+        void openCashDialog(State& state, std::uint8_t side) noexcept
+        {
+            state.cashOriginalOffers = {state.cashDesired[2], state.cashDesired[3]};
+            state.cashDialogSide = side;
+            state.cashTradeAmount = 0;
+            state.cashDialogVisible = true;
+        }
+
         [[nodiscard]] bool validTradeItemForProjection(
             const rules::GameState& gameState,
             const actions::Message& message) noexcept
@@ -112,6 +173,10 @@ namespace monopoly::tradeui
         state.cashDesired = {};
         state.jailCardDesired = {};
         state.immunityFutureDesired = {};
+        state.cashDialogVisible = false;
+        state.cashDialogSide = 0;
+        state.cashTradeAmount = 0;
+        state.cashOriginalOffers = {};
         state.items.clear();
     }
 
@@ -138,6 +203,8 @@ namespace monopoly::tradeui
             state.desiredTradePanels =
                 static_cast<int>(state.playerA) * 10 + state.playerB;
             updateJailCards(state, gameState);
+            recomputeCash(state, gameState);
+            state.showPropose = true;
             return true;
         }
 
@@ -229,7 +296,246 @@ namespace monopoly::tradeui
         state.desiredTradePanels =
             static_cast<int>(state.playerA) * 10 + state.playerB;
         updateJailCards(state, gameState);
+        recomputeCash(state, gameState);
+        state.showPropose = true;
         return true;
+    }
+
+    InputUpdate processInput(
+        State& state,
+        const rules::GameState& gameState,
+        display::Screen2D desiredView,
+        const uimsg::Message& message)
+    {
+        InputUpdate result{};
+        if (desiredView != display::Screen2D::Trade || !state.editMode ||
+            state.playerSelectVisible || !validPlayer(gameState, state.playerA) ||
+            !validPlayer(gameState, state.playerB))
+            return result;
+
+        const int x = static_cast<int>(message.numberA);
+        const int y = static_cast<int>(message.numberB);
+
+        if (state.cashDialogVisible &&
+            (message.type == uimsg::Type::MouseLeftDown ||
+             message.type == uimsg::Type::TextInput ||
+             message.type == uimsg::Type::KeyboardPressed))
+        {
+            result.consumed = true;
+            auto commitAmount = [&](std::int64_t amount) {
+                state.cashTradeAmount = amount;
+                (void)writeCashItem(state, gameState, state.cashDialogSide, amount);
+                state.cashDesired[state.cashDialogSide + 2u] = amount;
+                recomputeCash(state, gameState);
+            };
+
+            if (message.type == uimsg::Type::MouseLeftDown)
+            {
+                constexpr std::array<std::pair<Rect, std::int64_t>, 7> denominations{{
+                    {{7, 10, 31, 43}, 500}, {{32, 10, 56, 43}, 100},
+                    {{57, 10, 81, 43}, 50}, {{82, 10, 106, 43}, 20},
+                    {{107, 10, 131, 43}, 10}, {{132, 10, 156, 43}, 5},
+                    {{157, 10, 183, 43}, 1}}};
+                for (const auto& [local, amount] : denominations)
+                {
+                    if (!cashPopupRect(state.cashDialogSide, local).contains(x, y)) continue;
+                    if (state.cashTradeAmount + amount <= 999999)
+                        commitAmount(state.cashTradeAmount + amount);
+                    return result;
+                }
+
+                if (cashPopupRect(state.cashDialogSide, {7, 43, 57, 59}).contains(x, y))
+                {
+                    state.cashDesired[state.cashDialogSide + 2u] = state.cashTradeAmount;
+                    state.cashDesired[(1u - state.cashDialogSide) + 2u] = 0;
+                    (void)writeCashItem(state, gameState, state.cashDialogSide, state.cashTradeAmount);
+                    recomputeCash(state, gameState);
+                    state.cashDialogVisible = false;
+                    return result;
+                }
+                if (cashPopupRect(state.cashDialogSide, {68, 43, 118, 59}).contains(x, y))
+                {
+                    state.cashTradeAmount = 0;
+                    (void)removeFirstItem(state, rules::TradeItemKind::Cash);
+                    state.cashDesired[state.cashDialogSide + 2u] = 0;
+                    recomputeCash(state, gameState);
+                    return result;
+                }
+                if (cashPopupRect(state.cashDialogSide, {129, 43, 179, 59}).contains(x, y))
+                {
+                    std::uint8_t restoredSide = state.cashDialogSide;
+                    std::int64_t restoredAmount = 0;
+                    if (state.cashOriginalOffers[0] == 0 && state.cashOriginalOffers[1] == 0)
+                        restoredAmount = 0;
+                    else if (state.cashOriginalOffers[0] == 0)
+                    {
+                        restoredAmount = state.cashOriginalOffers[1];
+                        if (restoredSide == 0) restoredSide = 1;
+                    }
+                    else
+                    {
+                        restoredAmount = state.cashOriginalOffers[0];
+                        if (restoredSide == 1) restoredSide = 0;
+                    }
+                    state.cashTradeAmount = restoredAmount;
+                    (void)writeCashItem(state, gameState, restoredSide, restoredAmount);
+                    state.cashDesired[2] = state.cashOriginalOffers[0];
+                    state.cashDesired[3] = state.cashOriginalOffers[1];
+                    recomputeCash(state, gameState);
+                    state.cashDialogVisible = false;
+                    return result;
+                }
+                return result;
+            }
+
+            int key = -1;
+            if (message.type == uimsg::Type::TextInput && !message.text.empty())
+                key = static_cast<unsigned char>(message.text.front());
+            else if (message.type == uimsg::Type::KeyboardPressed)
+                key = static_cast<int>(message.numberA);
+
+            if (key == 8)
+                commitAmount(state.cashTradeAmount / 10);
+            else if (key >= '0' && key <= '9' && state.cashTradeAmount < 100000)
+                commitAmount(state.cashTradeAmount * 10 + (key - '0'));
+            else if (key == 13)
+            {
+                state.cashDesired[state.cashDialogSide + 2u] = state.cashTradeAmount;
+                state.cashDesired[(1u - state.cashDialogSide) + 2u] = 0;
+                (void)writeCashItem(state, gameState, state.cashDialogSide, state.cashTradeAmount);
+                recomputeCash(state, gameState);
+                state.cashDialogVisible = false;
+            }
+            return result;
+        }
+
+        if (message.type != uimsg::Type::MouseLeftDown) return result;
+        result.consumed = true;
+
+        if (inEither(CashTradeAT1, CashTradeAT2, x, y) && !state.cashDialogVisible)
+        {
+            openCashDialog(state, 0);
+            return result;
+        }
+        if (inEither(CashTradeBT1, CashTradeBT2, x, y) && !state.cashDialogVisible)
+        {
+            openCashDialog(state, 1);
+            return result;
+        }
+
+        auto zeroCash = [&](rules::PlayerNumber sender, std::size_t offerIndex) {
+            const auto kind = static_cast<std::int64_t>(rules::TradeItemKind::Cash);
+            const auto it = std::find_if(state.items.begin(), state.items.end(),
+                [&](const actions::Message& item) {
+                    return item.numberC == kind && item.numberA == sender;
+                });
+            if (it != state.items.end())
+            {
+                state.cashDesired[offerIndex] = 0;
+                it->numberD = 0;
+                recomputeCash(state, gameState);
+            }
+        };
+        if (inEither(CashTradeAM1, CashTradeAM2, x, y))
+        {
+            zeroCash(state.playerA, 2);
+            return result;
+        }
+        if (inEither(CashTradeBM1, CashTradeBM2, x, y))
+        {
+            zeroCash(state.playerB, 3);
+            return result;
+        }
+
+        auto toggleJail = [&](std::size_t deck, std::size_t slot) {
+            const std::uint8_t bit = static_cast<std::uint8_t>(1u << slot);
+            if ((state.jailCardDesired[deck] & bit) == 0) return;
+            if (slot < 2)
+            {
+                const auto from = slot == 0 ? state.playerA : state.playerB;
+                const auto to = slot == 0 ? state.playerB : state.playerA;
+                state.jailCardDesired[deck] = static_cast<std::uint8_t>(1u << (slot + 2));
+                actions::Message item{};
+                item.numberA = from;
+                item.numberB = to;
+                item.numberC = static_cast<std::int64_t>(rules::TradeItemKind::JailCard);
+                item.numberD = static_cast<std::int64_t>(deck);
+                (void)addTradeItem(state, gameState, item);
+            }
+            else
+            {
+                state.jailCardDesired[deck] = static_cast<std::uint8_t>(1u << (slot - 2));
+                (void)removeFirstItem(state, rules::TradeItemKind::JailCard,
+                    static_cast<std::int64_t>(deck));
+            }
+        };
+        for (std::size_t slot = 0; slot < ChanceJailRects.size(); ++slot)
+        {
+            if (ChanceJailRects[slot].contains(x, y))
+            {
+                toggleJail(0, slot);
+                return result;
+            }
+            if (CommunityJailRects[slot].contains(x, y))
+            {
+                toggleJail(1, slot);
+                return result;
+            }
+        }
+
+        if (ProposeRect.contains(x, y))
+        {
+            bool give = false;
+            bool get = false;
+            for (const auto& item : state.items)
+            {
+                const bool meaningful =
+                    item.numberC != static_cast<std::int64_t>(rules::TradeItemKind::Cash) ||
+                    item.numberD != 0;
+                if (!meaningful) continue;
+                if (item.numberA == state.playerA) give = true;
+                if (item.numberB == state.playerA) get = true;
+            }
+            if (give && get && state.showPropose && state.tradeFrom < rules::MaxPlayers)
+            {
+                actions::Message action{};
+                action.action = actions::Type::StartTradeEditing;
+                action.fromPlayer = state.tradeFrom;
+                action.toPlayer = rules::BankPlayer;
+                action.numberA = 1;
+                result.outgoing.push_back(std::move(action));
+            }
+            return result;
+        }
+
+        if (CancelRect.contains(x, y))
+        {
+            reset(state);
+            result.requestedBackdrop = display::Screen2D::Main;
+            return result;
+        }
+
+        return result;
+    }
+
+    std::vector<actions::Message> planEditorSubmission(
+        const State& state,
+        rules::PlayerNumber editor,
+        std::uint32_t localHumanMask)
+    {
+        std::vector<actions::Message> batch;
+        if (editor >= rules::MaxPlayers || state.tradeFrom != editor ||
+            (localHumanMask & (1u << editor)) == 0) return batch;
+        batch.reserve(state.items.size() + 1);
+        batch.insert(batch.end(), state.items.begin(), state.items.end());
+        actions::Message done{};
+        done.action = actions::Type::TradeEditingDone;
+        done.fromPlayer = editor;
+        done.toPlayer = rules::BankPlayer;
+        done.numberA = 0;
+        done.numberB = 1;
+        batch.push_back(std::move(done));
+        return batch;
     }
 
     bool addTradeItem(
