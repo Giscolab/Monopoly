@@ -149,7 +149,7 @@ struct SyntheticSequenceResources
                     0x03000014, 0, 0x04000000, 2, 0x000003A0});
                 const auto finiteAuctionSequence = words({
                     0x03000014, 0, 0x04000004, 2, 0x000003A0});
-                items.resize(0x03A1);
+                items.resize(0x0602);
                 for (std::uint32_t tag = 0x0003U; tag <= 0x000DU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, auctionSequence};
                 // UDAuct Pennybags CNK_an01..CNK_an17 are finite animations
@@ -157,6 +157,9 @@ struct SyntheticSequenceResources
                 for (std::uint32_t tag = 0x000EU; tag <= 0x001EU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteAuctionSequence};
                 for (std::uint32_t tag = 0x036FU; tag <= 0x0384U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, auctionSequence};
+                // UDTrade deed tabs: mortgaged 0x05CA..0x05E5, normal 0x05E6..0x0601.
+                for (std::uint32_t tag = 0x05CAU; tag <= 0x0601U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, auctionSequence};
                 items[0x03A0] = {LegacyDataType::Bitmap, bitmap24()};
             }
