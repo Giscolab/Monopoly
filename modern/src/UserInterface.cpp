@@ -21,16 +21,20 @@ namespace monopoly::userinterface
     {
         dice::PromptState dicePrompt;
         ibar::RuleProjection iBarRuleProjection;
-        auctionui::State auctionState;
+        auctionui::State auctionProjection;
     }
     dice::PromptState& dicePromptState() noexcept { return dicePrompt; }
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept
     {
         return iBarRuleProjection;
     }
+    auctionui::State& auctionState() noexcept
+    {
+        return auctionProjection;
+    }
     const auctionui::State& auctionStateReadOnly() noexcept
     {
-        return auctionState;
+        return auctionProjection;
     }
     namespace
     {
@@ -88,6 +92,48 @@ namespace monopoly::userinterface
         }
     }
 
+    std::expected<void, std::string> sendAuctionReadyResponses(
+        std::uint32_t playerMask,
+        std::int64_t serial)
+    {
+        const auto count = std::min<rules::PlayerNumber>(
+            uiRuleState.numberOfPlayers, rules::MaxPlayers);
+        std::size_t required{};
+        for (rules::PlayerNumber player = 0; player < count; ++player)
+        {
+            if ((playerMask & (1u << player)) != 0 &&
+                ui::localplayers::slotIsLocalPlayer(player))
+            {
+                ++required;
+            }
+        }
+
+        const auto queued = messaging::queuedActionCount();
+        if (queued > messaging::MessageQueueCapacity ||
+            required > messaging::MessageQueueCapacity - queued)
+        {
+            return std::unexpected(
+                "message queue cannot fit auction I_AM_HERE responses");
+        }
+
+        for (rules::PlayerNumber player = 0; player < count; ++player)
+        {
+            if ((playerMask & (1u << player)) == 0 ||
+                !ui::localplayers::slotIsLocalPlayer(player))
+            {
+                continue;
+            }
+            if (!messaging::sendAction(
+                    actions::Type::IAmHere, player, rules::BankPlayer, serial))
+            {
+                return std::unexpected(
+                    "validated auction I_AM_HERE response was rejected");
+            }
+        }
+        return {};
+    }
+
+
     void resetRuleProjection()
     {
         uiRuleState = {};
@@ -96,7 +142,7 @@ namespace monopoly::userinterface
         diceIngress.reset();
         dicePrompt = {};
         iBarRuleProjection.reset();
-        auctionui::reset(auctionState);
+        auctionui::reset(auctionProjection);
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -127,7 +173,7 @@ namespace monopoly::userinterface
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
         const auto auctionUpdate = auctionui::processRuleMessage(
-            auctionState, uiRuleState, message, display::state().desired2DView);
+            auctionProjection, uiRuleState, message, display::state().desired2DView);
         if (auctionUpdate.requestedBackdrop)
             display::setBackdrop(*auctionUpdate.requestedBackdrop);
         if (message.action == actions::Type::NotifyHousingShortage)
@@ -385,7 +431,7 @@ namespace monopoly::userinterface
         // UDAUCT_ProcessMessage, UDBOARD_ProcessMessage, UDIBAR_ProcessMessage,
         // puis UDPSEL_ProcessMessage (les modules non portes restent differes).
         if (const auto bid = auctionui::planBid(
-                auctionState, uiRuleState.numberOfPlayers,
+                auctionProjection, uiRuleState.numberOfPlayers,
                 display::state().desired2DView, message, localHumanPlayerMask()))
         {
             actions::Message action{};

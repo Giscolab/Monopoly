@@ -21,6 +21,7 @@
 #include "PieceBuildingDisplay.hpp"
 #include "PieceShadowDisplay.hpp"
 #include "AuctionPlayback.hpp"
+#include "AuctionPennyBagsPlayback.hpp"
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
@@ -57,6 +58,7 @@ namespace monopoly::engine
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
         pieces::PieceShadowDisplay pieceShadowDisplay;
         auctionui::Playback auctionPlayback;
+        auctionui::PennyBagsPlayback auctionPennyBagsPlayback;
         boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
         boarddisplay::OwnershipHighlightPlayback ownershipHighlightPlayback;
         boarddisplay::BoardLightingController boardLightingController;
@@ -634,6 +636,20 @@ namespace monopoly::engine
                 displayState.desired2DView, displayState.city, *session);
             if (!auctionSync)
                 return SDL_SetError("Auction playback: %s", auctionSync.error().c_str());
+            const auto pennyBagsSync = auctionPennyBagsPlayback.sync(
+                userinterface::auctionState(), ruleState,
+                displayState.desired2DView, *session,
+                [](std::uint32_t playerMask, std::int64_t serial)
+                    -> std::expected<void, std::string>
+                {
+                    return userinterface::sendAuctionReadyResponses(
+                        playerMask, serial);
+                });
+            if (!pennyBagsSync)
+                return SDL_SetError("Auction Pennybags playback: %s",
+                    pennyBagsSync.error().c_str());
+            if (pennyBagsSync->requestedBackdrop)
+                display::setBackdrop(*pennyBagsSync->requestedBackdrop);
             auto& dicePrompt = userinterface::dicePromptState();
             dicePrompt.show();
             const auto& iBarRules = userinterface::iBarRuleStateReadOnly();
@@ -859,6 +875,7 @@ namespace monopoly::engine
         pieceBuildingDisplay.reset();
         pieceShadowDisplay.reset();
         auctionPlayback.reset();
+        auctionPennyBagsPlayback.reset();
         boardBackdropPlayback.reset();
         ownershipHighlightPlayback.reset();
         boardLightingController.reset();

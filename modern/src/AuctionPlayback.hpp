@@ -14,7 +14,6 @@
 namespace monopoly::auctionui
 {
     inline constexpr std::uint16_t AuctionBasePriority = 315;
-    inline constexpr std::uint16_t AuctionPennyBagsPriority = 325;
     inline constexpr std::uint16_t AuctionPropertyPriority = 330;
     inline constexpr std::uint16_t AuctionBottomBarPriority = AuctionBasePriority - 1;
 

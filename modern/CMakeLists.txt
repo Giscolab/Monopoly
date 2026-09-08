@@ -663,6 +663,7 @@ target_sources(
     src/UserInterface.cpp
     src/AuctionUI.cpp
     src/AuctionPlayback.cpp
+    src/AuctionPennyBagsPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -754,6 +755,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.AuctionPlayback
         COMMAND MonopolyAuctionPlaybackTests
+    )
+endif()
+
+# UDAuct.cpp Pennybags graphic state machine / deferred roll-call
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAuctionPennyBagsPlaybackTests
+        tests/AuctionPennyBagsPlaybackTests.cpp
+        src/AuctionPennyBagsPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyAuctionPennyBagsPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyAuctionPennyBagsPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAuctionPennyBagsPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AuctionPennyBagsPlayback
+        COMMAND MonopolyAuctionPennyBagsPlaybackTests
     )
 endif()
 
