@@ -1,4 +1,5 @@
 #include "TradeUI.hpp"
+#include "IBarLayout.hpp"
 
 #include "IBarLayout.hpp"
 
@@ -510,6 +511,223 @@ namespace
             "a deed already offered no longer has a before hit target and cannot be duplicated");
     }
 
+    void testFutureContractCreationWorkflow()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.options.futureRentTradingAllowed = true;
+        game.squares[5].owner = 1;
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0),
+            "future contract fixture initializes a two-player trade");
+
+        uimsg::Message click{};
+        click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = tradeui::FutureNewRect.left + 1;
+        click.numberB = tradeui::FutureNewRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogVisible && state.contractDialogMode == 0 &&
+                state.contractDialogKind == rules::TradeItemKind::FutureRent,
+            "Future button opens the shared retail contract dialog in mode 0");
+
+        click.numberA = 10; click.numberB = 230;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogMode == 1 && state.contractDialogSide == 1,
+            "mode 0 click on A selects A as beneficiary and B as future-rent grantor");
+
+        const auto projection = tradeui::projectProperties(state, game);
+        const auto deed = projection.hitRects[1][5];
+        click.numberA = (deed.left + deed.right) / 2;
+        click.numberB = (deed.top + deed.bottom) / 2;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        const auto bit5 = ibar::layout::propertyBit(5);
+        expect(state.contractProperties == bit5,
+            "mode 1 selects only the counterparty property set that survives after-trade projection");
+
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogMode == 2 && state.contractAmount == 0,
+            "contract Okay advances non-empty property selection to count entry");
+
+        uimsg::Message key{};
+        key.type = uimsg::Type::TextInput;
+        key.text = "1";
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        key.text = "9";
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        key.text = "9";
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        expect(state.contractAmount == 19,
+            "future/immunity count input is capped to the legacy two-digit 1..99 field");
+        key.type = uimsg::Type::KeyboardPressed;
+        key.text.clear();
+        key.numberA = 13;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        expect(state.contractDialogMode == 3,
+            "Enter from count entry advances to the historical confirmation mode");
+
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(!state.contractDialogVisible && state.items.size() == 1 &&
+                state.items[0].numberA == 1 && state.items[0].numberB == 0 &&
+                state.items[0].numberC == static_cast<std::int64_t>(rules::TradeItemKind::FutureRent) &&
+                state.items[0].numberD == 19 && state.items[0].numberE == bit5 &&
+                (state.immunityFutureDesired[0] & (1u << 3u)) != 0,
+            "future confirmation emits one B-to-A TIK_FUTURE_RENT per selected property and shows B offered icon");
+    }
+
+    void testImmunityContractUsesSharedWorkflow()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.options.immunitiesTradingAllowed = true;
+        game.squares[5].owner = 1;
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0),
+            "immunity contract fixture initializes trade");
+
+        uimsg::Message click{};
+        click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = tradeui::ImmunityNewRect.left + 1;
+        click.numberB = tradeui::ImmunityNewRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogVisible &&
+                state.contractDialogKind == rules::TradeItemKind::Immunity,
+            "Immunity button selects the same dialog machine with TIK_IMMUNITY kind");
+
+        click.numberA = 10; click.numberB = 230;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        const auto projection = tradeui::projectProperties(state, game);
+        const auto deed = projection.hitRects[1][5];
+        click.numberA = (deed.left + deed.right) / 2;
+        click.numberB = (deed.top + deed.bottom) / 2;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+
+        uimsg::Message key{};
+        key.type = uimsg::Type::TextInput;
+        key.text = "4";
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        key.type = uimsg::Type::KeyboardPressed;
+        key.text.clear();
+        key.numberA = 13;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.items.size() == 1 &&
+                state.items[0].numberC == static_cast<std::int64_t>(rules::TradeItemKind::Immunity) &&
+                state.items[0].numberA == 1 && state.items[0].numberB == 0 &&
+                state.items[0].numberD == 4 &&
+                (state.immunityFutureDesired[1] & (1u << 3u)) != 0,
+            "shared contract dialog emits B-to-A immunity and projects the correct offered icon");
+    }
+
+    void testExistingFutureTransferRemovalAndReadOnlyView()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(3);
+        game.options.futureRentTradingAllowed = true;
+        game.squares[5].owner = 2;
+        const auto bit5 = ibar::layout::propertyBit(5);
+        game.countHits[0].properties = bit5;
+        game.countHits[0].fromPlayer = 2;
+        game.countHits[0].toPlayer = 0;
+        game.countHits[0].hitType = rules::CountHitType::FutureRent;
+        game.countHits[0].hitCount = 7;
+        game.countHits[0].tradedItem = false;
+
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0) &&
+                tradeui::selectPartner(state, game, 1) &&
+                (state.immunityFutureDesired[0] & 1u) != 0,
+            "active future-rent CountHit exposes A outer icon after partner selection");
+
+        uimsg::Message click{};
+        click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = tradeui::FutureTradeAT.left + 1;
+        click.numberB = tradeui::FutureTradeAT.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogMode == 4 && state.contractDialogSide == 0 &&
+                state.contractList.size() == 1 && state.contractList[0].hitCount == 7 &&
+                state.contractList[0].properties == bit5,
+            "outer future icon opens mode 4 with active non-traded rights for A");
+
+        click.numberA = tradeui::ContractListRects[0].left + 1;
+        click.numberB = tradeui::ContractListRects[0].top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.items.size() == 2 &&
+                state.items[0].numberA == 0 && state.items[0].numberB == 1 &&
+                state.items[0].numberD == 7 &&
+                state.items[1].numberA == 1 && state.items[1].numberB == 0 &&
+                state.items[1].numberD == -7 &&
+                (state.immunityFutureDesired[0] & (1u << 2u)) != 0,
+            "mode 4 transfers an active future as legacy +N forward and -N reverse pair");
+
+        state.editMode = false;
+        click.numberA = tradeui::FutureTradeAM.left + 1;
+        click.numberB = tradeui::FutureTradeAM.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogVisible && state.contractDialogMode == 6 &&
+                state.contractList.size() == 1,
+            "view-only Trade opens offered future in mode 6 rather than enabling removal");
+        click.numberA = tradeui::ContractListRects[0].left + 1;
+        click.numberB = tradeui::ContractListRects[0].top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(!state.contractList[0].selected,
+            "mode 6 list is read-only even when its row is clicked");
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+
+        state.editMode = true;
+        click.numberA = tradeui::FutureTradeAM.left + 1;
+        click.numberB = tradeui::FutureTradeAM.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.contractDialogMode == 5 && state.contractList.size() == 1,
+            "edit Trade opens offered future in mode 5 removal list");
+        click.numberA = tradeui::ContractListRects[0].left + 1;
+        click.numberB = tradeui::ContractListRects[0].top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        click.numberA = tradeui::ContractOkayRect.left + 1;
+        click.numberB = tradeui::ContractOkayRect.top + 1;
+        (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+        expect(state.items.empty() &&
+                (state.immunityFutureDesired[0] & (1u << 2u)) == 0 &&
+                (state.immunityFutureDesired[0] & 1u) != 0,
+            "mode 5 zeroes both paired directions while preserving authoritative active future");
+    }
+
+    void testContractProjectionDropsSelfOwnedRecipientProperty()
+    {
+        using namespace monopoly;
+        auto game = gameWithPlayers(2);
+        game.options.futureRentTradingAllowed = true;
+        game.squares[5].owner = 0;
+        const auto bit5 = ibar::layout::propertyBit(5);
+        tradeui::State state{};
+        expect(tradeui::beginLocalTrade(state, game, 0),
+            "self-owned contract cleanup fixture initializes trade");
+
+        auto square = tradeItem(0, 1, rules::TradeItemKind::Square, 5);
+        auto future = tradeItem(0, 1, rules::TradeItemKind::FutureRent, 6, bit5);
+        expect(tradeui::addTradeItem(state, game, square) &&
+                tradeui::addTradeItem(state, game, future) && state.items.size() == 2,
+            "cleanup fixture contains property transfer plus future for the same recipient property");
+        tradeui::refreshContractProjection(state, game);
+        expect(state.items.size() == 1 &&
+                state.items[0].numberC == static_cast<std::int64_t>(rules::TradeItemKind::Square) &&
+                state.immunityFutureDesired[0] == 0,
+            "contract projection removes a future when its recipient will own the referenced property");
+    }
+
     void testJailCardsProposeCancelAndSubmission()
     {
         using namespace monopoly;
@@ -598,6 +816,10 @@ int main()
     testPropertyProjectionLayoutAndPriority();
     testPropertySetsMortgageAndAfterProjection();
     testPropertyClicksAddRemoveAndMortgage();
+    testFutureContractCreationWorkflow();
+    testImmunityContractUsesSharedWorkflow();
+    testExistingFutureTransferRemovalAndReadOnlyView();
+    testContractProjectionDropsSelfOwnedRecipientProperty();
     testJailCardsProposeCancelAndSubmission();
     return failures == 0 ? 0 : 1;
 }

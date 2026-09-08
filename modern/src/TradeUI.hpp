@@ -56,6 +56,29 @@ namespace monopoly::tradeui
     inline constexpr std::array<Rect, 4> CommunityJailRects{{
         {66, 420, 99, 439}, {666, 420, 699, 439},
         {266, 383, 299, 402}, {466, 383, 499, 402}}};
+    inline constexpr Rect FutureTradeAT{104, 398, 165, 413};
+    inline constexpr Rect FutureTradeBT{704, 398, 765, 413};
+    inline constexpr Rect FutureTradeAM{304, 361, 365, 376};
+    inline constexpr Rect FutureTradeBM{504, 361, 565, 376};
+    inline constexpr Rect ImmunityTradeAT{104, 422, 165, 437};
+    inline constexpr Rect ImmunityTradeBT{704, 422, 765, 437};
+    inline constexpr Rect ImmunityTradeAM{304, 385, 365, 400};
+    inline constexpr Rect ImmunityTradeBM{504, 385, 565, 400};
+    inline constexpr Rect FutureNewRect{607, 197, 701, 220};
+    inline constexpr Rect ImmunityNewRect{704, 197, 798, 220};
+    inline constexpr Rect ContractOkayRect{660, 187, 740, 209};
+    inline constexpr Rect ContractUpRect{767, 115, 785, 141};
+    inline constexpr Rect ContractDownRect{767, 155, 785, 181};
+    inline constexpr std::array<Rect, 5> ContractListRects{{
+        {614,114,764,128}, {614,128,764,142}, {614,142,764,156},
+        {614,156,764,170}, {614,170,764,184}}};
+
+    struct ContractListEntry
+    {
+        std::int32_t hitCount{};
+        std::uint32_t properties{};
+        bool selected{};
+    };
 
     struct State
     {
@@ -77,6 +100,14 @@ namespace monopoly::tradeui
         std::uint8_t cashDialogSide{};
         std::int64_t cashTradeAmount{};
         std::array<std::int64_t, 2> cashOriginalOffers{};
+        bool contractDialogVisible{};
+        rules::TradeItemKind contractDialogKind{rules::TradeItemKind::FutureRent};
+        std::uint8_t contractDialogMode{};
+        std::uint8_t contractDialogSide{};
+        std::uint32_t contractProperties{};
+        std::int32_t contractAmount{};
+        int contractListOffset{};
+        std::vector<ContractListEntry> contractList;
         std::vector<actions::Message> items;
     };
 
@@ -128,6 +159,10 @@ namespace monopoly::tradeui
         State& state,
         const rules::GameState& gameState,
         rules::PlayerNumber player) noexcept;
+
+    void refreshContractProjection(
+        State& state,
+        const rules::GameState& gameState) noexcept;
 
     [[nodiscard]] PropertyProjection projectProperties(
         const State& state,
