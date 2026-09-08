@@ -263,12 +263,19 @@ struct SyntheticSequenceResources
                 items[0x02F6] = {LegacyDataType::Bitmap, bitmap24()};
                 // USA deed pop-ups used by UDIBar property mouseover. City 0 only:
                 // TAB_iyb00x00 (mortgaged) and TAB_iyf00x00 (normal), 28 deeds each.
-                items.resize(0x1054);
+                items.resize(0x118B);
                 // UDTrade future/immunity static icons: TAB_syfut / TAB_syimm.
                 const auto staticTradeIcon = words({
                     0x03000014, 0, 0x04000000, 2, 0x000002F6});
                 items[0x1027] = {LegacyDataType::Chunky, staticTradeIcon};
                 items[0x1053] = {LegacyDataType::Chunky, staticTradeIcon};
+                // UDTrade cash popup: persistent background and Clear/Okay/Cancel idle CNKs.
+                for (const auto tag : {0x02D9U, 0x02DBU, 0x02DDU})
+                    items[tag] = {LegacyDataType::Chunky, staticTradeIcon};
+                // Pressed Clear/Okay/Cancel are finite and EndingActionStop at runtime.
+                for (const auto tag : {0x02DAU, 0x02DCU, 0x02DEU})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
+                items[0x118A] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDAuct property-for-sale deeds. USA regular deeds are 28 per city;
                 // house and hotel use fixed language-graphics tags.
                 items[0x090C] = {LegacyDataType::Chunky, finiteButton};
