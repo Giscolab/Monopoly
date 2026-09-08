@@ -23,6 +23,9 @@ namespace test_support
     int cameraCycleCount = 0;
     std::int32_t lastCameraSquare = -1;
     bool lastCameraSequential = false;
+    int tradeBeginCount = 0;
+    monopoly::rules::PlayerNumber tradeBeginPlayer = monopoly::rules::NobodyPlayer;
+    bool tradeBeginAccepted = true;
 }
 
 namespace monopoly::display
@@ -59,6 +62,13 @@ namespace monopoly::userinterface
     const rules::GameState& ruleStateReadOnly()
     {
         return test_support::ruleState;
+    }
+
+    bool beginTradeFromIBar(rules::PlayerNumber player) noexcept
+    {
+        ++test_support::tradeBeginCount;
+        test_support::tradeBeginPlayer = player;
+        return test_support::tradeBeginAccepted;
     }
 }
 
@@ -708,6 +718,49 @@ namespace
         test_support::displayState.desired2DView = display::Screen2D::Main;
     }
 
+    void testGlobalTradeButton()
+    {
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::ruleState.numberOfPlayers = 3;
+        test_support::ruleState.currentPlayer = 0;
+        test_support::ruleState.players[0].currentSquare = 7;
+        test_support::ruleState.players[1].currentSquare = 23;
+        test_support::tradeBeginCount = 0;
+        test_support::tradeBeginPlayer = rules::NobodyPlayer;
+        test_support::tradeBeginAccepted = true;
+
+        setHit(ibar::RuleMode::StartTurn, Layout::General,
+            mask({Slot::Trade}));
+        click(Slot::Trade, Layout::General);
+        require(test_support::tradeBeginCount == 1 &&
+                test_support::tradeBeginPlayer == 0 &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::TradeButtonIndex,
+            "Trade global button delegates to UDTrade flow and requests Pressed feedback");
+        ibar::clearPendingPressedButton(ibar::TradeButtonIndex);
+
+        test_support::tradeBeginAccepted = false;
+        click(Slot::Trade, Layout::General);
+        require(test_support::tradeBeginCount == 2 &&
+                !ibar::stateReadOnly().pendingPressedButton,
+            "Trade button does not fake Pressed feedback when Trade entry is rejected");
+
+        test_support::tradeBeginAccepted = true;
+        ibar::show();
+        const auto player1Rect = ibar::stateReadOnly().players[1].rect;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            player1Rect.left + 1, player1Rect.top + 1});
+        click(Slot::Trade, Layout::General);
+        require(test_support::tradeBeginCount == 3 &&
+                test_support::tradeBeginPlayer == 1 &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::TradeButtonIndex,
+            "Trade global button follows the locally inspected IBar player like the retail UI");
+        ibar::clearPendingPressedButton(ibar::TradeButtonIndex);
+
+        const auto player0Rect = ibar::stateReadOnly().players[0].rect;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            player0Rect.left + 1, player0Rect.top + 1});
+    }
+
     void testRemoteAndPlayerSelectGuards()
     {
         setHit(ibar::RuleMode::BuyAuction, Layout::BuyAuction,
@@ -748,6 +801,7 @@ int main()
         testCardNotificationState();
         testBSSMSubstatesAndDeeds();
         testGlobalCameraButton();
+        testGlobalTradeButton();
         testRemoteAndPlayerSelectGuards();
         monopoly::ibar::shutdown();
         return 0;

@@ -8,6 +8,7 @@
 #include "DiceIngress.hpp"
 #include "IBarRuleState.hpp"
 #include "AuctionUI.hpp"
+#include "TradeUI.hpp"
 
 #include <cstdint>
 #include <expected>
@@ -20,6 +21,9 @@ namespace monopoly::userinterface
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept;
     auctionui::State& auctionState() noexcept;
     const auctionui::State& auctionStateReadOnly() noexcept;
+    tradeui::State& tradeState() noexcept;
+    const tradeui::State& tradeStateReadOnly() noexcept;
+    [[nodiscard]] bool beginTradeFromIBar(rules::PlayerNumber iBarPlayer) noexcept;
     [[nodiscard]] std::expected<void, std::string> sendAuctionReadyResponses(
         std::uint32_t playerMask,
         std::int64_t serial);
