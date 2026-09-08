@@ -231,6 +231,284 @@ namespace monopoly::tradeui
             }
         }
 
+        [[nodiscard]] std::optional<std::size_t> contractIndex(
+            rules::TradeItemKind kind) noexcept
+        {
+            if (kind == rules::TradeItemKind::FutureRent) return 0u;
+            if (kind == rules::TradeItemKind::Immunity) return 1u;
+            return std::nullopt;
+        }
+
+        [[nodiscard]] rules::CountHitType contractHitType(
+            rules::TradeItemKind kind) noexcept
+        {
+            return kind == rules::TradeItemKind::FutureRent
+                ? rules::CountHitType::FutureRent
+                : rules::CountHitType::RentImmunity;
+        }
+
+        [[nodiscard]] Rect contractBoxBounds(std::size_t box) noexcept
+        {
+            const auto& origin = TradePropertyBoxOrigins[box];
+            return {origin[0], origin[1], origin[0] + 200, origin[1] + 225};
+        }
+
+        void clampContractListOffset(State& state) noexcept
+        {
+            if (state.contractList.empty()) state.contractListOffset = 0;
+            else state.contractListOffset = std::clamp(
+                state.contractListOffset, 0,
+                static_cast<int>(state.contractList.size()) - 1);
+        }
+
+        void closeContractDialog(State& state) noexcept
+        {
+            state.contractDialogVisible = false;
+            state.contractDialogMode = 0;
+            state.contractDialogSide = 0;
+            state.contractProperties = 0;
+            state.contractAmount = 0;
+            state.contractListOffset = 0;
+            state.contractList.clear();
+        }
+
+        [[nodiscard]] bool openContractDialog(
+            State& state,
+            const rules::GameState& gameState,
+            rules::TradeItemKind kind,
+            std::uint8_t mode,
+            std::uint8_t side)
+        {
+            if (!contractIndex(kind) || side > 1 ||
+                !validPlayer(gameState, state.playerA) ||
+                !validPlayer(gameState, state.playerB))
+                return false;
+
+            state.contractDialogVisible = true;
+            state.contractDialogKind = kind;
+            state.contractDialogMode = mode;
+            state.contractDialogSide = side;
+            state.contractListOffset = 0;
+            state.contractList.clear();
+            if (mode == 0)
+            {
+                state.contractProperties = 0;
+                state.contractAmount = 0;
+                return true;
+            }
+
+            if (mode == 4)
+            {
+                const auto to = side ? state.playerB : state.playerA;
+                const auto hitType = contractHitType(kind);
+                for (const auto& hit : gameState.countHits)
+                {
+                    if (state.contractList.size() >= 28) break;
+                    if (hit.toPlayer == to && hit.hitType == hitType &&
+                        hit.hitCount != 0 && !hit.tradedItem)
+                        state.contractList.push_back({hit.hitCount, hit.properties, false});
+                }
+            }
+            else if (mode == 5 || mode == 6)
+            {
+                const auto to = side ? state.playerA : state.playerB;
+                const auto rawKind = static_cast<std::int64_t>(kind);
+                for (const auto& item : state.items)
+                {
+                    if (state.contractList.size() >= 28) break;
+                    if (item.numberC == rawKind && item.numberD != 0 &&
+                        item.numberB == to && item.numberE >= 0 &&
+                        item.numberE <= std::numeric_limits<std::uint32_t>::max())
+                    {
+                        state.contractList.push_back({
+                            static_cast<std::int32_t>(item.numberD),
+                            static_cast<std::uint32_t>(item.numberE), false});
+                    }
+                }
+            }
+            clampContractListOffset(state);
+            return true;
+        }
+
+        [[nodiscard]] std::pair<rules::PlayerNumber, rules::PlayerNumber>
+        contractDirection(const State& state, std::uint8_t side) noexcept
+        {
+            return side == 0
+                ? std::pair{state.playerA, state.playerB}
+                : std::pair{state.playerB, state.playerA};
+        }
+
+        [[nodiscard]] bool writeContractItem(
+            State& state,
+            const rules::GameState& gameState,
+            rules::TradeItemKind kind,
+            rules::PlayerNumber from,
+            rules::PlayerNumber to,
+            std::int32_t count,
+            std::uint32_t properties)
+        {
+            actions::Message item{};
+            item.numberA = from;
+            item.numberB = to;
+            item.numberC = static_cast<std::int64_t>(kind);
+            item.numberD = count;
+            item.numberE = properties;
+            return addTradeItem(state, gameState, item);
+        }
+
+        void processContractDialog(
+            State& state,
+            const rules::GameState& gameState,
+            const uimsg::Message& message)
+        {
+            const auto kind = state.contractDialogKind;
+            const int x = static_cast<int>(message.numberA);
+            const int y = static_cast<int>(message.numberB);
+
+            if (state.contractDialogMode == 2 &&
+                (message.type == uimsg::Type::TextInput ||
+                 message.type == uimsg::Type::KeyboardPressed))
+            {
+                int key = -1;
+                if (message.type == uimsg::Type::TextInput && !message.text.empty())
+                    key = static_cast<unsigned char>(message.text.front());
+                else if (message.type == uimsg::Type::KeyboardPressed)
+                    key = static_cast<int>(message.numberA);
+                if (key == 8)
+                    state.contractAmount /= 10;
+                else if (key >= '0' && key <= '9' && state.contractAmount < 10)
+                    state.contractAmount = state.contractAmount * 10 + (key - '0');
+                else if (key == 13)
+                {
+                    if (state.contractAmount <= 0) closeContractDialog(state);
+                    else state.contractDialogMode = 3;
+                }
+                return;
+            }
+
+            if (message.type != uimsg::Type::MouseLeftDown) return;
+            if (state.contractDialogMode == 0)
+            {
+                if (ContractOkayRect.contains(x, y))
+                {
+                    closeContractDialog(state);
+                    return;
+                }
+                for (std::size_t box = 0; box < TradePropertyBoxOrigins.size(); ++box)
+                {
+                    if (!contractBoxBounds(box).contains(x, y)) continue;
+                    state.contractDialogSide = static_cast<std::uint8_t>(1u - (box % 2u));
+                    state.contractDialogMode = 1;
+                    state.contractProperties = 0;
+                    return;
+                }
+            }
+            else if (state.contractDialogMode == 1)
+            {
+                if (ContractOkayRect.contains(x, y))
+                {
+                    if (state.contractProperties == 0) closeContractDialog(state);
+                    else
+                    {
+                        state.contractDialogMode = 2;
+                        state.contractAmount = 0;
+                    }
+                    return;
+                }
+                const auto projection = projectProperties(state, gameState);
+                const auto hit = propertyHit(projection, x, y);
+                if (!hit) return;
+                const int box = *hit / 100;
+                const int square = *hit % 100;
+                const auto bit = ibar::layout::propertyBit(square);
+                bool legal = false;
+                if (state.contractDialogSide == 0)
+                    legal = (box == 0 || box == 3) &&
+                        (((projection.after[0] | projection.afterMortgaged[0]) & bit) != 0);
+                else
+                    legal = (box == 1 || box == 2) &&
+                        (((projection.after[1] | projection.afterMortgaged[1]) & bit) != 0);
+                if (legal) state.contractProperties ^= bit;
+                return;
+            }
+            else if (state.contractDialogMode == 2)
+            {
+                if (!ContractOkayRect.contains(x, y)) return;
+                if (state.contractAmount <= 0) closeContractDialog(state);
+                else state.contractDialogMode = 3;
+                return;
+            }
+            else if (state.contractDialogMode == 3)
+            {
+                if (!ContractOkayRect.contains(x, y)) return;
+                const auto [from, to] = contractDirection(state, state.contractDialogSide);
+                for (unsigned int bit = 0; bit < 28; ++bit)
+                {
+                    const auto mask = 1u << bit;
+                    if ((state.contractProperties & mask) == 0) continue;
+                    (void)writeContractItem(
+                        state, gameState, kind, from, to,
+                        state.contractAmount, mask);
+                }
+                closeContractDialog(state);
+                refreshContractProjection(state, gameState);
+                return;
+            }
+            else if (state.contractDialogMode == 4 ||
+                     state.contractDialogMode == 5 ||
+                     state.contractDialogMode == 6)
+            {
+                if (ContractOkayRect.contains(x, y))
+                {
+                    if (state.contractDialogMode != 6)
+                    {
+                        const auto [from, to] =
+                            contractDirection(state, state.contractDialogSide);
+                        for (const auto& entry : state.contractList)
+                        {
+                            if (!entry.selected) continue;
+                            if (state.contractDialogMode == 4)
+                            {
+                                (void)writeContractItem(state, gameState, kind,
+                                    from, to, entry.hitCount, entry.properties);
+                                (void)writeContractItem(state, gameState, kind,
+                                    to, from, -entry.hitCount, entry.properties);
+                            }
+                            else
+                            {
+                                (void)writeContractItem(state, gameState, kind,
+                                    from, to, 0, entry.properties);
+                                (void)writeContractItem(state, gameState, kind,
+                                    to, from, 0, entry.properties);
+                            }
+                        }
+                    }
+                    closeContractDialog(state);
+                    refreshContractProjection(state, gameState);
+                    return;
+                }
+                if (state.contractDialogMode != 6)
+                {
+                    for (std::size_t row = 0; row < ContractListRects.size(); ++row)
+                    {
+                        if (!ContractListRects[row].contains(x, y)) continue;
+                        const auto index = static_cast<std::size_t>(
+                            state.contractListOffset + static_cast<int>(row));
+                        if (index < state.contractList.size())
+                            state.contractList[index].selected =
+                                !state.contractList[index].selected;
+                        return;
+                    }
+                }
+            }
+
+            if (ContractUpRect.contains(x, y))
+                --state.contractListOffset;
+            else if (ContractDownRect.contains(x, y))
+                ++state.contractListOffset;
+            clampContractListOffset(state);
+        }
+
         [[nodiscard]] bool validTradeItemForProjection(
             const rules::GameState& gameState,
             const actions::Message& message) noexcept
@@ -284,6 +562,14 @@ namespace monopoly::tradeui
         state.cashDialogSide = 0;
         state.cashTradeAmount = 0;
         state.cashOriginalOffers = {};
+        state.contractDialogVisible = false;
+        state.contractDialogKind = rules::TradeItemKind::FutureRent;
+        state.contractDialogMode = 0;
+        state.contractDialogSide = 0;
+        state.contractProperties = 0;
+        state.contractAmount = 0;
+        state.contractListOffset = 0;
+        state.contractList.clear();
         state.items.clear();
     }
 
@@ -311,6 +597,7 @@ namespace monopoly::tradeui
                 static_cast<int>(state.playerA) * 10 + state.playerB;
             updateJailCards(state, gameState);
             recomputeCash(state, gameState);
+            refreshContractProjection(state, gameState);
             state.showPropose = true;
             return true;
         }
@@ -404,6 +691,7 @@ namespace monopoly::tradeui
             static_cast<int>(state.playerA) * 10 + state.playerB;
         updateJailCards(state, gameState);
         recomputeCash(state, gameState);
+        refreshContractProjection(state, gameState);
         state.showPropose = true;
         return true;
     }
@@ -479,6 +767,86 @@ namespace monopoly::tradeui
         return projection;
     }
 
+    void refreshContractProjection(
+        State& state,
+        const rules::GameState& gameState) noexcept
+    {
+        state.immunityFutureDesired = {};
+        if ((!gameState.options.futureRentTradingAllowed &&
+             !gameState.options.immunitiesTradingAllowed) ||
+            !validPlayer(gameState, state.playerA) ||
+            !validPlayer(gameState, state.playerB))
+            return;
+
+        const auto projection = projectProperties(state, gameState);
+        const std::array<PropertyMask, 2> after{{
+            projection.after[0] | projection.afterMortgaged[0],
+            projection.after[1] | projection.afterMortgaged[1]}};
+        constexpr std::array<rules::TradeItemKind, 2> kinds{{
+            rules::TradeItemKind::FutureRent,
+            rules::TradeItemKind::Immunity}};
+        for (std::size_t which = 0; which < kinds.size(); ++which)
+        {
+            const auto kind = kinds[which];
+            const auto hitType = contractHitType(kind);
+            for (std::size_t side = 0; side < 2; ++side)
+            {
+                const auto player = side ? state.playerB : state.playerA;
+                for (const auto& hit : gameState.countHits)
+                {
+                    if (hit.toPlayer == player && hit.hitType == hitType &&
+                        !hit.tradedItem)
+                    {
+                        state.immunityFutureDesired[which] |=
+                            static_cast<std::uint8_t>(1u << side);
+                    }
+                }
+
+                const auto target = side ? state.playerA : state.playerB;
+                const auto targetAfter = after[side ? 0u : 1u];
+                const auto otherAfter = after[side ? 1u : 0u];
+                const auto rawKind = static_cast<std::int64_t>(kind);
+                std::size_t itemIndex = 0;
+                while (itemIndex < state.items.size())
+                {
+                    const auto& item = state.items[itemIndex];
+                    if (item.numberC != rawKind || item.numberB != target ||
+                        item.numberD <= 0 || item.numberE < 0 ||
+                        item.numberE > std::numeric_limits<std::uint32_t>::max())
+                    {
+                        ++itemIndex;
+                        continue;
+                    }
+                    const auto properties = static_cast<std::uint32_t>(item.numberE);
+                    if ((properties & targetAfter) == 0)
+                    {
+                        state.immunityFutureDesired[which] |=
+                            static_cast<std::uint8_t>(1u << (side + 2u));
+                        ++itemIndex;
+                        continue;
+                    }
+
+                    state.items[itemIndex] = std::move(state.items.back());
+                    state.items.pop_back();
+                    for (std::size_t q = 0; q < state.items.size(); ++q)
+                    {
+                        const auto& candidate = state.items[q];
+                        if (candidate.numberC == rawKind &&
+                            candidate.numberB == target && candidate.numberD < 0 &&
+                            candidate.numberE >= 0 &&
+                            candidate.numberE <= std::numeric_limits<std::uint32_t>::max() &&
+                            (static_cast<std::uint32_t>(candidate.numberE) & otherAfter) != 0)
+                        {
+                            state.items[q] = std::move(state.items.back());
+                            state.items.pop_back();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     std::optional<int> propertyHit(
         const PropertyProjection& projection,
         int x,
@@ -519,13 +887,46 @@ namespace monopoly::tradeui
         const uimsg::Message& message)
     {
         InputUpdate result{};
-        if (desiredView != display::Screen2D::Trade || !state.editMode ||
-            state.playerSelectVisible || !validPlayer(gameState, state.playerA) ||
+        if (desiredView != display::Screen2D::Trade || state.playerSelectVisible ||
+            !validPlayer(gameState, state.playerA) ||
             !validPlayer(gameState, state.playerB))
             return result;
 
+        refreshContractProjection(state, gameState);
         const int x = static_cast<int>(message.numberA);
         const int y = static_cast<int>(message.numberB);
+
+        if (state.contractDialogVisible &&
+            (message.type == uimsg::Type::MouseLeftDown ||
+             message.type == uimsg::Type::TextInput ||
+             message.type == uimsg::Type::KeyboardPressed))
+        {
+            result.consumed = true;
+            processContractDialog(state, gameState, message);
+            return result;
+        }
+
+        if (!state.editMode)
+        {
+            if (message.type != uimsg::Type::MouseLeftDown) return result;
+            if (FutureTradeAM.contains(x, y) &&
+                (state.immunityFutureDesired[0] & (1u << 2u)))
+                result.consumed = openContractDialog(
+                    state, gameState, rules::TradeItemKind::FutureRent, 6, 0);
+            else if (FutureTradeBM.contains(x, y) &&
+                (state.immunityFutureDesired[0] & (1u << 3u)))
+                result.consumed = openContractDialog(
+                    state, gameState, rules::TradeItemKind::FutureRent, 6, 1);
+            else if (ImmunityTradeAM.contains(x, y) &&
+                (state.immunityFutureDesired[1] & (1u << 2u)))
+                result.consumed = openContractDialog(
+                    state, gameState, rules::TradeItemKind::Immunity, 6, 0);
+            else if (ImmunityTradeBM.contains(x, y) &&
+                (state.immunityFutureDesired[1] & (1u << 3u)))
+                result.consumed = openContractDialog(
+                    state, gameState, rules::TradeItemKind::Immunity, 6, 1);
+            return result;
+        }
 
         if (state.cashDialogVisible &&
             (message.type == uimsg::Type::MouseLeftDown ||
@@ -685,6 +1086,7 @@ namespace monopoly::tradeui
                 (void)removeFirstItem(
                     state, rules::TradeItemKind::Square, square);
             }
+            refreshContractProjection(state, gameState);
             return result;
         }
 
@@ -722,6 +1124,77 @@ namespace monopoly::tradeui
                 toggleJail(1, slot);
                 return result;
             }
+        }
+
+        if (FutureTradeAT.contains(x, y) &&
+            (state.immunityFutureDesired[0] & (1u << 0u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::FutureRent, 4, 0);
+            return result;
+        }
+        if (FutureTradeBT.contains(x, y) &&
+            (state.immunityFutureDesired[0] & (1u << 1u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::FutureRent, 4, 1);
+            return result;
+        }
+        if (FutureTradeAM.contains(x, y) &&
+            (state.immunityFutureDesired[0] & (1u << 2u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::FutureRent, 5, 0);
+            return result;
+        }
+        if (FutureTradeBM.contains(x, y) &&
+            (state.immunityFutureDesired[0] & (1u << 3u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::FutureRent, 5, 1);
+            return result;
+        }
+        if (ImmunityTradeAT.contains(x, y) &&
+            (state.immunityFutureDesired[1] & (1u << 0u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::Immunity, 4, 0);
+            return result;
+        }
+        if (ImmunityTradeBT.contains(x, y) &&
+            (state.immunityFutureDesired[1] & (1u << 1u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::Immunity, 4, 1);
+            return result;
+        }
+        if (ImmunityTradeAM.contains(x, y) &&
+            (state.immunityFutureDesired[1] & (1u << 2u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::Immunity, 5, 0);
+            return result;
+        }
+        if (ImmunityTradeBM.contains(x, y) &&
+            (state.immunityFutureDesired[1] & (1u << 3u)))
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::Immunity, 5, 1);
+            return result;
+        }
+        if (FutureNewRect.contains(x, y) &&
+            gameState.options.futureRentTradingAllowed)
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::FutureRent, 0, 1);
+            return result;
+        }
+        if (ImmunityNewRect.contains(x, y) &&
+            gameState.options.immunitiesTradingAllowed)
+        {
+            (void)openContractDialog(
+                state, gameState, rules::TradeItemKind::Immunity, 0, 1);
+            return result;
         }
 
         if (ProposeRect.contains(x, y))
@@ -1030,6 +1503,7 @@ namespace monopoly::tradeui
                 }
             }
             state.proposed = false;
+            refreshContractProjection(state, gameState);
             return result;
 
         case actions::Type::NotifyTradeEditor:
@@ -1045,12 +1519,15 @@ namespace monopoly::tradeui
             }
             state.playerA = static_cast<rules::PlayerNumber>(message.numberA);
             state.tradeFrom = state.playerA;
+            refreshContractProjection(state, gameState);
             return result;
 
         case actions::Type::NotifyTradeAcceptanceDecision:
             state.playerSelectVisible = false;
             state.editMode = false;
             state.showPropose = false;
+            closeContractDialog(state);
+            refreshContractProjection(state, gameState);
             return result;
 
         case actions::Type::NotifyTradeItem:
@@ -1094,6 +1571,7 @@ namespace monopoly::tradeui
                     static_cast<std::uint32_t>(message.numberE), true);
                 break;
             }
+            refreshContractProjection(state, gameState);
             return result;
         }
 
