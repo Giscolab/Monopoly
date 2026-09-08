@@ -58,6 +58,7 @@ namespace monopoly::display
     void setBackdrop(Screen2D screen)
     {
         requestedBackdrop = screen;
+        routingDisplayState.desired2DView = screen;
         route.push_back("display");
     }
 
@@ -115,6 +116,14 @@ namespace monopoly::ui::localplayers
         capturedTradeB = tradeBPlayer;
         capturedTradePending = pendingPlayers;
         return tradeResolvedPlayer;
+    }
+
+    rules::PlayerNumber tradeSourcePlayer(
+        const rules::GameState& state,
+        rules::PlayerNumber current)
+    {
+        if (state.numberOfPlayers == 0) return rules::MaxPlayers;
+        return current < state.numberOfPlayers ? current : rules::MaxPlayers;
     }
 
     void processRuleMessage(
@@ -344,6 +353,80 @@ namespace
         localHumanMask = 0x3F;
         simulatedQueuedActions = 0;
         capturedMessages.clear();
+    }
+
+    void testTradeEntryAndPartnerRouting()
+    {
+        using namespace monopoly;
+
+        userinterface::resetRuleProjection();
+        runtime::reset();
+        runtime::state().gameInProgress = true;
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 4;
+        uiState.currentPlayer = 0;
+        for (rules::PlayerNumber player = 0; player < uiState.numberOfPlayers; ++player)
+            uiState.players[player].currentSquare = player;
+        localHumanMask = 0x0Fu;
+        localPlayerMask = 0x0Fu;
+        routingDisplayState.desired2DView = display::Screen2D::Main;
+        requestedBackdrop = display::Screen2D::Invalid;
+        route.clear();
+
+        expect(userinterface::beginTradeFromIBar(0),
+            "IBar Trade entry accepts an active local source player");
+        const auto& opening = userinterface::tradeStateReadOnly();
+        expect(requestedBackdrop == display::Screen2D::Trade &&
+                routingDisplayState.desired2DView == display::Screen2D::Trade &&
+                opening.playerA == 0 && opening.playerB == rules::MaxPlayers &&
+                opening.playerSelectVisible && opening.ignoreEntryClick,
+            "IBar Trade entry switches backdrop and opens the retail partner selector");
+
+        const auto partnerRect = tradeui::playerTokenRect(opening, uiState, 1);
+        expect(partnerRect.has_value(),
+            "eligible partner exposes the retail token hit rectangle");
+        if (!partnerRect)
+        {
+            requestedBackdrop = display::Screen2D::Invalid;
+            routingDisplayState.desired2DView = display::Screen2D::Main;
+            localHumanMask = 0x3Fu;
+            localPlayerMask = 0x3Fu;
+            runtime::reset();
+            return;
+        }
+
+        uimsg::Message click{};
+        click.type = uimsg::Type::MouseLeftDown;
+        click.numberA = (partnerRect->left + partnerRect->right) / 2;
+        click.numberB = (partnerRect->top + partnerRect->bottom) / 2;
+        expect(userinterface::processUIMessage(click) &&
+                userinterface::tradeStateReadOnly().playerB == rules::MaxPlayers &&
+                !userinterface::tradeStateReadOnly().ignoreEntryClick,
+            "first Trade mouse-down is swallowed by the historical first-time guard");
+        expect(userinterface::processUIMessage(click) &&
+                userinterface::tradeStateReadOnly().playerB == 1 &&
+                !userinterface::tradeStateReadOnly().playerSelectVisible &&
+                userinterface::tradeStateReadOnly().desiredTradePanels == 1,
+            "second Trade mouse-down selects B through the full UserInterface route");
+
+        auto& storedTrade = userinterface::tradeState();
+        actions::Message storedItem{};
+        storedItem.action = actions::Type::TradeItem;
+        storedTrade.items.push_back(storedItem);
+        routingDisplayState.desired2DView = display::Screen2D::Main;
+        requestedBackdrop = display::Screen2D::Invalid;
+        expect(userinterface::beginTradeFromIBar(0) &&
+                requestedBackdrop == display::Screen2D::Trade &&
+                storedTrade.playerA == 0 && storedTrade.playerB == 1 &&
+                storedTrade.items.size() == 1 && !storedTrade.playerSelectVisible &&
+                storedTrade.ignoreEntryClick,
+            "reopening Trade preserves a valid non-empty stored editor instead of clearing it");
+
+        requestedBackdrop = display::Screen2D::Invalid;
+        routingDisplayState.desired2DView = display::Screen2D::Main;
+        localHumanMask = 0x3Fu;
+        localPlayerMask = 0x3Fu;
+        runtime::reset();
     }
 
     void testLocalBoundary()
@@ -713,6 +796,7 @@ int main()
     testAuctionBidRouting();
     testAuctionRuleRouting();
     testAuctionReadyResponses();
+    testTradeEntryAndPartnerRouting();
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();

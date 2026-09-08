@@ -664,6 +664,7 @@ target_sources(
     src/AuctionUI.cpp
     src/AuctionPlayback.cpp
     src/AuctionPennyBagsPlayback.cpp
+    src/TradeUI.cpp
 )
 
 if(BUILD_TESTING)
@@ -683,6 +684,7 @@ if(BUILD_TESTING)
         src/BoardGeometry.cpp
         src/RuleArchive.cpp
         src/RuleOptions.cpp
+        src/TradeUI.cpp
     )
 
     target_include_directories(
@@ -705,6 +707,28 @@ if(BUILD_TESTING)
         COMMAND MonopolyUserInterfaceRoutingTests
     )
 
+endif()
+
+# UDTrade.cpp / trade.cpp pure editor projection and partner selection
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeUITests
+        tests/TradeUITests.cpp
+        src/TradeUI.cpp
+    )
+    target_include_directories(
+        MonopolyTradeUITests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeUITests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeUI
+        COMMAND MonopolyTradeUITests
+    )
 endif()
 
 # UDAuct.cpp notification projection and bill hit testing

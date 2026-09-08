@@ -22,6 +22,7 @@ namespace monopoly::userinterface
         dice::PromptState dicePrompt;
         ibar::RuleProjection iBarRuleProjection;
         auctionui::State auctionProjection;
+        tradeui::State tradeProjection;
     }
     dice::PromptState& dicePromptState() noexcept { return dicePrompt; }
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept
@@ -35,6 +36,14 @@ namespace monopoly::userinterface
     const auctionui::State& auctionStateReadOnly() noexcept
     {
         return auctionProjection;
+    }
+    tradeui::State& tradeState() noexcept
+    {
+        return tradeProjection;
+    }
+    const tradeui::State& tradeStateReadOnly() noexcept
+    {
+        return tradeProjection;
     }
     namespace
     {
@@ -134,6 +143,40 @@ namespace monopoly::userinterface
     }
 
 
+    bool beginTradeFromIBar(rules::PlayerNumber iBarPlayer) noexcept
+    {
+        if (!runtime::state().gameInProgress ||
+            display::state().desired2DView == display::Screen2D::Trade ||
+            iBarPlayer >= uiRuleState.numberOfPlayers ||
+            iBarPlayer >= rules::MaxPlayers ||
+            uiRuleState.players[iBarPlayer].currentSquare >= tradeui::OffBoardSquare)
+        {
+            return false;
+        }
+
+        const auto source = ui::localplayers::tradeSourcePlayer(
+            uiRuleState, iBarPlayer);
+        if (source == rules::MaxPlayers)
+            return false;
+
+        const bool storedTradeValid =
+            tradeProjection.tradeFrom < rules::MaxPlayers &&
+            tradeProjection.playerA < rules::MaxPlayers &&
+            tradeProjection.playerB < rules::MaxPlayers &&
+            !tradeProjection.items.empty();
+        if (!storedTradeValid &&
+            !tradeui::beginLocalTrade(tradeProjection, uiRuleState, source))
+        {
+            return false;
+        }
+        if (storedTradeValid)
+            tradeProjection.ignoreEntryClick = true;
+
+        display::setBackdrop(display::Screen2D::Trade);
+        return true;
+    }
+
+
     void resetRuleProjection()
     {
         uiRuleState = {};
@@ -143,6 +186,7 @@ namespace monopoly::userinterface
         dicePrompt = {};
         iBarRuleProjection.reset();
         auctionui::reset(auctionProjection);
+        tradeui::reset(tradeProjection);
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -201,6 +245,12 @@ namespace monopoly::userinterface
                 iBarRuleProjection.processTradeAcceptance(message, tradePlayer);
             }
         }
+
+        const auto tradeUpdate = tradeui::processRuleMessage(
+            tradeProjection, uiRuleState, message,
+            display::state().desired2DView, localHumanPlayerMask());
+        if (tradeUpdate.requestedBackdrop)
+            display::setBackdrop(*tradeUpdate.requestedBackdrop);
 
         if (message.action == actions::Type::NotifyDiceRolled)
         {
@@ -448,6 +498,12 @@ namespace monopoly::userinterface
 
 
         playerselection::processLibraryMessage(message);
+        if (const auto partner = tradeui::planPartnerSelection(
+                tradeProjection, uiRuleState, display::state().desired2DView,
+                message))
+        {
+            (void)tradeui::selectPartner(tradeProjection, uiRuleState, *partner);
+        }
         update();
 
         // Correspond à ProcessUIMessage() de Main.cpp.

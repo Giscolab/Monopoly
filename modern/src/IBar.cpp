@@ -200,10 +200,30 @@ namespace monopoly::ibar
             layout::ActionButtonSlot slot,
             const uimsg::Message& message) noexcept
         {
+            const auto& uiState = userinterface::ruleStateReadOnly();
+            if (slot == layout::ActionButtonSlot::Trade)
+            {
+                auto tradePlayer = resolveRulePlayer(globalState.projectedRulePlayer);
+                const auto validTradePlayer = [&](rules::PlayerNumber player) noexcept {
+                    return player < rules::MaxPlayers &&
+                        player < uiState.numberOfPlayers;
+                };
+                if (!validTradePlayer(tradePlayer))
+                    tradePlayer = globalState.projectedRulePlayer;
+                if (!validTradePlayer(tradePlayer))
+                    tradePlayer = uiState.currentPlayer;
+                if (!validTradePlayer(tradePlayer) ||
+                    !userinterface::beginTradeFromIBar(tradePlayer))
+                {
+                    return false;
+                }
+                globalState.pendingPressedButton = TradeButtonIndex;
+                return true;
+            }
+
             if (slot != layout::ActionButtonSlot::Camera)
                 return false;
 
-            const auto& uiState = userinterface::ruleStateReadOnly();
             auto cameraPlayer = resolveRulePlayer(globalState.projectedRulePlayer);
             const auto validPlayer = [&](rules::PlayerNumber player) noexcept {
                 return player < rules::MaxPlayers &&
