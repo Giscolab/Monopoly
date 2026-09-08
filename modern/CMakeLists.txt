@@ -665,6 +665,7 @@ target_sources(
     src/AuctionPlayback.cpp
     src/AuctionPennyBagsPlayback.cpp
     src/TradeUI.cpp
+    src/TradePropertyPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -730,6 +731,34 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeUI
         COMMAND MonopolyTradeUITests
+    )
+endif()
+
+# UDTrade.cpp static PAT deed playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradePropertyPlaybackTests
+        tests/TradePropertyPlaybackTests.cpp
+        src/TradePropertyPlayback.cpp
+        src/TradeUI.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyTradePropertyPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradePropertyPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradePropertyPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradePropertyPlayback
+        COMMAND MonopolyTradePropertyPlaybackTests
     )
 endif()
 
