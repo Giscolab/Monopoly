@@ -364,10 +364,14 @@ namespace
 
         click.numberA = 12; click.numberB = 368;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
-        expect(!state.cashDialogVisible && state.cashDesired[2] == 12 &&
-                state.cashDesired[3] == 0 && state.cashDesired[0] == 1488 &&
-                state.cashDesired[1] == 1512,
-            "cash Okay commits selected side and clears opposite offer exactly");
+        expect(!state.cashDialogVisible && state.cashDialogClosing &&
+                state.cashDialogFeedback == tradeui::CashDialogFeedback::Okay &&
+                state.cashDesired[2] == 12 && state.cashDesired[3] == 0 &&
+                state.cashDesired[0] == 1488 && state.cashDesired[1] == 1512,
+            "cash Okay commits selected side and enters legacy dying feedback state");
+        // Playback completion is covered by TradeCashDialogPlaybackTests.
+        state.cashDialogClosing = false;
+        state.cashDialogFeedback = tradeui::CashDialogFeedback::None;
 
         click.numberA = 620; click.numberB = 400;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
@@ -378,10 +382,13 @@ namespace
             "cash B popup temporarily replaces the single global cash item");
         click.numberA = 734; click.numberB = 368;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
-        expect(!state.cashDialogVisible && state.cashDesired[2] == 12 &&
-                state.cashDesired[3] == 0 && state.items[0].numberA == 0 &&
-                state.items[0].numberD == 12,
-            "cash Cancel restores original amount and original direction");
+        expect(!state.cashDialogVisible && state.cashDialogClosing &&
+                state.cashDialogFeedback == tradeui::CashDialogFeedback::Cancel &&
+                state.cashDesired[2] == 12 && state.cashDesired[3] == 0 &&
+                state.items[0].numberA == 0 && state.items[0].numberD == 12,
+            "cash Cancel restores original direction then enters dying feedback state");
+        state.cashDialogClosing = false;
+        state.cashDialogFeedback = tradeui::CashDialogFeedback::None;
 
         click.numberA = 220; click.numberB = 360;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
