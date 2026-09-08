@@ -270,6 +270,14 @@ struct SyntheticSequenceResources
                 // UDTrade future/immunity static icons: TAB_syfut / TAB_syimm.
                 const auto staticTradeIcon = words({
                     0x03000014, 0, 0x04000000, 2, 0x000002F6});
+                // UDTrade autonomous backdrop and player-colour rail CNKs.
+                for (const auto tag : {0x02ACU, 0x02BBU, 0x02CDU,
+                     0x02CFU, 0x02D0U, 0x02DFU})
+                    items[tag] = {LegacyDataType::Chunky, staticTradeIcon};
+                for (std::uint32_t tag = 0x02ADU; tag <= 0x02BAU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, staticTradeIcon};
+                for (const auto tag : {0x02CEU, 0x02D1U, 0x02D8U})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 items[0x1027] = {LegacyDataType::Chunky, staticTradeIcon};
                 items[0x1053] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDTrade cash popup: persistent background and Clear/Okay/Cancel idle CNKs.

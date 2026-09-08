@@ -669,6 +669,7 @@ target_sources(
     src/TradeOfferIconPlayback.cpp
     src/TradeCashDialogPlayback.cpp
     src/TradeContractDialogPlayback.cpp
+    src/TradeBackdropPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -840,6 +841,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeContractDialogPlayback
         COMMAND MonopolyTradeContractDialogPlaybackTests
+    )
+endif()
+
+# UDTrade.cpp autonomous backdrop, colour rails and contract buttons
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeBackdropPlaybackTests
+        tests/TradeBackdropPlaybackTests.cpp
+        src/TradeBackdropPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyTradeBackdropPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeBackdropPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeBackdropPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeBackdropPlayback
+        COMMAND MonopolyTradeBackdropPlaybackTests
     )
 endif()
 
