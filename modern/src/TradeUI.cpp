@@ -570,6 +570,7 @@ namespace monopoly::tradeui
         state.contractAmount = 0;
         state.contractListOffset = 0;
         state.contractList.clear();
+        state.propertyMove.reset();
         state.items.clear();
     }
 
@@ -1059,35 +1060,64 @@ namespace monopoly::tradeui
             return result;
         }
 
-        const auto propertyProjection = projectProperties(state, gameState);
-        if (const auto hit = propertyHit(propertyProjection, x, y))
+        if (!state.propertyMove)
         {
-            const int box = *hit / 100;
-            const int square = *hit % 100;
-            const auto bit = ibar::layout::propertyBit(square);
-            if (box == 0 || box == 1)
+            const auto propertyProjection = projectProperties(state, gameState);
+            if (const auto hit = propertyHit(propertyProjection, x, y))
             {
-                const std::size_t side = static_cast<std::size_t>(box);
-                if (((propertyProjection.after[side] |
-                      propertyProjection.afterMortgaged[side]) & bit) != 0)
+                const int box = *hit / 100;
+                const int square = *hit % 100;
+                const auto bit = ibar::layout::propertyBit(square);
+                const auto sourceRect =
+                    propertyProjection.hitRects[static_cast<std::size_t>(box)]
+                        [static_cast<std::size_t>(square)];
+                bool changed = false;
+                if (box == 0 || box == 1)
                 {
-                    actions::Message item{};
-                    item.numberA =
-                        gameState.squares[static_cast<std::size_t>(square)].owner;
-                    item.numberB = side == 0 ? state.playerB : state.playerA;
-                    item.numberC =
-                        static_cast<std::int64_t>(rules::TradeItemKind::Square);
-                    item.numberD = square;
-                    (void)addTradeItem(state, gameState, item);
+                    const std::size_t side = static_cast<std::size_t>(box);
+                    if (((propertyProjection.after[side] |
+                          propertyProjection.afterMortgaged[side]) & bit) != 0)
+                    {
+                        actions::Message item{};
+                        item.numberA =
+                            gameState.squares[static_cast<std::size_t>(square)].owner;
+                        item.numberB = side == 0 ? state.playerB : state.playerA;
+                        item.numberC =
+                            static_cast<std::int64_t>(rules::TradeItemKind::Square);
+                        item.numberD = square;
+                        changed = addTradeItem(state, gameState, item);
+                        if (changed)
+                        {
+                            const auto updated = projectProperties(state, gameState);
+                            state.propertyMove = PropertyMoveRequest{
+                                square, static_cast<std::uint8_t>(box),
+                                static_cast<std::uint8_t>(box + 2),
+                                gameState.squares[static_cast<std::size_t>(square)].mortgaged,
+                                sourceRect,
+                                updated.hitRects[static_cast<std::size_t>(box + 2)]
+                                    [static_cast<std::size_t>(square)]};
+                        }
+                    }
                 }
+                else
+                {
+                    changed = removeFirstItem(
+                        state, rules::TradeItemKind::Square, square);
+                    if (changed)
+                    {
+                        const auto updated = projectProperties(state, gameState);
+                        state.propertyMove = PropertyMoveRequest{
+                            square, static_cast<std::uint8_t>(box),
+                            static_cast<std::uint8_t>(box - 2),
+                            gameState.squares[static_cast<std::size_t>(square)].mortgaged,
+                            sourceRect,
+                            updated.hitRects[static_cast<std::size_t>(box - 2)]
+                                [static_cast<std::size_t>(square)]};
+                    }
+                }
+                if (changed) refreshContractProjection(state, gameState);
+                return result;
             }
-            else
-            {
-                (void)removeFirstItem(
-                    state, rules::TradeItemKind::Square, square);
-            }
-            refreshContractProjection(state, gameState);
-            return result;
         }
 
         auto toggleJail = [&](std::size_t deck, std::size_t slot) {

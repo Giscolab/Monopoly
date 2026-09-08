@@ -653,8 +653,8 @@ namespace monopoly::engine
             if (pennyBagsSync->requestedBackdrop)
                 display::setBackdrop(*pennyBagsSync->requestedBackdrop);
             const auto tradePropertySync = tradePropertyPlayback.sync(
-                userinterface::tradeStateReadOnly(), ruleState,
-                displayState.desired2DView, *session);
+                userinterface::tradeState(), ruleState,
+                displayState.desired2DView, tick, *session);
             if (!tradePropertySync)
                 return SDL_SetError("Trade deed playback: %s",
                     tradePropertySync.error().c_str());

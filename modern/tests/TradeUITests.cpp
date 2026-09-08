@@ -481,16 +481,18 @@ namespace
                 state.items[0].numberA == 0 && state.items[0].numberB == 1 &&
                 state.items[0].numberC ==
                     static_cast<std::int64_t>(rules::TradeItemKind::Square) &&
-                state.items[0].numberD == 5,
+                state.items[0].numberD == 5 && state.propertyMove.has_value(),
             "before property click adds the frontmost TIK_SQUARE with owner-to-partner direction");
+        state.propertyMove.reset(); // Playback completion is covered by TradePropertyPlaybackTests.
 
         auto projection = tradeui::projectProperties(state, game);
         const auto offered5 = projection.hitRects[2][5];
         click.numberA = offered5.left + 1;
         click.numberB = offered5.top + 1;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
-        expect(state.items.empty(),
+        expect(state.items.empty() && state.propertyMove.has_value(),
             "offered property click removes the first matching TIK_SQUARE");
+        state.propertyMove.reset();
 
         projection = tradeui::projectProperties(state, game);
         const auto mortgaged3 = projection.hitRects[0][3];
@@ -499,10 +501,11 @@ namespace
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
         projection = tradeui::projectProperties(state, game);
         const auto bit3 = ibar::layout::propertyBit(3);
-        expect(state.items.size() == 1 &&
+        expect(state.items.size() == 1 && state.propertyMove.has_value() &&
                 (projection.offeredMortgaged[0] & bit3) != 0 &&
                 (projection.offered[0] & bit3) == 0,
             "mortgaged before click adds TIK_SQUARE and preserves mortgage classification");
+        state.propertyMove.reset();
 
         click.numberA = mortgaged3.left + 1;
         click.numberB = mortgaged3.top + 1;
