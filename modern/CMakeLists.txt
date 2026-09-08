@@ -666,6 +666,7 @@ target_sources(
     src/AuctionPennyBagsPlayback.cpp
     src/TradeUI.cpp
     src/TradePropertyPlayback.cpp
+    src/TradeOfferIconPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -759,6 +760,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradePropertyPlayback
         COMMAND MonopolyTradePropertyPlaybackTests
+    )
+endif()
+
+# UDTrade.cpp jail/future/immunity offer-icon playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeOfferIconPlaybackTests
+        tests/TradeOfferIconPlaybackTests.cpp
+        src/TradeOfferIconPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyTradeOfferIconPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeOfferIconPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeOfferIconPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeOfferIconPlayback
+        COMMAND MonopolyTradeOfferIconPlaybackTests
     )
 endif()
 

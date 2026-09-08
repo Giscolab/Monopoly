@@ -127,6 +127,9 @@ struct SyntheticSequenceResources
                 // Active UDIBar backdrop sequences: TAB_indsbg0..TAB_indsbg7.
                 // They deliberately reuse the synthetic bitmap payload above.
                 items.resize(0x01D7);
+                // UDTrade Get Out of Jail icons: TAB_ibjlcdf0 / TAB_ibjlcdf1.
+                items[0x00DD] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x00DE] = {LegacyDataType::Chunky, bitmapSequence};
                 // Test-only raw DataUAP root used to prove LE_SEQNCR_StartUpSequence.
                 items[0x00A2] = {LegacyDataType::Uap, uap8()};
                 // UDIBar current-player token sequences: CNK_indstra + token.
@@ -260,7 +263,12 @@ struct SyntheticSequenceResources
                 items[0x02F6] = {LegacyDataType::Bitmap, bitmap24()};
                 // USA deed pop-ups used by UDIBar property mouseover. City 0 only:
                 // TAB_iyb00x00 (mortgaged) and TAB_iyf00x00 (normal), 28 deeds each.
-                items.resize(0x0E00);
+                items.resize(0x1054);
+                // UDTrade future/immunity static icons: TAB_syfut / TAB_syimm.
+                const auto staticTradeIcon = words({
+                    0x03000014, 0, 0x04000000, 2, 0x000002F6});
+                items[0x1027] = {LegacyDataType::Chunky, staticTradeIcon};
+                items[0x1053] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDAuct property-for-sale deeds. USA regular deeds are 28 per city;
                 // house and hotel use fixed language-graphics tags.
                 items[0x090C] = {LegacyDataType::Chunky, finiteButton};
