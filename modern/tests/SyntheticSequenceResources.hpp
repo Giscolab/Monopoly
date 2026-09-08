@@ -127,6 +127,9 @@ struct SyntheticSequenceResources
                 // Active UDIBar backdrop sequences: TAB_indsbg0..TAB_indsbg7.
                 // They deliberately reuse the synthetic bitmap payload above.
                 items.resize(0x01D7);
+                // UDTrade Future/Immunity dialog arrows: CNK_byahadni / CNK_byahaupi.
+                items[0x0007] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x0009] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDTrade Get Out of Jail icons: TAB_ibjlcdf0 / TAB_ibjlcdf1.
                 items[0x00DD] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x00DE] = {LegacyDataType::Chunky, bitmapSequence};

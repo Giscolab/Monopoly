@@ -668,6 +668,7 @@ target_sources(
     src/TradePropertyPlayback.cpp
     src/TradeOfferIconPlayback.cpp
     src/TradeCashDialogPlayback.cpp
+    src/TradeContractDialogPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -813,6 +814,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeCashDialogPlayback
         COMMAND MonopolyTradeCashDialogPlaybackTests
+    )
+endif()
+
+# UDTrade.cpp shared Future/Immunity dialog arrow playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeContractDialogPlaybackTests
+        tests/TradeContractDialogPlaybackTests.cpp
+        src/TradeContractDialogPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyTradeContractDialogPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeContractDialogPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeContractDialogPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeContractDialogPlayback
+        COMMAND MonopolyTradeContractDialogPlaybackTests
     )
 endif()
 
