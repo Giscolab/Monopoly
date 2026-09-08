@@ -25,6 +25,7 @@
 #include "TradeBackdropPlayback.hpp"
 #include "TradeTokenPlayback.hpp"
 #include "TradeActionButtonPlayback.hpp"
+#include "OptionsFilePlayback.hpp"
 #include "TradePropertyPlayback.hpp"
 #include "TradeOfferIconPlayback.hpp"
 #include "TradeCashDialogPlayback.hpp"
@@ -69,6 +70,7 @@ namespace monopoly::engine
         tradeui::BackdropPlayback tradeBackdropPlayback;
         tradeui::TokenPlayback tradeTokenPlayback;
         tradeui::ActionButtonPlayback tradeActionButtonPlayback;
+        optionsui::FilePlayback optionsFilePlayback;
         tradeui::PropertyPlayback tradePropertyPlayback;
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
         tradeui::CashDialogPlayback tradeCashDialogPlayback;
@@ -682,6 +684,12 @@ namespace monopoly::engine
             if (!tradeActionButtonSync)
                 return SDL_SetError("Trade action-button playback: %s",
                     tradeActionButtonSync.error().c_str());
+            const auto optionsFileSync = optionsFilePlayback.sync(
+                userinterface::optionsStateReadOnly(),
+                displayState.desired2DView, *session);
+            if (!optionsFileSync)
+                return SDL_SetError("Options File-screen playback: %s",
+                    optionsFileSync.error().c_str());
             const auto tradePropertySync = tradePropertyPlayback.sync(
                 userinterface::tradeState(), ruleState,
                 displayState.desired2DView, tick, *session);
@@ -738,6 +746,7 @@ namespace monopoly::engine
             iBarInputs.ruleMode = effectiveRuleMode;
             iBarInputs.rulePlayer = projectedIBarPlayer;
             iBarInputs.trackRules = !ibar::stateReadOnly().localRuleModeActive;
+            iBarInputs.gameInProgress = runtime::state().gameInProgress;
             iBarInputs.tradeEligible = tradeEligible;
             iBarInputs.rollDiceDesired = dicePrompt.currentStartTurn;
             iBarInputs.raiseCashCanBankrupt = iBarRules.raiseCashCanBankrupt;
@@ -935,6 +944,7 @@ namespace monopoly::engine
         tradeBackdropPlayback.reset();
         tradeTokenPlayback.reset();
         tradeActionButtonPlayback.reset();
+        optionsFilePlayback.reset();
         tradePropertyPlayback.reset();
         tradeOfferIconPlayback.reset();
         tradeCashDialogPlayback.reset();

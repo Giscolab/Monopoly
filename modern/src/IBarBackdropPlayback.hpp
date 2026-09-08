@@ -47,6 +47,7 @@ namespace monopoly::ibar
         RuleMode ruleMode{RuleMode::Nothing};
         rules::PlayerNumber rulePlayer{rules::NobodyPlayer};
         bool trackRules{true};
+        bool gameInProgress{};
         bool tradeEligible{};
         bool rollDiceDesired{};
         bool raiseCashCanBankrupt{};

@@ -278,6 +278,34 @@ namespace
             "UI routing preserves UDAuct then UDBoard then UDIBar then PlayerSelection order");
     }
 
+    void testOptionsEntryAndCancelRouting()
+    {
+        using namespace monopoly;
+        runtime::reset();
+        runtime::state().gameInProgress = true;
+        userinterface::resetRuleProjection();
+        routingDisplayState.current2DView = display::Screen2D::Trade;
+        routingDisplayState.desired2DView = display::Screen2D::Trade;
+        requestedBackdrop = display::Screen2D::Invalid;
+
+        expect(userinterface::beginOptionsFromIBar() &&
+                requestedBackdrop == display::Screen2D::Options &&
+                userinterface::optionsStateReadOnly().active &&
+                userinterface::optionsStateReadOnly().previousView == display::Screen2D::Trade,
+            "IBar Options entry records current Trade view and requests Options backdrop");
+
+        route.clear();
+        uimsg::Message cancel{};
+        cancel.type = uimsg::Type::MouseLeftDown;
+        cancel.numberA = 300;
+        cancel.numberB = 420;
+        expect(userinterface::processUIMessage(cancel) &&
+                requestedBackdrop == display::Screen2D::Trade &&
+                !userinterface::optionsStateReadOnly().active,
+            "UDOpts File Cancel returns through UserInterface to saved IBar view");
+        runtime::reset();
+    }
+
     void testAuctionBidRouting()
     {
         using namespace monopoly;

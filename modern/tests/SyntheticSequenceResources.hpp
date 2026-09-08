@@ -270,6 +270,10 @@ struct SyntheticSequenceResources
                 // UDTrade future/immunity static icons: TAB_syfut / TAB_syimm.
                 const auto staticTradeIcon = words({
                     0x03000014, 0, 0x04000000, 2, 0x000002F6});
+                // UDOpts File screen: title plus New/Load/Save/Exit/Cancel incoming CNKs.
+                items[0x023A] = {LegacyDataType::Chunky, staticTradeIcon};
+                for (const auto tag : {0x0241U, 0x023EU, 0x0244U, 0x0238U, 0x0235U})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // UDTrade autonomous backdrop and player-colour rail CNKs.
                 for (const auto tag : {0x02ACU, 0x02BBU, 0x02CDU,
                      0x02CFU, 0x02D0U, 0x02DFU})

@@ -141,6 +141,13 @@ namespace monopoly::ibar
         default:
             break;
         }
+        if (inputs.gameInProgress)
+            add(layout::ActionButtonSlot::Options);
+        if (inputs.gameInProgress && inputs.tradeEligible &&
+            inputs.desired2DView != display::Screen2D::Trade)
+        {
+            add(layout::ActionButtonSlot::Trade);
+        }
         return result;
     }
 

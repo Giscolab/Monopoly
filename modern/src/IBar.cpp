@@ -201,6 +201,14 @@ namespace monopoly::ibar
             const uimsg::Message& message) noexcept
         {
             const auto& uiState = userinterface::ruleStateReadOnly();
+            if (slot == layout::ActionButtonSlot::Options)
+            {
+                if (!userinterface::beginOptionsFromIBar())
+                    return false;
+                globalState.pendingPressedButton = OptionsButtonIndex;
+                return true;
+            }
+
             if (slot == layout::ActionButtonSlot::Trade)
             {
                 auto tradePlayer = resolveRulePlayer(globalState.projectedRulePlayer);

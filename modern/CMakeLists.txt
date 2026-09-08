@@ -672,6 +672,8 @@ target_sources(
     src/TradeBackdropPlayback.cpp
     src/TradeTokenPlayback.cpp
     src/TradeActionButtonPlayback.cpp
+    src/OptionsUI.cpp
+    src/OptionsFilePlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -692,6 +694,7 @@ if(BUILD_TESTING)
         src/RuleArchive.cpp
         src/RuleOptions.cpp
         src/TradeUI.cpp
+        src/OptionsUI.cpp
         src/IBarLayout.cpp
     )
 
@@ -921,6 +924,33 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeActionButtonPlayback
         COMMAND MonopolyTradeActionButtonPlaybackTests
+    )
+endif()
+
+# UDOpts.cpp File-screen projection and autonomous sequence playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyOptionsUITests
+        tests/OptionsUITests.cpp
+        src/OptionsUI.cpp
+        src/OptionsFilePlayback.cpp
+    )
+    target_include_directories(
+        MonopolyOptionsUITests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyOptionsUITests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyOptionsUITests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.OptionsUI
+        COMMAND MonopolyOptionsUITests
     )
 endif()
 
