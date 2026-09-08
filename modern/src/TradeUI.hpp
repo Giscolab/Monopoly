@@ -80,6 +80,18 @@ namespace monopoly::tradeui
         bool selected{};
     };
 
+    struct PropertyMoveRequest
+    {
+        int square{-1};
+        std::uint8_t fromBox{};
+        std::uint8_t toBox{};
+        bool mortgaged{};
+        Rect from{};
+        Rect to{};
+
+        bool operator==(const PropertyMoveRequest&) const = default;
+    };
+
     struct State
     {
         rules::PlayerNumber playerA{rules::MaxPlayers};
@@ -108,6 +120,7 @@ namespace monopoly::tradeui
         std::int32_t contractAmount{};
         int contractListOffset{};
         std::vector<ContractListEntry> contractList;
+        std::optional<PropertyMoveRequest> propertyMove;
         std::vector<actions::Message> items;
     };
 
