@@ -671,6 +671,7 @@ target_sources(
     src/TradeContractDialogPlayback.cpp
     src/TradeBackdropPlayback.cpp
     src/TradeTokenPlayback.cpp
+    src/TradeActionButtonPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -894,6 +895,32 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.TradeTokenPlayback
         COMMAND MonopolyTradeTokenPlaybackTests
+    )
+endif()
+
+# UDTrade.cpp Propose/Cancel idle and finite-out playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeActionButtonPlaybackTests
+        tests/TradeActionButtonPlaybackTests.cpp
+        src/TradeActionButtonPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyTradeActionButtonPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeActionButtonPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeActionButtonPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeActionButtonPlayback
+        COMMAND MonopolyTradeActionButtonPlaybackTests
     )
 endif()
 

@@ -286,6 +286,11 @@ struct SyntheticSequenceResources
                 // Pressed Clear/Okay/Cancel are finite and EndingActionStop at runtime.
                 for (const auto tag : {0x02DAU, 0x02DCU, 0x02DEU})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
+                // UDTrade Propose/Cancel idle and finite out animations.
+                for (const auto tag : {0x01AFU, 0x01B8U})
+                    items[tag] = {LegacyDataType::Chunky, staticTradeIcon};
+                for (const auto tag : {0x01B1U, 0x01BAU})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 items[0x118A] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDAuct property-for-sale deeds. USA regular deeds are 28 per city;
                 // house and hotel use fixed language-graphics tags.
