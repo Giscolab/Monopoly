@@ -101,6 +101,8 @@ namespace monopoly::display
         bool game3DOn = true;
         bool board3DOn = false;
         bool viewportBackgroundFillOn = false;
+        bool optionTokenAnimationsOn = true;
+        bool optionCameraMovementOn = true;
         bool optionLightingOn = true;
         std::uint64_t boardTick = 0;
         bool mouseLeftPressed = false;
@@ -155,6 +157,8 @@ namespace monopoly::display
     void cancelDiceCameraOverride();
 
     void noteBoardActivity() noexcept;
+    void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
+        bool lightingOn, bool board3DOn) noexcept;
     void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept;
     void setTokenAnimationStackActive(bool active) noexcept;
     void processBoardInput(const uimsg::Message& message);

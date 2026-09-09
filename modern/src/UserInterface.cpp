@@ -313,10 +313,8 @@ namespace monopoly::userinterface
         {
             // UDIBar.cpp processes the move against the old UI square, then
             // updates UICurrentGameState except for the GoToJail destination.
-            // Token animations default to TRUE in display.cpp; the Options
-            // screen toggle is not yet ported.
             const auto movement = pieceMoveIngress.process(
-                uiRuleState, message, true);
+                uiRuleState, message, display::stateReadOnly().optionTokenAnimationsOn);
             if (movement && movement->sourceQueueLockRequired)
                 lockGameQueue();
         }
@@ -545,6 +543,26 @@ namespace monopoly::userinterface
         );
         const auto optionsInput = optionsui::processInput(
             optionsProjection, display::state().desired2DView, message);
+        if (optionsInput.pressedMenuButton == optionsui::MenuButton::Option)
+        {
+            const auto& displayState = display::stateReadOnly();
+            optionsui::loadSupportedOptionValues(optionsProjection,
+                displayState.optionTokenAnimationsOn,
+                displayState.optionCameraMovementOn,
+                displayState.optionLightingOn, displayState.game3DOn);
+        }
+        if (optionsInput.pressedOptionOkay && optionsProjection.optionSnapshotLoaded)
+        {
+            const auto value = [&](optionsui::OptionToggle toggle)
+            {
+                return optionsProjection.optionOn[static_cast<std::size_t>(toggle)];
+            };
+            display::applyRuntimeOptions(
+                value(optionsui::OptionToggle::TokenAnimations),
+                value(optionsui::OptionToggle::Camera),
+                value(optionsui::OptionToggle::Lighting),
+                value(optionsui::OptionToggle::Board3D));
+        }
         if (optionsInput.requestedBackdrop)
             display::setBackdrop(*optionsInput.requestedBackdrop);
 

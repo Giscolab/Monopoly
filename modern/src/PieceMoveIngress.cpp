@@ -119,6 +119,14 @@ namespace monopoly::pieces
         result.sourceQueueLockRequired = !plan.instructions.empty() ||
             plan.special == PieceMoveSpecial::GoToJail;
 
+        if (!animationsEnabled && plan.special == PieceMoveSpecial::GoToJail)
+        {
+            uiState.players[player].currentSquare = 40;
+            result.sourceQueueLockRequired = false;
+            result.projectionUpdated = true;
+            return result;
+        }
+
         if (plan.special == PieceMoveSpecial::GoToJail ||
             plan.special == PieceMoveSpecial::LeaveJail)
         {

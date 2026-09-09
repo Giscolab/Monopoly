@@ -1,5 +1,6 @@
 #include "OptionsUI.hpp"
 
+#include <algorithm>
 #include <array>
 
 namespace monopoly::optionsui
@@ -19,6 +20,9 @@ namespace monopoly::optionsui
         inline constexpr int OptionOkayY = 450;
         inline constexpr int OptionOkayWidth = 127;
         inline constexpr int OptionOkayHeight = 36;
+        inline constexpr int ToggleButtonWidth = 59;
+        inline constexpr int ToggleButtonHeight = 33;
+        inline constexpr std::array<int, 7> ToggleY{135, 175, 215, 255, 295, 335, 375};
     }
 
     Rect menuButtonRect(MenuButton button) noexcept
@@ -47,6 +51,26 @@ namespace monopoly::optionsui
         return {OptionOkayX, OptionOkayY,
             OptionOkayX + OptionOkayWidth,
             OptionOkayY + OptionOkayHeight};
+    }
+
+    Rect optionToggleRect(OptionToggle toggle, bool onSide) noexcept
+    {
+        const auto index = static_cast<std::size_t>(toggle);
+        if (index >= static_cast<std::size_t>(OptionToggle::Count))
+            return {};
+        const bool soundColumn = index <= static_cast<std::size_t>(OptionToggle::Music);
+        const int columnX = soundColumn ? 25 : 457;
+        const std::size_t yIndex = soundColumn ? index : index - 3U;
+        if (yIndex >= ToggleY.size()) return {};
+        const int left = columnX + (onSide ? 0 : ToggleButtonWidth);
+        const int top = ToggleY[yIndex];
+        return {left, top, left + ToggleButtonWidth, top + ToggleButtonHeight};
+    }
+
+    bool optionToggleSupported(OptionToggle toggle) noexcept
+    {
+        return std::find(SupportedOptionToggles.begin(),
+            SupportedOptionToggles.end(), toggle) != SupportedOptionToggles.end();
     }
 
     Rect fileButtonRect(FileButton button) noexcept
@@ -79,8 +103,20 @@ namespace monopoly::optionsui
             return false;
         state.currentScreen = Screen::File;
         state.previousView = previousView;
+        state.optionSnapshotLoaded = false;
         state.active = true;
         return true;
+    }
+
+    void loadSupportedOptionValues(State& state,
+        bool tokenAnimationsOn, bool cameraMovementOn,
+        bool lightingOn, bool board3DOn) noexcept
+    {
+        state.optionOn[static_cast<std::size_t>(OptionToggle::TokenAnimations)] = tokenAnimationsOn;
+        state.optionOn[static_cast<std::size_t>(OptionToggle::Camera)] = cameraMovementOn;
+        state.optionOn[static_cast<std::size_t>(OptionToggle::Lighting)] = lightingOn;
+        state.optionOn[static_cast<std::size_t>(OptionToggle::Board3D)] = board3DOn;
+        state.optionSnapshotLoaded = true;
     }
 
     InputResult processInput(
@@ -92,6 +128,7 @@ namespace monopoly::optionsui
         if (desiredView != display::Screen2D::Options)
         {
             state.active = false;
+            state.optionSnapshotLoaded = false;
             return result;
         }
         if (!state.active || message.type != uimsg::Type::MouseLeftDown)
@@ -104,6 +141,7 @@ namespace monopoly::optionsui
         {
             result.pressedMenuButton = menu;
             state.currentScreen = static_cast<Screen>(static_cast<std::uint8_t>(*menu));
+            state.optionSnapshotLoaded = false;
             return result;
         }
 
@@ -116,6 +154,19 @@ namespace monopoly::optionsui
                 result.pressedOptionOkay = true;
                 result.requestedBackdrop = state.previousView;
                 state.active = false;
+                return result;
+            }
+            if (!state.optionSnapshotLoaded) return result;
+            for (const auto toggle : SupportedOptionToggles)
+            {
+                if (optionToggleRect(toggle, true).contains(x, y) ||
+                    optionToggleRect(toggle, false).contains(x, y))
+                {
+                    result.pressedOptionToggle = toggle;
+                    const auto index = static_cast<std::size_t>(toggle);
+                    state.optionOn[index] = !state.optionOn[index];
+                    return result;
+                }
             }
             return result;
         }
