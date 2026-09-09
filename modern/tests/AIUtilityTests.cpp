@@ -1,5 +1,6 @@
 #include "AIUtility.hpp"
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -559,6 +560,48 @@ namespace
             "AI Chance back-three preserves Community Chest 3 neutral special case");
     }
 
+    void testTradeSetHelpers()
+    {
+        const auto twoMonopolies = bits({SquareType::MediterraneanAvenue,
+            SquareType::BalticAvenue, SquareType::ParkPlace,
+            SquareType::Boardwalk});
+        require(ai::monopoliesInSet(twoMonopolies) == 2,
+            "AI property-set helper counts complete colour monopolies");
+        require(ai::monopoliesInSet(bits({SquareType::ReadingRailroad,
+                    SquareType::PennsylvaniaRailroad, SquareType::BAndORailroad,
+                    SquareType::ShortLineRailroad})) == 0,
+            "AI property-set helper excludes railroad monopoly quirk");
+
+        rules::GameState state{};
+        state.numberOfPlayers = 3;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        own(state, SquareType::BalticAvenue, 1);
+        own(state, SquareType::ParkPlace, 2);
+        const std::array<rules::PlayerNumber, 2> pair{0, 1};
+        require(ai::monopoliesBetweenPlayers(state, pair) == 1,
+            "AI combined-player helper detects monopoly split across players");
+        const std::array<rules::PlayerNumber, 3> trio{0, 1, 2};
+        require(ai::monopoliesBetweenPlayers(state, trio, SquareType::Boardwalk) == 2,
+            "AI combined-player helper includes hypothetical extra property");
+        require(ai::monopoliesBetweenPlayers(state, trio) == 1,
+            "AI combined-player GO sentinel adds no property");
+
+        std::array<rules::PlayerNumber, rules::MaxPlayers> players{0, 1, 2, 3, 4, 5};
+        const std::array<rules::PlayerNumber, 2> remove{4, 1};
+        const auto remaining = ai::removePlayersFromList(players, players.size(), remove);
+        require(remaining == 4 && players[0] == 0 && players[1] == 2 &&
+                players[2] == 3 && players[3] == 5,
+            "AI player-list removal preserves retail compacted order");
+
+        const std::array<SquareType, 3> toggles{SquareType::BalticAvenue,
+            SquareType::OrientalAvenue, SquareType::Go};
+        const auto toggled = ai::xorProperties(
+            bits({SquareType::MediterraneanAvenue, SquareType::BalticAvenue}), toggles);
+        require(toggled == bits({SquareType::MediterraneanAvenue,
+                    SquareType::OrientalAvenue}),
+            "AI XOR helper toggles properties and preserves GO terminator semantics");
+    }
+
     void testAssetContracts()
     {
         rules::GameState state{};
@@ -598,6 +641,7 @@ int main()
         testIncomeContracts();
         testRentSelectionCorrections();
         testMonopolyStageContracts();
+        testTradeSetHelpers();
         testMortgageSelectionContracts();
         testTokenReactionContracts();
         testAssetContracts();
