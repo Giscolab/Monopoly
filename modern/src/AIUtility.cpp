@@ -638,6 +638,63 @@ namespace monopoly::ai
         }
         return highestPlayer;
     }
+    int monopoliesInSet(
+        rules::board::PropertySet properties) noexcept
+    {
+        int count{};
+        for (const auto square : ExpensiveMonopolySquares)
+        {
+            if (testForMonopoly(properties, square))
+                ++count;
+        }
+        return count;
+    }
+
+    int monopoliesBetweenPlayers(
+        const rules::GameState& state,
+        std::span<const rules::PlayerNumber> players,
+        rules::board::SquareType extraProperty) noexcept
+    {
+        rules::board::PropertySet combined{};
+        for (const auto player : players)
+            combined |= propertiesOwnedByPlayer(state, player);
+        combined |= rules::board::propertyBit(extraProperty);
+        return monopoliesInSet(combined);
+    }
+
+    std::size_t removePlayersFromList(
+        std::span<rules::PlayerNumber> players,
+        std::size_t playerCount,
+        std::span<const rules::PlayerNumber> remove) noexcept
+    {
+        playerCount = std::min(playerCount, players.size());
+        for (auto removeIndex = remove.size(); removeIndex > 0; --removeIndex)
+        {
+            const auto target = remove[removeIndex - 1];
+            for (std::size_t current = 0; current < playerCount; ++current)
+            {
+                if (players[current] != target)
+                    continue;
+                --playerCount;
+                for (std::size_t index = current; index < playerCount; ++index)
+                    players[index] = players[index + 1];
+            }
+        }
+        return playerCount;
+    }
+
+    rules::board::PropertySet xorProperties(
+        rules::board::PropertySet properties,
+        std::span<const rules::board::SquareType> squares) noexcept
+    {
+        for (const auto square : squares)
+        {
+            if (square != SquareType::Go)
+                properties ^= rules::board::propertyBit(square);
+        }
+        return properties;
+    }
+
     MonopolyCollection monopoliesOwned(
         const rules::GameState& state,
         rules::PlayerNumber player,

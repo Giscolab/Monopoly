@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace monopoly::ai
 {
@@ -174,6 +175,20 @@ namespace monopoly::ai
         rules::PlayerNumber player) noexcept;
     [[nodiscard]] rules::PlayerNumber bestCurrentRent(
         const rules::GameState& state) noexcept;
+    [[nodiscard]] int monopoliesInSet(
+        rules::board::PropertySet properties) noexcept;
+    [[nodiscard]] int monopoliesBetweenPlayers(
+        const rules::GameState& state,
+        std::span<const rules::PlayerNumber> players,
+        rules::board::SquareType extraProperty =
+            rules::board::SquareType::Go) noexcept;
+    [[nodiscard]] std::size_t removePlayersFromList(
+        std::span<rules::PlayerNumber> players,
+        std::size_t playerCount,
+        std::span<const rules::PlayerNumber> remove) noexcept;
+    [[nodiscard]] rules::board::PropertySet xorProperties(
+        rules::board::PropertySet properties,
+        std::span<const rules::board::SquareType> squares) noexcept;
     [[nodiscard]] MonopolyCollection monopoliesOwned(
         const rules::GameState& state,
         rules::PlayerNumber player,
