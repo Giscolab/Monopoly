@@ -444,6 +444,121 @@ namespace
             "AI unmortgage selection preserves GO sentinel when nothing is affordable");
     }
 
+    void testTokenReactionContracts()
+    {
+        require(static_cast<int>(ai::TokenReaction::Happy) == 0 &&
+                static_cast<int>(ai::TokenReaction::Sad) == 1 &&
+                static_cast<int>(ai::TokenReaction::Neutral) == 2 &&
+                static_cast<int>(ai::TokenReaction::Angry) == 3 &&
+                ai::HappyReactionRent == 250 &&
+                ai::SadReactionRent == 100 &&
+                ai::AngryReactionRent == 500,
+            "AI token reaction values and rent thresholds preserve retail contract");
+
+        rules::GameState ownSquare{};
+        ownSquare.numberOfPlayers = 2;
+        own(ownSquare, SquareType::Boardwalk, 0);
+        require(ai::squareMoveReaction(ownSquare, 0, SquareType::Boardwalk) ==
+                    ai::TokenReaction::Neutral,
+            "AI token reaction stays neutral on player's own property");
+
+        rules::GameState rail{};
+        rail.numberOfPlayers = 2;
+        for (const auto square : {SquareType::ReadingRailroad,
+                 SquareType::PennsylvaniaRailroad, SquareType::BAndORailroad,
+                 SquareType::ShortLineRailroad})
+            own(rail, square, 1);
+        require(ai::squareMoveReaction(rail, 0, SquareType::ReadingRailroad) ==
+                    ai::TokenReaction::Sad,
+            "AI token reaction fixes retail payer-property-set bug for railroad rent");
+
+        rules::GameState hotel{};
+        hotel.numberOfPlayers = 2;
+        for (const auto square : {SquareType::KentuckyAvenue,
+                 SquareType::IndianaAvenue, SquareType::IllinoisAvenue})
+            own(hotel, square, 1);
+        hotel.squares[static_cast<std::size_t>(SquareType::IllinoisAvenue)].houses = 5;
+        require(ai::squareMoveReaction(hotel, 0, SquareType::IllinoisAvenue) ==
+                    ai::TokenReaction::Angry,
+            "AI token reaction becomes angry at rent of at least 500");
+        require(ai::squareMoveReaction(hotel, 0, SquareType::Chance1,
+                    rules::CardType::ChanceGoToIllinoisAvenue) ==
+                    ai::TokenReaction::Angry,
+            "AI Chance movement card recursively evaluates destination rent");
+
+        require(ai::squareMoveReaction(hotel, 0, SquareType::Chance1,
+                    rules::CardType::ChanceGet150FromBank) ==
+                    ai::TokenReaction::Neutral &&
+                ai::squareMoveReaction(hotel, 0, SquareType::CommunityChest1,
+                    rules::CardType::CommunityGet200FromBank) ==
+                    ai::TokenReaction::Neutral,
+            "AI retail cash gains below 250 remain neutral");
+        require(ai::squareMoveReaction(hotel, 0, SquareType::CommunityChest1,
+                    rules::CardType::CommunityPay150ToBank) ==
+                    ai::TokenReaction::Sad &&
+                ai::squareMoveReaction(hotel, 0, SquareType::CommunityChest1,
+                    rules::CardType::CommunityPay100ToBank) ==
+                    ai::TokenReaction::Sad,
+            "AI Community bank payments preserve sad threshold behavior");
+
+        rules::GameState repairs{};
+        repairs.numberOfPlayers = 2;
+        own(repairs, SquareType::MediterraneanAvenue, 0);
+        own(repairs, SquareType::BalticAvenue, 0);
+        repairs.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 2;
+        repairs.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].houses = 2;
+        require(ai::squareMoveReaction(repairs, 0, SquareType::Chance1,
+                    rules::CardType::ChancePay25EachHouse100EachHotel) ==
+                    ai::TokenReaction::Sad,
+            "AI repair card preserves retail rough house-unit cost estimate");
+        repairs.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].mortgaged = true;
+        require(ai::squareMoveReaction(repairs, 0, SquareType::Chance1,
+                    rules::CardType::ChancePay25EachHouse100EachHotel) ==
+                    ai::TokenReaction::Neutral,
+            "AI repair reaction excludes mortgaged monopoly like retail mortgage_counts TRUE");
+
+        rules::GameState jailLow{};
+        jailLow.numberOfPlayers = 2;
+        own(jailLow, SquareType::ReadingRailroad, 1);
+        require(ai::averageRentPaid(jailLow, 0, 0, true, 1.0) > 3 &&
+                ai::averageRentPaid(jailLow, 0, 0, true, 1.0) < ai::AngryReactionRent &&
+                ai::squareMoveReaction(jailLow, 0, SquareType::Chance1,
+                    rules::CardType::ChanceGoDirectlyToJail) ==
+                    ai::TokenReaction::Neutral,
+            "AI jail reaction fixes retail enum-vs-dollar threshold bug");
+
+        rules::GameState jailHigh{};
+        jailHigh.numberOfPlayers = 2;
+        for (const auto square : {SquareType::ParkPlace, SquareType::Boardwalk,
+                 SquareType::PacificAvenue, SquareType::NorthCarolinaAvenue,
+                 SquareType::PennsylvaniaAvenue})
+        {
+            own(jailHigh, square, 1);
+            jailHigh.squares[static_cast<std::size_t>(square)].houses = 5;
+        }
+        require(ai::averageRentPaid(jailHigh, 0, 0, true, 1.0) >
+                    ai::AngryReactionRent &&
+                ai::squareMoveReaction(jailHigh, 0, SquareType::Chance1,
+                    rules::CardType::ChanceGoDirectlyToJail) ==
+                    ai::TokenReaction::Happy,
+            "AI jail reaction becomes happy only when expected rent exposure exceeds 500");
+
+        rules::GameState backThree{};
+        backThree.numberOfPlayers = 2;
+        for (const auto square : {SquareType::StJamesPlace,
+                 SquareType::TennesseeAvenue, SquareType::NewYorkAvenue})
+            own(backThree, square, 1);
+        backThree.squares[static_cast<std::size_t>(SquareType::NewYorkAvenue)].houses = 5;
+        require(ai::squareMoveReaction(backThree, 0, SquareType::Chance2,
+                    rules::CardType::ChanceGoBackThreeSpaces) ==
+                    ai::TokenReaction::Angry,
+            "AI Chance back-three recursively evaluates New York Avenue");
+        require(ai::squareMoveReaction(backThree, 0, SquareType::Chance3,
+                    rules::CardType::ChanceGoBackThreeSpaces) ==
+                    ai::TokenReaction::Neutral,
+            "AI Chance back-three preserves Community Chest 3 neutral special case");
+    }
+
     void testAssetContracts()
     {
         rules::GameState state{};
@@ -484,6 +599,7 @@ int main()
         testRentSelectionCorrections();
         testMonopolyStageContracts();
         testMortgageSelectionContracts();
+        testTokenReactionContracts();
         testAssetContracts();
         return 0;
     }

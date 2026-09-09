@@ -816,4 +816,111 @@ namespace monopoly::ai
         }
         return bestSquare;
     }
+
+    TokenReaction squareMoveReaction(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        SquareType landSquare,
+        rules::CardType card) noexcept
+    {
+        const bool cardSquare =
+            landSquare == SquareType::CommunityChest1 ||
+            landSquare == SquareType::CommunityChest2 ||
+            landSquare == SquareType::CommunityChest3 ||
+            landSquare == SquareType::Chance1 ||
+            landSquare == SquareType::Chance2 ||
+            landSquare == SquareType::Chance3 ||
+            landSquare == SquareType::Go;
+
+        if (cardSquare)
+        {
+            switch (card)
+            {
+            case rules::CardType::ChanceGet150FromBank:
+                return HappyReactionRent <= 150
+                    ? TokenReaction::Happy : TokenReaction::Neutral;
+            case rules::CardType::ChanceGoToBoardwalk:
+                return squareMoveReaction(
+                    state, player, SquareType::Boardwalk);
+            case rules::CardType::ChanceGoToStCharlesPlace:
+                return squareMoveReaction(
+                    state, player, SquareType::StCharlesPlace);
+            case rules::CardType::ChancePay25EachHouse100EachHotel:
+            case rules::CardType::CommunityPay40EachHouse115EachHotel:
+            {
+                const auto monopolies = monopoliesOwned(state, player, true);
+                std::int64_t totalHouses{};
+                for (std::size_t index = 0; index < monopolies.count; ++index)
+                {
+                    totalHouses += housesOnMonopoly(
+                        state, monopolies.representatives[index]);
+                }
+                const auto cost = totalHouses *
+                    (card == rules::CardType::ChancePay25EachHouse100EachHotel
+                        ? 25 : 40);
+                if (cost >= AngryReactionRent)
+                    return TokenReaction::Angry;
+                if (cost >= SadReactionRent)
+                    return TokenReaction::Sad;
+                return TokenReaction::Neutral;
+            }
+            case rules::CardType::ChanceGoToIllinoisAvenue:
+                return squareMoveReaction(
+                    state, player, SquareType::IllinoisAvenue);
+            case rules::CardType::ChanceGoDirectlyToJail:
+            case rules::CardType::CommunityGoDirectlyToJail:
+            {
+                const auto exposure = averageRentPaid(
+                    state, player, 0, true, 1.0);
+                return exposure > AngryReactionRent
+                    ? TokenReaction::Happy : TokenReaction::Neutral;
+            }
+            case rules::CardType::ChanceGoBackThreeSpaces:
+            {
+                const auto current = static_cast<std::size_t>(landSquare);
+                if (current < 3)
+                    return TokenReaction::Neutral;
+                const auto destination = squareAt(current - 3);
+                if (destination == SquareType::CommunityChest3)
+                    return TokenReaction::Neutral;
+                return squareMoveReaction(state, player, destination);
+            }
+            case rules::CardType::CommunityGet100FromBank1:
+            case rules::CardType::CommunityGet100FromBank2:
+            case rules::CardType::CommunityGet100FromBank3:
+                return HappyReactionRent <= 100
+                    ? TokenReaction::Happy : TokenReaction::Neutral;
+            case rules::CardType::CommunityGet200FromBank:
+                return HappyReactionRent <= 200
+                    ? TokenReaction::Happy : TokenReaction::Neutral;
+            case rules::CardType::CommunityPay150ToBank:
+                if (AngryReactionRent <= 150)
+                    return TokenReaction::Angry;
+                return SadReactionRent <= 150
+                    ? TokenReaction::Sad : TokenReaction::Neutral;
+            case rules::CardType::CommunityPay100ToBank:
+                return SadReactionRent <= 100
+                    ? TokenReaction::Sad : TokenReaction::Neutral;
+            default:
+                return TokenReaction::Neutral;
+            }
+        }
+
+        const auto squareIndex = indexOf(landSquare);
+        if (squareIndex >= state.squares.size())
+            return TokenReaction::Neutral;
+        const auto owner = state.squares[squareIndex].owner;
+        if (owner == player)
+            return TokenReaction::Neutral;
+
+        rules::board::PropertySet ownerProperties{};
+        if (owner != rules::NobodyPlayer && owner != rules::BankPlayer)
+            ownerProperties = propertiesOwnedByPlayer(state, owner);
+        const auto rent = rentIfSteppedOn(state, landSquare, ownerProperties);
+        if (rent >= AngryReactionRent)
+            return TokenReaction::Angry;
+        if (rent >= SadReactionRent)
+            return TokenReaction::Sad;
+        return TokenReaction::Neutral;
+    }
 }

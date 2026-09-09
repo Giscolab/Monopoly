@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BoardRules.hpp"
+#include "CardTypes.hpp"
 
 #include <array>
 #include <cstddef>
@@ -40,6 +41,17 @@ namespace monopoly::ai
         MonopoliesOwnOne
     };
 
+    enum class TokenReaction : std::uint8_t
+    {
+        Happy = 0,
+        Sad,
+        Neutral,
+        Angry
+    };
+
+    inline constexpr int HappyReactionRent = 250;
+    inline constexpr int SadReactionRent = 100;
+    inline constexpr int AngryReactionRent = 500;
     inline constexpr int CriticalUnownedSquares = 2;
 
     inline constexpr std::array<rules::board::SquareType, 8>
@@ -184,4 +196,9 @@ namespace monopoly::ai
         rules::PlayerNumber player,
         rules::board::PropertySet properties,
         std::int64_t topUnmortgageCost) noexcept;
+    [[nodiscard]] TokenReaction squareMoveReaction(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::SquareType landSquare,
+        rules::CardType card = rules::CardType::None) noexcept;
 }
