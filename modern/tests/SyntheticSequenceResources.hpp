@@ -282,6 +282,10 @@ struct SyntheticSequenceResources
                 for (const auto tag : {0x0186U, 0x0187U, 0x0188U, 0x018AU, 0x018BU, 0x018CU,
                      0x018EU, 0x018FU, 0x0190U, 0x0192U, 0x0193U, 0x0194U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
+                // UDOpts Help screen: title plus Quick Help / Full Help / Cancel incoming CNKs.
+                items[0x0249U] = {LegacyDataType::Chunky, staticTradeIcon};
+                for (const auto tag : {0x0250U, 0x024BU, 0x0235U})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // UDOpts supported On/Off controls: selected/unselected assets shared by priority.
                 for (const auto tag : {0x026BU, 0x026CU, 0x0272U, 0x0273U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};

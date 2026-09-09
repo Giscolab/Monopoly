@@ -9,6 +9,7 @@ namespace monopoly::optionsui
     {
         inline constexpr std::array<int, 5> FileButtonY{
             114, 180, 247, 314, 401};
+        inline constexpr std::array<int, 3> HelpButtonY{180, 288, 401};
         inline constexpr int FileButtonX = 291;
         inline constexpr int FileButtonWidth = 220;
         inline constexpr int FileButtonHeight = 62;
@@ -95,6 +96,24 @@ namespace monopoly::optionsui
         return std::nullopt;
     }
 
+    Rect helpButtonRect(HelpButton button) noexcept
+    {
+        const auto index = static_cast<std::size_t>(button);
+        if (index >= HelpButtonY.size()) return {};
+        const int top = HelpButtonY[index];
+        return {FileButtonX, top, FileButtonX + FileButtonWidth, top + FileButtonHeight};
+    }
+
+    std::optional<HelpButton> helpButtonHit(int x, int y) noexcept
+    {
+        for (std::size_t index = 0; index < HelpButtonY.size(); ++index)
+        {
+            const auto button = static_cast<HelpButton>(index);
+            if (helpButtonRect(button).contains(x, y)) return button;
+        }
+        return std::nullopt;
+    }
+
     bool beginFromIBar(
         State& state,
         display::Screen2D previousView) noexcept
@@ -167,6 +186,21 @@ namespace monopoly::optionsui
                     state.optionOn[index] = !state.optionOn[index];
                     return result;
                 }
+            }
+            return result;
+        }
+
+        if (state.currentScreen == Screen::Help)
+        {
+            const auto button = helpButtonHit(
+                static_cast<int>(message.numberA),
+                static_cast<int>(message.numberB));
+            if (!button) return result;
+            result.pressedHelpButton = button;
+            if (*button == HelpButton::Cancel)
+            {
+                result.requestedBackdrop = state.previousView;
+                state.active = false;
             }
             return result;
         }

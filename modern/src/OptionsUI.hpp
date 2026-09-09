@@ -38,6 +38,14 @@ namespace monopoly::optionsui
         Count
     };
 
+    enum class HelpButton : std::uint8_t
+    {
+        QuickHelp = 0,
+        FullHelp,
+        Cancel,
+        Count
+    };
+
     enum class OptionToggle : std::uint8_t
     {
         TokenVoices = 0,
@@ -84,6 +92,7 @@ namespace monopoly::optionsui
         std::optional<display::Screen2D> requestedBackdrop;
         std::optional<MenuButton> pressedMenuButton;
         std::optional<FileButton> pressedFileButton;
+        std::optional<HelpButton> pressedHelpButton;
         std::optional<OptionToggle> pressedOptionToggle;
         bool pressedOptionOkay{};
     };
@@ -95,6 +104,8 @@ namespace monopoly::optionsui
     [[nodiscard]] bool optionToggleSupported(OptionToggle toggle) noexcept;
     [[nodiscard]] Rect fileButtonRect(FileButton button) noexcept;
     [[nodiscard]] std::optional<FileButton> fileButtonHit(int x, int y) noexcept;
+    [[nodiscard]] Rect helpButtonRect(HelpButton button) noexcept;
+    [[nodiscard]] std::optional<HelpButton> helpButtonHit(int x, int y) noexcept;
 
     [[nodiscard]] bool beginFromIBar(
         State& state,
