@@ -264,6 +264,55 @@ namespace
         require(ai::minimumCalculatedExpenses(rent, 0) == -1,
             "AI minimum expenses rejects off-board players like retail");
     }
+    void testRentSelectionCorrections()
+    {
+        rules::GameState state{};
+        state.numberOfPlayers = 3;
+        for (const auto square : {SquareType::KentuckyAvenue,
+                 SquareType::IndianaAvenue, SquareType::IllinoisAvenue})
+            own(state, square, 1);
+        state.squares[static_cast<std::size_t>(SquareType::IllinoisAvenue)].houses = 5;
+        own(state, SquareType::Boardwalk, 2);
+
+        const auto highest = ai::highestRentSquare(state, 0);
+        require(highest.square == SquareType::IllinoisAvenue &&
+                highest.rent == 1100,
+            "AI highest-rent selection fixes retail reversed assignment bug");
+
+        rules::GameState rail{};
+        rail.numberOfPlayers = 2;
+        for (const auto square : {SquareType::ReadingRailroad,
+                 SquareType::PennsylvaniaRailroad, SquareType::BAndORailroad,
+                 SquareType::ShortLineRailroad})
+            own(rail, square, 1);
+        const auto railHighest = ai::highestRentSquare(rail, 0);
+        require(railHighest.square == SquareType::ReadingRailroad &&
+                railHighest.rent == 200,
+            "AI highest-rent uses opponent property set for railroad rent");
+
+        rules::GameState empty{};
+        empty.numberOfPlayers = 2;
+        const auto none = ai::highestRentSquare(empty, 0);
+        require(none.square == SquareType::Go && none.rent == 0,
+            "AI highest-rent preserves GO-zero sentinel when no opponent rent exists");
+
+        rules::GameState income{};
+        income.numberOfPlayers = 2;
+        own(income, SquareType::ParkPlace, 0);
+        own(income, SquareType::Boardwalk, 0);
+        income.squares[static_cast<std::size_t>(SquareType::ParkPlace)].houses = 5;
+        income.squares[static_cast<std::size_t>(SquareType::Boardwalk)].houses = 5;
+        own(income, SquareType::MediterraneanAvenue, 1);
+        own(income, SquareType::BalticAvenue, 1);
+
+        require(ai::bestCurrentRent(income) == 0,
+            "AI best-current-rent ranks rent receiver instead of largest payer");
+        const auto paidByZero = ai::averageRentPaid(income, 0, 0, true, 1.0);
+        const auto paidByOne = ai::averageRentPaid(income, 1, 0, true, 1.0);
+        require(paidByOne > paidByZero,
+            "AI regression fixture proves retail paid-rent ranking would choose opponent");
+    }
+
     void testAssetContracts()
     {
         rules::GameState state{};
@@ -301,6 +350,7 @@ int main()
         testRentContracts();
         testExposureContracts();
         testIncomeContracts();
+        testRentSelectionCorrections();
         testAssetContracts();
         return 0;
     }

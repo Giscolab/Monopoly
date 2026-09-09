@@ -20,6 +20,12 @@ namespace monopoly::ai
         std::size_t count{};
     };
 
+    struct HighestRentResult
+    {
+        rules::board::SquareType square = rules::board::SquareType::Go;
+        std::int64_t rent{};
+    };
+
     inline constexpr std::array<rules::board::SquareType, 8>
         ExpensiveMonopolySquares{
             rules::board::SquareType::BalticAvenue,
@@ -134,5 +140,10 @@ namespace monopoly::ai
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;
     [[nodiscard]] rules::PlayerNumber mostExpensivePotentialIncome(
+        const rules::GameState& state) noexcept;
+    [[nodiscard]] HighestRentResult highestRentSquare(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept;
+    [[nodiscard]] rules::PlayerNumber bestCurrentRent(
         const rules::GameState& state) noexcept;
 }
