@@ -136,4 +136,56 @@ namespace monopoly::ai::trade
         return unowned;
     }
 
+    MonopolyTradeDecision shouldTradeForMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return MonopolyTradeDecision::Avoid;
+
+        if (ai::anyMonopoly(state))
+        {
+            return ai::playerOwnsMonopoly(state, player, false)
+                ? MonopolyTradeDecision::Avoid
+                : MonopolyTradeDecision::Required;
+        }
+
+        if (ai::monopolyStage(state, player) == ai::MonopolyStage::Buying)
+            return MonopolyTradeDecision::Avoid;
+
+        std::array<double, rules::MaxPlayers> averageIncome{};
+        double largestIncome{};
+        auto largestPlayer = rules::NobodyPlayer;
+        for (rules::PlayerNumber current = 0;
+             current < state.numberOfPlayers; ++current)
+        {
+            const auto owned = ai::propertiesOwnedByPlayer(state, current);
+            averageIncome[current] = ai::averageRentReceived(
+                state, current, 0, false, 1.0, owned) *
+                static_cast<double>(state.numberOfPlayers - 1);
+            averageIncome[current] -= static_cast<double>(
+                ai::averageRentPaid(state, current, 0, true, 1.0));
+            averageIncome[current] +=
+                static_cast<double>(state.options.passingGoAmount);
+
+            if (averageIncome[current] >= largestIncome)
+            {
+                largestIncome = averageIncome[current];
+                largestPlayer = current;
+            }
+        }
+
+        if (largestPlayer != rules::NobodyPlayer && largestPlayer != player)
+        {
+            const auto playerIncome = averageIncome[player];
+            const auto gap = largestIncome - playerIncome;
+            if ((playerIncome == 0.0 && gap > 0.0) ||
+                (playerIncome != 0.0 && gap / playerIncome > 0.2))
+                return MonopolyTradeDecision::Required;
+        }
+
+        return MonopolyTradeDecision::Maybe;
+    }
+
 }
