@@ -23,4 +23,14 @@ namespace monopoly::ai::trade
         rules::board::PropertySet monopoly,
         std::span<const rules::PlayerNumber> candidates,
         const PropertySets& properties) noexcept;
+    [[nodiscard]] std::int64_t transferTax(
+        const rules::GameState& state,
+        rules::board::PropertySet properties) noexcept;
+    [[nodiscard]] int vetoMonopolies(
+        rules::board::PropertySet properties) noexcept;
+    [[nodiscard]] int possibleMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber owner,
+        rules::board::SquareType square) noexcept;
+
 }
