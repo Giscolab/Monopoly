@@ -379,6 +379,71 @@ namespace
             "AI stage excludes railroad monopoly quirk from strategic monopoly detection");
     }
 
+    void testMortgageSelectionContracts()
+    {
+        rules::GameState balanced{};
+        const auto orange = ai::monopolyLots(SquareType::NewYorkAvenue);
+        for (std::size_t index = 0; index < orange.count; ++index)
+            balanced.squares[static_cast<std::size_t>(orange.squares[index])].houses = 5;
+        ai::testSellHouses(balanced, orange, SquareType::TennesseeAvenue);
+        require(balanced.squares[static_cast<std::size_t>(SquareType::NewYorkAvenue)].houses == 5 &&
+                balanced.squares[static_cast<std::size_t>(SquareType::TennesseeAvenue)].houses == 4 &&
+                balanced.squares[static_cast<std::size_t>(SquareType::StJamesPlace)].houses == 5,
+            "AI hypothetical house sale preserves expensive-lot-first balancing");
+        require(ai::housesOnMonopoly(balanced, SquareType::NewYorkAvenue) == 14,
+            "AI hypothetical house sale removes exactly one house without shortage");
+
+        rules::GameState shortage{};
+        for (std::size_t index = 0; index < orange.count; ++index)
+            shortage.squares[static_cast<std::size_t>(orange.squares[index])].houses = 5;
+        for (const auto square : {SquareType::MediterraneanAvenue, SquareType::BalticAvenue,
+                 SquareType::OrientalAvenue, SquareType::VermontAvenue,
+                 SquareType::ConnecticutAvenue, SquareType::StCharlesPlace,
+                 SquareType::StatesAvenue})
+            shortage.squares[static_cast<std::size_t>(square)].houses = 4;
+        shortage.squares[static_cast<std::size_t>(SquareType::VirginiaAvenue)].houses = 1;
+        require(ai::freeHouses(shortage) == 3,
+            "AI shortage fixture leaves three houses in bank");
+        ai::testSellHouses(shortage, orange, SquareType::TennesseeAvenue);
+        require(shortage.squares[static_cast<std::size_t>(SquareType::NewYorkAvenue)].houses == 1 &&
+                shortage.squares[static_cast<std::size_t>(SquareType::TennesseeAvenue)].houses == 1 &&
+                shortage.squares[static_cast<std::size_t>(SquareType::StJamesPlace)].houses == 1,
+            "AI hotel sale reproduces retail forced decomposition during house shortage");
+
+        rules::GameState mortgage{};
+        mortgage.numberOfPlayers = 2;
+        own(mortgage, SquareType::MediterraneanAvenue, 0);
+        own(mortgage, SquareType::ReadingRailroad, 0);
+        const auto candidates = ai::propertiesOwnedByPlayer(mortgage, 0);
+        require(ai::findLowestRentProperty(mortgage, 0, candidates) ==
+                    SquareType::MediterraneanAvenue,
+            "AI mortgage selection sacrifices the property with lower rent impact");
+        mortgage.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        require(ai::findLowestRentProperty(mortgage, 0, candidates) ==
+                    SquareType::ReadingRailroad,
+            "AI mortgage selection skips already-mortgaged candidates");
+
+        rules::GameState unmortgage{};
+        unmortgage.numberOfPlayers = 2;
+        own(unmortgage, SquareType::BalticAvenue, 0);
+        own(unmortgage, SquareType::ReadingRailroad, 0);
+        unmortgage.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].mortgaged = true;
+        unmortgage.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged = true;
+        const auto mortgaged = ai::propertiesOwnedByPlayer(unmortgage, 0);
+        require(ai::findHighestRentMortgaged(unmortgage, 0, mortgaged, 109) ==
+                    SquareType::BalticAvenue,
+            "AI unmortgage selection respects retail 110-percent affordability ceiling");
+        require(ai::findHighestRentMortgaged(unmortgage, 0, mortgaged, 110) ==
+                    SquareType::BalticAvenue,
+            "AI unmortgage selection preserves retail floating 110-percent edge at exact ceiling");
+        require(ai::findHighestRentMortgaged(unmortgage, 0, mortgaged, 111) ==
+                    SquareType::ReadingRailroad,
+            "AI unmortgage selection chooses highest restored average rent once affordable");
+        require(ai::findHighestRentMortgaged(unmortgage, 0, mortgaged, 32) ==
+                    SquareType::Go,
+            "AI unmortgage selection preserves GO sentinel when nothing is affordable");
+    }
+
     void testAssetContracts()
     {
         rules::GameState state{};
@@ -418,6 +483,7 @@ int main()
         testIncomeContracts();
         testRentSelectionCorrections();
         testMonopolyStageContracts();
+        testMortgageSelectionContracts();
         testAssetContracts();
         return 0;
     }
