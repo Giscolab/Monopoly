@@ -135,13 +135,16 @@ namespace monopoly::display
                 *globalState.currentBoardCamera != globalState.desiredBoardCamera;
             const bool revalidate = globalState.desiredCameraInvalidatedLock &&
                 globalState.desiredCameraClearToValidate;
-            if (cameraChanged || boardModeChanged || revalidate ||
-                globalState.manualCameraRequested)
+            const bool manualRequest = globalState.manualCameraRequested;
+            const bool automaticRequest = globalState.optionCameraMovementOn &&
+                (cameraChanged || boardModeChanged || revalidate);
+            const bool initialRequest = !globalState.currentBoardCamera.has_value();
+            if (initialRequest || automaticRequest || manualRequest)
             {
                 const bool forceInterrupt = !globalState.board3DOn;
                 boardCameraController.requestPreset(
                     globalState.desiredBoardCamera, boardCameraTick, forceInterrupt,
-                    globalState.manualCameraRequested);
+                    manualRequest);
                 globalState.manualCameraRequested = false;
                 globalState.currentBoardCamera = globalState.desiredBoardCamera;
                 if (revalidate)
@@ -208,6 +211,13 @@ namespace monopoly::display
         void updateDemoMode(std::uint64_t numberOfTicks)
         {
             if (numberOfTicks == 0) return;
+            if (!globalState.optionCameraMovementOn)
+            {
+                globalState.lastBoardActivityTick = boardCameraTick;
+                globalState.demoModeDesired = false;
+                globalState.demoWaitTicks = 0;
+                return;
+            }
 
             constexpr std::uint64_t DemoDelayTicks = 90U * 60U;
             constexpr float DemoBaseMoveTicks = 85.0F;
@@ -374,7 +384,8 @@ namespace monopoly::display
         globalState.diceCameraControlActive = true;
         globalState.desiredCameraInvalidatedLock = true;
         globalState.desiredCameraClearToValidate = false;
-        if (randomFourteen && globalState.board3DOn)
+        if (randomFourteen && globalState.board3DOn &&
+            globalState.optionCameraMovementOn)
             boardCameraController.requestDiceMove(boardCameraTick, *randomFourteen);
     }
 
@@ -401,6 +412,40 @@ namespace monopoly::display
     void noteBoardActivity() noexcept
     {
         globalState.lastBoardActivityTick = boardCameraTick;
+    }
+
+    void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
+        bool lightingOn, bool board3DOn) noexcept
+    {
+        globalState.optionTokenAnimationsOn = tokenAnimationsOn;
+        globalState.optionLightingOn = lightingOn;
+
+        if (globalState.optionCameraMovementOn != cameraMovementOn)
+        {
+            globalState.optionCameraMovementOn = cameraMovementOn;
+            globalState.lastBoardActivityTick = boardCameraTick;
+            globalState.cameraCanFloat = false;
+            globalState.floatingCameraActive = false;
+            globalState.demoModeDesired = false;
+            globalState.demoWaitTicks = 0;
+            if (cameraMovementOn)
+            {
+                globalState.desiredCameraInvalidatedLock = true;
+                globalState.desiredCameraClearToValidate = true;
+            }
+        }
+
+        if (globalState.game3DOn != board3DOn)
+        {
+            globalState.game3DOn = board3DOn;
+            if (!board3DOn)
+            {
+                globalState.manualMouseCamLock = false;
+                boardCameraController.releaseManualMouse();
+                globalState.desiredCameraInvalidatedLock = true;
+                globalState.desiredCameraClearToValidate = true;
+            }
+        }
     }
 
     void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept
@@ -442,7 +487,7 @@ namespace monopoly::display
         }
 
         globalState.desiredBoardCamera = desired;
-        if (globalState.manualMouseCamLock)
+        if (!globalState.optionCameraMovementOn || globalState.manualMouseCamLock)
             globalState.manualCameraRequested = true;
     }
 
@@ -567,6 +612,7 @@ namespace monopoly::display
             globalState.floatingCameraActive = false;
         }
         if (globalState.cameraCanFloat && !boardCameraController.moving() &&
+            globalState.optionCameraMovementOn &&
             !globalState.demoModeDesired && globalState.board3DOn &&
             globalState.game3DOn &&
             globalState.desiredBoardCamera != pieces::BoardCameraView::TopDownSquare &&

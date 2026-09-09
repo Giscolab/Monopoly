@@ -1,6 +1,7 @@
 #include "OptionsFilePlayback.hpp"
 #include "OptionsNavigationPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
+#include "OptionsTogglePlayback.hpp"
 #include "OptionsUI.hpp"
 #include "SyntheticSequenceResources.hpp"
 
@@ -279,6 +280,103 @@ namespace
             "Option OK removes exactly four autonomous frame sequences");
     }
 
+    void testOptionToggles()
+    {
+        require(optionsui::ToggleOffUnselectedTag == 0x026B &&
+                optionsui::ToggleOffSelectedTag == 0x026C &&
+                optionsui::ToggleOnUnselectedTag == 0x0272 &&
+                optionsui::ToggleOnSelectedTag == 0x0273 &&
+                optionsui::togglePriority(optionsui::OptionToggle::TokenAnimations) == 53 &&
+                optionsui::togglePriority(optionsui::OptionToggle::Board3D) == 56,
+            "Option toggles use retail shared CNKs and priority 50+i");
+        const auto cameraOn = optionsui::optionToggleRect(
+            optionsui::OptionToggle::Camera, true);
+        const auto cameraOff = optionsui::optionToggleRect(
+            optionsui::OptionToggle::Camera, false);
+        require(cameraOn.left == 457 && cameraOn.top == 175 &&
+                cameraOn.right == 516 && cameraOn.bottom == 208 &&
+                cameraOff.left == 516 && cameraOff.right == 575,
+            "Camera toggle preserves retail On/Off rectangles");
+        require(optionsui::optionToggleSupported(optionsui::OptionToggle::TokenAnimations) &&
+                optionsui::optionToggleSupported(optionsui::OptionToggle::Camera) &&
+                optionsui::optionToggleSupported(optionsui::OptionToggle::Lighting) &&
+                optionsui::optionToggleSupported(optionsui::OptionToggle::Board3D) &&
+                !optionsui::optionToggleSupported(optionsui::OptionToggle::Music),
+            "only toggles with real modern owners are interactive");
+
+        optionsui::State state{};
+        require(optionsui::beginFromIBar(state, display::Screen2D::Main),
+            "toggle fixture enters Options from Main");
+        const auto optionTab = optionsui::menuButtonRect(optionsui::MenuButton::Option);
+        (void)optionsui::processInput(state, display::Screen2D::Options,
+            click((optionTab.left + optionTab.right) / 2, optionTab.top + 1));
+        optionsui::loadSupportedOptionValues(state, true, false, true, false);
+        require(state.optionSnapshotLoaded &&
+                state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::TokenAnimations)] &&
+                !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Camera)] &&
+                state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Lighting)] &&
+                !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Board3D)],
+            "Option tab snapshots four supported runtime owners");
+
+        const auto music = optionsui::optionToggleRect(optionsui::OptionToggle::Music, true);
+        const auto ignored = optionsui::processInput(state, display::Screen2D::Options,
+            click(music.left + 1, music.top + 1));
+        require(!ignored.pressedOptionToggle,
+            "unported Music control cannot pretend to change runtime state");
+
+        const auto lighting = optionsui::optionToggleRect(optionsui::OptionToggle::Lighting, true);
+        const auto lightClick = optionsui::processInput(state, display::Screen2D::Options,
+            click(lighting.left + 1, lighting.top + 1));
+        require(lightClick.pressedOptionToggle == optionsui::OptionToggle::Lighting &&
+                !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Lighting)],
+            "supported toggle click flips temporary value without applying early");
+
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        optionsui::TogglePlayback toggles;
+        require(toggles.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 24,
+            "four supported toggles open as two Start+Move+Stay roots each");
+        require(playback.update(0).has_value() && playback.world2D().size() == 8,
+            "supported Option toggles publish eight Overlay2D roots");
+
+        const auto cameraOnId = optionsui::toggleSequence(true, false);
+        const auto cameraOffId = optionsui::toggleSequence(false, false);
+        const auto cameraOnRoots = playback.runtime().matching(cameraOnId, 54);
+        const auto cameraOffRoots = playback.runtime().matching(cameraOffId, 54);
+        const auto* cameraOnObject = cameraOnRoots.empty() ? nullptr :
+            playback.world2D().find(cameraOnRoots.front());
+        const auto* cameraOffObject = cameraOffRoots.empty() ? nullptr :
+            playback.world2D().find(cameraOffRoots.front());
+        require(cameraOnObject && cameraOffObject &&
+                cameraOnObject->worldTransform.values[6] == 457.0F &&
+                cameraOnObject->worldTransform.values[7] == 175.0F &&
+                cameraOffObject->worldTransform.values[6] == 516.0F &&
+                cameraOffObject->worldTransform.values[7] == 175.0F,
+            "Camera Off renders unselected On and selected Off at retail coordinates");
+
+        const auto cameraClick = optionsui::processInput(state, display::Screen2D::Options,
+            click(cameraOff.left + 1, cameraOff.top + 1));
+        require(cameraClick.pressedOptionToggle == optionsui::OptionToggle::Camera &&
+                toggles.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 8,
+            "toggle change queues Stop pair plus replacement Start+Move+Stay pair");
+        require(playback.update(1).has_value() &&
+                toggles.shown(optionsui::OptionToggle::Camera) == 1 &&
+                playback.runtime().matching(optionsui::toggleSequence(true, true), 54).size() == 1 &&
+                playback.runtime().matching(optionsui::toggleSequence(false, true), 54).size() == 1,
+            "Camera visual swaps atomically to selected On state");
+
+        const auto creditsTab = optionsui::menuButtonRect(optionsui::MenuButton::Credits);
+        (void)optionsui::processInput(state, display::Screen2D::Options,
+            click(creditsTab.left + 1, creditsTab.top + 1));
+        require(!state.optionSnapshotLoaded &&
+                toggles.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 8 && playback.update(2).has_value() &&
+                playback.world2D().size() == 0,
+            "leaving Option tab discards snapshot and stops eight supported toggle roots");
+    }
+
     void testTransactionalFailures()
     {
         optionsui::State state{};
@@ -381,6 +479,41 @@ namespace
         require(!optionNoRoom && optionPlayback.commands().pendingCount() == optionBefore &&
                 !option.visible(),
             "insufficient FIFO preserves hidden Option-frame state transactionally");
+
+
+        optionsui::State toggleState{};
+        require(optionsui::beginFromIBar(toggleState, display::Screen2D::Main),
+            "toggle failure fixture enters Options");
+        (void)optionsui::processInput(toggleState, display::Screen2D::Options,
+            click((optionTabRect.left + optionTabRect.right) / 2, optionTabRect.top + 1));
+        optionsui::loadSupportedOptionValues(toggleState, true, true, true, true);
+        engine::SequencePlayback missingTogglePlayback(nullptr);
+        optionsui::TogglePlayback missingToggle;
+        const auto missingToggleResult = missingToggle.sync(
+            toggleState, display::Screen2D::Options, missingTogglePlayback);
+        require(!missingToggleResult && missingTogglePlayback.commands().pendingCount() == 0 &&
+                missingToggle.shown(optionsui::OptionToggle::Camera) == -1,
+            "missing toggle resources reject before queue mutation");
+
+        SyntheticSequenceResources toggleResources;
+        engine::SequencePlayback togglePlayback(toggleResources.service.snapshot());
+        optionsui::TogglePlayback toggleVisual;
+        bool toggleFilled = true;
+        for (std::size_t index = 0;
+             index < sequence::SequenceCommandQueue::Capacity - 23; ++index)
+        {
+            const auto queued = togglePlayback.commands().enqueue(
+                sequence::StopSequenceCommand{data::EmptyDataId, 0, false});
+            toggleFilled = toggleFilled && queued.has_value();
+        }
+        require(toggleFilled,
+            "toggle FIFO fixture leaves twenty-three slots for twenty-four-command open");
+        const auto toggleBefore = togglePlayback.commands().pendingCount();
+        const auto toggleNoRoom = toggleVisual.sync(
+            toggleState, display::Screen2D::Options, togglePlayback);
+        require(!toggleNoRoom && togglePlayback.commands().pendingCount() == toggleBefore &&
+                toggleVisual.shown(optionsui::OptionToggle::Lighting) == -1,
+            "insufficient FIFO preserves hidden supported-toggle state transactionally");
     }
 }
 
@@ -393,6 +526,7 @@ int main()
         testFilePlayback();
         testNavigationInputAndPlayback();
         testOptionScreenFrame();
+        testOptionToggles();
         testTransactionalFailures();
         return 0;
     }

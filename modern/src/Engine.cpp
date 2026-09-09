@@ -28,6 +28,7 @@
 #include "OptionsFilePlayback.hpp"
 #include "OptionsNavigationPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
+#include "OptionsTogglePlayback.hpp"
 #include "TradePropertyPlayback.hpp"
 #include "TradeOfferIconPlayback.hpp"
 #include "TradeCashDialogPlayback.hpp"
@@ -75,6 +76,7 @@ namespace monopoly::engine
         optionsui::FilePlayback optionsFilePlayback;
         optionsui::NavigationPlayback optionsNavigationPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
+        optionsui::TogglePlayback optionsTogglePlayback;
         tradeui::PropertyPlayback tradePropertyPlayback;
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
         tradeui::CashDialogPlayback tradeCashDialogPlayback;
@@ -245,7 +247,7 @@ namespace monopoly::engine
         {
             pieces::PieceIdleDisplayContext context{};
             context.boardVisible = boardVisible;
-            context.animationsEnabled = true;
+            context.animationsEnabled = display::stateReadOnly().optionTokenAnimationsOn;
 
             const auto& state = userinterface::ruleStateReadOnly();
             if (pieceMovePlayback.active() &&
@@ -706,6 +708,12 @@ namespace monopoly::engine
             if (!optionsOptionSync)
                 return SDL_SetError("Options Option-screen playback: %s",
                     optionsOptionSync.error().c_str());
+            const auto optionsToggleSync = optionsTogglePlayback.sync(
+                userinterface::optionsStateReadOnly(),
+                displayState.desired2DView, *session);
+            if (!optionsToggleSync)
+                return SDL_SetError("Options toggle playback: %s",
+                    optionsToggleSync.error().c_str());
             const auto tradePropertySync = tradePropertyPlayback.sync(
                 userinterface::tradeState(), ruleState,
                 displayState.desired2DView, tick, *session);
@@ -963,6 +971,7 @@ namespace monopoly::engine
         optionsFilePlayback.reset();
         optionsNavigationPlayback.reset();
         optionsOptionPlayback.reset();
+        optionsTogglePlayback.reset();
         tradePropertyPlayback.reset();
         tradeOfferIconPlayback.reset();
         tradeCashDialogPlayback.reset();
