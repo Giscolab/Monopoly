@@ -1257,6 +1257,7 @@ target_sources(
     PRIVATE
     src/BoardRules.cpp
     src/AIUtility.cpp
+    src/AITradeUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
     src/PiecePlacement.cpp
@@ -1383,6 +1384,28 @@ if(BUILD_TESTING)
     )
 endif()
 
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAITradeUtilityTests
+        tests/AITradeUtilityTests.cpp
+        src/AITradeUtility.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
+    )
+    target_include_directories(
+        MonopolyAITradeUtilityTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAITradeUtilityTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AITradeUtility
+        COMMAND MonopolyAITradeUtilityTests
+    )
+endif()
 if(BUILD_TESTING)
 
     add_executable(
