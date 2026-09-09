@@ -531,6 +531,78 @@ namespace
         shutdown();
     }
 
+    void testRuntimeDisplayOptions()
+    {
+        using namespace monopoly;
+        using namespace monopoly::display;
+        using pieces::BoardCameraView;
+
+        expect(initialize(), "DISPLAY initializes for runtime Options test");
+        showAll2();
+        setBackdrop(Screen2D::Main);
+        state().game3DOn = true;
+        showAll2();
+        expect(stateReadOnly().optionTokenAnimationsOn &&
+                stateReadOnly().optionCameraMovementOn &&
+                stateReadOnly().optionLightingOn,
+            "portable DISPLAY options default to the retail enabled state");
+
+        processBoardInput({uimsg::Type::MouseLeftDown, 400, 200});
+        processBoardInput({uimsg::Type::MouseMoved, 400, 200, 10, 0});
+        processBoardInput({uimsg::Type::MouseLeftUp, 400, 200});
+        expect(stateReadOnly().manualMouseCamLock,
+            "runtime Options fixture acquires manual mouse camera before 3D disable");
+
+        applyRuntimeOptions(false, false, false, false);
+        expect(!stateReadOnly().optionTokenAnimationsOn &&
+                !stateReadOnly().optionCameraMovementOn &&
+                !stateReadOnly().optionLightingOn && !stateReadOnly().game3DOn,
+            "Option OK applies Token/Camera/Lighting/3D owners together");
+        expect(!stateReadOnly().manualMouseCamLock,
+            "disabling 3D board releases manual mouse camera ownership");
+        showAll2();
+        expect(!stateReadOnly().board3DOn && !stateReadOnly().viewportBackgroundFillOn,
+            "3D Board Off immediately selects the portable 2D-board path");
+
+        applyRuntimeOptions(false, false, false, true);
+        showAll2();
+        const auto beforeAutomatic = stateReadOnly().currentBoardCamera;
+        state().desiredBoardCamera = BoardCameraView::FifteenTiles12;
+        showAll2();
+        expect(stateReadOnly().currentBoardCamera == beforeAutomatic,
+            "Camera Off blocks automatic desired-camera preset changes");
+
+        cycleIBarCamera(7, true);
+        const auto manualDesired = stateReadOnly().desiredBoardCamera;
+        expect(stateReadOnly().manualCameraRequested,
+            "Camera button remains an explicit one-shot request while Camera option is Off");
+        showAll2();
+        expect(stateReadOnly().currentBoardCamera == manualDesired &&
+                !stateReadOnly().manualCameraRequested,
+            "Camera Off still allows the historical manual IBar camera request");
+
+        applyRuntimeOptions(true, true, true, true);
+        expect(stateReadOnly().optionTokenAnimationsOn &&
+                stateReadOnly().optionCameraMovementOn &&
+                stateReadOnly().optionLightingOn && stateReadOnly().game3DOn &&
+                stateReadOnly().desiredCameraInvalidatedLock &&
+                stateReadOnly().desiredCameraClearToValidate,
+            "re-enabling Camera requests standard-camera revalidation");
+        state().desiredBoardCamera = BoardCameraView::ThreeTiles01;
+        showAll2();
+        expect(stateReadOnly().currentBoardCamera == BoardCameraView::ThreeTiles01,
+            "Camera On restores automatic desired-camera processing");
+
+        applyRuntimeOptions(true, false, true, true);
+        state().lastBoardActivityTick = 0;
+        tickActions(90U * 60U + 1U);
+        expect(!stateReadOnly().demoModeDesired &&
+                stateReadOnly().lastBoardActivityTick == stateReadOnly().boardTick,
+            "Camera Off suppresses demo-camera entry and refreshes its inactivity anchor");
+
+        shutdown();
+    }
+
 }
 
 int main()
@@ -545,6 +617,7 @@ int main()
     testBoardFloatingCamera();
     testManualMouseBoardCamera();
     testIBarCameraCycle();
+    testRuntimeDisplayOptions();
     testDisplayStateMachine();
 
     if (failures != 0)

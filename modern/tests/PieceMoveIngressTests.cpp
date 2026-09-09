@@ -102,6 +102,21 @@ namespace
         (void)ingress.takeSpecial();
     }
 
+    void testJailSpecialAnimationsOff()
+    {
+        PieceMoveIngress ingress([] { return std::uint8_t{0}; });
+        auto state = stateWithPlayer(7, 3);
+        const auto jail = ingress.process(state,
+            moveMessage(actions::Type::NotifyJumpToSquare, 40, 0), false);
+        expect(jail && jail->special == PieceMoveSpecial::GoToJail &&
+            !jail->planQueued && jail->projectionUpdated &&
+            !jail->sourceQueueLockRequired,
+            "animations-off go-to-jail skips the dedicated Paddywagon lock");
+        expect(state.players[0].currentSquare == 40 &&
+            !ingress.hasPendingSpecial() && !ingress.hasPendingPlan(),
+            "animations-off go-to-jail registers prison immediately without pending playback");
+    }
+
     void testOffBoardOutcomeUsesOldProjection()
     {
         PieceMoveIngress ingress([] { return std::uint8_t{0}; });
@@ -149,6 +164,7 @@ int main()
     testNormalMovementAndLazyRandom();
     testAnimationToggleAndBusyGate();
     testJailSpecials();
+    testJailSpecialAnimationsOff();
     testOffBoardOutcomeUsesOldProjection();
     testValidation();
     std::cout << (failures ? "Piece move-ingress tests FAILED\n" :
