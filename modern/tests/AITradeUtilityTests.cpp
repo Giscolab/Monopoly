@@ -115,6 +115,26 @@ namespace
             "AI trade search rejects invalid candidate player");
     }
 
+    void fillStaticNoMonopolyBoard(rules::GameState& state)
+    {
+        state.numberOfPlayers = 2;
+        state.options.passingGoAmount = 200;
+        for (std::size_t groupIndex = 0; groupIndex < 8; ++groupIndex)
+        {
+            const auto group = static_cast<rules::board::SquareGroup>(groupIndex);
+            const auto range = ai::groupRange(group);
+            std::size_t ordinal{};
+            for (std::size_t index = range.begin; index < range.endExclusive; ++index)
+            {
+                const auto square = static_cast<SquareType>(index);
+                if (rules::board::definition(square).group != group)
+                    continue;
+                state.squares[index].owner =
+                    static_cast<rules::PlayerNumber>(ordinal++ % 2);
+            }
+        }
+    }
+
     void testTransferAndPossibleMonopolyContracts()
     {
         rules::GameState state{};
@@ -162,6 +182,49 @@ namespace
                     rail, 0, SquareType::Chance1) == -1,
             "AI possible-monopoly rejects non-property groups safely");
     }
+
+    void testShouldTradeForMonopoly()
+    {
+        using Decision = ai::trade::MonopolyTradeDecision;
+        require(static_cast<int>(Decision::Avoid) == 0 &&
+                static_cast<int>(Decision::Required) == 1 &&
+                static_cast<int>(Decision::Maybe) == 2,
+            "AI monopoly-trade decision preserves retail FALSE/TRUE/MAYBE values");
+
+        rules::GameState buying{};
+        buying.numberOfPlayers = 2;
+        require(ai::trade::shouldTradeForMonopoly(buying, 0) == Decision::Avoid,
+            "AI monopoly trade waits during retail buying stage");
+        require(ai::trade::shouldTradeForMonopoly(buying, 2) == Decision::Avoid,
+            "AI monopoly trade rejects invalid requesting player safely");
+
+        rules::GameState monopoly{};
+        monopoly.numberOfPlayers = 2;
+        monopoly.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        monopoly.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        require(ai::trade::shouldTradeForMonopoly(monopoly, 0) == Decision::Avoid,
+            "AI monopoly owner avoids forced monopoly trade");
+        require(ai::trade::shouldTradeForMonopoly(monopoly, 1) == Decision::Required,
+            "AI player without monopoly requires trade once monopoly exists");
+
+        rules::GameState leader{};
+        fillStaticNoMonopolyBoard(leader);
+        for (const auto square : {SquareType::ReadingRailroad,
+                 SquareType::PennsylvaniaRailroad, SquareType::BAndORailroad,
+                 SquareType::ShortLineRailroad})
+            leader.squares[static_cast<std::size_t>(square)].owner = 0;
+        require(ai::trade::shouldTradeForMonopoly(leader, 0) == Decision::Maybe,
+            "AI top earner can wait for a preferred monopoly trade");
+
+        rules::GameState lagging{};
+        fillStaticNoMonopolyBoard(lagging);
+        for (const auto square : {SquareType::ReadingRailroad,
+                 SquareType::PennsylvaniaRailroad, SquareType::BAndORailroad,
+                 SquareType::ShortLineRailroad})
+            lagging.squares[static_cast<std::size_t>(square)].owner = 1;
+        require(ai::trade::shouldTradeForMonopoly(lagging, 0) == Decision::Required,
+            "AI income lag above twenty percent requires monopoly trade");
+    }
 }
 
 int main()
@@ -175,6 +238,7 @@ int main()
         testTwoPlayerRequirement();
         testInputGuards();
         testTransferAndPossibleMonopolyContracts();
+        testShouldTradeForMonopoly();
         return 0;
     }
     catch (const std::exception& error)
