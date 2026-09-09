@@ -2,6 +2,7 @@
 #include "OptionsNavigationPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
+#include "OptionsHelpPlayback.hpp"
 #include "OptionsUI.hpp"
 #include "SyntheticSequenceResources.hpp"
 
@@ -377,6 +378,75 @@ namespace
             "leaving Option tab discards snapshot and stops eight supported toggle roots");
     }
 
+    void testHelpScreen()
+    {
+        require(optionsui::HelpTitleTag == 0x0249 &&
+                optionsui::HelpButtonInTags == std::array<data::DataTag, 3>{
+                    0x0250, 0x024B, 0x0235} &&
+                optionsui::HelpScreenPriority == 50 &&
+                optionsui::HelpScreenStayAtEnd == 2,
+            "Help screen uses retail title/button CNKs, priority 50 and StayAtEnd");
+
+        const std::array<int, 3> tops{180, 288, 401};
+        bool exact = true;
+        for (std::size_t index = 0; index < tops.size(); ++index)
+        {
+            const auto rect = optionsui::helpButtonRect(
+                static_cast<optionsui::HelpButton>(index));
+            exact = exact && rect.left == 291 && rect.top == tops[index] &&
+                rect.right == 511 && rect.bottom == tops[index] + 62;
+        }
+        require(exact &&
+                optionsui::helpButtonHit(291, 180) == optionsui::HelpButton::QuickHelp &&
+                optionsui::helpButtonHit(291, 288) == optionsui::HelpButton::FullHelp &&
+                optionsui::helpButtonHit(291, 401) == optionsui::HelpButton::Cancel &&
+                !optionsui::helpButtonHit(511, 401),
+            "Help hotspots match retail Quick/Full/Cancel rectangles");
+
+        optionsui::State state{};
+        require(optionsui::beginFromIBar(state, display::Screen2D::Portfolio),
+            "Help fixture enters Options from Portfolio");
+        const auto helpTab = optionsui::menuButtonRect(optionsui::MenuButton::Help);
+        const auto tab = optionsui::processInput(state, display::Screen2D::Options,
+            click((helpTab.left + helpTab.right) / 2, helpTab.top + 1));
+        require(tab.pressedMenuButton == optionsui::MenuButton::Help &&
+                state.currentScreen == optionsui::Screen::Help,
+            "Help navigation activates retail Help screen");
+
+        const auto quick = optionsui::processInput(
+            state, display::Screen2D::Options, click(300, 190));
+        const auto full = optionsui::processInput(
+            state, display::Screen2D::Options, click(300, 300));
+        require(quick.pressedHelpButton == optionsui::HelpButton::QuickHelp &&
+                full.pressedHelpButton == optionsui::HelpButton::FullHelp &&
+                !quick.requestedBackdrop && !full.requestedBackdrop && state.active,
+            "Quick/Full Help hits are identified without inventing WinHelp/file backends");
+
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        optionsui::HelpPlayback help;
+        require(help.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 7 && help.visible(),
+            "Help frame queues title plus three Start+Stay button sequences atomically");
+        require(playback.update(0).has_value() && playback.world2D().size() == 4,
+            "Help title and three incoming buttons publish exactly four roots");
+        require(playback.update(100).has_value() && playback.world2D().size() == 4,
+            "Help incoming button sequences stay on their final frame");
+        require(help.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 0,
+            "unchanged Help frame queues no redundant commands");
+
+        const auto cancel = optionsui::processInput(
+            state, display::Screen2D::Options, click(300, 420));
+        require(cancel.pressedHelpButton == optionsui::HelpButton::Cancel &&
+                cancel.requestedBackdrop == display::Screen2D::Portfolio && !state.active,
+            "Help Cancel returns to exact previous IBar view");
+        require(help.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 4 && playback.update(101).has_value() &&
+                !help.visible() && playback.world2D().size() == 0,
+            "Help Cancel removes exactly the four autonomous Help sequences");
+    }
+
     void testTransactionalFailures()
     {
         optionsui::State state{};
@@ -514,6 +584,40 @@ namespace
         require(!toggleNoRoom && togglePlayback.commands().pendingCount() == toggleBefore &&
                 toggleVisual.shown(optionsui::OptionToggle::Lighting) == -1,
             "insufficient FIFO preserves hidden supported-toggle state transactionally");
+
+        optionsui::State helpState{};
+        require(optionsui::beginFromIBar(helpState, display::Screen2D::Main),
+            "Help failure fixture enters Options");
+        const auto helpTabRect = optionsui::menuButtonRect(optionsui::MenuButton::Help);
+        (void)optionsui::processInput(helpState, display::Screen2D::Options,
+            click((helpTabRect.left + helpTabRect.right) / 2, helpTabRect.top + 1));
+        engine::SequencePlayback missingHelpPlayback(nullptr);
+        optionsui::HelpPlayback missingHelp;
+        const auto missingHelpResult = missingHelp.sync(
+            helpState, display::Screen2D::Options, missingHelpPlayback);
+        require(!missingHelpResult && missingHelpPlayback.commands().pendingCount() == 0 &&
+                !missingHelp.visible(),
+            "missing Help resources reject before queue mutation");
+
+        SyntheticSequenceResources helpResources;
+        engine::SequencePlayback helpPlayback(helpResources.service.snapshot());
+        optionsui::HelpPlayback helpVisual;
+        bool helpFilled = true;
+        for (std::size_t index = 0;
+             index < sequence::SequenceCommandQueue::Capacity - 6; ++index)
+        {
+            const auto queued = helpPlayback.commands().enqueue(
+                sequence::StopSequenceCommand{data::EmptyDataId, 0, false});
+            helpFilled = helpFilled && queued.has_value();
+        }
+        require(helpFilled,
+            "Help FIFO fixture leaves six slots for seven-command open");
+        const auto helpBefore = helpPlayback.commands().pendingCount();
+        const auto helpNoRoom = helpVisual.sync(
+            helpState, display::Screen2D::Options, helpPlayback);
+        require(!helpNoRoom && helpPlayback.commands().pendingCount() == helpBefore &&
+                !helpVisual.visible(),
+            "insufficient FIFO preserves hidden Help-screen state transactionally");
     }
 }
 
@@ -527,6 +631,7 @@ int main()
         testNavigationInputAndPlayback();
         testOptionScreenFrame();
         testOptionToggles();
+        testHelpScreen();
         testTransactionalFailures();
         return 0;
     }
