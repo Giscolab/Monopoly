@@ -48,7 +48,8 @@ namespace monopoly::ai
         rules::board::SquareType square) noexcept;
     [[nodiscard]] bool isMonopoly(
         const rules::GameState& state,
-        rules::board::SquareType square) noexcept;    [[nodiscard]] bool ownsMonopoly(
+        rules::board::SquareType square) noexcept;
+    [[nodiscard]] bool ownsMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
         rules::board::SquareType square,
@@ -71,7 +72,8 @@ namespace monopoly::ai
         rules::PlayerNumber player,
         rules::board::SquareGroup group,
         bool mortgageCounts,
-        rules::board::PropertySet propertiesOwned) noexcept;    [[nodiscard]] std::int64_t rentIfSteppedOn(
+        rules::board::PropertySet propertiesOwned) noexcept;
+    [[nodiscard]] std::int64_t rentIfSteppedOn(
         const rules::GameState& state,
         rules::board::SquareType square,
         rules::board::PropertySet propertiesOwned) noexcept;
@@ -93,4 +95,44 @@ namespace monopoly::ai
     [[nodiscard]] std::int64_t housesCanBuyOnMonopoly(
         const rules::GameState& state,
         rules::board::SquareType square) noexcept;
+    [[nodiscard]] bool playerCloseToProperty(
+        const rules::GameState& state,
+        rules::PlayerNumber ignorePlayer,
+        rules::board::SquareType property,
+        std::int64_t minDistance,
+        std::int64_t maxDistance) noexcept;
+    [[nodiscard]] bool someoneCloseToMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const MonopolyLots& monopoly,
+        std::int64_t minDistance = 2,
+        std::int64_t maxDistance = 12) noexcept;
+    [[nodiscard]] std::int64_t costUnmortgageMonopoly(
+        const rules::GameState& state,
+        rules::board::SquareType square) noexcept;
+    [[nodiscard]] bool isCashCow(
+        rules::board::SquareType square) noexcept;
+    [[nodiscard]] double landingFrequency(
+        rules::board::SquareType square) noexcept;
+    [[nodiscard]] double averageRentReceived(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::int64_t startSquare,
+        bool dontCountDevelopedMonopolies,
+        double cashCowMultiplier,
+        rules::board::PropertySet propertiesOwned) noexcept;
+    [[nodiscard]] std::int64_t averageRentPaid(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::int64_t startSquare,
+        bool considerDevelopedMonopolies,
+        double cashCowMultiplier) noexcept;
+    [[nodiscard]] std::int64_t minimumCalculatedExpenses(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept;
+    [[nodiscard]] std::int64_t potentialIncome(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept;
+    [[nodiscard]] rules::PlayerNumber mostExpensivePotentialIncome(
+        const rules::GameState& state) noexcept;
 }

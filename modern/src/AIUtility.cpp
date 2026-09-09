@@ -17,6 +17,14 @@ namespace monopoly::ai
                 {1, 4}, {6, 10}, {11, 15}, {16, 20}, {21, 25},
                 {26, 30}, {31, 35}, {37, 40}, {5, 36}, {12, 29}}};
 
+        constexpr std::array<double, rules::SquareCount>
+            LandingFrequencies{{
+                1.14, 0.77, 1.0, 0.8, 0.88, 1.14, 0.86, 1.0, 0.89, 0.9,
+                1.0, 1.05, 1.07, 0.87, 0.95, 1.08, 1.06, 1.0, 1.11, 1.14,
+                1.10, 1.07, 1.0, 1.02, 1.19, 1.14, 1.01, 1.02, 1.04, 0.98,
+                0.97, 0.99, 0.97, 1.0, 0.91, 0.88, 1.0, 0.8, 0.8, 0.98,
+                0.0, 0.0}};
+
         [[nodiscard]] constexpr std::size_t indexOf(
             SquareType square) noexcept
         {
@@ -392,4 +400,195 @@ namespace monopoly::ai
         return static_cast<std::int64_t>(state.options.housesPerHotel) *
             propertyCount(monopolySet(square)) - housesOnMonopoly(state, square);
     }
+    bool playerCloseToProperty(
+        const rules::GameState& state,
+        rules::PlayerNumber ignorePlayer,
+        SquareType property,
+        std::int64_t minDistance,
+        std::int64_t maxDistance) noexcept
+    {
+        const auto propertyIndex = static_cast<std::int64_t>(indexOf(property));
+        const auto boardwalk = static_cast<std::int64_t>(indexOf(SquareType::Boardwalk));
+        const auto freeParking = static_cast<std::int64_t>(indexOf(SquareType::FreeParking));
+        for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+        {
+            if (player == ignorePlayer)
+                continue;
+            const auto current = static_cast<std::int64_t>(state.players[player].currentSquare);
+            if (current > boardwalk)
+                continue;
+            auto distance = propertyIndex - current;
+            if (distance < -freeParking)
+                distance += boardwalk + 1;
+            if (distance >= minDistance && distance <= maxDistance)
+                return true;
+        }
+        return false;
+    }
+
+    bool someoneCloseToMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const MonopolyLots& monopoly,
+        std::int64_t minDistance,
+        std::int64_t maxDistance) noexcept
+    {
+        for (std::size_t index = 0; index < monopoly.count; ++index)
+        {
+            if (playerCloseToProperty(state, player, monopoly.squares[index],
+                    minDistance, maxDistance))
+                return true;
+        }
+        return false;
+    }
+
+    std::int64_t costUnmortgageMonopoly(
+        const rules::GameState& state,
+        SquareType square) noexcept
+    {
+        const auto lots = monopolyLots(square);
+        std::int64_t cost{};
+        for (std::size_t index = 0; index < lots.count; ++index)
+        {
+            const auto lot = lots.squares[index];
+            if (!state.squares[indexOf(lot)].mortgaged)
+                continue;
+            cost += static_cast<std::int64_t>(
+                static_cast<double>(rules::board::definition(lot).mortgageCost) * 1.1);
+        }
+        return cost;
+    }
+
+    bool isCashCow(SquareType square) noexcept
+    {
+        const auto group = rules::board::definition(square).group;
+        return group == SquareGroup::Utility || group == SquareGroup::Railroad;
+    }
+
+    double landingFrequency(SquareType square) noexcept
+    {
+        const auto index = indexOf(square);
+        return index < LandingFrequencies.size() ? LandingFrequencies[index] : 0.0;
+    }
+
+    double averageRentReceived(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::int64_t startSquare,
+        bool dontCountDevelopedMonopolies,
+        double cashCowMultiplier,
+        rules::board::PropertySet propertiesOwned) noexcept
+    {
+        (void)player;
+        if (startSquare < 0)
+            return 0.0;
+        double total{};
+        const auto end = static_cast<std::int64_t>(indexOf(SquareType::InJail));
+        for (auto index = startSquare; index < end; ++index)
+        {
+            const auto square = squareAt(static_cast<std::size_t>(index));
+            if ((propertiesOwned & rules::board::propertyBit(square)) == 0)
+                continue;
+            if (dontCountDevelopedMonopolies && housesOnMonopoly(state, square) > 0)
+                continue;
+            const double multiplier = isCashCow(square) ? cashCowMultiplier : 1.0;
+            total += static_cast<double>(rentIfSteppedOn(state, square, propertiesOwned)) *
+                landingFrequency(square) * multiplier;
+        }
+        return total / 7.0;
+    }
+
+    std::int64_t averageRentPaid(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::int64_t startSquare,
+        bool considerDevelopedMonopolies,
+        double cashCowMultiplier) noexcept
+    {
+        double total{};
+        for (rules::PlayerNumber counter = 0; counter < state.numberOfPlayers; ++counter)
+        {
+            if (counter == player ||
+                state.players[counter].currentSquare == indexOf(SquareType::OffBoard))
+                continue;
+            const auto owned = propertiesOwnedByPlayer(state, counter);
+            total += averageRentReceived(state, counter, startSquare,
+                !considerDevelopedMonopolies, cashCowMultiplier, owned);
+        }
+
+        if (static_cast<std::int64_t>(indexOf(SquareType::IncomeTax)) >= startSquare)
+        {
+            const auto worth = totalWorth(state, player);
+            if (state.options.luxuryTaxAmount > 0)
+            {
+                const double quotient = static_cast<double>(worth) /
+                    static_cast<double>(state.options.luxuryTaxAmount);
+                if (quotient > static_cast<double>(state.options.flatTaxFee))
+                    total += static_cast<double>(state.options.flatTaxFee) / 7.0;
+                else
+                    total += quotient / 7.0;
+            }
+        }
+        if (static_cast<std::int64_t>(indexOf(SquareType::LuxuryTax)) >= startSquare)
+            total += static_cast<double>(state.options.luxuryTaxAmount) / 7.0;
+        return static_cast<std::int64_t>(total);
+    }
+
+    std::int64_t minimumCalculatedExpenses(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        auto current = static_cast<std::int64_t>(state.players[player].currentSquare);
+        if (current == static_cast<std::int64_t>(indexOf(SquareType::InJail)))
+            current = static_cast<std::int64_t>(indexOf(SquareType::JustVisiting));
+        if (current > static_cast<std::int64_t>(indexOf(SquareType::Boardwalk)))
+            return -1;
+        return averageRentPaid(state, player, current, false, 1.0);
+    }
+
+    std::int64_t potentialIncome(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        std::int64_t income{};
+        const auto maxRentIndex = static_cast<std::size_t>(
+            std::clamp(state.options.housesPerHotel, 0,
+                static_cast<int>(rules::board::RentStepCount - 1)));
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            if (state.squares[index].owner != player)
+                continue;
+            const auto square = squareAt(index);
+            const auto& definition = rules::board::definition(square);
+            if (isMonopoly(state, square))
+            {
+                if (state.squares[index].houses == 0)
+                    income += definition.rent[0] * 2;
+                else
+                    income += definition.rent[maxRentIndex];
+            }
+            else
+                income += definition.rent[0];
+        }
+        return income;
+    }
+
+    rules::PlayerNumber mostExpensivePotentialIncome(
+        const rules::GameState& state) noexcept
+    {
+        std::int64_t highest{};
+        auto highestPlayer = rules::NobodyPlayer;
+        for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+        {
+            const auto income = potentialIncome(state, player);
+            if (income > highest)
+            {
+                highest = income;
+                highestPlayer = player;
+            }
+        }
+        return highestPlayer;
+    }
+
 }
