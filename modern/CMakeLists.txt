@@ -675,6 +675,7 @@ target_sources(
     src/OptionsUI.cpp
     src/OptionsFilePlayback.cpp
     src/OptionsNavigationPlayback.cpp
+    src/OptionsOptionPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -936,6 +937,7 @@ if(BUILD_TESTING)
         src/OptionsUI.cpp
         src/OptionsFilePlayback.cpp
         src/OptionsNavigationPlayback.cpp
+    src/OptionsOptionPlayback.cpp
     )
     target_include_directories(
         MonopolyOptionsUITests PRIVATE

@@ -15,6 +15,10 @@ namespace monopoly::optionsui
         inline constexpr std::array<int, 4> MenuButtonY{494, 493, 490, 490};
         inline constexpr std::array<int, 4> MenuButtonWidth{170, 159, 164, 175};
         inline constexpr std::array<int, 4> MenuButtonHeight{59, 60, 63, 62};
+        inline constexpr int OptionOkayX = 350;
+        inline constexpr int OptionOkayY = 450;
+        inline constexpr int OptionOkayWidth = 127;
+        inline constexpr int OptionOkayHeight = 36;
     }
 
     Rect menuButtonRect(MenuButton button) noexcept
@@ -36,6 +40,13 @@ namespace monopoly::optionsui
                 return button;
         }
         return std::nullopt;
+    }
+
+    Rect optionOkayRect() noexcept
+    {
+        return {OptionOkayX, OptionOkayY,
+            OptionOkayX + OptionOkayWidth,
+            OptionOkayY + OptionOkayHeight};
     }
 
     Rect fileButtonRect(FileButton button) noexcept
@@ -93,6 +104,19 @@ namespace monopoly::optionsui
         {
             result.pressedMenuButton = menu;
             state.currentScreen = static_cast<Screen>(static_cast<std::uint8_t>(*menu));
+            return result;
+        }
+
+        if (state.currentScreen == Screen::Option)
+        {
+            const auto x = static_cast<int>(message.numberA);
+            const auto y = static_cast<int>(message.numberB);
+            if (optionOkayRect().contains(x, y))
+            {
+                result.pressedOptionOkay = true;
+                result.requestedBackdrop = state.previousView;
+                state.active = false;
+            }
             return result;
         }
 

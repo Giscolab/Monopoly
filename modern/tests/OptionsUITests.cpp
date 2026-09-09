@@ -1,5 +1,6 @@
 #include "OptionsFilePlayback.hpp"
 #include "OptionsNavigationPlayback.hpp"
+#include "OptionsOptionPlayback.hpp"
 #include "OptionsUI.hpp"
 #include "SyntheticSequenceResources.hpp"
 
@@ -212,6 +213,72 @@ namespace
             "leaving Options stops exactly the four currently published navigation roots");
     }
 
+    void testOptionScreenFrame()
+    {
+        require(optionsui::OptionScreenTags == std::array<data::DataTag, 4>{
+                    0x0277, 0x0278, 0x0262, 0x026E} &&
+                optionsui::OptionScreenPriority == 50 &&
+                optionsui::OptionScreenStayAtEnd == 2,
+            "Option frame uses retail title/subtitles/OK CNKs and priority 50");
+        const auto okayRect = optionsui::optionOkayRect();
+        require(okayRect.left == 350 && okayRect.top == 450 &&
+                okayRect.right == 477 && okayRect.bottom == 486 &&
+                okayRect.contains(350, 450) && !okayRect.contains(477, 450),
+            "Option OK hotspot matches retail 350,450 127x36 rectangle");
+
+        optionsui::State state{};
+        require(optionsui::beginFromIBar(state, display::Screen2D::Trade),
+            "Option-frame fixture enters Options from Trade");
+        const auto optionRect = optionsui::menuButtonRect(optionsui::MenuButton::Option);
+        const auto tab = optionsui::processInput(state, display::Screen2D::Options,
+            click((optionRect.left + optionRect.right) / 2, optionRect.top + 1));
+        require(tab.pressedMenuButton == optionsui::MenuButton::Option &&
+                state.currentScreen == optionsui::Screen::Option,
+            "Option tab activates Option projection before frame playback");
+
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        optionsui::OptionPlayback option;
+        require(option.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 6 && option.visible(),
+            "Option frame queues title/subtitles plus Start+Move+Stay OK atomically");
+        require(playback.update(0).has_value(),
+            "Option frame opening transition executes");
+        bool allPresent = true;
+        for (const auto tag : optionsui::OptionScreenTags)
+            allPresent = allPresent && playback.runtime().matching(
+                optionsui::optionSequence(tag), optionsui::OptionScreenPriority).size() == 1;
+        require(allPresent,
+            "Option title, Sound/Display subtitles and OK publish at priority 50");
+
+        const auto okayId = optionsui::optionSequence(optionsui::OptionOkayInTag);
+        const auto okayRoots = playback.runtime().matching(okayId, optionsui::OptionScreenPriority);
+        const auto* okayObject = okayRoots.empty() ? nullptr : playback.world2D().find(okayRoots.front());
+        require(okayObject && okayObject->worldTransform.values[6] == 350.0F &&
+                okayObject->worldTransform.values[7] == 450.0F,
+            "Option OK uses retail StartXY(350,450)");
+        require(playback.update(100).has_value() &&
+                playback.runtime().matching(okayId, optionsui::OptionScreenPriority).size() == 1,
+            "Option OK incoming animation stays on its final frame");
+        require(option.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 0,
+            "unchanged Option frame queues no redundant commands");
+
+        const auto miss = optionsui::processInput(
+            state, display::Screen2D::Options, click(349, 450));
+        require(!miss.pressedOptionOkay && !miss.requestedBackdrop && state.active,
+            "Option OK preserves Win32 left edge and ignores adjacent pixels");
+        const auto okay = optionsui::processInput(
+            state, display::Screen2D::Options, click(350, 450));
+        require(okay.pressedOptionOkay &&
+                okay.requestedBackdrop == display::Screen2D::Trade && !state.active,
+            "Option OK returns to exact previous IBar view");
+        require(option.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount() == 4 && playback.update(101).has_value() &&
+                !option.visible(),
+            "Option OK removes exactly four autonomous frame sequences");
+    }
+
     void testTransactionalFailures()
     {
         optionsui::State state{};
@@ -279,6 +346,41 @@ namespace
                 nav.visual(optionsui::MenuButton::File) == optionsui::NavigationVisual::Press &&
                 nav.visual(optionsui::MenuButton::Option) == optionsui::NavigationVisual::Idle,
             "insufficient FIFO preserves complete Options navigation state transactionally");
+
+
+        optionsui::State optionState{};
+        require(optionsui::beginFromIBar(optionState, display::Screen2D::Main),
+            "Option failure fixture enters Options");
+        const auto optionTabRect = optionsui::menuButtonRect(optionsui::MenuButton::Option);
+        (void)optionsui::processInput(optionState, display::Screen2D::Options,
+            click((optionTabRect.left + optionTabRect.right) / 2, optionTabRect.top + 1));
+        engine::SequencePlayback missingOptionPlayback(nullptr);
+        optionsui::OptionPlayback missingOption;
+        const auto missingOptionResult = missingOption.sync(
+            optionState, display::Screen2D::Options, missingOptionPlayback);
+        require(!missingOptionResult && missingOptionPlayback.commands().pendingCount() == 0 &&
+                !missingOption.visible(),
+            "missing Option-frame resources reject before queue mutation");
+
+        SyntheticSequenceResources optionResources;
+        engine::SequencePlayback optionPlayback(optionResources.service.snapshot());
+        optionsui::OptionPlayback option;
+        bool optionFilled = true;
+        for (std::size_t index = 0;
+             index < sequence::SequenceCommandQueue::Capacity - 5; ++index)
+        {
+            const auto queued = optionPlayback.commands().enqueue(
+                sequence::StopSequenceCommand{data::EmptyDataId, 0, false});
+            optionFilled = optionFilled && queued.has_value();
+        }
+        require(optionFilled,
+            "Option FIFO fixture leaves five slots for six-command frame open");
+        const auto optionBefore = optionPlayback.commands().pendingCount();
+        const auto optionNoRoom = option.sync(
+            optionState, display::Screen2D::Options, optionPlayback);
+        require(!optionNoRoom && optionPlayback.commands().pendingCount() == optionBefore &&
+                !option.visible(),
+            "insufficient FIFO preserves hidden Option-frame state transactionally");
     }
 }
 
@@ -290,6 +392,7 @@ int main()
         testFileInput();
         testFilePlayback();
         testNavigationInputAndPlayback();
+        testOptionScreenFrame();
         testTransactionalFailures();
         return 0;
     }

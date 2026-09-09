@@ -62,10 +62,12 @@ namespace monopoly::optionsui
         std::optional<display::Screen2D> requestedBackdrop;
         std::optional<MenuButton> pressedMenuButton;
         std::optional<FileButton> pressedFileButton;
+        bool pressedOptionOkay{};
     };
 
     [[nodiscard]] Rect menuButtonRect(MenuButton button) noexcept;
     [[nodiscard]] std::optional<MenuButton> menuButtonHit(int x, int y) noexcept;
+    [[nodiscard]] Rect optionOkayRect() noexcept;
     [[nodiscard]] Rect fileButtonRect(FileButton button) noexcept;
     [[nodiscard]] std::optional<FileButton> fileButtonHit(int x, int y) noexcept;
 
