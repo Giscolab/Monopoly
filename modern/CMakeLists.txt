@@ -1256,6 +1256,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/BoardRules.cpp
+    src/AIUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
     src/PiecePlacement.cpp
@@ -1359,6 +1360,28 @@ target_sources(
 # ============================================================
 # RULE scenario tests
 # ============================================================
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAIUtilityTests
+        tests/AIUtilityTests.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
+    )
+    target_include_directories(
+        MonopolyAIUtilityTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAIUtilityTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AIUtility
+        COMMAND MonopolyAIUtilityTests
+    )
+endif()
 
 if(BUILD_TESTING)
 
