@@ -274,6 +274,10 @@ struct SyntheticSequenceResources
                 items[0x023A] = {LegacyDataType::Chunky, staticTradeIcon};
                 for (const auto tag : {0x0241U, 0x023EU, 0x0244U, 0x0238U, 0x0235U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
+                // UDOpts bottom navigation File/Option/Credits/Help idle/return/press.
+                for (const auto tag : {0x0186U, 0x0187U, 0x0188U, 0x018AU, 0x018BU, 0x018CU,
+                     0x018EU, 0x018FU, 0x0190U, 0x0192U, 0x0193U, 0x0194U})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // UDTrade autonomous backdrop and player-colour rail CNKs.
                 for (const auto tag : {0x02ACU, 0x02BBU, 0x02CDU,
                      0x02CFU, 0x02D0U, 0x02DFU})
