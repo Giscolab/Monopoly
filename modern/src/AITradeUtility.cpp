@@ -73,4 +73,67 @@ namespace monopoly::ai::trade
             candidates.size(),
             properties);
     }
+
+    std::int64_t transferTax(
+        const rules::GameState& state,
+        rules::board::PropertySet properties) noexcept
+    {
+        std::int64_t tax{};
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(rules::board::SquareType::InJail);
+             ++index)
+        {
+            const auto square = static_cast<rules::board::SquareType>(index);
+            const auto bit = rules::board::propertyBit(square);
+            if (bit == 0 || (properties & bit) == 0 ||
+                !state.squares[index].mortgaged)
+                continue;
+            tax += static_cast<std::int64_t>(
+                rules::board::definition(square).purchaseCost) *
+                state.options.taxRate / 100;
+        }
+        return tax;
+    }
+
+    int vetoMonopolies(rules::board::PropertySet properties) noexcept
+    {
+        int count{};
+        for (std::size_t group = 1;
+             group < ai::ExpensiveMonopolySquares.size(); ++group)
+        {
+            if ((ai::monopolySet(ai::ExpensiveMonopolySquares[group]) &
+                 properties) != 0)
+                ++count;
+        }
+        return count;
+    }
+
+    int possibleMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber owner,
+        rules::board::SquareType square) noexcept
+    {
+        if (owner >= rules::MaxPlayers)
+            return -1;
+        const auto group = rules::board::definition(square).group;
+        if (static_cast<std::size_t>(group) >=
+            rules::board::MaxPropertyGroups)
+            return -1;
+        const auto range = ai::groupRange(group);
+        int unowned{};
+        for (std::size_t index = range.begin; index < range.endExclusive; ++index)
+        {
+            const auto candidate = static_cast<rules::board::SquareType>(index);
+            if (rules::board::definition(candidate).group != group)
+                continue;
+            const auto candidateOwner = state.squares[index].owner;
+            if (candidateOwner == owner)
+                continue;
+            if (candidateOwner != rules::NobodyPlayer)
+                return -1;
+            ++unowned;
+        }
+        return unowned;
+    }
+
 }

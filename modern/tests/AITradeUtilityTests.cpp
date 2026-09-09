@@ -114,6 +114,54 @@ namespace
                     0, 0, invalid, properties).count == 0,
             "AI trade search rejects invalid candidate player");
     }
+
+    void testTransferAndPossibleMonopolyContracts()
+    {
+        rules::GameState state{};
+        state.options.taxRate = 10;
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        state.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged = true;
+        const auto taxed = bits({SquareType::MediterraneanAvenue,
+            SquareType::BalticAvenue, SquareType::ReadingRailroad});
+        require(ai::trade::transferTax(state, taxed) == 26,
+            "AI transfer tax charges only mortgaged properties at purchase-cost rate");
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = false;
+        state.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged = false;
+        require(ai::trade::transferTax(state, taxed) == 0,
+            "AI transfer tax ignores unmortgaged properties");
+
+        require(ai::trade::vetoMonopolies(bits({SquareType::MediterraneanAvenue,
+                    SquareType::BalticAvenue})) == 0,
+            "AI veto count preserves retail omission of brown monopoly");
+        require(ai::trade::vetoMonopolies(bits({SquareType::OrientalAvenue,
+                    SquareType::ParkPlace})) == 2,
+            "AI veto count counts distinct Oriental-through-Park-Place groups");
+
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        require(ai::trade::possibleMonopoly(
+                    state, 0, SquareType::MediterraneanAvenue) == 1,
+            "AI possible-monopoly counts one unowned brown lot");
+        state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        require(ai::trade::possibleMonopoly(
+                    state, 0, SquareType::MediterraneanAvenue) == 0,
+            "AI possible-monopoly returns zero for already complete group");
+        state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        require(ai::trade::possibleMonopoly(
+                    state, 0, SquareType::MediterraneanAvenue) == -1,
+            "AI possible-monopoly rejects group blocked by another owner");
+
+        rules::GameState rail{};
+        rail.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].owner = 0;
+        require(ai::trade::possibleMonopoly(
+                    rail, 0, SquareType::ReadingRailroad) == 3,
+            "AI possible-monopoly preserves sparse railroad scan contract");
+        require(ai::trade::possibleMonopoly(
+                    rail, rules::NobodyPlayer, SquareType::ReadingRailroad) == -1,
+            "AI possible-monopoly rejects invalid owner safely");
+        require(ai::trade::possibleMonopoly(
+                    rail, 0, SquareType::Chance1) == -1,
+            "AI possible-monopoly rejects non-property groups safely");
+    }
 }
 
 int main()
@@ -126,6 +174,7 @@ int main()
         testSingleAndMinimalGroups();
         testTwoPlayerRequirement();
         testInputGuards();
+        testTransferAndPossibleMonopolyContracts();
         return 0;
     }
     catch (const std::exception& error)
