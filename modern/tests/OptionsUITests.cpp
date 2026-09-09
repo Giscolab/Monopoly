@@ -1,4 +1,5 @@
 #include "OptionsFilePlayback.hpp"
+#include "OptionsNavigationPlayback.hpp"
 #include "OptionsUI.hpp"
 #include "SyntheticSequenceResources.hpp"
 
@@ -135,6 +136,82 @@ namespace
             "File Cancel removes File screen from Overlay2D runtime");
     }
 
+    void testNavigationInputAndPlayback()
+    {
+        const std::array<data::DataTag, 4> idle{0x018E, 0x0192, 0x0186, 0x018A};
+        const std::array<data::DataTag, 4> ret{0x018F, 0x0193, 0x0187, 0x018B};
+        const std::array<data::DataTag, 4> press{0x0190, 0x0194, 0x0188, 0x018C};
+        require(optionsui::NavigationIdleTags == idle &&
+                optionsui::NavigationReturnTags == ret &&
+                optionsui::NavigationPressTags == press &&
+                optionsui::NavigationIdlePriorities == std::array<std::uint16_t, 4>{1006,1008,1004,1001} &&
+                optionsui::NavigationPressPriorities == std::array<std::uint16_t, 4>{1007,1009,1005,1003},
+            "Options navigation uses exact retail CNKs and idle/press priorities");
+
+        const std::array<int,4> xs{31,180,478,615};
+        const std::array<int,4> ys{494,493,490,490};
+        const std::array<int,4> widths{170,159,164,175};
+        const std::array<int,4> heights{59,60,63,62};
+        bool rects = true;
+        for (std::size_t i=0; i<4; ++i)
+        {
+            const auto r=optionsui::menuButtonRect(static_cast<optionsui::MenuButton>(i));
+            rects = rects && r.left==xs[i] && r.top==ys[i] &&
+                r.right==xs[i]+widths[i] && r.bottom==ys[i]+heights[i];
+        }
+        require(rects,
+            "Options navigation hotspots match retail File/Option/Credits/Help rectangles");
+        require(optionsui::menuButtonHit(181, 500) == optionsui::MenuButton::File,
+            "retail overlap resolves File before Option in index order");
+
+        optionsui::State state{};
+        require(optionsui::beginFromIBar(state, display::Screen2D::Main),
+            "navigation fixture enters Options from Main");
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        optionsui::NavigationPlayback nav;
+        require(nav.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount()==4,
+            "Options navigation opening queues four retail starts");
+        require(playback.update(0).has_value() &&
+                playback.runtime().matching(optionsui::navigationSequence(
+                    optionsui::MenuButton::File, optionsui::NavigationVisual::Press),1007).size()==1 &&
+                playback.runtime().matching(optionsui::navigationSequence(
+                    optionsui::MenuButton::Option, optionsui::NavigationVisual::Idle),1008).size()==1,
+            "Options navigation opens with File pressed and other menu buttons idle");
+
+        const auto optionRect=optionsui::menuButtonRect(optionsui::MenuButton::Option);
+        const auto optionClick=optionsui::processInput(state, display::Screen2D::Options,
+            click((optionRect.left+optionRect.right)/2, optionRect.top+1));
+        require(optionClick.pressedMenuButton==optionsui::MenuButton::Option &&
+                state.currentScreen==optionsui::Screen::Option,
+            "Options navigation click switches projection to Option screen");
+        require(nav.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount()==6,
+            "File-to-Option queues Stop/Return/Stay plus Stop/Press/Stay atomically");
+        require(playback.update(1).has_value() &&
+                nav.visual(optionsui::MenuButton::File)==optionsui::NavigationVisual::Return &&
+                nav.visual(optionsui::MenuButton::Option)==optionsui::NavigationVisual::Press &&
+                playback.runtime().matching(optionsui::navigationSequence(
+                    optionsui::MenuButton::File, optionsui::NavigationVisual::Return),1006).size()==1,
+            "previous File tab uses retail Return while Option becomes Press");
+
+        const auto creditsRect=optionsui::menuButtonRect(optionsui::MenuButton::Credits);
+        (void)optionsui::processInput(state, display::Screen2D::Options,
+            click(creditsRect.left+1, creditsRect.top+1));
+        require(nav.sync(state, display::Screen2D::Options, playback) &&
+                playback.commands().pendingCount()==6 && playback.update(2).has_value() &&
+                nav.visual(optionsui::MenuButton::File)==optionsui::NavigationVisual::Return &&
+                nav.visual(optionsui::MenuButton::Option)==optionsui::NavigationVisual::Return &&
+                nav.visual(optionsui::MenuButton::Credits)==optionsui::NavigationVisual::Press,
+            "navigation preserves older Return art and transfers Press to Credits");
+
+        (void)optionsui::processInput(state, display::Screen2D::Main, click(0,0));
+        require(nav.sync(state, display::Screen2D::Main, playback) &&
+                playback.commands().pendingCount()==4 && playback.update(3).has_value(),
+            "leaving Options stops exactly the four currently published navigation roots");
+    }
+
     void testTransactionalFailures()
     {
         optionsui::State state{};
@@ -167,6 +244,41 @@ namespace
         require(!noRoom && full.commands().pendingCount() == before &&
                 !fullFile.visible(),
             "insufficient FIFO preserves hidden File-screen state transactionally");
+
+
+        engine::SequencePlayback missingNavPlayback(nullptr);
+        optionsui::NavigationPlayback missingNav;
+        const auto missingNavResult = missingNav.sync(
+            state, display::Screen2D::Options, missingNavPlayback);
+        require(!missingNavResult && missingNavPlayback.commands().pendingCount() == 0 &&
+                missingNav.visual(optionsui::MenuButton::File) == optionsui::NavigationVisual::Off,
+            "missing navigation resources reject before queue mutation");
+
+        SyntheticSequenceResources navResources;
+        engine::SequencePlayback navPlayback(navResources.service.snapshot());
+        optionsui::NavigationPlayback nav;
+        require(nav.sync(state, display::Screen2D::Options, navPlayback) &&
+                navPlayback.update(0).has_value(),
+            "navigation FIFO fixture opens initial File state");
+        const auto optionRect = optionsui::menuButtonRect(optionsui::MenuButton::Option);
+        (void)optionsui::processInput(state, display::Screen2D::Options,
+            click((optionRect.left + optionRect.right) / 2, optionRect.top + 1));
+        bool navFilled = true;
+        for (std::size_t index = 0;
+             index < sequence::SequenceCommandQueue::Capacity - 5; ++index)
+        {
+            const auto queued = navPlayback.commands().enqueue(
+                sequence::StopSequenceCommand{data::EmptyDataId, 0, false});
+            navFilled = navFilled && queued.has_value();
+        }
+        require(navFilled,
+            "navigation FIFO fixture leaves five slots for six-command tab switch");
+        const auto navBefore = navPlayback.commands().pendingCount();
+        const auto navNoRoom = nav.sync(state, display::Screen2D::Options, navPlayback);
+        require(!navNoRoom && navPlayback.commands().pendingCount() == navBefore &&
+                nav.visual(optionsui::MenuButton::File) == optionsui::NavigationVisual::Press &&
+                nav.visual(optionsui::MenuButton::Option) == optionsui::NavigationVisual::Idle,
+            "insufficient FIFO preserves complete Options navigation state transactionally");
     }
 }
 
@@ -177,6 +289,7 @@ int main()
         testRetailContract();
         testFileInput();
         testFilePlayback();
+        testNavigationInputAndPlayback();
         testTransactionalFailures();
         return 0;
     }

@@ -26,6 +26,7 @@
 #include "TradeTokenPlayback.hpp"
 #include "TradeActionButtonPlayback.hpp"
 #include "OptionsFilePlayback.hpp"
+#include "OptionsNavigationPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
 #include "TradeOfferIconPlayback.hpp"
 #include "TradeCashDialogPlayback.hpp"
@@ -71,6 +72,7 @@ namespace monopoly::engine
         tradeui::TokenPlayback tradeTokenPlayback;
         tradeui::ActionButtonPlayback tradeActionButtonPlayback;
         optionsui::FilePlayback optionsFilePlayback;
+        optionsui::NavigationPlayback optionsNavigationPlayback;
         tradeui::PropertyPlayback tradePropertyPlayback;
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
         tradeui::CashDialogPlayback tradeCashDialogPlayback;
@@ -690,6 +692,12 @@ namespace monopoly::engine
             if (!optionsFileSync)
                 return SDL_SetError("Options File-screen playback: %s",
                     optionsFileSync.error().c_str());
+            const auto optionsNavigationSync = optionsNavigationPlayback.sync(
+                userinterface::optionsStateReadOnly(),
+                displayState.desired2DView, *session);
+            if (!optionsNavigationSync)
+                return SDL_SetError("Options navigation playback: %s",
+                    optionsNavigationSync.error().c_str());
             const auto tradePropertySync = tradePropertyPlayback.sync(
                 userinterface::tradeState(), ruleState,
                 displayState.desired2DView, tick, *session);
@@ -945,6 +953,7 @@ namespace monopoly::engine
         tradeTokenPlayback.reset();
         tradeActionButtonPlayback.reset();
         optionsFilePlayback.reset();
+        optionsNavigationPlayback.reset();
         tradePropertyPlayback.reset();
         tradeOfferIconPlayback.reset();
         tradeCashDialogPlayback.reset();

@@ -18,6 +18,15 @@ namespace monopoly::optionsui
         LoadGame
     };
 
+    enum class MenuButton : std::uint8_t
+    {
+        File = 0,
+        Option,
+        Credits,
+        Help,
+        Count
+    };
+
     enum class FileButton : std::uint8_t
     {
         NewGame = 0,
@@ -51,9 +60,12 @@ namespace monopoly::optionsui
     struct InputResult
     {
         std::optional<display::Screen2D> requestedBackdrop;
+        std::optional<MenuButton> pressedMenuButton;
         std::optional<FileButton> pressedFileButton;
     };
 
+    [[nodiscard]] Rect menuButtonRect(MenuButton button) noexcept;
+    [[nodiscard]] std::optional<MenuButton> menuButtonHit(int x, int y) noexcept;
     [[nodiscard]] Rect fileButtonRect(FileButton button) noexcept;
     [[nodiscard]] std::optional<FileButton> fileButtonHit(int x, int y) noexcept;
 

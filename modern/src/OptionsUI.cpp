@@ -11,6 +11,31 @@ namespace monopoly::optionsui
         inline constexpr int FileButtonX = 291;
         inline constexpr int FileButtonWidth = 220;
         inline constexpr int FileButtonHeight = 62;
+        inline constexpr std::array<int, 4> MenuButtonX{31, 180, 478, 615};
+        inline constexpr std::array<int, 4> MenuButtonY{494, 493, 490, 490};
+        inline constexpr std::array<int, 4> MenuButtonWidth{170, 159, 164, 175};
+        inline constexpr std::array<int, 4> MenuButtonHeight{59, 60, 63, 62};
+    }
+
+    Rect menuButtonRect(MenuButton button) noexcept
+    {
+        const auto index = static_cast<std::size_t>(button);
+        if (index >= MenuButtonX.size())
+            return {};
+        return {MenuButtonX[index], MenuButtonY[index],
+            MenuButtonX[index] + MenuButtonWidth[index],
+            MenuButtonY[index] + MenuButtonHeight[index]};
+    }
+
+    std::optional<MenuButton> menuButtonHit(int x, int y) noexcept
+    {
+        for (std::size_t index = 0; index < MenuButtonX.size(); ++index)
+        {
+            const auto button = static_cast<MenuButton>(index);
+            if (menuButtonRect(button).contains(x, y))
+                return button;
+        }
+        return std::nullopt;
     }
 
     Rect fileButtonRect(FileButton button) noexcept
@@ -58,11 +83,21 @@ namespace monopoly::optionsui
             state.active = false;
             return result;
         }
-        if (!state.active || state.currentScreen != Screen::File ||
-            message.type != uimsg::Type::MouseLeftDown)
+        if (!state.active || message.type != uimsg::Type::MouseLeftDown)
+            return result;
+
+        const auto menu = menuButtonHit(
+            static_cast<int>(message.numberA),
+            static_cast<int>(message.numberB));
+        if (menu)
         {
+            result.pressedMenuButton = menu;
+            state.currentScreen = static_cast<Screen>(static_cast<std::uint8_t>(*menu));
             return result;
         }
+
+        if (state.currentScreen != Screen::File)
+            return result;
 
         const auto button = fileButtonHit(
             static_cast<int>(message.numberA),
