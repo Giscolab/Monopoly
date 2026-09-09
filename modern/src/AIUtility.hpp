@@ -171,4 +171,17 @@ namespace monopoly::ai
     [[nodiscard]] MonopolyStage monopolyStage(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;
+    void testSellHouses(
+        rules::GameState& state,
+        const MonopolyLots& monopoly,
+        rules::board::SquareType testSquare) noexcept;
+    [[nodiscard]] rules::board::SquareType findLowestRentProperty(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::PropertySet properties) noexcept;
+    [[nodiscard]] rules::board::SquareType findHighestRentMortgaged(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::PropertySet properties,
+        std::int64_t topUnmortgageCost) noexcept;
 }

@@ -682,4 +682,138 @@ namespace monopoly::ai
             ? MonopolyStage::NoMonopolies
             : MonopolyStage::Buying;
     }
+
+    void testSellHouses(
+        rules::GameState& state,
+        const MonopolyLots& monopoly,
+        SquareType testSquare) noexcept
+    {
+        if (monopoly.count == 0)
+            return;
+
+        const int housesPerHotel = state.options.housesPerHotel;
+        int hotelsOnMonopoly{};
+        int housesOnLots{};
+        for (std::size_t index = 0; index < monopoly.count; ++index)
+        {
+            const auto houses = state.squares[indexOf(monopoly.squares[index])].houses;
+            if (houses == housesPerHotel)
+                ++hotelsOnMonopoly;
+            else
+                housesOnLots += houses;
+        }
+
+        const int totalHouseUnits =
+            hotelsOnMonopoly * housesPerHotel + housesOnLots;
+        int housesNeedToSell = 1;
+        if (hotelsOnMonopoly > 0 &&
+            freeHouses(state) < housesPerHotel - 1)
+        {
+            housesNeedToSell = hotelsOnMonopoly * housesPerHotel -
+                freeHouses(state);
+        }
+
+        const int remaining = totalHouseUnits - housesNeedToSell;
+        const int lotCount = static_cast<int>(monopoly.count);
+        const int minHouses = remaining / lotCount;
+        const int maxHouses = (remaining + lotCount - 1) / lotCount;
+        int maxHouseLots = remaining % lotCount;
+
+        for (std::size_t index = 0; index < monopoly.count; ++index)
+        {
+            const auto square = monopoly.squares[index];
+            if (square == testSquare)
+            {
+                state.squares[indexOf(square)].houses =
+                    static_cast<std::uint8_t>(minHouses);
+            }
+            else if (maxHouseLots > 0)
+            {
+                --maxHouseLots;
+                state.squares[indexOf(square)].houses =
+                    static_cast<std::uint8_t>(maxHouses);
+            }
+            else
+            {
+                state.squares[indexOf(square)].houses =
+                    static_cast<std::uint8_t>(minHouses);
+            }
+        }
+    }
+
+    SquareType findLowestRentProperty(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::PropertySet properties) noexcept
+    {
+        auto bestSquare = SquareType::Go;
+        double highestRemainingRent = -1.0;
+        const auto propertiesOwned = propertiesOwnedByPlayer(state, player);
+
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            const auto square = squareAt(index);
+            if ((properties & rules::board::propertyBit(square)) == 0 ||
+                state.squares[index].mortgaged)
+                continue;
+
+            auto candidate = state;
+            if (housesOnMonopoly(candidate, square) > 0)
+            {
+                const auto lots = monopolyLots(square);
+                testSellHouses(candidate, lots, square);
+            }
+            else
+            {
+                candidate.squares[index].mortgaged = true;
+            }
+
+            const auto remainingRent = averageRentReceived(
+                candidate, player, 0, false, 1.0, propertiesOwned);
+            if (highestRemainingRent < 0.0 ||
+                remainingRent > highestRemainingRent)
+            {
+                highestRemainingRent = remainingRent;
+                bestSquare = square;
+            }
+        }
+        return bestSquare;
+    }
+
+    SquareType findHighestRentMortgaged(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::PropertySet properties,
+        std::int64_t topUnmortgageCost) noexcept
+    {
+        auto bestSquare = SquareType::Go;
+        double highestRent = -1.0;
+        const auto propertiesOwned = propertiesOwnedByPlayer(state, player);
+
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            const auto square = squareAt(index);
+            if ((properties & rules::board::propertyBit(square)) == 0 ||
+                !state.squares[index].mortgaged)
+                continue;
+
+            const double cost = static_cast<double>(
+                rules::board::definition(square).mortgageCost) * 1.1;
+            if (cost > static_cast<double>(topUnmortgageCost))
+                continue;
+
+            auto candidate = state;
+            candidate.squares[index].mortgaged = false;
+            const auto currentRent = averageRentReceived(
+                candidate, player, 0, false, 1.0, propertiesOwned);
+            if (highestRent < 0.0 || currentRent > highestRent)
+            {
+                highestRent = currentRent;
+                bestSquare = square;
+            }
+        }
+        return bestSquare;
+    }
 }
