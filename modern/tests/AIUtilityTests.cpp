@@ -1,5 +1,6 @@
 #include "AIUtility.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -189,6 +190,80 @@ namespace
             "AI mortgage-count mode excludes mortgaged utilities from group count");
     }
 
+
+    void testExposureContracts()
+    {
+        require(std::abs(ai::landingFrequency(SquareType::Go) - 1.14) < 1e-12 &&
+                std::abs(ai::landingFrequency(SquareType::IllinoisAvenue) - 1.19) < 1e-12 &&
+                ai::landingFrequency(SquareType::InJail) == 0.0,
+            "AI landing-frequency table preserves retail constants");
+
+        rules::GameState state{};
+        state.numberOfPlayers = 3;
+        state.players[1].currentSquare = static_cast<std::uint8_t>(SquareType::LuxuryTax);
+        state.players[2].currentSquare = static_cast<std::uint8_t>(SquareType::InJail);
+        require(ai::playerCloseToProperty(state, 0, SquareType::BalticAvenue, 2, 12),
+            "AI proximity wraps from before GO to brown properties");
+        require(!ai::playerCloseToProperty(state, 0, SquareType::Boardwalk, 2, 12),
+            "AI proximity preserves one-direction retail distance window");
+        require(ai::someoneCloseToMonopoly(state, 0,
+                    ai::monopolyLots(SquareType::BalticAvenue)),
+            "AI monopoly proximity checks every lot using retail 2..12 window");
+
+        rules::GameState mortgage{};
+        mortgage.squares[static_cast<std::size_t>(SquareType::ParkPlace)].mortgaged = true;
+        mortgage.squares[static_cast<std::size_t>(SquareType::Boardwalk)].mortgaged = true;
+        require(ai::costUnmortgageMonopoly(mortgage, SquareType::Boardwalk) == 412,
+            "AI unmortgage cost truncates each retail 110-percent lot cost");
+        require(ai::isCashCow(SquareType::ReadingRailroad) &&
+                ai::isCashCow(SquareType::ElectricCompany) &&
+                !ai::isCashCow(SquareType::Boardwalk),
+            "AI cash-cow classification is railroad or utility only");
+    }
+
+    void testIncomeContracts()
+    {
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        state.players[0].cash = 1500;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        own(state, SquareType::BalticAvenue, 0);
+        require(ai::potentialIncome(state, 0) == 12,
+            "AI potential income preserves undeveloped monopoly double-rent rule");
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 1;
+        require(ai::potentialIncome(state, 0) == 258,
+            "AI potential income uses hotel rent only for already-developed lots");
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 0;
+
+        own(state, SquareType::ParkPlace, 1);
+        own(state, SquareType::Boardwalk, 1);
+        require(ai::mostExpensivePotentialIncome(state) == 1,
+            "AI potential-income ranking selects strict highest player");
+
+        rules::GameState rent{};
+        rent.numberOfPlayers = 2;
+        rent.players[0].cash = 1500;
+        own(rent, SquareType::ReadingRailroad, 1);
+        const auto rail = ai::propertiesOwnedByPlayer(rent, 1);
+        const double expectedRail = 25.0 * 1.14 / 7.0;
+        require(std::abs(ai::averageRentReceived(rent, 1, 0, false, 1.0, rail) -
+                    expectedRail) < 1e-12,
+            "AI average rent received applies landing frequency then divides by seven");
+        require(std::abs(ai::averageRentReceived(rent, 1, 0, false, 2.0, rail) -
+                    expectedRail * 2.0) < 1e-12,
+            "AI cash-cow multiplier applies to railroad average rent");
+
+        require(ai::averageRentPaid(rent, 0, 0, true, 1.0) == 17,
+            "AI average rent paid preserves retail income/luxury-tax arithmetic");
+        require(ai::averageRentPaid(rent, 0, 5, true, 1.0) == 14,
+            "AI average rent paid skips income tax after its board position");
+        rent.players[0].currentSquare = static_cast<std::uint8_t>(SquareType::InJail);
+        require(ai::minimumCalculatedExpenses(rent, 0) == 10,
+            "AI minimum expenses treats jail as Just Visiting before calculation");
+        rent.players[0].currentSquare = static_cast<std::uint8_t>(SquareType::OffBoard);
+        require(ai::minimumCalculatedExpenses(rent, 0) == -1,
+            "AI minimum expenses rejects off-board players like retail");
+    }
     void testAssetContracts()
     {
         rules::GameState state{};
@@ -224,6 +299,8 @@ int main()
         testOwnershipContracts();
         testHousingContracts();
         testRentContracts();
+        testExposureContracts();
+        testIncomeContracts();
         testAssetContracts();
         return 0;
     }
