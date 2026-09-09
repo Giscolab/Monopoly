@@ -591,4 +591,51 @@ namespace monopoly::ai
         return highestPlayer;
     }
 
+    HighestRentResult highestRentSquare(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        HighestRentResult result{};
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            const auto& squareState = state.squares[index];
+            if (squareState.mortgaged || squareState.owner == player ||
+                squareState.owner == rules::NobodyPlayer ||
+                squareState.owner == rules::BankPlayer)
+                continue;
+
+            const auto ownerProperties =
+                propertiesOwnedByPlayer(state, squareState.owner);
+            const auto square = squareAt(index);
+            const auto currentRent =
+                rentIfSteppedOn(state, square, ownerProperties);
+            if (currentRent > result.rent)
+            {
+                result.rent = currentRent;
+                result.square = square;
+            }
+        }
+        return result;
+    }
+
+    rules::PlayerNumber bestCurrentRent(
+        const rules::GameState& state) noexcept
+    {
+        double highestIncome{};
+        auto highestPlayer = rules::NobodyPlayer;
+        for (rules::PlayerNumber player = 0;
+             player < state.numberOfPlayers; ++player)
+        {
+            const auto owned = propertiesOwnedByPlayer(state, player);
+            const auto income = averageRentReceived(
+                state, player, 0, false, 1.0, owned);
+            if (income > highestIncome)
+            {
+                highestIncome = income;
+                highestPlayer = player;
+            }
+        }
+        return highestPlayer;
+    }
 }
