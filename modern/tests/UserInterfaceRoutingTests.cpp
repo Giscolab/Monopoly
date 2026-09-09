@@ -55,6 +55,20 @@ namespace monopoly::display
         return routingDisplayState;
     }
 
+    const State& stateReadOnly()
+    {
+        return routingDisplayState;
+    }
+
+    void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
+        bool lightingOn, bool board3DOn) noexcept
+    {
+        routingDisplayState.optionTokenAnimationsOn = tokenAnimationsOn;
+        routingDisplayState.optionCameraMovementOn = cameraMovementOn;
+        routingDisplayState.optionLightingOn = lightingOn;
+        routingDisplayState.game3DOn = board3DOn;
+    }
+
     void setBackdrop(Screen2D screen)
     {
         requestedBackdrop = screen;
@@ -303,6 +317,58 @@ namespace
                 requestedBackdrop == display::Screen2D::Trade &&
                 !userinterface::optionsStateReadOnly().active,
             "UDOpts File Cancel returns through UserInterface to saved IBar view");
+        runtime::reset();
+    }
+
+    void testOptionsSupportedToggleRouting()
+    {
+        using namespace monopoly;
+        runtime::reset();
+        runtime::state().gameInProgress = true;
+        userinterface::resetRuleProjection();
+        routingDisplayState = {};
+        routingDisplayState.current2DView = display::Screen2D::Trade;
+        routingDisplayState.desired2DView = display::Screen2D::Trade;
+        routingDisplayState.optionTokenAnimationsOn = true;
+        routingDisplayState.optionCameraMovementOn = true;
+        routingDisplayState.optionLightingOn = true;
+        routingDisplayState.game3DOn = true;
+        requestedBackdrop = display::Screen2D::Invalid;
+
+        expect(userinterface::beginOptionsFromIBar(),
+            "Options runtime-toggle fixture enters from Trade");
+        const auto tabRect = optionsui::menuButtonRect(optionsui::MenuButton::Option);
+        uimsg::Message tab{};
+        tab.type = uimsg::Type::MouseLeftDown;
+        tab.numberA = (tabRect.left + tabRect.right) / 2;
+        tab.numberB = tabRect.top + 1;
+        expect(userinterface::processUIMessage(tab) &&
+                userinterface::optionsStateReadOnly().optionSnapshotLoaded &&
+                userinterface::optionsStateReadOnly().optionOn[
+                    static_cast<std::size_t>(optionsui::OptionToggle::Camera)],
+            "entering Option tab snapshots supported DISPLAY runtime owners");
+
+        const auto cameraRect = optionsui::optionToggleRect(
+            optionsui::OptionToggle::Camera, true);
+        uimsg::Message toggle{};
+        toggle.type = uimsg::Type::MouseLeftDown;
+        toggle.numberA = cameraRect.left + 1;
+        toggle.numberB = cameraRect.top + 1;
+        expect(userinterface::processUIMessage(toggle) &&
+                !userinterface::optionsStateReadOnly().optionOn[
+                    static_cast<std::size_t>(optionsui::OptionToggle::Camera)] &&
+                routingDisplayState.optionCameraMovementOn,
+            "Option toggle remains temporary until retail OK is pressed");
+
+        uimsg::Message okay{};
+        okay.type = uimsg::Type::MouseLeftDown;
+        okay.numberA = 350;
+        okay.numberB = 450;
+        expect(userinterface::processUIMessage(okay) &&
+                !routingDisplayState.optionCameraMovementOn &&
+                requestedBackdrop == display::Screen2D::Trade &&
+                !userinterface::optionsStateReadOnly().active,
+            "Option OK applies supported runtime values then restores saved IBar view");
         runtime::reset();
     }
 
@@ -882,6 +948,8 @@ int main()
         << "====================================\n";
 
     testUiModuleOrder();
+    testOptionsEntryAndCancelRouting();
+    testOptionsSupportedToggleRouting();
     testAuctionBidRouting();
     testAuctionRuleRouting();
     testAuctionReadyResponses();
