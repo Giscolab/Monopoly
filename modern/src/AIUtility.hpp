@@ -26,6 +26,22 @@ namespace monopoly::ai
         std::int64_t rent{};
     };
 
+    struct MonopolyCollection
+    {
+        std::array<rules::board::SquareType, 8> representatives{};
+        std::size_t count{};
+    };
+
+    enum class MonopolyStage : std::uint8_t
+    {
+        Buying = 0,
+        NoMonopolies,
+        MonopoliesNotOwnOne,
+        MonopoliesOwnOne
+    };
+
+    inline constexpr int CriticalUnownedSquares = 2;
+
     inline constexpr std::array<rules::board::SquareType, 8>
         ExpensiveMonopolySquares{
             rules::board::SquareType::BalticAvenue,
@@ -146,4 +162,13 @@ namespace monopoly::ai
         rules::PlayerNumber player) noexcept;
     [[nodiscard]] rules::PlayerNumber bestCurrentRent(
         const rules::GameState& state) noexcept;
+    [[nodiscard]] MonopolyCollection monopoliesOwned(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool mortgageCounts) noexcept;
+    [[nodiscard]] int propertiesLeftToBuy(
+        const rules::GameState& state) noexcept;
+    [[nodiscard]] MonopolyStage monopolyStage(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept;
 }

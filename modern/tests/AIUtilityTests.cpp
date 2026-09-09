@@ -313,6 +313,72 @@ namespace
             "AI regression fixture proves retail paid-rent ranking would choose opponent");
     }
 
+    void testMonopolyStageContracts()
+    {
+        rules::GameState defaultState{};
+        defaultState.numberOfPlayers = 2;
+        require(ai::propertiesLeftToBuy(defaultState) == 22,
+            "AI stage counts only 22 colour-group properties as unowned");
+        require(ai::monopolyStage(defaultState, 0) == ai::MonopolyStage::Buying,
+            "AI stage starts in buying phase with many colour properties unowned");
+
+        rules::GameState sparse{};
+        sparse.numberOfPlayers = 2;
+        int leaveUnowned = 2;
+        for (const auto representative : ai::ExpensiveMonopolySquares)
+        {
+            const auto lots = ai::monopolyLots(representative);
+            for (std::size_t index = 0; index < lots.count; ++index)
+            {
+                if (leaveUnowned > 0)
+                {
+                    --leaveUnowned;
+                    continue;
+                }
+                own(sparse, lots.squares[index],
+                    static_cast<rules::PlayerNumber>(index % 2));
+            }
+        }
+        require(ai::propertiesLeftToBuy(sparse) == ai::CriticalUnownedSquares &&
+                !ai::anyMonopoly(sparse),
+            "AI stage fixture reaches retail two-unowned threshold without monopoly");
+        require(ai::monopolyStage(sparse, 0) == ai::MonopolyStage::NoMonopolies,
+            "AI stage switches to no-monopolies at retail threshold two");
+        own(sparse, SquareType::OrientalAvenue, rules::NobodyPlayer);
+        require(ai::propertiesLeftToBuy(sparse) == 3 &&
+                ai::monopolyStage(sparse, 0) == ai::MonopolyStage::Buying,
+            "AI stage remains buying above retail unowned threshold");
+
+        rules::GameState monopoly{};
+        monopoly.numberOfPlayers = 2;
+        own(monopoly, SquareType::MediterraneanAvenue, 1);
+        own(monopoly, SquareType::BalticAvenue, 1);
+        const auto owned = ai::monopoliesOwned(monopoly, 1, false);
+        require(owned.count == 1 && owned.representatives[0] == SquareType::BalticAvenue,
+            "AI monopoly collection stores retail expensive representative");
+        require(ai::monopolyStage(monopoly, 0) ==
+                    ai::MonopolyStage::MonopoliesNotOwnOne &&
+                ai::monopolyStage(monopoly, 1) ==
+                    ai::MonopolyStage::MonopoliesOwnOne,
+            "AI stage distinguishes owning and not owning existing monopoly");
+        monopoly.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].mortgaged = true;
+        require(ai::monopoliesOwned(monopoly, 1, false).count == 1 &&
+                ai::monopoliesOwned(monopoly, 1, true).count == 0,
+            "AI monopoly collection preserves mortgage-count switch");
+        require(ai::monopolyStage(monopoly, 1) == ai::MonopolyStage::MonopoliesOwnOne,
+            "AI stage ignores mortgage state like retail AI_Get_Monopolies(...,0)");
+
+        rules::GameState rail{};
+        rail.numberOfPlayers = 2;
+        for (const auto square : {SquareType::ReadingRailroad,
+                 SquareType::PennsylvaniaRailroad, SquareType::BAndORailroad,
+                 SquareType::ShortLineRailroad})
+            own(rail, square, 0);
+        require(ai::isMonopoly(rail, SquareType::ReadingRailroad) &&
+                ai::monopolyStage(rail, 0) == ai::MonopolyStage::Buying,
+            "AI stage excludes railroad monopoly quirk from strategic monopoly detection");
+    }
+
     void testAssetContracts()
     {
         rules::GameState state{};
@@ -351,6 +417,7 @@ int main()
         testExposureContracts();
         testIncomeContracts();
         testRentSelectionCorrections();
+        testMonopolyStageContracts();
         testAssetContracts();
         return 0;
     }

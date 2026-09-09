@@ -638,4 +638,48 @@ namespace monopoly::ai
         }
         return highestPlayer;
     }
+    MonopolyCollection monopoliesOwned(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool mortgageCounts) noexcept
+    {
+        MonopolyCollection result{};
+        for (const auto square : ExpensiveMonopolySquares)
+        {
+            if (ownsMonopoly(state, player, square, mortgageCounts))
+                result.representatives[result.count++] = square;
+        }
+        return result;
+    }
+
+    int propertiesLeftToBuy(const rules::GameState& state) noexcept
+    {
+        int count{};
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            if (state.squares[index].owner != rules::NobodyPlayer)
+                continue;
+            const auto group = rules::board::definition(squareAt(index)).group;
+            if (static_cast<std::size_t>(group) <=
+                static_cast<std::size_t>(SquareGroup::ParkPlace))
+                ++count;
+        }
+        return count;
+    }
+
+    MonopolyStage monopolyStage(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        if (anyMonopoly(state))
+        {
+            return monopoliesOwned(state, player, false).count != 0
+                ? MonopolyStage::MonopoliesOwnOne
+                : MonopolyStage::MonopoliesNotOwnOne;
+        }
+        return propertiesLeftToBuy(state) <= CriticalUnownedSquares
+            ? MonopolyStage::NoMonopolies
+            : MonopolyStage::Buying;
+    }
 }
