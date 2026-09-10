@@ -256,6 +256,76 @@ namespace
             "AI should-buy-house accepts exact truncated unmortgage-plus-house budget");
     }
 
+    void testWorthFactorsAndMortgageWorstProperty()
+    {
+        using ai::decision::WorthFactors;
+        auto worth = baseState();
+        worth.players[0].cash = 123;
+        own(worth, SquareType::MediterraneanAvenue, 0);
+        own(worth, SquareType::ReadingRailroad, 0);
+        own(worth, SquareType::PennsylvaniaRailroad, 0);
+        own(worth, SquareType::ElectricCompany, 0);
+        worth.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 2;
+
+        WorthFactors factors{};
+        factors.property[static_cast<std::size_t>(rules::board::definition(SquareType::MediterraneanAvenue).group)] = 1.5;
+        factors.cashCow[1] = 2.0;
+        factors.cashCow[4] = 3.0;
+
+        const auto& mediterranean = rules::board::definition(SquareType::MediterraneanAvenue);
+        const auto& reading = rules::board::definition(SquareType::ReadingRailroad);
+        const auto& pennsylvania = rules::board::definition(SquareType::PennsylvaniaRailroad);
+        const auto& electric = rules::board::definition(SquareType::ElectricCompany);
+        const auto expectedWorth =
+            static_cast<std::int64_t>(mediterranean.housePurchaseCost) * 2 +
+            static_cast<std::int64_t>(static_cast<double>(mediterranean.purchaseCost) * 1.5) +
+            static_cast<std::int64_t>(static_cast<double>(reading.purchaseCost) * 2.0) +
+            static_cast<std::int64_t>(static_cast<double>(pennsylvania.purchaseCost) * 2.0) +
+            static_cast<std::int64_t>(static_cast<double>(electric.purchaseCost) * 3.0) + 123;
+        require(ai::decision::totalWorthWithFactors(worth, 0, factors) == expectedWorth,
+            "AI factored worth includes buildings cash and count-specific cash-cow factors");
+        require(ai::decision::totalWorthWithFactors(worth, 2, factors) == 0,
+            "AI factored worth rejects invalid player safely");
+
+        auto roi = baseState();
+        roi.players[0].cash = 10;
+        own(roi, SquareType::OrientalAvenue, 0);
+        own(roi, SquareType::BalticAvenue, 0);
+        require(ai::decision::mortgageWorstProperty(roi, 0, false, false),
+            "AI mortgage worst property finds ordinary mortgage candidate");
+        require(roi.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].mortgaged &&
+                !roi.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].mortgaged &&
+                roi.players[0].cash == 10 + rules::board::definition(SquareType::OrientalAvenue).mortgageCost,
+            "AI mortgage worst property preserves retail ROI order and credits mortgage cash");
+
+        auto cashCow = baseState();
+        own(cashCow, SquareType::ReadingRailroad, 0);
+        own(cashCow, SquareType::PennsylvaniaRailroad, 0);
+        own(cashCow, SquareType::ElectricCompany, 0);
+        require(ai::decision::mortgageWorstProperty(cashCow, 0, false, false),
+            "AI mortgage worst property can sacrifice lone utility before two-railroad cash cow");
+        require(cashCow.squares[static_cast<std::size_t>(SquareType::ElectricCompany)].mortgaged &&
+                !cashCow.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged &&
+                !cashCow.squares[static_cast<std::size_t>(SquareType::PennsylvaniaRailroad)].mortgaged,
+            "AI mortgage worst property preserves minor-monopoly railroad utility exception");
+
+        auto monopoly = baseState();
+        own(monopoly, SquareType::MediterraneanAvenue, 0);
+        own(monopoly, SquareType::BalticAvenue, 0);
+        require(!ai::decision::mortgageWorstProperty(monopoly, 0, false, false),
+            "AI mortgage worst property protects monopoly when monopoly mortgaging is disabled");
+        require(ai::decision::mortgageWorstProperty(monopoly, 0, false, true),
+            "AI mortgage worst property reaches undeveloped-monopoly fallback");
+        const auto medMortgaged =
+            monopoly.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged;
+        const auto balticMortgaged =
+            monopoly.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].mortgaged;
+        require(medMortgaged != balticMortgaged,
+            "AI undeveloped-monopoly fallback fixes retail unsigned houses comparison bug");
+        require(!ai::decision::mortgageWorstProperty(monopoly, 2, false, true),
+            "AI mortgage worst property rejects invalid player safely");
+    }
+
     void testHypotheticalUnmortgageAndGiveAway()
     {
         using ai::decision::CashStrategy;
@@ -354,6 +424,7 @@ int main()
         testExcessCashStrategies();
         testHypotheticalBuilding();
         testShouldUnmortgageAndBuyHouse();
+        testWorthFactorsAndMortgageWorstProperty();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }

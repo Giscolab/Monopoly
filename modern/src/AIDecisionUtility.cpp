@@ -27,6 +27,36 @@ namespace monopoly::ai::decision
             return index < MonopolyAverageLandingFrequency.size()
                 ? MonopolyAverageLandingFrequency[index] : 0.0;
         }
+
+        inline constexpr std::array<rules::board::SquareType, 28> MortgageOrder{
+            rules::board::SquareType::MediterraneanAvenue,
+            rules::board::SquareType::OrientalAvenue,
+            rules::board::SquareType::VermontAvenue,
+            rules::board::SquareType::BalticAvenue,
+            rules::board::SquareType::ConnecticutAvenue,
+            rules::board::SquareType::StCharlesPlace,
+            rules::board::SquareType::StatesAvenue,
+            rules::board::SquareType::VirginiaAvenue,
+            rules::board::SquareType::StJamesPlace,
+            rules::board::SquareType::TennesseeAvenue,
+            rules::board::SquareType::NewYorkAvenue,
+            rules::board::SquareType::KentuckyAvenue,
+            rules::board::SquareType::IndianaAvenue,
+            rules::board::SquareType::IllinoisAvenue,
+            rules::board::SquareType::AtlanticAvenue,
+            rules::board::SquareType::VentnorAvenue,
+            rules::board::SquareType::MarvinGardens,
+            rules::board::SquareType::PacificAvenue,
+            rules::board::SquareType::NorthCarolinaAvenue,
+            rules::board::SquareType::PennsylvaniaAvenue,
+            rules::board::SquareType::ParkPlace,
+            rules::board::SquareType::Boardwalk,
+            rules::board::SquareType::ShortLineRailroad,
+            rules::board::SquareType::BAndORailroad,
+            rules::board::SquareType::PennsylvaniaRailroad,
+            rules::board::SquareType::ReadingRailroad,
+            rules::board::SquareType::ElectricCompany,
+            rules::board::SquareType::WaterWorks};
     }
 
     std::int64_t excessCashAvailable(
@@ -362,6 +392,155 @@ namespace monopoly::ai::decision
 
         return foundDeferredMonopoly
             ? HousePurchaseDecision::Later : HousePurchaseDecision::No;
+    }
+
+    std::int64_t totalWorthWithFactors(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const WorthFactors& factors) noexcept
+    {
+        using rules::board::SquareGroup;
+        using rules::board::SquareType;
+        if (state.numberOfPlayers > rules::MaxPlayers || player >= state.numberOfPlayers)
+            return 0;
+
+        const auto owned = ai::propertiesOwnedByPlayer(state, player);
+        const auto railroadCount = ai::numberRailroadsUtilitiesOwned(
+            state, player, SquareGroup::Railroad, false, owned);
+        const auto utilityCount = ai::numberRailroadsUtilitiesOwned(
+            state, player, SquareGroup::Utility, false, owned);
+
+        std::int64_t total{};
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            const auto square = static_cast<SquareType>(index);
+            const auto bit = rules::board::propertyBit(square);
+            if (bit == 0 || (owned & bit) == 0)
+                continue;
+
+            const auto& definition = rules::board::definition(square);
+            total += definition.housePurchaseCost * state.squares[index].houses;
+
+            double factor{};
+            if (definition.group == SquareGroup::Railroad && railroadCount > 0)
+            {
+                const auto factorIndex = static_cast<std::size_t>(railroadCount - 1);
+                if (factorIndex < 4)
+                    factor = factors.cashCow[factorIndex];
+            }
+            else if (definition.group == SquareGroup::Utility && utilityCount > 0)
+            {
+                const auto factorIndex = static_cast<std::size_t>(4 + utilityCount - 1);
+                if (factorIndex < factors.cashCow.size())
+                    factor = factors.cashCow[factorIndex];
+            }
+            else
+            {
+                const auto factorIndex = static_cast<std::size_t>(definition.group);
+                if (factorIndex < factors.property.size())
+                    factor = factors.property[factorIndex];
+            }
+            total += static_cast<std::int64_t>(
+                static_cast<double>(definition.purchaseCost) * factor);
+        }
+        return total + state.players[player].cash;
+    }
+
+    bool mortgageWorstProperty(
+        rules::GameState& state,
+        rules::PlayerNumber player,
+        bool sellHouses,
+        bool mortgageMonopoly) noexcept
+    {
+        using rules::board::SquareGroup;
+        using rules::board::SquareType;
+        if (state.numberOfPlayers > rules::MaxPlayers || player >= state.numberOfPlayers)
+            return false;
+
+        const auto owned = ai::propertiesOwnedByPlayer(state, player);
+        auto monopoliless = owned;
+        auto housingless = owned;
+
+        const auto mortgage = [&](SquareType square) {
+            const auto index = static_cast<std::size_t>(square);
+            state.players[player].cash += rules::board::definition(square).mortgageCost;
+            state.squares[index].mortgaged = true;
+        };
+
+        for (const auto square : MortgageOrder)
+        {
+            const auto bit = rules::board::propertyBit(square);
+            if (bit == 0 || (owned & bit) == 0)
+                continue;
+
+            const auto index = static_cast<std::size_t>(square);
+            // Retail tests unsigned-char houses >= 0, which is always true and
+            // empties the intended "housingless" set. Keep only genuinely
+            // undeveloped lots so the documented fallback can actually run.
+            if (state.squares[index].houses > 0)
+                housingless &= ~bit;
+
+            const bool monopoly = ai::ownsMonopoly(
+                state, player, square, mortgageMonopoly);
+            if (monopoly)
+                monopoliless &= ~bit;
+
+            if (state.squares[index].mortgaged)
+                continue;
+
+            const auto group = rules::board::definition(square).group;
+            int groupCount{};
+            if (group == SquareGroup::Railroad || group == SquareGroup::Utility)
+            {
+                groupCount = ai::numberRailroadsUtilitiesOwned(
+                    state, player, group,
+                    state.options.mortgagedCountsInGroupRent, owned);
+            }
+
+            if (!monopoly && groupCount < 2)
+            {
+                mortgage(square);
+                return true;
+            }
+        }
+
+        SquareType mortgageSquare = SquareType::Go;
+        if (!sellHouses && !mortgageMonopoly)
+        {
+            mortgageSquare = ai::findLowestRentProperty(
+                state, player, monopoliless);
+        }
+        else if (!sellHouses)
+        {
+            mortgageSquare = ai::findLowestRentProperty(
+                state, player, housingless);
+        }
+        else if (ai::housingShortage(state, CriticalHousingLevel))
+        {
+            mortgageSquare = ai::findLowestRentProperty(
+                state, player, housingless);
+            if (mortgageSquare == SquareType::Go)
+                mortgageSquare = ai::findLowestRentProperty(state, player, owned);
+        }
+        else
+        {
+            mortgageSquare = ai::findLowestRentProperty(state, player, owned);
+        }
+
+        if (mortgageSquare == SquareType::Go)
+            return false;
+
+        if (ai::housesOnMonopoly(state, mortgageSquare) > 0)
+        {
+            const auto lots = ai::monopolyLots(mortgageSquare);
+            ai::testSellHouses(state, lots, mortgageSquare);
+        }
+        else
+        {
+            mortgage(mortgageSquare);
+        }
+        return true;
     }
 
     bool shouldGiveAwayMonopoly(
