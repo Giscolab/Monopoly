@@ -998,6 +998,98 @@ namespace monopoly::ai::decision
         return ai::trade::tradeIsProper(state, proposals, immunities);
     }
 
+    CounterProposalPreflightResult counterProposalPreflight(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const ai::trade::TradeProposalList& currentTrade,
+        const CounterProposalPreflightInputs& inputs,
+        const CounterProposalPreflightConfig& config,
+        CounterProposalSession& session,
+        std::span<const ai::trade::FutureImmunityRecord> immunities) noexcept
+    {
+        CounterProposalPreflightResult result{};
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || inputs.proposedPlayer >= state.numberOfPlayers)
+            return result;
+
+        if (inputs.pendingActions != 0 || !state.tradeInProgress ||
+            inputs.playerSendingTrade || inputs.auctionOn)
+        {
+            result.status = CounterProposalStatus::InvalidTime;
+            return result;
+        }
+        if (!ai::trade::playerInvolvedInTrade(currentTrade[player]))
+        {
+            result.status = CounterProposalStatus::NotInvolved;
+            return result;
+        }
+        if (ai::trade::playerHasFutureOrImmunity(player, immunities))
+        {
+            result.status = CounterProposalStatus::FutureOrImmunity;
+            return result;
+        }
+        if (session.timesCounteredTrade >= config.tradeCounterLimit)
+        {
+            result.status = CounterProposalStatus::TooManyCounters;
+            return result;
+        }
+        if (session.timesCounteredTrade == 0 &&
+            ai::trade::propertiesAlreadyTraded(
+                session.propertyMemory, inputs.proposedPlayer,
+                currentTrade[player], config.numberTimesAllowPropertyTrade) != 0)
+        {
+            result.status = CounterProposalStatus::RepeatedProperties;
+            return result;
+        }
+        if (session.timesCounteredTrade == 0)
+            ai::trade::rememberTradedProperties(
+                session.propertyMemory, inputs.proposedPlayer, currentTrade[player]);
+
+        if (inputs.counterRoll > config.tradeCounterProbability &&
+            inputs.tradeAccept && session.timesCounteredTrade == 0)
+        {
+            result.status = CounterProposalStatus::ProbabilitySkipped;
+            return result;
+        }
+        result.evaluation = evaluateTrade(
+            state, player, player, currentTrade, config.evaluation);
+        if (session.timesCounteredTrade != 0 &&
+            result.evaluation <= session.lastTradeEvaluation)
+        {
+            result.status = CounterProposalStatus::NotSeriousTrader;
+            return result;
+        }
+        session.lastTradeEvaluation = result.evaluation;
+
+        auto preparedState = state;
+        if (config.evaluation.purchasingPlayer < state.numberOfPlayers &&
+            config.evaluation.purchasingProperty < rules::board::SquareType::InJail)
+            preparedState.squares[static_cast<std::size_t>(
+                config.evaluation.purchasingProperty)].owner = config.evaluation.purchasingPlayer;
+        result.preparation = ai::trade::createPlayerPropertyAttitudeList(
+            preparedState, player, currentTrade, config.playerAttitude);
+        if (result.preparation.tradePlayerCount < 1)
+        {
+            result.status = CounterProposalStatus::NoTradePartners;
+            return result;
+        }
+        if (result.preparation.tradePlayerCount == 1)
+        {
+            const auto partner = result.preparation.tradePlayers[0];
+            if (config.playerAttitude[partner] <= -1.0)
+            {
+                result.status = CounterProposalStatus::AnnoyedWithTrader;
+                return result;
+            }
+        }
+        result.averageAttitude = result.preparation.totalAttitude /
+            static_cast<double>(result.preparation.tradePlayerCount);
+        if (result.averageAttitude < -1.0)
+            result.averageAttitude = -1.0;
+        result.status = CounterProposalStatus::Ready;
+        return result;
+    }
+
     bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
