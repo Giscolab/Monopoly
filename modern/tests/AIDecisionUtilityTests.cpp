@@ -1,5 +1,6 @@
 #include "AIDecisionUtility.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -326,6 +327,61 @@ namespace
             "AI mortgage worst property rejects invalid player safely");
     }
 
+    void testWinningChances()
+    {
+        using ai::decision::CashStrategy;
+        using ai::decision::WinningChanceConfig;
+
+        auto unmortgage = baseState();
+        unmortgage.players[0].cash = 500;
+        own(unmortgage, SquareType::Boardwalk, 0);
+        unmortgage.squares[static_cast<std::size_t>(SquareType::Boardwalk)].mortgaged = true;
+        require(ai::decision::hypotheticalUnmortgageProperty(
+                    unmortgage, 0, true, CashStrategy::MinimumAmount, 0) == SquareType::Go &&
+                unmortgage.squares[static_cast<std::size_t>(SquareType::Boardwalk)].mortgaged,
+            "AI generic hypothetical unmortgage honors monopoly-only mode");
+
+        const auto unmortgageCost = static_cast<std::int64_t>(
+            static_cast<double>(rules::board::definition(SquareType::Boardwalk).mortgageCost) * 1.1);
+        require(ai::decision::hypotheticalUnmortgageProperty(
+                    unmortgage, 0, false, CashStrategy::MinimumAmount, 0) == SquareType::Boardwalk,
+            "AI generic hypothetical unmortgage selects highest-rent affordable property");
+        require(!unmortgage.squares[static_cast<std::size_t>(SquareType::Boardwalk)].mortgaged &&
+                unmortgage.players[0].cash == 500 - unmortgageCost,
+            "AI generic hypothetical unmortgage debits selected property cost instead of stale retail pointer");
+
+        auto equal = baseState();
+        equal.players[0].cash = 200;
+        equal.players[1].cash = 200;
+        WinningChanceConfig config{};
+        config.buyingStageCashMultiplier = 0.05;
+        config.noMonopolyStageCashMultiplier = 0.025;
+        config.cashLiquidAssetsDependence = 1.01;
+        config.monopolyNotOwnedStageCashMultiplier = 0.01;
+        config.monopolyOwnedStageCashMultiplier = 0.1;
+        std::array<double, rules::MaxPlayers> chances{};
+        require(ai::decision::evaluateWinningChances(
+                    equal, rules::NobodyPlayer, config, chances) == 0.0,
+            "AI winning-chance bulk mode preserves retail zero return contract");
+        require(std::abs(chances[0] - 0.5) < 1e-12 &&
+                std::abs(chances[1] - 0.5) < 1e-12,
+            "AI winning chances normalize symmetric players to equal odds");
+
+        auto richer = equal;
+        richer.players[0].cash = 1000;
+        richer.players[1].cash = 0;
+        const auto richerChance = ai::decision::evaluateWinningChances(richer, 0, config);
+        require(richerChance > 0.5 && richerChance < 1.0,
+            "AI winning chances value liquid assets during buying stage");
+
+        config.moneyOwed[0] = 1000;
+        const auto debtChance = ai::decision::evaluateWinningChances(richer, 0, config);
+        require(debtChance < richerChance && debtChance < 0.5,
+            "AI winning chances include per-player debt while preserving retail tax asymmetry");
+        require(ai::decision::evaluateWinningChances(equal, 2, config) == 0.0,
+            "AI winning chances reject invalid single-player query safely");
+    }
+
     void testHypotheticalUnmortgageAndGiveAway()
     {
         using ai::decision::CashStrategy;
@@ -425,6 +481,7 @@ int main()
         testHypotheticalBuilding();
         testShouldUnmortgageAndBuyHouse();
         testWorthFactorsAndMortgageWorstProperty();
+        testWinningChances();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
