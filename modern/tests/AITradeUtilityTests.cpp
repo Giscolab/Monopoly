@@ -459,6 +459,99 @@ namespace
             "AI non-monopoly partner rejects invalid seeker safely");
     }
 
+    void testTradeCadenceContracts()
+    {
+        rules::GameState monopoly{};
+        monopoly.numberOfPlayers = 3;
+        monopoly.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        monopoly.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        require(ai::trade::onlyPlayerHasMonopoly(monopoly, 0),
+            "AI only-monopoly check accepts sole monopoly owner when opponents cannot trade for one");
+        require(!ai::trade::onlyPlayerHasMonopoly(monopoly, 1),
+            "AI only-monopoly check rejects player that owns no monopoly");
+
+        monopoly.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].owner = 1;
+        monopoly.squares[static_cast<std::size_t>(SquareType::VermontAvenue)].owner = 1;
+        monopoly.squares[static_cast<std::size_t>(SquareType::ConnecticutAvenue)].owner = 1;
+        require(!ai::trade::onlyPlayerHasMonopoly(monopoly, 0),
+            "AI only-monopoly check rejects when another player already owns monopoly");
+
+        rules::GameState synthetic{};
+        synthetic.numberOfPlayers = 3;
+        synthetic.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        synthetic.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        for (const auto square : {SquareType::OrientalAvenue, SquareType::ConnecticutAvenue,
+                 SquareType::StCharlesPlace, SquareType::VirginiaAvenue})
+            synthetic.squares[static_cast<std::size_t>(square)].owner = 1;
+        for (const auto square : {SquareType::VermontAvenue, SquareType::StatesAvenue})
+            synthetic.squares[static_cast<std::size_t>(square)].owner = 2;
+        require(ai::trade::onlyPlayerHasMonopoly(synthetic, 0),
+            "AI only-monopoly preserves synthetic-player quirk requiring N+1 opponent monopolies");
+        synthetic.squares[static_cast<std::size_t>(SquareType::StJamesPlace)].owner = 1;
+        synthetic.squares[static_cast<std::size_t>(SquareType::NewYorkAvenue)].owner = 1;
+        synthetic.squares[static_cast<std::size_t>(SquareType::TennesseeAvenue)].owner = 2;
+        require(!ai::trade::onlyPlayerHasMonopoly(synthetic, 0),
+            "AI only-monopoly detects opponent subset able to form enough monopolies");
+
+        const std::array<std::int64_t, 4> tradeTimes{9, 0, 3, 0};
+        require(ai::trade::findFreeTradeSpot(tradeTimes, 3) == 1,
+            "AI free-trade spot preserves first-zero scan order");
+        require(ai::trade::findFreeTradeSpot(tradeTimes, 1) == -1,
+            "AI free-trade spot respects configured max-trades prefix");
+        require(ai::trade::findFreeTradeSpot(tradeTimes, 5) == -1,
+            "AI free-trade spot rejects oversized strategy table safely");
+
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        std::array<std::int64_t, 2> slots{0, 4};
+        ai::trade::TradeCadenceInputs inputs{};
+        inputs.proposalRoll = 1.0;
+        inputs.giveAwayRoll = 1.0;
+        require(!ai::trade::shouldTrade(state, 0, 0, slots, 2,
+                    ai::trade::TradeCadenceInputs{true}),
+            "AI trade cadence blocks while AI trade message is already stacked");
+        state.tradeInProgress = true;
+        require(!ai::trade::shouldTrade(state, 0, 0, slots, 2, inputs),
+            "AI trade cadence blocks while rules trade is in progress");
+        state.tradeInProgress = false;
+        inputs.buySellMortgagePlayer = 1;
+        require(!ai::trade::shouldTrade(state, 0, 0, slots, 2, inputs),
+            "AI trade cadence blocks another player's buy-sell-mortgage action");
+        inputs.buySellMortgagePlayer = rules::NobodyPlayer;
+        const std::array<std::int64_t, 2> fullSlots{1, 2};
+        require(!ai::trade::shouldTrade(state, 0, 0, fullSlots, 2, inputs),
+            "AI trade cadence blocks when no recent-trade slot is free");
+
+        require(ai::trade::shouldTrade(state, 0, ai::trade::TradeSomewhatImportant,
+                    slots, 2, inputs),
+            "AI somewhat-important trade bypasses probability like retail");
+        inputs.shouldGiveAwayMonopoly = true;
+        inputs.giveAwayRoll = 0.25;
+        inputs.giveAwayProbability = 0.25;
+        require(ai::trade::shouldTrade(state, 0, 0, slots, 2, inputs),
+            "AI giveaway probability preserves inclusive retail boundary");
+        inputs.giveAwayRoll = 0.6;
+        inputs.giveAwayProbability = 0.5;
+        inputs.proposalRoll = 0.4;
+        inputs.proposalProbability = 0.4;
+        require(ai::trade::shouldTrade(state, 0, 0, slots, 2, inputs),
+            "AI failed giveaway falls through to second normal proposal roll");
+
+        rules::GameState required{};
+        required.numberOfPlayers = 2;
+        required.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 1;
+        required.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        inputs = {};
+        inputs.proposalRoll = 0.5;
+        inputs.monopolyProbability = 0.5;
+        inputs.proposalProbability = 0.0;
+        require(ai::trade::shouldTrade(required, 0, 0, slots, 2, inputs),
+            "AI required-monopoly cadence uses dedicated monopoly proposal probability");
+        inputs.proposalRoll = 0.6;
+        require(!ai::trade::shouldTrade(required, 0, 0, slots, 2, inputs),
+            "AI required-monopoly cadence rejects roll above monopoly probability");
+    }
+
     void testTradeProposalContracts()
     {
         using ai::trade::TradeProposalList;
@@ -532,6 +625,7 @@ int main()
         testTransferAndPossibleMonopolyContracts();
         testShouldTradeForMonopoly();
         testFindNonmonopolyPlayer();
+        testTradeCadenceContracts();
         testTradeProposalContracts();
         testAddTradeItemContracts();
         testTradeMutationAndMonopolyDetection();

@@ -6,8 +6,8 @@ namespace monopoly::ai::trade
 {
     namespace
     {
-        [[nodiscard]] MonopolyTradeGroup findRecursive(
-            rules::PlayerNumber player,
+        [[nodiscard]] MonopolyTradeGroup findRecursiveFromBase(
+            rules::board::PropertySet baseProperties,
             rules::board::PropertySet monopoly,
             std::array<rules::PlayerNumber, rules::MaxPlayers> list,
             std::size_t count,
@@ -16,7 +16,7 @@ namespace monopoly::ai::trade
             if (count == 0)
                 return {};
 
-            auto combined = properties[player];
+            auto combined = baseProperties;
             for (std::size_t index = 0; index < count; ++index)
                 combined |= properties[list[index]];
 
@@ -34,8 +34,8 @@ namespace monopoly::ai::trade
             for (std::size_t index = 0; index < count; ++index)
             {
                 std::swap(list[count - 1], list[index]);
-                const auto current = findRecursive(
-                    player, monopoly, list, count - 1, properties);
+                const auto current = findRecursiveFromBase(
+                    baseProperties, monopoly, list, count - 1, properties);
                 if (current.count != 0 &&
                     (best.count == 0 || current.count < best.count))
                 {
@@ -45,6 +45,17 @@ namespace monopoly::ai::trade
             }
 
             return best;
+        }
+
+        [[nodiscard]] MonopolyTradeGroup findRecursive(
+            rules::PlayerNumber player,
+            rules::board::PropertySet monopoly,
+            std::array<rules::PlayerNumber, rules::MaxPlayers> list,
+            std::size_t count,
+            const PropertySets& properties) noexcept
+        {
+            return findRecursiveFromBase(
+                properties[player], monopoly, list, count, properties);
         }
     }
 
@@ -216,6 +227,109 @@ namespace monopoly::ai::trade
             }
         }
         return highestPlayer;
+    }
+
+    bool onlyPlayerHasMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return false;
+
+        bool playerIsOnlyOwner{};
+        for (rules::PlayerNumber current = 0;
+             current < state.numberOfPlayers; ++current)
+        {
+            if (ai::playerOwnsMonopoly(state, current, false))
+            {
+                if (current == player)
+                    playerIsOnlyOwner = true;
+                else
+                    return false;
+            }
+            else if (current == player)
+            {
+                return false;
+            }
+        }
+
+        if (!playerIsOnlyOwner)
+            return false;
+
+        PropertySets properties{};
+        std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+        std::size_t candidateCount{};
+        for (rules::PlayerNumber current = 0;
+             current < state.numberOfPlayers; ++current)
+        {
+            properties[current] = ai::propertiesOwnedByPlayer(state, current);
+            if (current == player ||
+                state.players[current].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
+                continue;
+            candidates[candidateCount++] = current;
+        }
+
+        // Retail calls AI_Find_Smallest_Monopoly_Trade with RULE_MAX_PLAYERS
+        // as a synthetic player whose property set is empty. Preserve that quirk:
+        // N real opponents therefore need at least N+1 monopolies between them.
+        for (const auto representative : ai::ExpensiveMonopolySquares)
+        {
+            const auto possible = findRecursiveFromBase(
+                0, ai::monopolySet(representative), candidates, candidateCount, properties);
+            if (possible.count != 0)
+                return false;
+        }
+        return true;
+    }
+
+    int findFreeTradeSpot(
+        std::span<const std::int64_t> timeLastTrade,
+        std::size_t maxTrades) noexcept
+    {
+        if (maxTrades == 0 || maxTrades > timeLastTrade.size())
+            return -1;
+        for (std::size_t index = 0; index < maxTrades; ++index)
+        {
+            if (timeLastTrade[index] == 0)
+                return static_cast<int>(index);
+        }
+        return -1;
+    }
+
+    bool shouldTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::uint8_t importance,
+        std::span<const std::int64_t> timeLastTrade,
+        std::size_t maxTrades,
+        const TradeCadenceInputs& inputs) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return false;
+
+        if (inputs.playerSendingTrade || state.tradeInProgress ||
+            (inputs.buySellMortgagePlayer != player &&
+             inputs.buySellMortgagePlayer != rules::NobodyPlayer))
+            return false;
+
+        if (findFreeTradeSpot(timeLastTrade, maxTrades) < 0)
+            return false;
+
+        if ((importance & TradeSomewhatImportant) != 0)
+            return true;
+
+        if (inputs.shouldGiveAwayMonopoly &&
+            inputs.giveAwayRoll <= inputs.giveAwayProbability)
+            return true;
+
+        const auto monopolyDecision = shouldTradeForMonopoly(state, player);
+        const auto probability = monopolyDecision == MonopolyTradeDecision::Required
+            ? inputs.monopolyProbability
+            : inputs.proposalProbability;
+        return inputs.proposalRoll <= probability;
     }
 
     bool playerInvolvedInTrade(
