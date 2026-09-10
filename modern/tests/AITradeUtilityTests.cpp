@@ -552,6 +552,24 @@ namespace
             "AI required-monopoly cadence rejects roll above monopoly probability");
     }
 
+    void testCashMultiplierContracts()
+    {
+        ai::trade::CashMultiplierTable multipliers{};
+        for (std::size_t index = 0; index < multipliers.size(); ++index)
+            multipliers[index] = 10.0 + static_cast<double>(index);
+
+        require(ai::trade::cashMultiplier(-1.0, multipliers) == 10.0,
+            "AI cash multiplier clamps lower attitude and preserves index-zero direct value");
+        require(ai::trade::cashMultiplier(-0.95, multipliers) == 10.0,
+            "AI cash multiplier uses first table entry throughout the first attitude bin");
+        require(ai::trade::cashMultiplier(0.0, multipliers) == 19.0,
+            "AI cash multiplier preserves retail zero-attitude interpolation quirk");
+        require(ai::trade::cashMultiplier(0.25, multipliers) == 21.25,
+            "AI cash multiplier uses attitude fractional part rather than 0.1-bin position");
+        const auto upper = ai::trade::cashMultiplier(1.0, multipliers);
+        require(upper > 28.99 && upper < 29.0,
+            "AI cash multiplier clamps upper attitude below one and interpolates final entries");
+    }
     void testTradeProposalContracts()
     {
         using ai::trade::TradeProposalList;
@@ -626,6 +644,7 @@ int main()
         testShouldTradeForMonopoly();
         testFindNonmonopolyPlayer();
         testTradeCadenceContracts();
+        testCashMultiplierContracts();
         testTradeProposalContracts();
         testAddTradeItemContracts();
         testTradeMutationAndMonopolyDetection();

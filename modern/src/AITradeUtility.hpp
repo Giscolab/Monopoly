@@ -112,6 +112,13 @@ namespace monopoly::ai::trade
         std::size_t maxTrades,
         const TradeCadenceInputs& inputs) noexcept;
 
+    inline constexpr std::size_t WhatToTradeEntries = 20;
+    using CashMultiplierTable = std::array<double, WhatToTradeEntries>;
+
+    [[nodiscard]] double cashMultiplier(
+        double attitude,
+        const CashMultiplierTable& multipliers) noexcept;
+
     [[nodiscard]] bool playerInvolvedInTrade(
         const TradeProposalRecord& proposal) noexcept;
     [[nodiscard]] rules::PlayerNumber nextPlayerWantingCash(

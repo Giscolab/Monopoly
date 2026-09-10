@@ -1,6 +1,7 @@
 #include "AITradeUtility.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace monopoly::ai::trade
 {
@@ -330,6 +331,28 @@ namespace monopoly::ai::trade
             ? inputs.monopolyProbability
             : inputs.proposalProbability;
         return inputs.proposalRoll <= probability;
+    }
+
+    double cashMultiplier(
+        double attitude,
+        const CashMultiplierTable& multipliers) noexcept
+    {
+        if (attitude <= -1.0)
+            attitude = -0.999;
+        if (attitude >= 1.0)
+            attitude = 0.999;
+
+        auto index = static_cast<std::size_t>((attitude + 1.0) * 10.0);
+        if (index >= WhatToTradeEntries)
+            index = WhatToTradeEntries - 1;
+
+        // Preserve retail's interpolation quirk: it uses the fractional part
+        // of attitude itself, not the fractional position within the 0.1 bin.
+        attitude -= std::floor(attitude);
+        if (index == 0)
+            return multipliers[0];
+        return multipliers[index] * attitude +
+            multipliers[index - 1] * (1.0 - attitude);
     }
 
     bool playerInvolvedInTrade(
