@@ -1413,6 +1413,7 @@ if(BUILD_TESTING)
         MonopolyAIDecisionUtilityTests
         tests/AIDecisionUtilityTests.cpp
         src/AIDecisionUtility.cpp
+        src/AITradeUtility.cpp
         src/AIUtility.cpp
         src/BoardRules.cpp
     )

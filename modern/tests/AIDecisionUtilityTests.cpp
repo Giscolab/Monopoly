@@ -144,6 +144,92 @@ namespace
         require(!ai::decision::hypotheticalBuyHouse(broke, 0),
             "AI hypothetical builder refuses zero liquid assets");
     }
+    void testHypotheticalUnmortgageAndGiveAway()
+    {
+        using ai::decision::CashStrategy;
+        auto unmortgage = baseState();
+        unmortgage.players[0].cash = 1000;
+        for (const auto square : {SquareType::MediterraneanAvenue, SquareType::BalticAvenue,
+                 SquareType::OrientalAvenue, SquareType::VermontAvenue, SquareType::ConnecticutAvenue})
+            own(unmortgage, square, 0);
+        unmortgage.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        unmortgage.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].mortgaged = true;
+        require(ai::decision::hypotheticalUnmortgageMonopolyProperty(
+                    unmortgage, 0, CashStrategy::MinimumAmount, 0) == SquareType::OrientalAvenue,
+            "AI hypothetical unmortgage scans non-brown monopolies before brown like retail");
+        require(!unmortgage.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].mortgaged &&
+                unmortgage.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged,
+            "AI hypothetical unmortgage mutates only selected property");
+        require(unmortgage.players[0].cash == 945,
+            "AI hypothetical unmortgage debits truncated 110-percent Oriental cost");
+        require(ai::decision::hypotheticalUnmortgageMonopolyProperty(
+                    unmortgage, 0, CashStrategy::MinimumAmount, 0) == SquareType::MediterraneanAvenue,
+            "AI hypothetical unmortgage falls back to brown monopoly after later groups");
+
+        auto floatingEdge = baseState();
+        floatingEdge.players[0].cash = 220;
+        own(floatingEdge, SquareType::ParkPlace, 0);
+        own(floatingEdge, SquareType::Boardwalk, 0);
+        floatingEdge.squares[static_cast<std::size_t>(SquareType::Boardwalk)].mortgaged = true;
+        require(ai::decision::hypotheticalUnmortgageMonopolyProperty(
+                    floatingEdge, 0, CashStrategy::MinimumAmount, 0) == SquareType::Go,
+            "AI hypothetical unmortgage preserves retail floating 110-percent exact-ceiling rejection");
+        ++floatingEdge.players[0].cash;
+        require(ai::decision::hypotheticalUnmortgageMonopolyProperty(
+                    floatingEdge, 0, CashStrategy::MinimumAmount, 0) == SquareType::Boardwalk &&
+                floatingEdge.players[0].cash == 1,
+            "AI hypothetical unmortgage accepts one-dollar-above floating ceiling and truncates debit");
+
+        auto noMonopoly = baseState();
+        noMonopoly.numberOfPlayers = 3;
+        noMonopoly.players[1].cash = 500;
+        require(!ai::decision::shouldGiveAwayMonopoly(
+                    noMonopoly, 0, CashStrategy::MinimumAmount, 0, 3),
+            "AI monopoly giveaway rejects player without monopoly");
+
+        auto shortage = baseState();
+        shortage.numberOfPlayers = 3;
+        shortage.options.maximumHouses = ai::decision::CriticalHousingLevel;
+        shortage.players[1].cash = 500;
+        own(shortage, SquareType::MediterraneanAvenue, 0);
+        own(shortage, SquareType::BalticAvenue, 0);
+        own(shortage, SquareType::ParkPlace, 2);
+        own(shortage, SquareType::Boardwalk, 2);
+        require(!ai::decision::shouldGiveAwayMonopoly(
+                    shortage, 0, CashStrategy::MinimumAmount, 0, 3),
+            "AI monopoly giveaway rejects inclusive retail critical housing shortage");
+
+        auto giveaway = baseState();
+        giveaway.numberOfPlayers = 3;
+        giveaway.players[0].cash = 100;
+        giveaway.players[1].cash = 500;
+        own(giveaway, SquareType::MediterraneanAvenue, 0);
+        own(giveaway, SquareType::BalticAvenue, 0);
+        own(giveaway, SquareType::ParkPlace, 2);
+        own(giveaway, SquareType::Boardwalk, 2);
+        require(ai::decision::shouldGiveAwayMonopoly(
+                    giveaway, 0, CashStrategy::MinimumAmount, 0, 3),
+            "AI monopoly giveaway survives simulation when owned monopoly remains lightly developed");
+
+        auto developed = giveaway;
+        developed.players[0].cash = 0;
+        developed.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 4;
+        developed.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].houses = 4;
+        require(!ai::decision::shouldGiveAwayMonopoly(
+                    developed, 0, CashStrategy::MinimumAmount, 0, 3),
+            "AI monopoly giveaway rejects monopoly above configured houses-per-square threshold");
+        require(ai::decision::shouldGiveAwayMonopoly(
+                    developed, 0, CashStrategy::MinimumAmount, 0, 4),
+            "AI monopoly giveaway preserves inclusive houses-per-square threshold");
+
+        auto soleOwner = giveaway;
+        soleOwner.squares[static_cast<std::size_t>(SquareType::ParkPlace)].owner = rules::NobodyPlayer;
+        soleOwner.squares[static_cast<std::size_t>(SquareType::Boardwalk)].owner = rules::NobodyPlayer;
+        require(!ai::decision::shouldGiveAwayMonopoly(
+                    soleOwner, 0, CashStrategy::MinimumAmount, 0, 3),
+            "AI monopoly giveaway rejects sole monopoly owner when opponents cannot trade for one");
+    }
+
 }
 
 int main()
@@ -155,6 +241,7 @@ int main()
         testRetailConstants();
         testExcessCashStrategies();
         testHypotheticalBuilding();
+        testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
     catch (const std::exception& error)

@@ -1,4 +1,5 @@
 #include "AIDecisionUtility.hpp"
+#include "AITradeUtility.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -197,4 +198,95 @@ namespace monopoly::ai::decision
             rules::board::definition(bestSquare).housePurchaseCost;
         return true;
     }
+    rules::board::SquareType hypotheticalUnmortgageMonopolyProperty(
+        rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed) noexcept
+    {
+        using rules::board::SquareType;
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategy >= CashStrategy::Count)
+            return SquareType::Go;
+
+        const auto owned = ai::propertiesOwnedByPlayer(state, player);
+        const auto excess = excessCashAvailable(
+            state, player, false, strategy, minCashOnHand, moneyOwed);
+
+        const auto tryRange = [&](std::size_t begin, std::size_t endExclusive) {
+            for (std::size_t index = begin; index < endExclusive; ++index)
+            {
+                const auto square = static_cast<SquareType>(index);
+                auto& runtime = state.squares[index];
+                const auto bit = rules::board::propertyBit(square);
+                if (!runtime.mortgaged || bit == 0 || (owned & bit) == 0 ||
+                    !ai::testForMonopoly(owned, square))
+                    continue;
+
+                const auto rawCost = static_cast<double>(
+                    rules::board::definition(square).mortgageCost) * 1.1;
+                // Preserve the retail comparison against the untruncated double.
+                if (static_cast<double>(excess) < rawCost)
+                    continue;
+
+                runtime.mortgaged = false;
+                state.players[player].cash -= static_cast<std::int64_t>(rawCost);
+                return square;
+            }
+            return SquareType::Go;
+        };
+
+        auto square = tryRange(
+            static_cast<std::size_t>(SquareType::OrientalAvenue),
+            static_cast<std::size_t>(SquareType::InJail));
+        if (square != SquareType::Go)
+            return square;
+
+        return tryRange(
+            static_cast<std::size_t>(SquareType::Go),
+            static_cast<std::size_t>(SquareType::BalticAvenue) + 1);
+    }
+
+    bool shouldGiveAwayMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        int maxHousesPerSquareForGiveAway,
+        std::span<const std::int64_t> moneyOwed) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategy >= CashStrategy::Count)
+            return false;
+        if (!ai::playerOwnsMonopoly(state, player, false) ||
+            ai::housingShortage(state, CriticalHousingLevel) ||
+            trade::findNonmonopolyPlayer(state, player, moneyOwed) == rules::NobodyPlayer ||
+            trade::onlyPlayerHasMonopoly(state, player))
+            return false;
+
+        auto simulated = state;
+        const auto debt = player < moneyOwed.size() ? moneyOwed[player] : 0;
+        while (hypotheticalUnmortgageMonopolyProperty(
+            simulated, player, strategy, minCashOnHand, debt) !=
+            rules::board::SquareType::Go)
+        {
+        }
+        while (hypotheticalBuyHouse(simulated, player, debt))
+        {
+        }
+
+        const auto monopolies = ai::monopoliesOwned(simulated, player, false);
+        for (std::size_t index = 0; index < monopolies.count; ++index)
+        {
+            const auto representative = monopolies.representatives[index];
+            const auto lots = ai::monopolyLots(representative);
+            const auto houses = ai::housesOnMonopoly(simulated, representative);
+            if (houses <= static_cast<std::int64_t>(lots.count) *
+                    maxHousesPerSquareForGiveAway)
+                return true;
+        }
+        return false;
+    }
+
 }

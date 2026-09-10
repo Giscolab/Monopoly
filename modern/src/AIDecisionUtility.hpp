@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 namespace monopoly::ai::decision
 {
@@ -32,4 +33,21 @@ namespace monopoly::ai::decision
         rules::GameState& state,
         rules::PlayerNumber player,
         std::int64_t moneyOwed = 0) noexcept;
+
+    inline constexpr std::uint8_t CriticalHousingLevel = 3;
+
+    [[nodiscard]] rules::board::SquareType hypotheticalUnmortgageMonopolyProperty(
+        rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed = 0) noexcept;
+
+    [[nodiscard]] bool shouldGiveAwayMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        int maxHousesPerSquareForGiveAway,
+        std::span<const std::int64_t> moneyOwed = {}) noexcept;
 }
