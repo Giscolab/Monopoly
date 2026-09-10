@@ -80,6 +80,37 @@ namespace monopoly::ai::trade
         const rules::GameState& state,
         rules::PlayerNumber player,
         std::span<const std::int64_t> moneyOwed = {}) noexcept;
+    [[nodiscard]] bool onlyPlayerHasMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept;
+    [[nodiscard]] int findFreeTradeSpot(
+        std::span<const std::int64_t> timeLastTrade,
+        std::size_t maxTrades) noexcept;
+
+    inline constexpr std::uint8_t TradeSomewhatImportant = 1u << 0;
+    inline constexpr std::uint8_t TradeDesperate = 1u << 1;
+    inline constexpr std::uint8_t TradeForCash = 1u << 2;
+    inline constexpr std::uint8_t TradeGiveMonopoly = 1u << 3;
+
+    struct TradeCadenceInputs
+    {
+        bool playerSendingTrade{};
+        rules::PlayerNumber buySellMortgagePlayer = rules::NobodyPlayer;
+        bool shouldGiveAwayMonopoly{};
+        double giveAwayRoll{};
+        double proposalRoll{};
+        double giveAwayProbability{};
+        double monopolyProbability{};
+        double proposalProbability{};
+    };
+
+    [[nodiscard]] bool shouldTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::uint8_t importance,
+        std::span<const std::int64_t> timeLastTrade,
+        std::size_t maxTrades,
+        const TradeCadenceInputs& inputs) noexcept;
 
     [[nodiscard]] bool playerInvolvedInTrade(
         const TradeProposalRecord& proposal) noexcept;
