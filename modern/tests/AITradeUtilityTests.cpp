@@ -184,6 +184,57 @@ namespace
             "AI possible-monopoly rejects non-property groups safely");
     }
 
+    void testPlayerPropertyImportance()
+    {
+        using Config = ai::trade::PropertyImportanceConfig;
+        Config config{};
+
+        rules::GameState brown{};
+        brown.numberOfPlayers = 2;
+        brown.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        brown.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        config.monopolyReceivedImportance = 100.0;
+        config.propertyAllowTradeImportance = 7.0;
+        const auto brownResult = ai::trade::findPlayerPropertyImportance(brown, 0, 0, config);
+        require(brownResult.monopolies == 1 && brownResult.monopolyImportance == 7.0 &&
+                brownResult.importance == 7.0,
+            "AI property importance treats brown monopoly as retail weak trade value");
+
+        rules::GameState rails{};
+        rails.numberOfPlayers = 2;
+        rails.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].owner = 0;
+        rails.squares[static_cast<std::size_t>(SquareType::PennsylvaniaRailroad)].owner = 0;
+        config = {};
+        config.railroadImportance[1] = 13.0;
+        require(ai::trade::findPlayerPropertyImportance(rails, 0, 0, config).importance == 13.0,
+            "AI property importance uses count-specific railroad weight");
+        rules::GameState veto{};
+        veto.numberOfPlayers = 2;
+        veto.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].owner = 0;
+        config = {};
+        config.monopolyVetoImportance[1] = 5.0;
+        require(ai::trade::findPlayerPropertyImportance(veto, 0, 0, config).importance == 5.0,
+            "AI property importance adds colour-monopoly veto weight");
+
+        rules::GameState darzinskis{};
+        darzinskis.numberOfPlayers = 2;
+        darzinskis.players[0].aiPlayerLevel = 3;
+        for (const auto square : {SquareType::OrientalAvenue, SquareType::VermontAvenue,
+                 SquareType::ConnecticutAvenue})
+            darzinskis.squares[static_cast<std::size_t>(square)].owner = 0;
+        config = {};
+        config.monopolyReceivedImportance = 8.0;
+        const auto level3 = ai::trade::findPlayerPropertyImportance(darzinskis, 0, 0, config);
+        require(level3.monopolies == 1 && level3.monopolyImportance < 8.0 &&
+                level3.monopolyImportance > 7.9,
+            "AI level-three property importance applies Darzinskis liquid-assets factor");
+        darzinskis.players[0].aiPlayerLevel = 2;
+        require(ai::trade::findPlayerPropertyImportance(darzinskis, 0, 0, config).monopolyImportance == 8.0,
+            "AI non-level-three property importance bypasses Darzinskis factor like retail");
+        require(ai::trade::findPlayerPropertyImportance(darzinskis, 2, 0, config).importance == 0.0,
+            "AI property importance rejects invalid player safely");
+    }
+
     void testShouldTradeForMonopoly()
     {
         using Decision = ai::trade::MonopolyTradeDecision;
@@ -641,6 +692,7 @@ int main()
         testTwoPlayerRequirement();
         testInputGuards();
         testTransferAndPossibleMonopolyContracts();
+        testPlayerPropertyImportance();
         testShouldTradeForMonopoly();
         testFindNonmonopolyPlayer();
         testTradeCadenceContracts();

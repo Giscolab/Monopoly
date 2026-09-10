@@ -72,6 +72,32 @@ namespace monopoly::ai::trade
         Maybe = 2
     };
 
+    struct PropertyImportanceConfig
+    {
+        double monopolyReceivedImportance{};
+        double propertyAllowTradeImportance{};
+        double propertyAllowMoreTradeImportance{};
+        double propertyOneUnownedImportance{};
+        double propertyTwoUnownedImportance{};
+        std::array<double, 4> railroadImportance{};
+        std::array<double, 2> utilityImportance{};
+        std::array<double, 9> monopolyVetoImportance{};
+    };
+
+    struct PropertyImportanceResult
+    {
+        double importance{};
+        int monopolies{};
+        double monopolyImportance{};
+    };
+
+    [[nodiscard]] PropertyImportanceResult findPlayerPropertyImportance(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        const PropertyImportanceConfig& config,
+        std::int64_t moneyOwed = 0) noexcept;
+
     [[nodiscard]] MonopolyTradeDecision shouldTradeForMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;
