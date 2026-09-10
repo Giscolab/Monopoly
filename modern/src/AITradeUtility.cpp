@@ -53,6 +53,90 @@ namespace monopoly::ai::trade
             return order;
         }
 
+        [[nodiscard]] PropertyImportanceResult findPlayerPropertyImportanceAtChart(
+            const rules::GameState& state,
+            rules::PlayerNumber player,
+            rules::PlayerNumber strategyPlayer,
+            const PropertyImportanceConfig& config,
+            std::size_t chart,
+            std::int64_t moneyOwed) noexcept
+        {
+            PropertyImportanceResult result{};
+            const auto liquid = ai::liquidAssets(state, player, false, false, moneyOwed);
+            const auto aiLevel = state.players[strategyPlayer].aiPlayerLevel;
+            for (std::size_t group = 0; group < ai::ExpensiveMonopolySquares.size(); ++group)
+            {
+                const auto square = ai::ExpensiveMonopolySquares[group];
+                if (ai::isMonopoly(state, square) &&
+                    state.squares[static_cast<std::size_t>(square)].owner == player)
+                {
+                    ++result.monopolies;
+                    const double change = group == 0
+                        ? config.propertyAllowTradeImportance
+                        : config.monopolyReceivedImportance * monopolyAssetFactor(group, chart, 3.0, aiLevel);
+                    result.importance += change;
+                    result.monopolyImportance += change;
+                }
+
+                const int unowned = possibleMonopoly(state, player, square);
+                if (unowned == -1)
+                    continue;
+                const double factor = monopolyAssetFactor(group, chart, 2.0, aiLevel);
+                if (unowned == 1)
+                {
+                    const bool twoLotEdge = square == rules::board::SquareType::MediterraneanAvenue ||
+                        square == rules::board::SquareType::BalticAvenue ||
+                        square == rules::board::SquareType::ParkPlace ||
+                        square == rules::board::SquareType::Boardwalk;
+                    result.importance += (twoLotEdge ? config.propertyTwoUnownedImportance
+                                                    : config.propertyOneUnownedImportance) * factor;
+                }
+                else if (unowned == 2)
+                    result.importance += config.propertyTwoUnownedImportance * factor;
+            }
+
+            PropertySets properties{};
+            std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+            std::size_t candidateCount{};
+            for (rules::PlayerNumber current = 0; current < state.numberOfPlayers; ++current)
+            {
+                properties[current] = ai::propertiesOwnedByPlayer(state, current);
+                if (current == player || ai::playerOwnsMonopoly(state, current, false) ||
+                    state.players[current].currentSquare ==
+                        static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
+                    continue;
+                candidates[candidateCount++] = current;
+            }
+            const int railroads = ai::numberRailroadsUtilitiesOwned(
+                state, player, rules::board::SquareGroup::Railroad, false, properties[player]);
+            if (railroads > 0 && static_cast<std::size_t>(railroads) <= config.railroadImportance.size())
+                result.importance += config.railroadImportance[static_cast<std::size_t>(railroads - 1)];
+            const int utilities = ai::numberRailroadsUtilitiesOwned(
+                state, player, rules::board::SquareGroup::Utility, false, properties[player]);
+            if (utilities > 0 && static_cast<std::size_t>(utilities) <= config.utilityImportance.size())
+                result.importance += config.utilityImportance[static_cast<std::size_t>(utilities - 1)];
+
+            const auto order = monopolyImportanceOrder(liquid);
+            bool firstTradeProperty = true;
+            for (std::size_t rank = 0; rank + 1 < order.size(); ++rank)
+            {
+                const auto group = order[rank];
+                const auto trade = findSmallestMonopolyTrade(
+                    player, ai::monopolySet(ai::ExpensiveMonopolySquares[group]),
+                    std::span<const rules::PlayerNumber>(candidates.data(), candidateCount), properties);
+                if (trade.count == 0)
+                    continue;
+                const double factor = monopolyAssetFactor(group, chart, 1.0, aiLevel);
+                result.importance += (firstTradeProperty ? config.propertyAllowTradeImportance
+                                                        : config.propertyAllowMoreTradeImportance) * factor;
+                firstTradeProperty = false;
+            }
+            const int vetoes = vetoMonopolies(properties[player]);
+            if (vetoes >= 0 && static_cast<std::size_t>(vetoes) < config.monopolyVetoImportance.size())
+                result.importance += config.monopolyVetoImportance[static_cast<std::size_t>(vetoes)];
+            return result;
+        }
+
         [[nodiscard]] MonopolyTradeGroup findRecursiveFromBase(
             rules::board::PropertySet baseProperties,
             rules::board::PropertySet monopoly,
@@ -201,94 +285,94 @@ namespace monopoly::ai::trade
         const PropertyImportanceConfig& config,
         std::int64_t moneyOwed) noexcept
     {
-        PropertyImportanceResult result{};
         if (state.numberOfPlayers > rules::MaxPlayers ||
             player >= state.numberOfPlayers || strategyPlayer >= state.numberOfPlayers)
-            return result;
+            return {};
+        return findPlayerPropertyImportanceAtChart(
+            state, player, strategyPlayer, config,
+            darzinskisIndex(ai::liquidAssets(state, player, false, false, moneyOwed)), moneyOwed);
+    }
 
-        const auto liquid = ai::liquidAssets(state, player, false, false, moneyOwed);
-        const auto chart = darzinskisIndex(liquid);
-        const auto aiLevel = state.players[strategyPlayer].aiPlayerLevel;
-        for (std::size_t group = 0; group < ai::ExpensiveMonopolySquares.size(); ++group)
+    double calculateTradePropertyImportance(
+        const rules::GameState& before,
+        const rules::GameState& after,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        const TradeProposalList& proposals,
+        bool givingMonopolyAway,
+        const PropertyImportanceConfig& config,
+        std::span<const std::int64_t> moneyOwed) noexcept
+    {
+        if (before.numberOfPlayers == 0 || before.numberOfPlayers > rules::MaxPlayers ||
+            after.numberOfPlayers != before.numberOfPlayers || player >= before.numberOfPlayers ||
+            strategyPlayer >= before.numberOfPlayers)
+            return 0.0;
+        const auto debtFor = [&](rules::PlayerNumber current) {
+            return current < moneyOwed.size() ? moneyOwed[current] : 0;
+        };
+        std::array<std::size_t, rules::MaxPlayers> charts{};
+        for (rules::PlayerNumber current = 0; current < before.numberOfPlayers; ++current)
+            charts[current] = darzinskisIndex(ai::liquidAssets(
+                after, current, false, false, debtFor(current)));
+
+        auto filtered = proposals;
+        const auto keep = ~proposals[player].propertiesGiven;
+        filtered[player].propertiesReceived = 0;
+        for (rules::PlayerNumber current = 0; current < before.numberOfPlayers; ++current)
+            filtered[current].propertiesReceived &= keep;
+        auto withoutOurProperties = before;
+        applyTradeToState(withoutOurProperties, filtered);
+
+        const auto playerBefore = findPlayerPropertyImportanceAtChart(
+            before, player, strategyPlayer, config, charts[player], debtFor(player));
+        const auto playerAfter = findPlayerPropertyImportanceAtChart(
+            after, player, strategyPlayer, config, charts[player], debtFor(player));
+        double importance = playerAfter.importance - playerBefore.importance;
+        const int playerMonopolyChange = playerAfter.monopolies - playerBefore.monopolies;
+        double totalMonopolyImportance{};
+        int involvedOthers{};
+
+        for (rules::PlayerNumber current = 0; current < before.numberOfPlayers; ++current)
         {
-            const auto square = ai::ExpensiveMonopolySquares[group];
-            if (ai::isMonopoly(state, square) &&
-                state.squares[static_cast<std::size_t>(square)].owner == player)
+            if (current == player || !playerInvolvedInTrade(proposals[current]))
+                continue;
+            ++involvedOthers;
+            const auto otherBefore = findPlayerPropertyImportanceAtChart(
+                withoutOurProperties, current, strategyPlayer, config,
+                charts[current], debtFor(current));
+            const auto otherAfter = findPlayerPropertyImportanceAtChart(
+                after, current, strategyPlayer, config, charts[current], debtFor(current));
+            const int originalMonopolies = static_cast<int>(
+                ai::monopoliesOwned(before, current, false).count);
+            const int monopolyChange = otherAfter.monopolies - originalMonopolies;
+            double monopolyImportanceChange =
+                otherAfter.monopolyImportance - otherBefore.monopolyImportance;
+            double importanceChange = otherAfter.importance - otherBefore.importance -
+                monopolyImportanceChange;
+            if (importanceChange < 0.0)
+                importanceChange *= config.negativePropertyImportanceChangeMultiplier;
+            importance -= importanceChange;
+            if (monopolyChange > playerMonopolyChange)
             {
-                ++result.monopolies;
-                double change{};
-                if (group == 0)
-                    change = config.propertyAllowTradeImportance;
+                const double weight = givingMonopolyAway
+                    ? config.givingMonopolyImportance
+                    : config.monopolyReceivedImportance;
+                const double change = static_cast<double>(monopolyChange - playerMonopolyChange) *
+                    weight * 0.875;
+                importance -= change;
+                if (givingMonopolyAway)
+                    monopolyImportanceChange = 0.0;
                 else
-                    change = config.monopolyReceivedImportance *
-                        monopolyAssetFactor(group, chart, 3.0, aiLevel);
-                result.importance += change;
-                result.monopolyImportance += change;
+                    monopolyImportanceChange -= change;
             }
-
-            const int unowned = possibleMonopoly(state, player, square);
-            if (unowned == -1)
-                continue;
-            const double factor = monopolyAssetFactor(group, chart, 2.0, aiLevel);
-            if (unowned == 1)
-            {
-                const bool twoLotEdge = square == rules::board::SquareType::MediterraneanAvenue ||
-                    square == rules::board::SquareType::BalticAvenue ||
-                    square == rules::board::SquareType::ParkPlace ||
-                    square == rules::board::SquareType::Boardwalk;
-                result.importance += (twoLotEdge ? config.propertyTwoUnownedImportance
-                                                : config.propertyOneUnownedImportance) * factor;
-            }
-            else if (unowned == 2)
-                result.importance += config.propertyTwoUnownedImportance * factor;
-        }
-        PropertySets properties{};
-        std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
-        std::size_t candidateCount{};
-        for (rules::PlayerNumber current = 0; current < state.numberOfPlayers; ++current)
-        {
-            properties[current] = ai::propertiesOwnedByPlayer(state, current);
-            if (current == player ||
-                ai::playerOwnsMonopoly(state, current, false) ||
-                state.players[current].currentSquare ==
-                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
-                continue;
-            candidates[candidateCount++] = current;
+            totalMonopolyImportance += monopolyImportanceChange;
         }
 
-        const int railroads = ai::numberRailroadsUtilitiesOwned(
-            state, player, rules::board::SquareGroup::Railroad, false, properties[player]);
-        if (railroads > 0 && static_cast<std::size_t>(railroads) <= config.railroadImportance.size())
-            result.importance += config.railroadImportance[static_cast<std::size_t>(railroads - 1)];
-        const int utilities = ai::numberRailroadsUtilitiesOwned(
-            state, player, rules::board::SquareGroup::Utility, false, properties[player]);
-        if (utilities > 0 && static_cast<std::size_t>(utilities) <= config.utilityImportance.size())
-            result.importance += config.utilityImportance[static_cast<std::size_t>(utilities - 1)];
-        const auto order = monopolyImportanceOrder(liquid);
-        bool firstTradeProperty = true;
-        for (std::size_t rank = 0; rank + 1 < order.size(); ++rank)
-        {
-            const auto group = order[rank];
-            const auto square = ai::ExpensiveMonopolySquares[group];
-            const auto trade = findSmallestMonopolyTrade(
-                player, ai::monopolySet(square),
-                std::span<const rules::PlayerNumber>(candidates.data(), candidateCount), properties);
-            if (trade.count == 0)
-                continue;
-            const double factor = monopolyAssetFactor(group, chart, 1.0, aiLevel);
-            if (firstTradeProperty)
-            {
-                result.importance += config.propertyAllowTradeImportance * factor;
-                firstTradeProperty = false;
-            }
-            else
-                result.importance += config.propertyAllowMoreTradeImportance * factor;
-        }
-
-        const int vetoes = vetoMonopolies(properties[player]);
-        if (vetoes >= 0 && static_cast<std::size_t>(vetoes) < config.monopolyVetoImportance.size())
-            result.importance += config.monopolyVetoImportance[static_cast<std::size_t>(vetoes)];
-        return result;
+        // Retail assumes at least one other participant. Keep the intended
+        // arithmetic while avoiding a divide-by-zero for malformed proposals.
+        if (involvedOthers > 0)
+            importance -= totalMonopolyImportance / static_cast<double>(involvedOthers);
+        return importance;
     }
 
     MonopolyTradeDecision shouldTradeForMonopoly(

@@ -235,6 +235,55 @@ namespace
             "AI property importance rejects invalid player safely");
     }
 
+    void testTradePropertyImportance()
+    {
+        using Config = ai::trade::PropertyImportanceConfig;
+        using Proposals = ai::trade::TradeProposalList;
+        Config config{};
+        config.propertyAllowTradeImportance = 10.0;
+        config.monopolyReceivedImportance = 10.0;
+        config.givingMonopolyImportance = 4.0;
+
+        rules::GameState before{};
+        before.numberOfPlayers = 2;
+        before.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        before.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        Proposals proposals{};
+        proposals[0].propertiesReceived = rules::board::propertyBit(SquareType::BalticAvenue);
+        proposals[1].propertiesGiven = rules::board::propertyBit(SquareType::BalticAvenue);
+        auto after = before;
+        ai::trade::applyTradeToState(after, proposals);
+        require(ai::trade::calculateTradePropertyImportance(
+                    before, after, 0, 0, proposals, false, config) == 10.0,
+            "AI trade property importance rewards evaluated player completing brown monopoly");
+
+        proposals = {};
+        proposals[0].propertiesGiven = rules::board::propertyBit(SquareType::BalticAvenue);
+        proposals[1].propertiesReceived = rules::board::propertyBit(SquareType::BalticAvenue);
+        before.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 1;
+        before.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        after = before;
+        ai::trade::applyTradeToState(after, proposals);
+        require(ai::trade::calculateTradePropertyImportance(
+                    before, after, 0, 0, proposals, false, config) == -10.0,
+            "AI trade property importance penalizes opponent monopoly symmetrically");
+        require(ai::trade::calculateTradePropertyImportance(
+                    before, after, 0, 0, proposals, true, config) == -3.5,
+            "AI trade property importance uses giving-monopoly weight when requested");
+
+        Proposals cashOnly{};
+        cashOnly[0].cashGiven = 25;
+        cashOnly[1].cashReceived = 25;
+        auto cashAfter = before;
+        ai::trade::applyTradeToState(cashAfter, cashOnly);
+        require(ai::trade::calculateTradePropertyImportance(
+                    before, cashAfter, 0, 0, cashOnly, false, config) == 0.0,
+            "AI trade property importance ignores cash-only changes");
+        require(ai::trade::calculateTradePropertyImportance(
+                    before, cashAfter, 2, 0, cashOnly, false, config) == 0.0,
+            "AI trade property importance rejects invalid evaluated player safely");
+    }
+
     void testShouldTradeForMonopoly()
     {
         using Decision = ai::trade::MonopolyTradeDecision;
@@ -693,6 +742,7 @@ int main()
         testInputGuards();
         testTransferAndPossibleMonopolyContracts();
         testPlayerPropertyImportance();
+        testTradePropertyImportance();
         testShouldTradeForMonopoly();
         testFindNonmonopolyPlayer();
         testTradeCadenceContracts();
