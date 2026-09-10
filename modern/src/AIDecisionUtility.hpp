@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AIUtility.hpp"
+#include "AITradeUtility.hpp"
 
 #include <array>
 #include <cstdint>
@@ -112,6 +113,27 @@ namespace monopoly::ai::decision
         rules::PlayerNumber player,
         const WinningChanceConfig& config,
         std::span<double> savePlayerChances = {}) noexcept;
+
+    struct TradeEvaluationConfig
+    {
+        WinningChanceConfig winningChance{};
+        WorthFactors worthFactors{};
+        ai::trade::PropertyImportanceConfig propertyImportance{};
+        double chancesThreshold{};
+        double chancesFactor{};
+        double cashFactor{};
+        double tradeImportanceFactor{};
+        std::int64_t jailCardValue{49};
+        rules::PlayerNumber purchasingPlayer = rules::NobodyPlayer;
+        rules::board::SquareType purchasingProperty = rules::board::SquareType::Count;
+    };
+
+    [[nodiscard]] double evaluateTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        const ai::trade::TradeProposalList& proposals,
+        const TradeEvaluationConfig& config) noexcept;
 
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
