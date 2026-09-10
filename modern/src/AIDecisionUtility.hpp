@@ -135,6 +135,15 @@ namespace monopoly::ai::decision
         const ai::trade::TradeProposalList& proposals,
         const TradeEvaluationConfig& config) noexcept;
 
+    void evaluateTradePlayerList(
+        const rules::GameState& state,
+        std::span<const rules::PlayerNumber> players,
+        rules::PlayerNumber strategyPlayer,
+        const ai::trade::TradeProposalList& proposals,
+        bool givingMonopolyForCash,
+        const TradeEvaluationConfig& config,
+        std::span<double> evaluations) noexcept;
+
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,

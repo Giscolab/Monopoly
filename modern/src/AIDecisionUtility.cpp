@@ -778,6 +778,81 @@ namespace monopoly::ai::decision
             propertyImportance * config.tradeImportanceFactor;
     }
 
+    void evaluateTradePlayerList(
+        const rules::GameState& state,
+        std::span<const rules::PlayerNumber> players,
+        rules::PlayerNumber strategyPlayer,
+        const ai::trade::TradeProposalList& proposals,
+        bool givingMonopolyForCash,
+        const TradeEvaluationConfig& config,
+        std::span<double> evaluations) noexcept
+    {
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            strategyPlayer >= state.numberOfPlayers || evaluations.size() < players.size())
+            return;
+
+        auto before = state;
+        auto after = state;
+        ai::trade::applyTradeToState(after, proposals);
+        mortgageNegativeCashPlayers(after);
+        if (config.purchasingPlayer < state.numberOfPlayers &&
+            config.purchasingProperty < rules::board::SquareType::InJail)
+        {
+            const auto index = static_cast<std::size_t>(config.purchasingProperty);
+            before.squares[index].owner = config.purchasingPlayer;
+            after.squares[index].owner = config.purchasingPlayer;
+        }
+        std::array<double, rules::MaxPlayers> chancesBefore{};
+        std::array<double, rules::MaxPlayers> chancesAfter{};
+        (void)evaluateWinningChances(
+            before, rules::NobodyPlayer, config.winningChance,
+            std::span<double>(chancesBefore.data(), state.numberOfPlayers));
+        (void)evaluateWinningChances(
+            after, rules::NobodyPlayer, config.winningChance,
+            std::span<double>(chancesAfter.data(), state.numberOfPlayers));
+
+        for (std::size_t index = 0; index < players.size(); ++index)
+        {
+            const auto player = players[index];
+            if (player >= state.numberOfPlayers)
+            {
+                evaluations[index] = -50.0;
+                continue;
+            }
+            if ((chancesBefore[player] - chancesAfter[player]) > config.chancesThreshold)
+            {
+                evaluations[index] = -50.0;
+                continue;
+            }
+
+            auto worthBefore = totalWorthWithFactors(before, player, config.worthFactors);
+            auto worthAfter = totalWorthWithFactors(after, player, config.worthFactors);
+            const auto debt = config.winningChance.moneyOwed[player];
+            if (ai::liquidAssets(after, player, true, true, debt) <= 0)
+            {
+                evaluations[index] = -50.0;
+                continue;
+            }
+            for (std::size_t deck = 0;
+                 deck < static_cast<std::size_t>(rules::DeckType::Count); ++deck)
+            {
+                if (before.cards[deck].jailOwner == player)
+                    worthBefore += config.jailCardValue;
+                if (after.cards[deck].jailOwner == player)
+                    worthAfter += config.jailCardValue;
+            }
+
+            const double propertyImportance = ai::trade::calculateTradePropertyImportance(
+                before, after, player, strategyPlayer, proposals,
+                givingMonopolyForCash, config.propertyImportance,
+                config.winningChance.moneyOwed);
+            evaluations[index] =
+                (chancesAfter[player] - chancesBefore[player]) * config.chancesFactor +
+                static_cast<double>(worthAfter - worthBefore) * config.cashFactor +
+                propertyImportance * config.tradeImportanceFactor;
+        }
+    }
+
     bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
