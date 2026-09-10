@@ -652,6 +652,78 @@ namespace
             "AI required-monopoly cadence rejects roll above monopoly probability");
     }
 
+    void testCounterProposalPreparation()
+    {
+        rules::GameState state{};
+        state.numberOfPlayers = 3;
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        state.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].owner = 2;
+        ai::trade::TradeProposalList proposals{};
+        proposals[1].cashGiven = 5;
+        const std::array<double, 3> attitudes{-1.5, 0.25, 1.5};
+        const auto list = ai::trade::createPlayerPropertyAttitudeList(
+            state, 0, proposals, attitudes);
+        require(list.playerIndex[0] == 0 && list.playerIndex[1] == 12 &&
+                list.playerIndex[2] == 19,
+            "AI counter list preserves retail attitude index clamp and truncation");
+        require(list.tradePlayerCount == 1 && list.tradePlayers[0] == 1 &&
+                list.totalAttitude == 0.25,
+            "AI counter list includes only involved opponents and sums attitudes");
+        require((list.playerProperties[0] & rules::board::propertyBit(SquareType::MediterraneanAvenue)) != 0 &&
+                (list.playerProperties[2] & rules::board::propertyBit(SquareType::ReadingRailroad)) != 0,
+            "AI counter list snapshots every player's property set");
+        const std::array<double, 1> shortAttitudes{0.0};
+        require(ai::trade::createPlayerPropertyAttitudeList(
+                    state, 0, proposals, shortAttitudes).tradePlayerCount == 0,
+            "AI counter list rejects undersized injected attitude table safely");
+
+        require(static_cast<int>(ai::trade::TradeImportanceItem::Monopoly) == 0 &&
+                static_cast<int>(ai::trade::TradeImportanceItem::Utility) == 5 &&
+                static_cast<int>(ai::trade::TradeImportanceItem::Count) == 6 &&
+                static_cast<int>(ai::trade::TradeImportanceItem::Junk) == 7,
+            "AI trade-importance items preserve retail numeric contract and junk gap");
+
+        rules::GameState importanceState{};
+        importanceState.numberOfPlayers = 2;
+        importanceState.squares[static_cast<std::size_t>(SquareType::ElectricCompany)].owner = 0;
+        ai::trade::PropertyImportanceConfig config{};
+        config.monopolyReceivedImportance = 40.0;
+        config.propertyAllowTradeImportance = 25.0;
+        config.propertyTwoUnownedImportance = 20.0;
+        config.propertyOneUnownedImportance = 15.0;
+        config.railroadImportance = {5.0, 9.0, 14.0, 20.0};
+        config.utilityImportance = {10.0, 30.0};
+        ai::trade::CashMultiplierTable multipliers{};
+        multipliers.fill(2.0);
+        const auto importance = ai::trade::createItemImportanceList(
+            importanceState, 0, 0, config, 0.0, multipliers);
+        auto findImportance = [&](ai::trade::TradeImportanceItem item) {
+            for (const auto& record : importance)
+                if (record.item == item) return record.importance;
+            return -9999.0;
+        };
+        require(findImportance(ai::trade::TradeImportanceItem::Utility) == 25.0,
+            "AI item importance preserves retail utility-minus-railroad table quirk");
+        require(importance[0].importance >= importance[1].importance &&
+                importance[1].importance >= importance[2].importance &&
+                importance[2].importance >= importance[3].importance &&
+                importance[3].importance >= importance[4].importance &&
+                importance[4].importance >= importance[5].importance,
+            "AI item importance preserves retail descending linear sort");
+
+        importanceState.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].owner = 1;
+        importanceState.squares[static_cast<std::size_t>(SquareType::PennsylvaniaRailroad)].owner = 1;
+        const auto cross = ai::trade::createItemImportanceList(
+            importanceState, 0, 1, config, 0.0, multipliers);
+        auto crossRail = -1.0;
+        for (const auto& record : cross)
+            if (record.item == ai::trade::TradeImportanceItem::Railroad)
+                crossRail = record.importance;
+        require(crossRail == 18.0,
+            "AI item importance includes strategy player's cash-cow loss and cash multiplier");
+    }
+
     void testCashMultiplierContracts()
     {
         ai::trade::CashMultiplierTable multipliers{};
@@ -746,6 +818,7 @@ int main()
         testShouldTradeForMonopoly();
         testFindNonmonopolyPlayer();
         testTradeCadenceContracts();
+        testCounterProposalPreparation();
         testCashMultiplierContracts();
         testTradeProposalContracts();
         testAddTradeItemContracts();

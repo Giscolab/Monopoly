@@ -560,6 +560,100 @@ namespace monopoly::ai::trade
         return inputs.proposalRoll <= probability;
     }
 
+    PlayerPropertyAttitudeList createPlayerPropertyAttitudeList(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const TradeProposalList& proposals,
+        std::span<const double> playerAttitudes) noexcept
+    {
+        PlayerPropertyAttitudeList result{};
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || playerAttitudes.size() < state.numberOfPlayers)
+            return result;
+
+        for (rules::PlayerNumber target = 0; target < state.numberOfPlayers; ++target)
+        {
+            const double attitude = playerAttitudes[target];
+            int index = attitude <= -1.0 ? 0 : static_cast<int>((attitude + 1.0) * 10.0);
+            if (index >= static_cast<int>(WhatToTradeEntries))
+                index = static_cast<int>(WhatToTradeEntries) - 1;
+            result.playerIndex[target] = index;
+            result.playerProperties[target] = ai::propertiesOwnedByPlayer(state, target);
+            if (target == player || !playerInvolvedInTrade(proposals[target]))
+                continue;
+            result.tradePlayers[result.tradePlayerCount++] = target;
+            result.totalAttitude += attitude;
+        }
+        return result;
+    }
+
+    TradeImportanceList createItemImportanceList(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        const PropertyImportanceConfig& config,
+        double strategyAttitudeTowardPlayer,
+        const CashMultiplierTable& multipliers) noexcept
+    {
+        TradeImportanceList result{};
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategyPlayer >= state.numberOfPlayers)
+            return result;
+        const double factor = player == strategyPlayer
+            ? 1.0 : cashMultiplier(strategyAttitudeTowardPlayer, multipliers);
+        const auto owned = ai::propertiesOwnedByPlayer(state, player);
+        int rails = ai::numberRailroadsUtilitiesOwned(
+            state, player, rules::board::SquareGroup::Railroad, false, owned);
+        int utils = ai::numberRailroadsUtilitiesOwned(
+            state, player, rules::board::SquareGroup::Utility, false, owned);
+        if (rails == 4) --rails;
+        if (utils == 2) --utils;
+
+        result = {{
+            {TradeImportanceItem::Monopoly, config.monopolyReceivedImportance * 0.75 * factor},
+            {TradeImportanceItem::Trade, config.propertyAllowTradeImportance * factor},
+            {TradeImportanceItem::TwoUnowned, config.propertyTwoUnownedImportance * factor},
+            {TradeImportanceItem::OneUnowned, config.propertyOneUnownedImportance * factor},
+            {TradeImportanceItem::Railroad,
+                (config.railroadImportance[rails] -
+                 (rails ? config.railroadImportance[rails - 1] : 0.0)) * factor},
+            {TradeImportanceItem::Utility,
+                (config.utilityImportance[utils] -
+                 (utils ? config.railroadImportance[utils - 1] : 0.0)) * factor}
+        }};
+
+        if (strategyPlayer != player)
+        {
+            const auto strategyOwned = ai::propertiesOwnedByPlayer(state, strategyPlayer);
+            rails = ai::numberRailroadsUtilitiesOwned(
+                state, strategyPlayer, rules::board::SquareGroup::Railroad, false, strategyOwned);
+            utils = ai::numberRailroadsUtilitiesOwned(
+                state, strategyPlayer, rules::board::SquareGroup::Utility, false, strategyOwned);
+            if (rails)
+            {
+                --rails;
+                result[4].importance += (config.railroadImportance[rails] -
+                    (rails ? config.railroadImportance[rails - 1] : 0.0)) * factor;
+            }
+            if (utils)
+            {
+                --utils;
+                result[5].importance += (config.utilityImportance[utils] -
+                    (utils ? config.railroadImportance[utils - 1] : 0.0)) * factor;
+            }
+        }
+
+        for (std::size_t head = 0; head < result.size(); ++head)
+        {
+            for (std::size_t tail = head + 1; tail < result.size(); ++tail)
+            {
+                if (result[head].importance < result[tail].importance)
+                    std::swap(result[head], result[tail]);
+            }
+        }
+        return result;
+    }
+
     double cashMultiplier(
         double attitude,
         const CashMultiplierTable& multipliers) noexcept
