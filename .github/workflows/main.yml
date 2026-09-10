@@ -1,0 +1,33 @@
+name: Update Progress Stats
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  calculate-progress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Calculate project progress
+        run: |
+          # Get closed issues count
+          CLOSED=$(gh issue list --state closed --jq '. | length')
+          # Get total issues count
+          TOTAL=$(gh issue list --state all --jq '. | length')
+          
+          # Calculate percentage
+          if [ "$TOTAL" -gt 0 ]; then
+            PERCENT=$((CLOSED * 100 / TOTAL))
+          else
+            PERCENT=0
+          fi
+          
+          echo "## 📊 Progress Stats"
+          echo "- **Closed Issues**: $CLOSED / $TOTAL"
+          echo "- **Completion**: $PERCENT%"
+          echo "- **Last Updated**: $(date)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
