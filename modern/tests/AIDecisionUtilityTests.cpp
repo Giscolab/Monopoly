@@ -490,6 +490,59 @@ namespace
             "AI monopoly giveaway rejects sole monopoly owner when opponents cannot trade for one");
     }
 
+    void testEvaluateTrade()
+    {
+        using ai::decision::TradeEvaluationConfig;
+        using ai::trade::TradeProposalList;
+        auto state = baseState();
+        state.options.passingGoAmount = 200;
+        state.players[0].cash = 500;
+        state.players[1].cash = 500;
+
+        TradeEvaluationConfig config{};
+        config.chancesThreshold = 1.0;
+        config.cashFactor = 1.0;
+
+        TradeProposalList proposals{};
+        proposals[0].cashGiven = 100;
+        proposals[1].cashReceived = 100;
+        require(std::abs(ai::decision::evaluateTrade(
+                    state, 0, 0, proposals, config) + 100.0) < 1e-9,
+            "AI trade evaluation applies weighted factored-worth cash delta");
+
+        auto bankrupt = state;
+        bankrupt.players[0].cash = 50;
+        require(ai::decision::evaluateTrade(
+                    bankrupt, 0, 0, proposals, config) == -50.0,
+            "AI trade evaluation preserves retail bankruptcy sentinel");
+        auto jail = state;
+        jail.cards[static_cast<std::size_t>(rules::DeckType::Chance)].jailOwner = 0;
+        TradeProposalList jailTrade{};
+        jailTrade[1].jailCardReceived[static_cast<std::size_t>(rules::DeckType::Chance)] = true;
+        require(std::abs(ai::decision::evaluateTrade(
+                    jail, 0, 0, jailTrade, config) + 49.0) < 1e-9,
+            "AI trade evaluation values transferred jail card at retail 49 dollars");
+
+        auto monopoly = state;
+        own(monopoly, SquareType::BalticAvenue, 1);
+        TradeProposalList propertyTrade{};
+        const auto baltic = rules::board::propertyBit(SquareType::BalticAvenue);
+        propertyTrade[1].propertiesGiven = baltic;
+        propertyTrade[0].propertiesReceived = baltic;
+        TradeEvaluationConfig propertyConfig{};
+        propertyConfig.chancesThreshold = 1.0;
+        propertyConfig.tradeImportanceFactor = 1.0;
+        propertyConfig.propertyImportance.propertyAllowTradeImportance = 10.0;
+        propertyConfig.purchasingPlayer = 0;
+        propertyConfig.purchasingProperty = SquareType::MediterraneanAvenue;
+        require(ai::decision::evaluateTrade(
+                    monopoly, 0, 0, propertyTrade, propertyConfig) > 0.0,
+            "AI trade evaluation accounts for property currently being purchased");
+        require(ai::decision::evaluateTrade(
+                    state, 2, 0, {}, config) == -50.0,
+            "AI trade evaluation rejects invalid evaluated player safely");
+    }
+
 }
 
 int main()
@@ -505,6 +558,7 @@ int main()
         testWorthFactorsAndMortgageWorstProperty();
         testWinningChances();
         testMortgageNegativeCashPlayers();
+        testEvaluateTrade();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
