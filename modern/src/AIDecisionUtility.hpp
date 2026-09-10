@@ -164,6 +164,64 @@ namespace monopoly::ai::decision
         const FairTradeConfig& config,
         std::span<const ai::trade::FutureImmunityRecord> immunities = {}) noexcept;
 
+    enum class CounterProposalStatus : std::uint8_t
+    {
+        Ready = 0,
+        InvalidInput,
+        InvalidTime,
+        NotInvolved,
+        FutureOrImmunity,
+        TooManyCounters,
+        RepeatedProperties,
+        ProbabilitySkipped,
+        NotSeriousTrader,
+        NoTradePartners,
+        AnnoyedWithTrader
+    };
+
+    struct CounterProposalSession
+    {
+        int timesCounteredTrade{};
+        double lastTradeEvaluation{};
+        ai::trade::PropertyTradeMemory propertyMemory{};
+    };
+
+    struct CounterProposalPreflightInputs
+    {
+        rules::PlayerNumber proposedPlayer = rules::NobodyPlayer;
+        int pendingActions{};
+        bool playerSendingTrade{};
+        bool auctionOn{};
+        bool tradeAccept{};
+        double counterRoll{};
+    };
+
+    struct CounterProposalPreflightConfig
+    {
+        TradeEvaluationConfig evaluation{};
+        std::array<double, rules::MaxPlayers> playerAttitude{};
+        int tradeCounterLimit{};
+        int numberTimesAllowPropertyTrade{};
+        double tradeCounterProbability{};
+    };
+
+    struct CounterProposalPreflightResult
+    {
+        CounterProposalStatus status = CounterProposalStatus::InvalidInput;
+        ai::trade::PlayerPropertyAttitudeList preparation{};
+        double evaluation{-50.0};
+        double averageAttitude{};
+    };
+
+    [[nodiscard]] CounterProposalPreflightResult counterProposalPreflight(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const ai::trade::TradeProposalList& currentTrade,
+        const CounterProposalPreflightInputs& inputs,
+        const CounterProposalPreflightConfig& config,
+        CounterProposalSession& session,
+        std::span<const ai::trade::FutureImmunityRecord> immunities = {}) noexcept;
+
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,

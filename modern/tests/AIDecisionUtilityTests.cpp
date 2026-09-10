@@ -404,6 +404,135 @@ namespace
             "AI negative-cash resolver ignores off-board bankrupt players");
     }
 
+    void testCounterProposalPreflight()
+    {
+        using ai::decision::CounterProposalPreflightConfig;
+        using ai::decision::CounterProposalPreflightInputs;
+        using ai::decision::CounterProposalSession;
+        using ai::decision::CounterProposalStatus;
+        using ai::trade::TradeProposalList;
+        auto state = baseState();
+        state.tradeInProgress = true;
+        state.players[0].cash = 500;
+        state.players[1].cash = 500;
+
+        CounterProposalPreflightConfig config{};
+        config.tradeCounterLimit = 3;
+        config.numberTimesAllowPropertyTrade = 1;
+        config.tradeCounterProbability = 1.0;
+        config.evaluation.chancesThreshold = 1.0;
+        config.evaluation.cashFactor = 1.0;
+        config.playerAttitude[1] = 0.25;
+        CounterProposalPreflightInputs inputs{};
+        inputs.proposedPlayer = 1;
+
+        TradeProposalList trade{};
+        trade[0].cashGiven = 10;
+        trade[1].cashReceived = 10;
+        CounterProposalSession session{};
+        auto result = ai::decision::counterProposalPreflight(
+            state, 0, trade, inputs, config, session);
+        require(result.status == CounterProposalStatus::Ready &&
+                std::abs(result.evaluation + 10.0) < 1e-9 &&
+                result.preparation.tradePlayerCount == 1 &&
+                std::abs(result.averageAttitude - 0.25) < 1e-9,
+            "AI counter preflight reaches ready state with retail preparation");
+        auto purchaseConfig = config;
+        purchaseConfig.evaluation.purchasingPlayer = 0;
+        purchaseConfig.evaluation.purchasingProperty = SquareType::MediterraneanAvenue;
+        auto purchaseSession = CounterProposalSession{};
+        result = ai::decision::counterProposalPreflight(
+            state, 0, trade, inputs, purchaseConfig, purchaseSession);
+        require((result.preparation.playerProperties[0] &
+                    rules::board::propertyBit(SquareType::MediterraneanAvenue)) != 0,
+            "AI counter preflight includes pending purchase in retail property snapshot");
+
+
+        auto invalidTime = inputs;
+        invalidTime.pendingActions = 1;
+        auto untouched = CounterProposalSession{};
+        result = ai::decision::counterProposalPreflight(
+            state, 0, trade, invalidTime, config, untouched);
+        require(result.status == CounterProposalStatus::InvalidTime &&
+                untouched.propertyMemory.bit1[1] == 0,
+            "AI counter preflight rejects busy AI before remembering trade");
+
+        TradeProposalList emptyTrade{};
+        result = ai::decision::counterProposalPreflight(
+            state, 0, emptyTrade, inputs, config, untouched);
+        require(result.status == CounterProposalStatus::NotInvolved,
+            "AI counter preflight preserves retail not-involved exit");
+
+        std::array<ai::trade::FutureImmunityRecord, 1> immunity{{
+            {0, 1, 0, 1, rules::TradeItemKind::Immunity}}};
+        auto futureSession = CounterProposalSession{};
+        result = ai::decision::counterProposalPreflight(
+            state, 0, trade, inputs, config, futureSession, immunity);
+        require(result.status == CounterProposalStatus::FutureOrImmunity &&
+                futureSession.propertyMemory.bit1[1] == 0,
+            "AI counter preflight rejects immunity before remembering trade");
+
+        auto limitSession = CounterProposalSession{};
+        limitSession.timesCounteredTrade = config.tradeCounterLimit;
+        result = ai::decision::counterProposalPreflight(
+            state, 0, trade, inputs, config, limitSession);
+        require(result.status == CounterProposalStatus::TooManyCounters,
+            "AI counter preflight rejects trade at retail counter limit");
+
+        TradeProposalList propertyTrade{};
+        const auto baltic = rules::board::propertyBit(SquareType::BalticAvenue);
+        propertyTrade[0].propertiesGiven = baltic;
+        propertyTrade[1].propertiesReceived = baltic;
+        auto repeatedSession = CounterProposalSession{};
+        ai::trade::rememberTradedProperties(
+            repeatedSession.propertyMemory, 1, propertyTrade[0]);
+        result = ai::decision::counterProposalPreflight(
+            state, 0, propertyTrade, inputs, config, repeatedSession);
+        require(result.status == CounterProposalStatus::RepeatedProperties,
+            "AI counter preflight rejects repeated property offer before increment");
+
+        auto probabilitySession = CounterProposalSession{};
+        auto probabilityInputs = inputs;
+        probabilityInputs.tradeAccept = true;
+        probabilityInputs.counterRoll = 0.9;
+        auto probabilityConfig = config;
+        probabilityConfig.tradeCounterProbability = 0.5;
+        result = ai::decision::counterProposalPreflight(
+            state, 0, propertyTrade, probabilityInputs,
+            probabilityConfig, probabilitySession);
+        require(result.status == CounterProposalStatus::ProbabilitySkipped &&
+                ai::trade::propertiesAlreadyTraded(
+                    probabilitySession.propertyMemory, 1,
+                    propertyTrade[0], 1) == baltic,
+            "AI counter preflight remembers first property offer before probability skip");
+
+        auto seriousSession = CounterProposalSession{};
+        seriousSession.timesCounteredTrade = 1;
+        seriousSession.lastTradeEvaluation = 0.0;
+        result = ai::decision::counterProposalPreflight(
+            state, 0, trade, inputs, config, seriousSession);
+        require(result.status == CounterProposalStatus::NotSeriousTrader &&
+                seriousSession.lastTradeEvaluation == 0.0,
+            "AI counter preflight rejects non-improving counter without replacing saved evaluation");
+
+        auto noPartnersTrade = TradeProposalList{};
+        noPartnersTrade[0].cashGiven = 1;
+        noPartnersTrade[0].cashReceived = 1;
+        auto noPartnersSession = CounterProposalSession{};
+        result = ai::decision::counterProposalPreflight(
+            state, 0, noPartnersTrade, inputs, config, noPartnersSession);
+        require(result.status == CounterProposalStatus::NoTradePartners,
+            "AI counter preflight rejects malformed trade with no involved partner");
+
+        auto annoyedConfig = config;
+        annoyedConfig.playerAttitude[1] = -1.0;
+        auto annoyedSession = CounterProposalSession{};
+        result = ai::decision::counterProposalPreflight(
+            state, 0, trade, inputs, annoyedConfig, annoyedSession);
+        require(result.status == CounterProposalStatus::AnnoyedWithTrader,
+            "AI counter preflight preserves retail annoyed single-partner exit");
+    }
+
     void testHypotheticalUnmortgageAndGiveAway()
     {
         using ai::decision::CashStrategy;
@@ -666,6 +795,7 @@ int main()
         testEvaluateTrade();
         testEvaluateTradePlayerList();
         testMakeTradeFair();
+        testCounterProposalPreflight();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
