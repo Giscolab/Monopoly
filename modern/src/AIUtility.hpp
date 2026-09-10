@@ -124,6 +124,12 @@ namespace monopoly::ai
         rules::board::PropertySet properties,
         bool countHouses,
         bool countMonopolies) noexcept;
+    [[nodiscard]] std::int64_t liquidAssets(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool countHouses,
+        bool countMonopolies,
+        std::int64_t moneyOwed = 0) noexcept;
     [[nodiscard]] std::int64_t totalWorth(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;

@@ -605,6 +605,7 @@ namespace
     void testAssetContracts()
     {
         rules::GameState state{};
+        state.numberOfPlayers = 1;
         state.players[0].cash = 500;
         own(state, SquareType::MediterraneanAvenue, 0);
         own(state, SquareType::BalticAvenue, 0);
@@ -614,6 +615,14 @@ namespace
             "AI liquid assets protect undeveloped monopolies when requested");
         require(ai::liquidAssetsForProperties(state, owned, false, true) == 160,
             "AI liquid assets include monopoly mortgages when enabled");
+        require(ai::liquidAssets(state, 0, false, false) == 600,
+            "AI player liquid assets add cash to mortgageable non-monopoly property");
+        require(ai::liquidAssets(state, 0, false, true) == 660,
+            "AI player liquid assets can include undeveloped monopoly mortgages");
+        require(ai::liquidAssets(state, 0, false, true, 125) == 535,
+            "AI player liquid assets subtract explicitly injected AI money owed");
+        require(ai::liquidAssets(state, 1, false, true) == 0,
+            "AI player liquid assets reject invalid player safely");
         state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 2;
         state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].houses = 2;
         require(ai::liquidAssetsForProperties(state, owned, true, true) == 260,

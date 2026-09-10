@@ -76,6 +76,11 @@ namespace monopoly::ai::trade
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;
 
+    [[nodiscard]] rules::PlayerNumber findNonmonopolyPlayer(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const std::int64_t> moneyOwed = {}) noexcept;
+
     [[nodiscard]] bool playerInvolvedInTrade(
         const TradeProposalRecord& proposal) noexcept;
     [[nodiscard]] rules::PlayerNumber nextPlayerWantingCash(
