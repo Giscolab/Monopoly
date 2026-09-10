@@ -7,6 +7,17 @@ Le portage, encore en cours, utilise C et C++23 avec des technologies portables
 actuelles. Il se trouve dans [`modern/`](modern/), tandis que le code d'origine
 reste disponible dans [`Source/`](Source/).
 
+## 📊 Progression
+
+![Workflow](https://github.com/Giscolab/Monopoly/actions/workflows/progress-stats.yml/badge.svg)
+
+Le suivi de la progression du projet est automatisé via GitHub Actions. Les statistiques sont mises à jour quotidiennement :
+
+- **Statut** : Work In Progress
+- **Dernière mise à jour** : Voir les [logs du workflow](https://github.com/Giscolab/Monopoly/actions/workflows/progress-stats.yml)
+
+Pour consulter la progression détaillée, consultez les [Issues du projet](https://github.com/Giscolab/Monopoly/issues).
+
 ## Sources et crédits
 
 Le code d'origine est désormais accessible publiquement. Sa provenance reste
