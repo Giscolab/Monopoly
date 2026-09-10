@@ -427,6 +427,38 @@ namespace
             "AI immunity filter ignores zero-count future involvement");
     }
 
+    void testFindNonmonopolyPlayer()
+    {
+        rules::GameState state{};
+        state.numberOfPlayers = 4;
+        state.players[1].cash = 300;
+        state.players[2].cash = 900;
+        state.players[3].cash = 250;
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 2;
+        state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 2;
+        state.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].owner = 3;
+        require(ai::trade::findNonmonopolyPlayer(state, 0) == 3,
+            "AI non-monopoly partner ranks liquid assets including mortgageable property");
+
+        std::array<std::int64_t, rules::MaxPlayers> moneyOwed{};
+        moneyOwed[3] = 200;
+        require(ai::trade::findNonmonopolyPlayer(state, 0, moneyOwed) == 1,
+            "AI non-monopoly partner subtracts explicitly injected money owed");
+
+        state.players[1].cash = 250;
+        state.players[3].cash = 150;
+        moneyOwed = {};
+        require(ai::trade::findNonmonopolyPlayer(state, 0, moneyOwed) == 1,
+            "AI non-monopoly partner preserves first-player tie order");
+
+        state.players[1].currentSquare = static_cast<std::uint8_t>(SquareType::OffBoard);
+        state.players[3].currentSquare = static_cast<std::uint8_t>(SquareType::OffBoard);
+        require(ai::trade::findNonmonopolyPlayer(state, 0) == rules::NobodyPlayer,
+            "AI non-monopoly partner ignores eliminated players and monopoly owners");
+        require(ai::trade::findNonmonopolyPlayer(state, 4) == rules::NobodyPlayer,
+            "AI non-monopoly partner rejects invalid seeker safely");
+    }
+
     void testTradeProposalContracts()
     {
         using ai::trade::TradeProposalList;
@@ -499,6 +531,7 @@ int main()
         testInputGuards();
         testTransferAndPossibleMonopolyContracts();
         testShouldTradeForMonopoly();
+        testFindNonmonopolyPlayer();
         testTradeProposalContracts();
         testAddTradeItemContracts();
         testTradeMutationAndMonopolyDetection();

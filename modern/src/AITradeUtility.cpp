@@ -188,6 +188,36 @@ namespace monopoly::ai::trade
         return MonopolyTradeDecision::Maybe;
     }
 
+    rules::PlayerNumber findNonmonopolyPlayer(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const std::int64_t> moneyOwed) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers || player >= state.numberOfPlayers)
+            return rules::NobodyPlayer;
+
+        std::int64_t highestAssets{};
+        auto highestPlayer = rules::NobodyPlayer;
+        for (rules::PlayerNumber current = 0; current < state.numberOfPlayers; ++current)
+        {
+            if (current == player ||
+                state.players[current].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard) ||
+                ai::playerOwnsMonopoly(state, current, false))
+                continue;
+
+            const auto debt = current < moneyOwed.size() ? moneyOwed[current] : 0;
+            const auto assets = ai::liquidAssets(
+                state, current, false, false, debt);
+            if (assets > highestAssets)
+            {
+                highestAssets = assets;
+                highestPlayer = current;
+            }
+        }
+        return highestPlayer;
+    }
+
     bool playerInvolvedInTrade(
         const TradeProposalRecord& proposal) noexcept
     {

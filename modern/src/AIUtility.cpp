@@ -374,6 +374,21 @@ namespace monopoly::ai
         return total;
     }
 
+    std::int64_t liquidAssets(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool countHouses,
+        bool countMonopolies,
+        std::int64_t moneyOwed) noexcept
+    {
+        if (player >= state.numberOfPlayers || player >= rules::MaxPlayers)
+            return 0;
+        const auto owned = propertiesOwnedByPlayer(state, player);
+        return state.players[player].cash +
+            liquidAssetsForProperties(state, owned, countHouses, countMonopolies) -
+            moneyOwed;
+    }
+
     std::int64_t totalWorth(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept
