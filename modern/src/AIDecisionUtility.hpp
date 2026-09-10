@@ -222,6 +222,41 @@ namespace monopoly::ai::decision
         CounterProposalSession& session,
         std::span<const ai::trade::FutureImmunityRecord> immunities = {}) noexcept;
 
+    enum class CounterProposalBalanceStatus : std::uint8_t
+    {
+        Ready = 0,
+        InvalidInput,
+        TooPoor,
+        CouldNotReturnMonopoly,
+        Unaffordable,
+        Improper
+    };
+
+    struct CounterProposalBalanceConfig
+    {
+        FairTradeConfig fairTrade{};
+        ai::trade::WhatToTradeTable whatToTrade{};
+        double minEvaluationThreshold{};
+        double lowestPropertyImportanceForCounter{};
+        std::int64_t maxGiveInTrade{2500};
+        std::size_t maxIterations{10000};
+    };
+    struct CounterProposalBalanceResult
+    {
+        CounterProposalBalanceStatus status = CounterProposalBalanceStatus::InvalidInput;
+        double evaluation{-50.0};
+        double propertyImportance{};
+        std::size_t iterations{};
+    };
+
+    [[nodiscard]] CounterProposalBalanceResult counterProposalBalance(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const CounterProposalPreflightResult& preflight,
+        ai::trade::TradeProposalList& proposals,
+        const CounterProposalBalanceConfig& config,
+        std::span<const ai::trade::FutureImmunityRecord> immunities = {}) noexcept;
+
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,

@@ -1090,6 +1090,175 @@ namespace monopoly::ai::decision
         return result;
     }
 
+    CounterProposalBalanceResult counterProposalBalance(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const CounterProposalPreflightResult& preflight,
+        ai::trade::TradeProposalList& proposals,
+        const CounterProposalBalanceConfig& config,
+        std::span<const ai::trade::FutureImmunityRecord> immunities) noexcept
+    {
+        CounterProposalBalanceResult result{};
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers ||
+            preflight.status != CounterProposalStatus::Ready ||
+            preflight.preparation.tradePlayerCount == 0 ||
+            preflight.preparation.tradePlayerCount >= rules::MaxPlayers ||
+            config.maxIterations == 0)
+            return result;
+
+        const auto partnerCount = preflight.preparation.tradePlayerCount;
+        for (std::size_t index = 0; index < partnerCount; ++index)
+        {
+            const auto partner = preflight.preparation.tradePlayers[index];
+            if (partner >= state.numberOfPlayers || partner == player)
+                return result;
+        }
+
+        auto oldState = state;
+        auto newState = state;
+        ai::trade::applyTradeToState(newState, proposals);
+        const auto& evaluationConfig = config.fairTrade.evaluation;
+        if (evaluationConfig.purchasingPlayer < state.numberOfPlayers &&
+            evaluationConfig.purchasingProperty < rules::board::SquareType::InJail)
+        {
+            const auto square = static_cast<std::size_t>(evaluationConfig.purchasingProperty);
+            oldState.squares[square].owner = evaluationConfig.purchasingPlayer;
+            newState.squares[square].owner = evaluationConfig.purchasingPlayer;
+        }
+        auto combinedProperties = rules::board::PropertySet{};
+        auto combinedTraded = rules::board::PropertySet{};
+        for (std::size_t index = 0; index < partnerCount; ++index)
+        {
+            const auto partner = preflight.preparation.tradePlayers[index];
+            combinedProperties |= preflight.preparation.playerProperties[partner];
+            combinedTraded |= proposals[partner].propertiesReceived |
+                proposals[partner].propertiesGiven;
+        }
+        combinedProperties |= preflight.preparation.playerProperties[player];
+        combinedProperties &= ~combinedTraded;
+
+        result.propertyImportance = 0.0;
+        do
+        {
+            result.evaluation = evaluateTrade(
+                oldState, player, player, proposals, evaluationConfig);
+            if (result.evaluation >= config.minEvaluationThreshold)
+                break;
+
+            // Retail repeatedly applies the full trade to new_state here. This
+            // intentionally reapplies cash deltas while property ownership stays idempotent.
+            ai::trade::applyTradeToState(newState, proposals);
+            result.propertyImportance = ai::trade::calculateTradePropertyImportance(
+                oldState, newState, player, player, proposals, false,
+                evaluationConfig.propertyImportance,
+                evaluationConfig.winningChance.moneyOwed);
+            const auto importance = ai::trade::createItemImportanceList(
+                oldState, player, player, evaluationConfig.propertyImportance,
+                0.0, config.fairTrade.cashMultipliers);
+            bool added{};
+            for (const auto& record : importance)
+            {
+                if (-result.propertyImportance < record.importance)
+                    continue;
+                if (ai::trade::addTypeProperty(
+                        state, newState, player, player, combinedProperties,
+                        record.item, proposals, preflight.preparation.playerProperties,
+                        false, config.whatToTrade, 0.0,
+                        evaluationConfig.winningChance.moneyOwed[player]))
+                {
+                    added = true;
+                    break;
+                }
+            }
+
+            ++result.iterations;
+            if (!added || result.iterations >= config.maxIterations)
+                break;
+        }
+        while (result.propertyImportance < 0.0);
+
+        if (result.propertyImportance < config.lowestPropertyImportanceForCounter &&
+            result.evaluation < config.minEvaluationThreshold)
+        {
+            result.status = CounterProposalBalanceStatus::TooPoor;
+            return result;
+        }
+
+        double gaveMonopolyValue{};
+        if (partnerCount == 1)
+        {
+            const auto target = preflight.preparation.tradePlayers[0];
+            const auto importance = ai::trade::createItemImportanceList(
+                oldState, target, player, evaluationConfig.propertyImportance,
+                config.fairTrade.playerAttitude[target],
+                config.fairTrade.cashMultipliers);
+            for (const auto& record : importance)
+            {
+                ai::trade::applyTradeToState(newState, proposals);
+                result.propertyImportance = ai::trade::calculateTradePropertyImportance(
+                    oldState, newState, target, player, proposals, false,
+                    evaluationConfig.propertyImportance,
+                    evaluationConfig.winningChance.moneyOwed);
+                result.propertyImportance += gaveMonopolyValue;
+                if (-result.propertyImportance < record.importance)
+                    continue;
+
+                if (record.item == ai::trade::TradeImportanceItem::Monopoly)
+                {
+                    proposals[player].propertiesGiven = 0;
+                    proposals[target].propertiesReceived = 0;
+                    newState = state;
+                    ai::trade::applyTradeToState(newState, proposals);
+                    result.propertyImportance = ai::trade::calculateTradePropertyImportance(
+                        oldState, newState, target, player, proposals, false,
+                        evaluationConfig.propertyImportance,
+                        evaluationConfig.winningChance.moneyOwed);
+                }
+
+                const bool added = ai::trade::addTypeProperty(
+                    state, newState, target, player, combinedProperties,
+                    record.item, proposals, preflight.preparation.playerProperties,
+                    true, config.whatToTrade, config.fairTrade.playerAttitude[target],
+                    evaluationConfig.winningChance.moneyOwed[target]);
+                if (!added && record.item == ai::trade::TradeImportanceItem::Monopoly)
+                {
+                    result.status = CounterProposalBalanceStatus::CouldNotReturnMonopoly;
+                    return result;
+                }
+                if (added && record.item == ai::trade::TradeImportanceItem::Monopoly)
+                {
+                    ai::trade::applyTradeToState(newState, proposals);
+                    gaveMonopolyValue = ai::trade::calculateTradePropertyImportance(
+                        oldState, newState, target, player, proposals, false,
+                        evaluationConfig.propertyImportance,
+                        evaluationConfig.winningChance.moneyOwed);
+                    gaveMonopolyValue -= result.propertyImportance;
+                    gaveMonopolyValue = record.importance - gaveMonopolyValue;
+                    if (gaveMonopolyValue < 0.0)
+                        gaveMonopolyValue = 0.0;
+                }
+            }
+        }
+
+        ai::trade::makeTradeProper(state, proposals, immunities);
+        const auto partners = std::span<const rules::PlayerNumber>(
+            preflight.preparation.tradePlayers.data(), partnerCount);
+        if (!makeTradeFair(oldState, player, partners, config.maxGiveInTrade,
+                false, proposals, config.fairTrade, immunities))
+        {
+            result.status = CounterProposalBalanceStatus::Unaffordable;
+            return result;
+        }
+        if (!ai::trade::tradeIsProper(state, proposals, immunities))
+        {
+            result.status = CounterProposalBalanceStatus::Improper;
+            return result;
+        }
+        result.status = CounterProposalBalanceStatus::Ready;
+        return result;
+    }
+
     bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
