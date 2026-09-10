@@ -150,8 +150,51 @@ namespace monopoly::ai::trade
         std::size_t maxTrades,
         const TradeCadenceInputs& inputs) noexcept;
 
+    struct PlayerPropertyAttitudeList
+    {
+        std::array<int, rules::MaxPlayers> playerIndex{};
+        PropertySets playerProperties{};
+        std::array<rules::PlayerNumber, rules::MaxPlayers> tradePlayers{};
+        std::size_t tradePlayerCount{};
+        double totalAttitude{};
+    };
+
+    [[nodiscard]] PlayerPropertyAttitudeList createPlayerPropertyAttitudeList(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const TradeProposalList& proposals,
+        std::span<const double> playerAttitudes) noexcept;
+
     inline constexpr std::size_t WhatToTradeEntries = 20;
     using CashMultiplierTable = std::array<double, WhatToTradeEntries>;
+
+    enum class TradeImportanceItem : std::uint8_t
+    {
+        Monopoly = 0,
+        Trade,
+        OneUnowned,
+        TwoUnowned,
+        Railroad,
+        Utility,
+        Count,
+        Junk
+    };
+
+    struct TradeImportanceRecord
+    {
+        TradeImportanceItem item = TradeImportanceItem::Monopoly;
+        double importance{};
+    };
+
+    using TradeImportanceList = std::array<TradeImportanceRecord, 6>;
+
+    [[nodiscard]] TradeImportanceList createItemImportanceList(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        const PropertyImportanceConfig& config,
+        double strategyAttitudeTowardPlayer,
+        const CashMultiplierTable& multipliers) noexcept;
 
     [[nodiscard]] double cashMultiplier(
         double attitude,
