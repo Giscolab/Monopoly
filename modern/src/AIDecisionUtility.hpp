@@ -43,6 +43,14 @@ namespace monopoly::ai::decision
         std::int64_t minCashOnHand,
         std::int64_t moneyOwed = 0) noexcept;
 
+    [[nodiscard]] rules::board::SquareType hypotheticalUnmortgageProperty(
+        rules::GameState& state,
+        rules::PlayerNumber player,
+        bool onlyMonopolies,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed = 0) noexcept;
+
     [[nodiscard]] bool shouldUnmortgageProperty(
         const rules::GameState& state,
         rules::PlayerNumber player,
@@ -84,6 +92,24 @@ namespace monopoly::ai::decision
         rules::PlayerNumber player,
         bool sellHouses,
         bool mortgageMonopoly) noexcept;
+
+    struct WinningChanceConfig
+    {
+        std::array<CashStrategy, rules::MaxPlayers> cashStrategy{};
+        std::array<std::int64_t, rules::MaxPlayers> minCashOnHand{};
+        std::array<std::int64_t, rules::MaxPlayers> moneyOwed{};
+        double buyingStageCashMultiplier{};
+        double noMonopolyStageCashMultiplier{};
+        double cashLiquidAssetsDependence{1.0};
+        double monopolyNotOwnedStageCashMultiplier{};
+        double monopolyOwnedStageCashMultiplier{};
+    };
+
+    [[nodiscard]] double evaluateWinningChances(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const WinningChanceConfig& config,
+        std::span<double> savePlayerChances = {}) noexcept;
 
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,

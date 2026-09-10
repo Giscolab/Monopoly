@@ -2,6 +2,7 @@
 #include "AITradeUtility.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace monopoly::ai::decision
@@ -278,6 +279,41 @@ namespace monopoly::ai::decision
             static_cast<std::size_t>(SquareType::BalticAvenue) + 1);
     }
 
+    rules::board::SquareType hypotheticalUnmortgageProperty(
+        rules::GameState& state,
+        rules::PlayerNumber player,
+        bool onlyMonopolies,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed) noexcept
+    {
+        using rules::board::SquareType;
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategy >= CashStrategy::Count)
+            return SquareType::Go;
+
+        const auto monopoly = hypotheticalUnmortgageMonopolyProperty(
+            state, player, strategy, minCashOnHand, moneyOwed);
+        if (monopoly != SquareType::Go || onlyMonopolies)
+            return monopoly;
+
+        const auto owned = ai::propertiesOwnedByPlayer(state, player);
+        const auto excessCash = excessCashAvailable(
+            state, player, true, strategy, minCashOnHand, moneyOwed);
+        const auto square = ai::findHighestRentMortgaged(
+            state, player, owned, excessCash);
+        if (square == SquareType::Go)
+            return SquareType::Go;
+
+        const auto rawCost = static_cast<double>(
+            rules::board::definition(square).mortgageCost) * 1.1;
+        // Retail's hypothetical non-monopoly fallback debits a stale
+        // Square_predefined_info pointer. Use the selected property's cost.
+        state.squares[static_cast<std::size_t>(square)].mortgaged = false;
+        state.players[player].cash -= static_cast<std::int64_t>(rawCost);
+        return square;
+    }
+
     bool shouldUnmortgageProperty(
         const rules::GameState& state,
         rules::PlayerNumber player,
@@ -541,6 +577,136 @@ namespace monopoly::ai::decision
             mortgage(mortgageSquare);
         }
         return true;
+    }
+
+    double evaluateWinningChances(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const WinningChanceConfig& config,
+        std::span<double> savePlayerChances) noexcept
+    {
+        using rules::board::SquareType;
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers)
+            return 0.0;
+        const bool saveAll = !savePlayerChances.empty();
+        if ((!saveAll && player >= state.numberOfPlayers) ||
+            (saveAll && savePlayerChances.size() < state.numberOfPlayers))
+            return 0.0;
+
+        std::array<double, rules::MaxPlayers> localChances{};
+        double* chances = saveAll ? savePlayerChances.data() : localChances.data();
+        std::fill(chances, chances + state.numberOfPlayers, 0.0);
+        auto simulated = state;
+        const bool shortage = ai::housingShortage(state, CriticalHousingLevel);
+
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+        {
+            if (state.players[current].currentSquare ==
+                static_cast<std::uint8_t>(SquareType::OffBoard))
+                continue;
+            do
+            {
+                if (!shortage)
+                {
+                    while (hypotheticalBuyHouse(
+                        simulated, current, config.moneyOwed[current]))
+                    {
+                    }
+                }
+            } while (hypotheticalUnmortgageProperty(
+                simulated, current, true, config.cashStrategy[current],
+                config.minCashOnHand[current], config.moneyOwed[current]) != SquareType::Go);
+        }
+
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+        {
+            if (state.players[current].currentSquare ==
+                static_cast<std::uint8_t>(SquareType::OffBoard))
+                continue;
+            while (hypotheticalUnmortgageProperty(
+                simulated, current, false, config.cashStrategy[current],
+                config.minCashOnHand[current], config.moneyOwed[current]) != SquareType::Go)
+            {
+            }
+        }
+
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+        {
+            if (state.players[current].currentSquare ==
+                static_cast<std::uint8_t>(SquareType::OffBoard))
+                continue;
+            while (simulated.players[current].cash < 0)
+            {
+                if (!mortgageWorstProperty(simulated, current, false, false) &&
+                    !mortgageWorstProperty(simulated, current, false, true) &&
+                    !mortgageWorstProperty(simulated, current, true, true))
+                    break;
+            }
+        }
+
+        double totalAbsoluteChance{};
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+        {
+            const auto owned = ai::propertiesOwnedByPlayer(state, current);
+            chances[current] = ai::averageRentReceived(
+                simulated, current, 0, false, 0.07, owned) *
+                static_cast<double>(simulated.numberOfPlayers - 1);
+            chances[current] -= static_cast<double>(
+                ai::averageRentPaid(simulated, current, 0, true, 0.07));
+            chances[current] += static_cast<double>(state.options.passingGoAmount);
+
+            const auto liquidAssets = ai::liquidAssets(
+                simulated, current, false, false, config.moneyOwed[current]);
+            switch (ai::monopolyStage(simulated, current))
+            {
+            case ai::MonopolyStage::Buying:
+            case ai::MonopolyStage::NoMonopolies:
+            {
+                constexpr double MonopolySquareCount = 22.0;
+                const double buyingFraction =
+                    static_cast<double>(ai::propertiesLeftToBuy(state)) / MonopolySquareCount;
+                double multiplier =
+                    config.buyingStageCashMultiplier * buyingFraction +
+                    config.noMonopolyStageCashMultiplier * (1.0 - buyingFraction);
+                const double dependence = config.cashLiquidAssetsDependence > 0.0
+                    ? config.cashLiquidAssetsDependence : 1.0;
+                double assetScale = 1.0 / std::exp(
+                    std::log(dependence) * static_cast<double>(liquidAssets) / 1000.0);
+                assetScale = std::clamp(assetScale, 0.25, 1.0);
+                multiplier *= assetScale;
+                chances[current] += multiplier * static_cast<double>(liquidAssets);
+                break;
+            }
+            case ai::MonopolyStage::MonopoliesNotOwnOne:
+                chances[current] += config.monopolyNotOwnedStageCashMultiplier *
+                    static_cast<double>(liquidAssets);
+                break;
+            case ai::MonopolyStage::MonopoliesOwnOne:
+                chances[current] += config.monopolyOwnedStageCashMultiplier *
+                    static_cast<double>(liquidAssets);
+                break;
+            }
+
+            if (chances[current] > 0.0)
+                totalAbsoluteChance += chances[current];
+        }
+
+        if (totalAbsoluteChance == 0.0)
+            totalAbsoluteChance = 1.0;
+
+        double normalizeConstant{};
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+        {
+            chances[current] /= totalAbsoluteChance;
+            chances[current] = std::exp(chances[current]);
+            normalizeConstant += chances[current];
+        }
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+            chances[current] /= normalizeConstant;
+
+        if (saveAll)
+            return 0.0;
+        return chances[player];
     }
 
     bool shouldGiveAwayMonopoly(
