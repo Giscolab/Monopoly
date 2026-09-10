@@ -391,4 +391,131 @@ namespace monopoly::ai::trade
         return false;
     }
 
+    bool addTradeItem(
+        TradeProposalList& proposals,
+        FutureImmunityList& immunities,
+        rules::TradeItemKind kind,
+        std::int64_t amount,
+        rules::PlayerNumber fromPlayer,
+        rules::PlayerNumber toPlayer,
+        rules::board::PropertySet propertySet) noexcept
+    {
+        bool applied{};
+        const auto validPlayer = [](rules::PlayerNumber player) noexcept {
+            return player < rules::MaxPlayers;
+        };
+
+        switch (kind)
+        {
+        case rules::TradeItemKind::Cash:
+            if (validPlayer(fromPlayer) && validPlayer(toPlayer))
+            {
+                proposals[fromPlayer].cashGiven = amount;
+                proposals[toPlayer].cashReceived = amount;
+                applied = true;
+            }
+            break;
+
+        case rules::TradeItemKind::Square:
+            if (amount >= 0 && amount < static_cast<std::int64_t>(
+                    rules::board::SquareType::InJail))
+            {
+                const auto square = static_cast<rules::board::SquareType>(amount);
+                const auto propertyBit = rules::board::propertyBit(square);
+                if (propertyBit != 0)
+                {
+                    if (toPlayer == rules::NobodyPlayer)
+                    {
+                        for (auto& proposal : proposals)
+                        {
+                            proposal.propertiesReceived &= ~propertyBit;
+                            proposal.propertiesGiven &= ~propertyBit;
+                        }
+                        applied = true;
+                    }
+                    else if (validPlayer(fromPlayer) && validPlayer(toPlayer))
+                    {
+                        proposals[fromPlayer].propertiesGiven |= propertyBit;
+                        proposals[toPlayer].propertiesReceived |= propertyBit;
+                        applied = true;
+                    }
+                }
+            }
+            break;
+
+        case rules::TradeItemKind::JailCard:
+            if (amount >= 0 && amount < static_cast<std::int64_t>(DeckCount))
+            {
+                const auto deck = static_cast<std::size_t>(amount);
+                if (toPlayer == rules::NobodyPlayer)
+                {
+                    for (auto& proposal : proposals)
+                    {
+                        proposal.jailCardGiven[deck] = false;
+                        proposal.jailCardReceived[deck] = false;
+                    }
+                    applied = true;
+                }
+                else if (validPlayer(fromPlayer) && validPlayer(toPlayer))
+                {
+                    proposals[fromPlayer].jailCardGiven[deck] = true;
+                    proposals[toPlayer].jailCardReceived[deck] = true;
+                    applied = true;
+                }
+            }
+            break;
+
+        case rules::TradeItemKind::Immunity:
+        case rules::TradeItemKind::FutureRent:
+            if (validPlayer(fromPlayer) && validPlayer(toPlayer))
+            {
+                const auto count = static_cast<std::uint8_t>(amount);
+                auto existing = std::find_if(
+                    immunities.begin(), immunities.end(),
+                    [&](const FutureImmunityRecord& entry) {
+                        return entry.count != 0 &&
+                            entry.hitType == kind &&
+                            entry.properties == propertySet &&
+                            entry.toPlayer == toPlayer;
+                    });
+                if (existing != immunities.end())
+                {
+                    existing->count = count;
+                    applied = true;
+                }
+                else
+                {
+                    auto free = std::find_if(
+                        immunities.begin(), immunities.end(),
+                        [](const FutureImmunityRecord& entry) {
+                            return entry.count == 0;
+                        });
+                    if (free != immunities.end())
+                    {
+                        *free = {propertySet, fromPlayer, toPlayer, count, kind};
+                        applied = true;
+                    }
+                }
+            }
+            break;
+        }
+
+        // The retail loop forgot to advance list_point and normalized player 0
+        // repeatedly. Normalize every proposal as the comment intended.
+        for (auto& proposal : proposals)
+        {
+            if (proposal.cashGiven > proposal.cashReceived)
+            {
+                proposal.cashGiven -= proposal.cashReceived;
+                proposal.cashReceived = 0;
+            }
+            else
+            {
+                proposal.cashReceived -= proposal.cashGiven;
+                proposal.cashGiven = 0;
+            }
+        }
+        return applied;
+    }
+
 }
