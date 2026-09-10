@@ -242,6 +242,23 @@ namespace monopoly::ai::trade
         double strategyAttitudeTowardPlayer,
         std::int64_t playerMoneyOwed = 0) noexcept;
 
+    struct PropertyTradeMemory
+    {
+        std::array<rules::board::PropertySet, rules::MaxPlayers> bit1{};
+        std::array<rules::board::PropertySet, rules::MaxPlayers> bit2{};
+    };
+
+    void rememberTradedProperties(
+        PropertyTradeMemory& memory,
+        rules::PlayerNumber proposedPlayer,
+        const TradeProposalRecord& proposal) noexcept;
+    [[nodiscard]] rules::board::PropertySet propertiesAlreadyTraded(
+        const PropertyTradeMemory& memory,
+        rules::PlayerNumber proposedPlayer,
+        const TradeProposalRecord& proposal,
+        int dangerLevel) noexcept;
+    void forgetTradedProperties(PropertyTradeMemory& memory) noexcept;
+
     [[nodiscard]] double cashMultiplier(
         double attitude,
         const CashMultiplierTable& multipliers) noexcept;

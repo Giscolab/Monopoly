@@ -724,6 +724,56 @@ namespace
             "AI item importance includes strategy player's cash-cow loss and cash multiplier");
     }
 
+    void testPropertyTradeMemory()
+    {
+        ai::trade::PropertyTradeMemory memory{};
+        ai::trade::TradeProposalRecord proposal{};
+        const auto traded = bits({SquareType::MediterraneanAvenue, SquareType::BalticAvenue});
+        proposal.propertiesReceived = traded;
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 1) == 0,
+            "AI trade memory starts empty");
+
+        ai::trade::rememberTradedProperties(memory, 1, proposal);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 1) == traded &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 2) == 0 &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 3) == 0,
+            "AI trade memory records first proposal at danger level one");
+        ai::trade::rememberTradedProperties(memory, 1, proposal);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 2) == traded &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 3) == 0,
+            "AI trade memory promotes second proposal to danger level two");
+        ai::trade::rememberTradedProperties(memory, 1, proposal);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 3) == traded,
+            "AI trade memory promotes third proposal to danger level three");
+        ai::trade::rememberTradedProperties(memory, 1, proposal);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 3) == traded,
+            "AI trade memory saturates repeated properties at three");
+
+        ai::trade::forgetTradedProperties(memory);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 2) == traded &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 3) == 0,
+            "AI trade memory ages three down to two");
+        ai::trade::forgetTradedProperties(memory);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 1) == traded &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 2) == 0,
+            "AI trade memory ages two down to one");
+        ai::trade::forgetTradedProperties(memory);
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 1) == 0,
+            "AI trade memory ages one down to zero");
+        require(ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 0) == 0 &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 4) == 0,
+            "AI trade memory rejects invalid danger levels safely");
+
+        ai::trade::rememberTradedProperties(memory, 2, proposal);
+        require(ai::trade::propertiesAlreadyTraded(memory, 2, proposal, 1) == traded &&
+                ai::trade::propertiesAlreadyTraded(memory, 1, proposal, 1) == 0,
+            "AI trade memory keeps proposed-player histories independent");
+        const auto snapshot = memory;
+        ai::trade::rememberTradedProperties(memory, rules::NobodyPlayer, proposal);
+        require(memory.bit1 == snapshot.bit1 && memory.bit2 == snapshot.bit2,
+            "AI trade memory rejects invalid proposed player without mutation");
+    }
+
     void testCashMultiplierContracts()
     {
         ai::trade::CashMultiplierTable multipliers{};
@@ -925,6 +975,7 @@ int main()
         testTradeCadenceContracts();
         testCounterProposalPreparation();
         testAddTradePropertyTypes();
+        testPropertyTradeMemory();
         testCashMultiplierContracts();
         testTradeProposalContracts();
         testAddTradeItemContracts();
