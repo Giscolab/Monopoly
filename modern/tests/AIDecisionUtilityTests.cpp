@@ -777,6 +777,82 @@ namespace
             "AI make-trade-fair rejects empty partner list safely");
     }
 
+    void testCounterProposalBalance()
+    {
+        using ai::decision::CounterProposalBalanceConfig;
+        using ai::decision::CounterProposalBalanceStatus;
+        using ai::decision::CounterProposalPreflightResult;
+        using ai::decision::CounterProposalStatus;
+        using ai::trade::TradeProposalList;
+
+        auto state = baseState();
+        state.players[0].cash = 500;
+        state.players[1].cash = 500;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        const auto mediterranean = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+
+        CounterProposalPreflightResult preflight{};
+        preflight.status = CounterProposalStatus::Ready;
+        preflight.preparation.tradePlayerCount = 1;
+        preflight.preparation.tradePlayers[0] = 1;
+        preflight.preparation.playerProperties[0] = ai::propertiesOwnedByPlayer(state, 0);
+        preflight.preparation.playerProperties[1] = ai::propertiesOwnedByPlayer(state, 1);
+        CounterProposalBalanceConfig config{};
+        config.fairTrade.evaluation.chancesThreshold = 1.0;
+        config.fairTrade.cashMultipliers.fill(1.0);
+        auto& importance = config.fairTrade.evaluation.propertyImportance;
+        importance.monopolyReceivedImportance = 10.0;
+        importance.propertyAllowTradeImportance = 10.0;
+        importance.propertyTwoUnownedImportance = 10.0;
+        importance.propertyOneUnownedImportance = 10.0;
+        importance.railroadImportance = {10.0, 20.0, 30.0, 40.0};
+        importance.utilityImportance = {10.0, 20.0};
+        config.fairTrade.minEvaluationThreshold = 0.0;
+        config.minEvaluationThreshold = 0.0;
+        config.lowestPropertyImportanceForCounter = -100.0;
+        config.maxGiveInTrade = 16;
+
+        TradeProposalList proposals{};
+        proposals[0].propertiesGiven = mediterranean;
+        proposals[1].propertiesReceived = mediterranean;
+        const auto result = ai::decision::counterProposalBalance(
+            state, 0, preflight, proposals, config);
+        require(result.status == CounterProposalBalanceStatus::Ready &&
+                proposals[0].cashReceived == 17 &&
+                proposals[1].cashGiven == 17 &&
+                ai::trade::tradeIsProper(state, proposals),
+            "AI counter balance normalizes and cash-balances a ready two-player trade");
+
+        auto invalidPreflight = preflight;
+        invalidPreflight.status = CounterProposalStatus::InvalidInput;
+        auto invalidTrade = proposals;
+        const auto invalidBefore = invalidTrade;
+        const auto invalidResult = ai::decision::counterProposalBalance(
+            state, 0, invalidPreflight, invalidTrade, config);
+        require(invalidResult.status == CounterProposalBalanceStatus::InvalidInput &&
+                invalidTrade == invalidBefore,
+            "AI counter balance rejects non-ready preflight without mutation");
+
+        auto poorState = baseState();
+        poorState.players[0].cash = 500;
+        poorState.players[1].cash = 500;
+        CounterProposalPreflightResult poorPreflight{};
+        poorPreflight.status = CounterProposalStatus::Ready;
+        poorPreflight.preparation.tradePlayerCount = 1;
+        poorPreflight.preparation.tradePlayers[0] = 1;
+        TradeProposalList poorTrade{};
+        poorTrade[0].cashGiven = 10;
+        poorTrade[1].cashReceived = 10;
+        auto poorConfig = config;
+        poorConfig.minEvaluationThreshold = 1.0;
+        poorConfig.lowestPropertyImportanceForCounter = 0.5;
+        const auto poorResult = ai::decision::counterProposalBalance(
+            poorState, 0, poorPreflight, poorTrade, poorConfig);
+        require(poorResult.status == CounterProposalBalanceStatus::TooPoor &&
+                poorResult.iterations == 1,
+            "AI counter balance rejects too-poor trade after failing to add important property");
+    }
+
 }
 
 int main()
@@ -795,6 +871,7 @@ int main()
         testEvaluateTrade();
         testEvaluateTradePlayerList();
         testMakeTradeFair();
+        testCounterProposalBalance();
         testCounterProposalPreflight();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
