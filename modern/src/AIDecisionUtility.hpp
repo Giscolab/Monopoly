@@ -93,6 +93,8 @@ namespace monopoly::ai::decision
         bool sellHouses,
         bool mortgageMonopoly) noexcept;
 
+    void mortgageNegativeCashPlayers(rules::GameState& state) noexcept;
+
     struct WinningChanceConfig
     {
         std::array<CashStrategy, rules::MaxPlayers> cashStrategy{};
