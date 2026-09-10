@@ -165,7 +165,39 @@ namespace monopoly::ai::trade
         const TradeProposalList& proposals,
         std::span<const double> playerAttitudes) noexcept;
 
+    enum class PropertyClassification : std::uint8_t
+    {
+        None = 0,
+        One = 1,
+        Two,
+        Three,
+        Four,
+        Five,
+        Six,
+        Worst = 10,
+        Best = 11
+    };
+
+    struct MonopolyTradeGenerosity
+    {
+        PropertyClassification giveMonopoly = PropertyClassification::None;
+        std::uint8_t giveGroupTrades{};
+        std::uint8_t giveCashCows{};
+        std::uint8_t giveJunk{};
+        double cashMultiplier{};
+    };
+
     inline constexpr std::size_t WhatToTradeEntries = 20;
+    using WhatToTradeTable = std::array<MonopolyTradeGenerosity, WhatToTradeEntries>;
+
+    [[nodiscard]] bool addTradeMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber toPlayer,
+        rules::board::PropertySet& properties,
+        PropertyClassification type,
+        TradeProposalList& proposals,
+        std::int64_t moneyOwed = 0) noexcept;
+
     using CashMultiplierTable = std::array<double, WhatToTradeEntries>;
 
     enum class TradeImportanceItem : std::uint8_t
@@ -195,6 +227,20 @@ namespace monopoly::ai::trade
         const PropertyImportanceConfig& config,
         double strategyAttitudeTowardPlayer,
         const CashMultiplierTable& multipliers) noexcept;
+
+    [[nodiscard]] bool addTypeProperty(
+        const rules::GameState& before,
+        const rules::GameState& after,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        rules::board::PropertySet& combinedProperties,
+        TradeImportanceItem item,
+        TradeProposalList& proposals,
+        const PropertySets& properties,
+        bool giveDescending,
+        const WhatToTradeTable& whatToTrade,
+        double strategyAttitudeTowardPlayer,
+        std::int64_t playerMoneyOwed = 0) noexcept;
 
     [[nodiscard]] double cashMultiplier(
         double attitude,
