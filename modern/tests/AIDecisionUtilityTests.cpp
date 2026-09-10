@@ -543,6 +543,50 @@ namespace
             "AI trade evaluation rejects invalid evaluated player safely");
     }
 
+    void testEvaluateTradePlayerList()
+    {
+        using ai::decision::TradeEvaluationConfig;
+        using ai::trade::TradeProposalList;
+        auto state = baseState();
+        state.options.passingGoAmount = 200;
+        state.players[0].cash = 500;
+        state.players[1].cash = 500;
+
+        TradeEvaluationConfig config{};
+        config.chancesThreshold = 1.0;
+        config.cashFactor = 1.0;
+        TradeProposalList proposals{};
+        proposals[0].cashGiven = 100;
+        proposals[1].cashReceived = 100;
+        const std::array<rules::PlayerNumber, 2> players{0, 1};
+        std::array<double, 2> evaluations{};
+        ai::decision::evaluateTradePlayerList(
+            state, players, 0, proposals, false, config, evaluations);
+        require(std::abs(evaluations[0] + 100.0) < 1e-9 &&
+                std::abs(evaluations[1] - 100.0) < 1e-9,
+            "AI trade player-list evaluation applies per-player worth deltas");
+        require(std::abs(evaluations[0] - ai::decision::evaluateTrade(
+                    state, 0, 0, proposals, config)) < 1e-9 &&
+                std::abs(evaluations[1] - ai::decision::evaluateTrade(
+                    state, 1, 0, proposals, config)) < 1e-9,
+            "AI trade player-list bulk path matches single-player evaluation");
+
+        auto bankrupt = state;
+        bankrupt.players[0].cash = 50;
+        evaluations = {};
+        ai::decision::evaluateTradePlayerList(
+            bankrupt, players, 0, proposals, false, config, evaluations);
+        require(evaluations[0] == -50.0 && evaluations[1] == 100.0,
+            "AI trade player-list isolates bankruptcy sentinel per player");
+
+        const std::array<rules::PlayerNumber, 2> invalidPlayers{0, 3};
+        evaluations = {};
+        ai::decision::evaluateTradePlayerList(
+            state, invalidPlayers, 0, proposals, false, config, evaluations);
+        require(evaluations[1] == -50.0,
+            "AI trade player-list rejects invalid participant safely");
+    }
+
 }
 
 int main()
@@ -559,6 +603,7 @@ int main()
         testWinningChances();
         testMortgageNegativeCashPlayers();
         testEvaluateTrade();
+        testEvaluateTradePlayerList();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
