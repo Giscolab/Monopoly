@@ -226,6 +226,103 @@ namespace
             "AI income lag above twenty percent requires monopoly trade");
     }
 
+    void testTradeMutationAndMonopolyDetection()
+    {
+        using ai::trade::TradeProposalList;
+        const auto med = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+        const auto baltic = rules::board::propertyBit(SquareType::BalticAvenue);
+
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        TradeProposalList proposals{};
+        proposals[0].propertiesGiven = med;
+        proposals[1].propertiesReceived = med;
+        require(!ai::trade::tradeIsProper(state, proposals),
+            "AI one-way property proposal starts improper");
+        ai::trade::makeTradeProper(state, proposals);
+        require(proposals[0].cashReceived == 2 && proposals[1].cashGiven == 2,
+            "AI make-proper preserves retail doubled-dollar quirk");
+        require(ai::trade::tradeIsProper(state, proposals),
+            "AI make-proper makes two-player one-way proposal proper");
+
+        proposals = {};
+        proposals[0].propertiesGiven = med;
+        proposals[1].propertiesReceived = med;
+        std::array<ai::trade::FutureImmunityRecord, 1> immunity{{
+            {0, 1, 0, 1, rules::TradeItemKind::Immunity}}};
+        ai::trade::makeTradeProper(state, proposals, immunity);
+        require(proposals[0].cashGiven == 0 && proposals[0].cashReceived == 0 &&
+                proposals[1].cashGiven == 0 && proposals[1].cashReceived == 0,
+            "AI make-proper adds no cash when immunity completes both directions");
+
+        rules::GameState applied{};
+        applied.numberOfPlayers = 2;
+        applied.players[0].cash = 100;
+        applied.players[1].cash = 200;
+        applied.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        applied.cards[static_cast<std::size_t>(rules::DeckType::Chance)].jailOwner = 0;
+        proposals = {};
+        proposals[0].propertiesGiven = med;
+        proposals[0].cashGiven = 25;
+        proposals[1].propertiesReceived = med;
+        proposals[1].cashReceived = 50;
+        proposals[1].cashGiven = 10;
+        proposals[1].jailCardReceived[static_cast<std::size_t>(rules::DeckType::Chance)] = true;
+        ai::trade::applyTradeToState(applied, proposals);
+        require(applied.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner == 1,
+            "AI state update assigns property from received set");
+        require(applied.players[0].cash == 75 && applied.players[1].cash == 240,
+            "AI state update applies per-player received-minus-given cash deltas");
+        require(applied.cards[static_cast<std::size_t>(rules::DeckType::Chance)].jailOwner == 1,
+            "AI state update transfers received jail card ownership");
+
+        rules::GameState split{};
+        split.numberOfPlayers = 2;
+        split.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        split.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        proposals = {};
+        proposals[0].propertiesReceived = baltic;
+        require(ai::trade::isMonopolyTrade(split, proposals),
+            "AI monopoly-trade detection sees newly created monopoly");
+
+        rules::GameState owned{};
+        owned.numberOfPlayers = 2;
+        owned.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        owned.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 0;
+        proposals = {};
+        proposals[1].propertiesReceived = baltic;
+        require(ai::trade::isMonopolyTrade(owned, proposals),
+            "AI monopoly-trade detection sees destroyed monopoly");
+        proposals = {};
+        proposals[1].propertiesReceived = med | baltic;
+        require(ai::trade::isMonopolyTrade(owned, proposals),
+            "AI monopoly-trade detection sees monopoly owner exchange");
+
+        proposals = {};
+        proposals[1].propertiesReceived = rules::board::propertyBit(SquareType::ReadingRailroad);
+        require(!ai::trade::isMonopolyTrade(split, proposals),
+            "AI monopoly-trade detection ignores non-colour railroad transfer");
+
+        rules::GameState invalid{};
+        invalid.numberOfPlayers = rules::MaxPlayers + 1;
+        const auto before = proposals;
+        ai::trade::makeTradeProper(invalid, proposals);
+        require(proposals == before,
+            "AI make-proper rejects oversized player count without mutation");
+        require(!ai::trade::isMonopolyTrade(invalid, proposals),
+            "AI monopoly-trade detection rejects oversized player count safely");
+
+        std::array<ai::trade::FutureImmunityRecord, 2> futures{{
+            {0, 0, 1, 0, rules::TradeItemKind::FutureRent},
+            {0, 2, 0, 1, rules::TradeItemKind::Immunity}}};
+        require(ai::trade::playerHasFutureOrImmunity(0, futures),
+            "AI immunity filter sees player receiving active future");
+        require(ai::trade::playerHasFutureOrImmunity(2, futures),
+            "AI immunity filter sees player giving active immunity");
+        require(!ai::trade::playerHasFutureOrImmunity(1, futures),
+            "AI immunity filter ignores zero-count future involvement");
+    }
+
     void testTradeProposalContracts()
     {
         using ai::trade::TradeProposalList;
@@ -299,6 +396,7 @@ int main()
         testTransferAndPossibleMonopolyContracts();
         testShouldTradeForMonopoly();
         testTradeProposalContracts();
+        testTradeMutationAndMonopolyDetection();
         return 0;
     }
     catch (const std::exception& error)
