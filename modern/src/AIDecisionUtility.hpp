@@ -68,6 +68,23 @@ namespace monopoly::ai::decision
         std::uint8_t housingPurchaseStrategy,
         std::int64_t moneyOwed = 0) noexcept;
 
+    struct WorthFactors
+    {
+        std::array<double, 8> property{};
+        std::array<double, 6> cashCow{};
+    };
+
+    [[nodiscard]] std::int64_t totalWorthWithFactors(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const WorthFactors& factors) noexcept;
+
+    [[nodiscard]] bool mortgageWorstProperty(
+        rules::GameState& state,
+        rules::PlayerNumber player,
+        bool sellHouses,
+        bool mortgageMonopoly) noexcept;
+
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
