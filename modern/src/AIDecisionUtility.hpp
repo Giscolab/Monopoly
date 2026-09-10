@@ -144,6 +144,26 @@ namespace monopoly::ai::decision
         const TradeEvaluationConfig& config,
         std::span<double> evaluations) noexcept;
 
+    struct FairTradeConfig
+    {
+        TradeEvaluationConfig evaluation{};
+        std::array<double, rules::MaxPlayers> playerAttitude{};
+        ai::trade::CashMultiplierTable cashMultipliers{};
+        std::array<bool, rules::MaxPlayers> localAIPlayer{};
+        double minEvaluationThreshold{};
+        double minGiveMonopolyEvaluation{};
+    };
+
+    [[nodiscard]] bool makeTradeFair(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const rules::PlayerNumber> partners,
+        std::int64_t giveMost,
+        bool givingMonopoly,
+        ai::trade::TradeProposalList& proposals,
+        const FairTradeConfig& config,
+        std::span<const ai::trade::FutureImmunityRecord> immunities = {}) noexcept;
+
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,

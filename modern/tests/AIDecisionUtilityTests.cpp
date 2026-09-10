@@ -587,6 +587,67 @@ namespace
             "AI trade player-list rejects invalid participant safely");
     }
 
+    void testMakeTradeFair()
+    {
+        using ai::decision::FairTradeConfig;
+        using ai::trade::TradeProposalList;
+        auto state = baseState();
+        state.players[0].cash = 500;
+        state.players[1].cash = 500;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        const auto mediterranean = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+        const std::array<rules::PlayerNumber, 1> partners{1};
+
+        FairTradeConfig config{};
+        config.evaluation.chancesThreshold = 1.0;
+        config.cashMultipliers.fill(1.0);
+        TradeProposalList proposals{};
+        proposals[0].propertiesGiven = mediterranean;
+        proposals[1].propertiesReceived = mediterranean;
+        require(ai::decision::makeTradeFair(
+                    state, 0, partners, 16, false, proposals, config) &&
+                proposals[0].cashReceived == 17 && proposals[1].cashGiven == 17,
+            "AI make-trade-fair preserves retail halving sequence and final five-dollar step");
+        TradeProposalList attitudeTrade{};
+        attitudeTrade[0].propertiesGiven = mediterranean;
+        attitudeTrade[1].propertiesReceived = mediterranean;
+        auto attitudeConfig = config;
+        attitudeConfig.cashMultipliers.fill(2.0);
+        require(ai::decision::makeTradeFair(
+                    state, 0, partners, 16, false, attitudeTrade, attitudeConfig) &&
+                attitudeTrade[0].cashReceived == 34 && attitudeTrade[1].cashGiven == 34,
+            "AI make-trade-fair scales requested cash by retail attitude multiplier");
+
+        auto poor = state;
+        poor.players[1].cash = 0;
+        TradeProposalList poorTrade{};
+        poorTrade[0].propertiesGiven = mediterranean;
+        poorTrade[1].propertiesReceived = mediterranean;
+        require(!ai::decision::makeTradeFair(
+                    poor, 0, partners, 16, false, poorTrade, config),
+            "AI make-trade-fair rejects partner unable to fund counter proposal");
+        auto monopolySale = state;
+        monopolySale.players[1].cash = 20;
+        TradeProposalList monopolyTrade{};
+        monopolyTrade[0].propertiesGiven = mediterranean;
+        monopolyTrade[1].propertiesReceived = mediterranean;
+        auto monopolyConfig = config;
+        monopolyConfig.cashMultipliers.fill(2.0);
+        require(ai::decision::makeTradeFair(
+                    monopolySale, 0, partners, 16, true, monopolyTrade, monopolyConfig) &&
+                monopolyTrade[0].cashReceived == 1 &&
+                monopolyTrade[0].cashGiven == -17 &&
+                monopolyTrade[1].cashGiven == 18,
+            "AI make-trade-fair preserves retail monopoly-sale break asymmetry");
+
+        TradeProposalList invalid{};
+        invalid[0].propertiesGiven = mediterranean;
+        invalid[1].propertiesReceived = mediterranean;
+        require(!ai::decision::makeTradeFair(
+                    state, 0, {}, 16, false, invalid, config),
+            "AI make-trade-fair rejects empty partner list safely");
+    }
+
 }
 
 int main()
@@ -604,6 +665,7 @@ int main()
         testMortgageNegativeCashPlayers();
         testEvaluateTrade();
         testEvaluateTradePlayerList();
+        testMakeTradeFair();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
