@@ -853,6 +853,151 @@ namespace monopoly::ai::decision
         }
     }
 
+    bool makeTradeFair(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const rules::PlayerNumber> partners,
+        std::int64_t giveMost,
+        bool givingMonopoly,
+        ai::trade::TradeProposalList& proposals,
+        const FairTradeConfig& config,
+        std::span<const ai::trade::FutureImmunityRecord> immunities) noexcept
+    {
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || partners.empty() ||
+            partners.size() >= rules::MaxPlayers)
+            return false;
+
+        std::array<rules::PlayerNumber, rules::MaxPlayers> participants{};
+        for (std::size_t index = 0; index < partners.size(); ++index)
+        {
+            if (partners[index] >= state.numberOfPlayers || partners[index] == player)
+                return false;
+            participants[index] = partners[index];
+        }
+        participants[partners.size()] = player;
+        const auto participantCount = partners.size() + 1;
+        std::array<std::int64_t, rules::MaxPlayers> cashGiven{};
+        auto change = giveMost / 2;
+        if (partners.size() == 1)
+        {
+            proposals[player].cashReceived = 0;
+            proposals[player].cashGiven = 0;
+            proposals[partners[0]].cashReceived = 0;
+            proposals[partners[0]].cashGiven = 0;
+        }
+
+        const double minEvaluation = givingMonopoly
+            ? config.minGiveMonopolyEvaluation
+            : config.minEvaluationThreshold;
+        bool doneChangingCash{};
+        std::array<double, rules::MaxPlayers> evaluations{};
+        while (!doneChangingCash)
+        {
+            evaluateTradePlayerList(
+                state,
+                std::span<const rules::PlayerNumber>(participants.data(), participantCount),
+                player, proposals, givingMonopoly, config.evaluation,
+                std::span<double>(evaluations.data(), participantCount));
+
+            auto bestEvaluation = evaluations[0];
+            auto worstEvaluation = evaluations[0];
+            auto bestPlayer = partners[0];
+            auto worstPlayer = partners[0];
+            for (std::size_t index = 0; index < partners.size(); ++index)
+            {
+                const auto current = partners[index];
+                if (evaluations[index] > bestEvaluation)
+                {
+                    bestEvaluation = evaluations[index];
+                    bestPlayer = current;
+                }
+                if (evaluations[index] < worstEvaluation)
+                {
+                    worstEvaluation = evaluations[index];
+                    worstPlayer = current;
+                }
+            }
+
+            if (evaluations[partners.size()] < minEvaluation ||
+                worstEvaluation >= evaluations[partners.size()])
+            {
+                if (change <= 2)
+                {
+                    change = 5;
+                    doneChangingCash = true;
+                }
+                proposals[player].cashReceived += change;
+                proposals[bestPlayer].cashGiven += change;
+                cashGiven[bestPlayer] -= change;
+            }
+            else
+            {
+                if (change <= 2)
+                {
+                    doneChangingCash = true;
+                    continue;
+                }
+                proposals[worstPlayer].cashReceived += change;
+                proposals[player].cashGiven += change;
+                cashGiven[worstPlayer] += change;
+            }
+            change /= 2;
+        }
+
+        for (const auto current : partners)
+        {
+            const double multiplier = ai::trade::cashMultiplier(
+                config.playerAttitude[current], config.cashMultipliers);
+            if (multiplier <= 0.0)
+                return false;
+            const double factor = 1.0 / multiplier;
+            std::int64_t adjustment{};
+            if (cashGiven[current] > 0)
+                adjustment = static_cast<std::int64_t>(
+                    static_cast<double>(cashGiven[current]) -
+                    static_cast<double>(cashGiven[current]) * factor);
+            else
+                adjustment = static_cast<std::int64_t>(
+                    static_cast<double>(cashGiven[current]) -
+                    static_cast<double>(cashGiven[current]) / factor);
+            proposals[current].cashReceived -= adjustment;
+            proposals[player].cashGiven -= adjustment;
+        }
+        for (std::size_t index = 0; index < participantCount; ++index)
+        {
+            const auto current = participants[index];
+            proposals[current].cashGiven -= proposals[current].cashReceived;
+            proposals[current].cashReceived = 0;
+            if (proposals[current].cashGiven < 0)
+            {
+                proposals[current].cashReceived = -proposals[current].cashGiven;
+                proposals[current].cashGiven = 0;
+            }
+
+            auto canPay = -ai::trade::transferTax(
+                state, proposals[current].propertiesReceived);
+            auto properties = ai::propertiesOwnedByPlayer(state, current);
+            properties &= ~proposals[current].propertiesGiven;
+            canPay += ai::liquidAssetsForProperties(state, properties, false, false);
+            canPay += state.players[current].cash;
+            if (config.localAIPlayer[current])
+                canPay -= config.evaluation.winningChance.moneyOwed[current];
+
+            if (canPay < proposals[current].cashGiven)
+            {
+                if (!givingMonopoly || canPay < -cashGiven[current])
+                    return false;
+                change = (canPay - cashGiven[current]) / 2;
+                change -= proposals[current].cashGiven;
+                proposals[current].cashGiven += change;
+                proposals[player].cashReceived += change;
+                break;
+            }
+        }
+        return ai::trade::tradeIsProper(state, proposals, immunities);
+    }
+
     bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
