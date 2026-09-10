@@ -579,6 +579,23 @@ namespace monopoly::ai::decision
         return true;
     }
 
+    void mortgageNegativeCashPlayers(rules::GameState& state) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers)
+            return;
+        for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+        {
+            if (state.players[player].currentSquare ==
+                static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
+                continue;
+            while (state.players[player].cash < 0)
+            {
+                if (!mortgageWorstProperty(state, player, true, true))
+                    break;
+            }
+        }
+    }
+
     double evaluateWinningChances(
         const rules::GameState& state,
         rules::PlayerNumber player,

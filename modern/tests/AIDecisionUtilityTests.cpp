@@ -382,6 +382,28 @@ namespace
             "AI winning chances reject invalid single-player query safely");
     }
 
+    void testMortgageNegativeCashPlayers()
+    {
+        auto state = baseState();
+        state.numberOfPlayers = 3;
+        state.players[0].cash = -20;
+        state.players[1].cash = -20;
+        state.players[2].cash = -20;
+        state.players[2].currentSquare = static_cast<std::uint8_t>(SquareType::OffBoard);
+        own(state, SquareType::OrientalAvenue, 0);
+        own(state, SquareType::VermontAvenue, 1);
+
+        ai::decision::mortgageNegativeCashPlayers(state);
+        require(state.players[0].cash >= 0 &&
+                state.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].mortgaged,
+            "AI negative-cash resolver mortgages assets until active player is solvent");
+        require(state.players[1].cash >= 0 &&
+                state.squares[static_cast<std::size_t>(SquareType::VermontAvenue)].mortgaged,
+            "AI negative-cash resolver processes every active player");
+        require(state.players[2].cash == -20,
+            "AI negative-cash resolver ignores off-board bankrupt players");
+    }
+
     void testHypotheticalUnmortgageAndGiveAway()
     {
         using ai::decision::CashStrategy;
@@ -482,6 +504,7 @@ int main()
         testShouldUnmortgageAndBuyHouse();
         testWorthFactorsAndMortgageWorstProperty();
         testWinningChances();
+        testMortgageNegativeCashPlayers();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
