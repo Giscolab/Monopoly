@@ -188,4 +188,69 @@ namespace monopoly::ai::trade
         return MonopolyTradeDecision::Maybe;
     }
 
+    bool playerInvolvedInTrade(
+        const TradeProposalRecord& proposal) noexcept
+    {
+        if (proposal.propertiesGiven != 0 || proposal.propertiesReceived != 0 ||
+            proposal.cashReceived != 0 || proposal.cashGiven != 0)
+            return true;
+        for (std::size_t index = 0; index < DeckCount; ++index)
+        {
+            if (proposal.jailCardGiven[index] || proposal.jailCardReceived[index])
+                return true;
+        }
+        return false;
+    }
+
+    rules::PlayerNumber nextPlayerWantingCash(
+        const TradeProposalList& proposals) noexcept
+    {
+        for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+        {
+            if (proposals[player].cashReceived != 0)
+                return player;
+        }
+        return rules::NobodyPlayer;
+    }
+
+    bool tradeIsProper(
+        const rules::GameState& state,
+        const TradeProposalList& proposals,
+        std::span<const FutureImmunityRecord> immunities) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers)
+            return false;
+
+        bool someoneInTrade{};
+        for (rules::PlayerNumber player = 0;
+             player < state.numberOfPlayers; ++player)
+        {
+            const auto& proposal = proposals[player];
+            if (!playerInvolvedInTrade(proposal))
+                continue;
+
+            someoneInTrade = true;
+            bool given = proposal.propertiesGiven != 0 || proposal.cashGiven != 0;
+            bool received =
+                proposal.propertiesReceived != 0 || proposal.cashReceived != 0;
+            for (std::size_t index = 0; index < DeckCount; ++index)
+            {
+                received = received || proposal.jailCardReceived[index];
+                given = given || proposal.jailCardGiven[index];
+            }
+            for (const auto& immunity : immunities)
+            {
+                if (immunity.count == 0)
+                    continue;
+                if (immunity.fromPlayer == player)
+                    given = true;
+                if (immunity.toPlayer == player)
+                    received = true;
+            }
+            if (!given || !received)
+                return false;
+        }
+        return someoneInTrade;
+    }
+
 }

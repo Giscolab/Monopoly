@@ -18,6 +18,31 @@ namespace monopoly::ai::trade
         rules::board::PropertySet,
         rules::MaxPlayers>;
 
+    inline constexpr std::size_t DeckCount =
+        static_cast<std::size_t>(rules::DeckType::Count);
+
+    struct TradeProposalRecord
+    {
+        rules::board::PropertySet propertiesGiven{};
+        rules::board::PropertySet propertiesReceived{};
+        std::int64_t cashReceived{};
+        std::int64_t cashGiven{};
+        std::array<bool, DeckCount> jailCardGiven{};
+        std::array<bool, DeckCount> jailCardReceived{};
+    };
+
+    using TradeProposalList = std::array<
+        TradeProposalRecord, rules::MaxPlayers>;
+
+    struct FutureImmunityRecord
+    {
+        rules::board::PropertySet properties{};
+        rules::PlayerNumber fromPlayer = rules::NobodyPlayer;
+        rules::PlayerNumber toPlayer = rules::NobodyPlayer;
+        std::uint8_t count{};
+        rules::TradeItemKind hitType = rules::TradeItemKind::Immunity;
+    };
+
     [[nodiscard]] MonopolyTradeGroup findSmallestMonopolyTrade(
         rules::PlayerNumber player,
         rules::board::PropertySet monopoly,
@@ -43,5 +68,14 @@ namespace monopoly::ai::trade
     [[nodiscard]] MonopolyTradeDecision shouldTradeForMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;
+
+    [[nodiscard]] bool playerInvolvedInTrade(
+        const TradeProposalRecord& proposal) noexcept;
+    [[nodiscard]] rules::PlayerNumber nextPlayerWantingCash(
+        const TradeProposalList& proposals) noexcept;
+    [[nodiscard]] bool tradeIsProper(
+        const rules::GameState& state,
+        const TradeProposalList& proposals,
+        std::span<const FutureImmunityRecord> immunities = {}) noexcept;
 
 }

@@ -225,6 +225,65 @@ namespace
         require(ai::trade::shouldTradeForMonopoly(lagging, 0) == Decision::Required,
             "AI income lag above twenty percent requires monopoly trade");
     }
+
+    void testTradeProposalContracts()
+    {
+        using ai::trade::TradeProposalList;
+        TradeProposalList proposals{};
+        require(!ai::trade::playerInvolvedInTrade(proposals[0]),
+            "AI empty proposal record is not involved in trade");
+        proposals[0].cashGiven = 1;
+        require(ai::trade::playerInvolvedInTrade(proposals[0]),
+            "AI cash field marks proposal record involved");
+        proposals[0] = {};
+        proposals[0].jailCardReceived[0] = true;
+        require(ai::trade::playerInvolvedInTrade(proposals[0]),
+            "AI jail-card field marks proposal record involved");
+
+        proposals = {};
+        proposals[4].cashReceived = 5;
+        proposals[2].cashReceived = 1;
+        require(ai::trade::nextPlayerWantingCash(proposals) == 2,
+            "AI next cash claimant preserves first-player scan order");
+        proposals = {};
+        require(ai::trade::nextPlayerWantingCash(proposals) == rules::NobodyPlayer,
+            "AI next cash claimant returns Nobody when no cash requested");
+
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        require(!ai::trade::tradeIsProper(state, proposals),
+            "AI proper-trade check rejects empty trade");
+        proposals[0].cashGiven = 10;
+        require(!ai::trade::tradeIsProper(state, proposals),
+            "AI proper-trade check rejects involved player that only gives");
+
+        proposals = {};
+        proposals[0].cashGiven = 10;
+        proposals[0].cashReceived = 5;
+        require(ai::trade::tradeIsProper(state, proposals),
+            "AI proper-trade check preserves retail per-player direction test without conservation");
+
+        proposals = {};
+        const auto brown = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+        proposals[0].propertiesGiven = brown;
+        proposals[1].propertiesReceived = brown;
+        std::array<ai::trade::FutureImmunityRecord, 1> immunity{{
+            {0, 1, 0, 1, rules::TradeItemKind::Immunity}}};
+        require(ai::trade::tradeIsProper(state, proposals, immunity),
+            "AI immunity can complete give/receive sides for already-involved players");
+        immunity[0].count = 0;
+        require(!ai::trade::tradeIsProper(state, proposals, immunity),
+            "AI zero-count immunity is ignored like retail");
+
+        proposals = {};
+        immunity[0] = {0, 0, 1, 1, rules::TradeItemKind::FutureRent};
+        require(!ai::trade::tradeIsProper(state, proposals, immunity),
+            "AI immunity-only participants preserve retail not-involved quirk");
+
+        state.numberOfPlayers = rules::MaxPlayers + 1;
+        require(!ai::trade::tradeIsProper(state, proposals),
+            "AI proper-trade check rejects oversized player count safely");
+    }
 }
 
 int main()
@@ -239,6 +298,7 @@ int main()
         testInputGuards();
         testTransferAndPossibleMonopolyContracts();
         testShouldTradeForMonopoly();
+        testTradeProposalContracts();
         return 0;
     }
     catch (const std::exception& error)
