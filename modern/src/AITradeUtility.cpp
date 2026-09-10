@@ -892,6 +892,54 @@ namespace monopoly::ai::trade
         return true;
     }
 
+    void rememberTradedProperties(
+        PropertyTradeMemory& memory,
+        rules::PlayerNumber proposedPlayer,
+        const TradeProposalRecord& proposal) noexcept
+    {
+        if (proposedPlayer >= rules::MaxPlayers)
+            return;
+        const auto traded = proposal.propertiesReceived | proposal.propertiesGiven;
+        auto& bit1 = memory.bit1[proposedPlayer];
+        auto& bit2 = memory.bit2[proposedPlayer];
+        const auto mask = ~bit1;
+        const auto mask2 = bit1 & traded & ~bit2;
+        bit1 |= mask & traded;
+        bit2 |= mask2;
+        bit1 &= ~mask2;
+    }
+
+    rules::board::PropertySet propertiesAlreadyTraded(
+        const PropertyTradeMemory& memory,
+        rules::PlayerNumber proposedPlayer,
+        const TradeProposalRecord& proposal,
+        int dangerLevel) noexcept
+    {
+        if (proposedPlayer >= rules::MaxPlayers || dangerLevel < 1 || dangerLevel > 3)
+            return 0;
+        const auto traded = proposal.propertiesReceived | proposal.propertiesGiven;
+        const auto first = traded & memory.bit1[proposedPlayer];
+        const auto second = traded & memory.bit2[proposedPlayer];
+        if (dangerLevel == 1)
+            return first | second;
+        if (dangerLevel == 2)
+            return second;
+        return first & second;
+    }
+
+    void forgetTradedProperties(PropertyTradeMemory& memory) noexcept
+    {
+        for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+        {
+            auto& bit1 = memory.bit1[player];
+            auto& bit2 = memory.bit2[player];
+            const auto mask = ~bit1;
+            const auto mask2 = bit2 & mask;
+            bit2 ^= mask2;
+            bit1 = mask2;
+        }
+    }
+
     double cashMultiplier(
         double attitude,
         const CashMultiplierTable& multipliers) noexcept
