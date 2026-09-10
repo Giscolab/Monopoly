@@ -43,6 +43,31 @@ namespace monopoly::ai::decision
         std::int64_t minCashOnHand,
         std::int64_t moneyOwed = 0) noexcept;
 
+    [[nodiscard]] bool shouldUnmortgageProperty(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed = 0) noexcept;
+
+    enum class HousePurchaseDecision : std::uint8_t
+    {
+        No = 0,
+        Yes = 1,
+        Later = 2
+    };
+
+    inline constexpr std::uint8_t HouseBuyAtLeast3 = 1u << 0;
+    inline constexpr std::uint8_t HouseBuyWithin12 = 1u << 1;
+
+    [[nodiscard]] HousePurchaseDecision shouldBuyHouse(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::uint8_t housingPurchaseStrategy,
+        std::int64_t moneyOwed = 0) noexcept;
+
     [[nodiscard]] bool shouldGiveAwayMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,

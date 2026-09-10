@@ -40,6 +40,14 @@ namespace
         require(ai::decision::MonopolyAverageLandingFrequency[3] == 1.103 &&
                 ai::decision::MonopolyAverageLandingFrequency[7] == 0.890,
             "AI monopoly landing-frequency priorities preserve retail constants");
+        using ai::decision::HousePurchaseDecision;
+        require(static_cast<int>(HousePurchaseDecision::No) == 0 &&
+                static_cast<int>(HousePurchaseDecision::Yes) == 1 &&
+                static_cast<int>(HousePurchaseDecision::Later) == 2,
+            "AI house purchase decision preserves retail EBOOL numeric contract");
+        require(ai::decision::HouseBuyAtLeast3 == 1 &&
+                ai::decision::HouseBuyWithin12 == 2,
+            "AI housing purchase flags preserve retail bit contract");
     }
 
     void testExcessCashStrategies()
@@ -144,6 +152,110 @@ namespace
         require(!ai::decision::hypotheticalBuyHouse(broke, 0),
             "AI hypothetical builder refuses zero liquid assets");
     }
+    void testShouldUnmortgageAndBuyHouse()
+    {
+        using ai::decision::CashStrategy;
+        using ai::decision::HousePurchaseDecision;
+
+        auto nonMonopoly = baseState();
+        nonMonopoly.players[0].cash = 100;
+        own(nonMonopoly, SquareType::ReadingRailroad, 0);
+        own(nonMonopoly, SquareType::PennsylvaniaRailroad, 0);
+        nonMonopoly.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged = true;
+        require(!ai::decision::shouldUnmortgageProperty(
+                    nonMonopoly, 0, CashStrategy::MinimumAmount, 50),
+            "AI should-unmortgage uses cash-only reserve for non-monopoly property");
+        nonMonopoly.players[0].cash = 160;
+        require(ai::decision::shouldUnmortgageProperty(
+                    nonMonopoly, 0, CashStrategy::MinimumAmount, 50),
+            "AI should-unmortgage accepts non-monopoly once cash-only reserve covers 110 percent");
+
+        auto monopoly = baseState();
+        monopoly.players[0].cash = 0;
+        own(monopoly, SquareType::MediterraneanAvenue, 0);
+        own(monopoly, SquareType::BalticAvenue, 0);
+        own(monopoly, SquareType::ReadingRailroad, 0);
+        monopoly.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        require(ai::decision::shouldUnmortgageProperty(
+                    monopoly, 0, CashStrategy::MinimumAmount, 0),
+            "AI should-unmortgage uses mortgageable excess for monopoly property");
+
+        auto buildFirst = baseState();
+        buildFirst.players[0].cash = 300;
+        own(buildFirst, SquareType::ParkPlace, 0);
+        own(buildFirst, SquareType::Boardwalk, 0);
+        own(buildFirst, SquareType::ReadingRailroad, 0);
+        buildFirst.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged = true;
+        require(!ai::decision::shouldUnmortgageProperty(
+                    buildFirst, 0, CashStrategy::MinimumAmount, 0),
+            "AI should-unmortgage simulates desired house purchase before freeing non-monopoly mortgage");
+        buildFirst.options.maximumHouses = ai::decision::CriticalHousingLevel;
+        require(ai::decision::shouldUnmortgageProperty(
+                    buildFirst, 0, CashStrategy::MinimumAmount, 0),
+            "AI should-unmortgage skips hypothetical housing during retail critical shortage");
+
+        auto noMonopoly = baseState();
+        noMonopoly.players[0].cash = 1000;
+        require(ai::decision::shouldBuyHouse(
+                    noMonopoly, 0, CashStrategy::MinimumAmount, 0, 0) ==
+                HousePurchaseDecision::No,
+            "AI should-buy-house rejects player without monopoly");
+
+        auto brown = baseState();
+        brown.players[0].cash = 100;
+        own(brown, SquareType::MediterraneanAvenue, 0);
+        own(brown, SquareType::BalticAvenue, 0);
+        require(ai::decision::shouldBuyHouse(
+                    brown, 0, CashStrategy::MinimumAmount, 0, 0) ==
+                HousePurchaseDecision::Yes,
+            "AI should-buy-house accepts affordable monopoly house");
+
+        auto atLeastThree = brown;
+        atLeastThree.players[0].cash = 250;
+        require(ai::decision::shouldBuyHouse(
+                    atLeastThree, 0, CashStrategy::MinimumAmount, 0,
+                    ai::decision::HouseBuyAtLeast3) == HousePurchaseDecision::No,
+            "AI at-least-three housing strategy reserves full six-house brown build");
+        atLeastThree.players[0].cash = 300;
+        require(ai::decision::shouldBuyHouse(
+                    atLeastThree, 0, CashStrategy::MinimumAmount, 0,
+                    ai::decision::HouseBuyAtLeast3) == HousePurchaseDecision::Yes,
+            "AI at-least-three housing strategy accepts exact full-build budget");
+
+        auto proximity = brown;
+        proximity.numberOfPlayers = 2;
+        proximity.players[0].cash = 500;
+        proximity.players[1].currentSquare = static_cast<std::uint8_t>(SquareType::FreeParking);
+        require(ai::decision::shouldBuyHouse(
+                    proximity, 0, CashStrategy::MinimumAmount, 0,
+                    ai::decision::HouseBuyWithin12) == HousePurchaseDecision::Later,
+            "AI within-12 housing strategy returns Later when monopoly is affordable but opponents are far");
+        proximity.players[1].currentSquare = static_cast<std::uint8_t>(SquareType::Boardwalk);
+        require(ai::decision::shouldBuyHouse(
+                    proximity, 0, CashStrategy::MinimumAmount, 0,
+                    ai::decision::HouseBuyWithin12) == HousePurchaseDecision::Yes,
+            "AI within-12 housing strategy buys when opponent approaches monopoly");
+        proximity.players[1].currentSquare = static_cast<std::uint8_t>(SquareType::FreeParking);
+        proximity.options.maximumHouses = ai::decision::CriticalHousingLevel;
+        require(ai::decision::shouldBuyHouse(
+                    proximity, 0, CashStrategy::MinimumAmount, 0,
+                    ai::decision::HouseBuyWithin12) == HousePurchaseDecision::Yes,
+            "AI housing shortage ignores within-12 delay like retail");
+
+        auto mortgagedBrown = brown;
+        mortgagedBrown.players[0].cash = 82;
+        mortgagedBrown.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        require(ai::decision::shouldBuyHouse(
+                    mortgagedBrown, 0, CashStrategy::MinimumAmount, 0, 0) ==
+                HousePurchaseDecision::No,
+            "AI should-buy-house subtracts monopoly unmortgage cost before house budget");
+        mortgagedBrown.players[0].cash = 83;
+        require(ai::decision::shouldBuyHouse(
+                    mortgagedBrown, 0, CashStrategy::MinimumAmount, 0, 0) ==
+                HousePurchaseDecision::Yes,
+            "AI should-buy-house accepts exact truncated unmortgage-plus-house budget");
+    }
+
     void testHypotheticalUnmortgageAndGiveAway()
     {
         using ai::decision::CashStrategy;
@@ -241,6 +353,7 @@ int main()
         testRetailConstants();
         testExcessCashStrategies();
         testHypotheticalBuilding();
+        testShouldUnmortgageAndBuyHouse();
         testHypotheticalUnmortgageAndGiveAway();
         return 0;
     }
