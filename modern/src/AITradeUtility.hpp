@@ -29,6 +29,8 @@ namespace monopoly::ai::trade
         std::int64_t cashGiven{};
         std::array<bool, DeckCount> jailCardGiven{};
         std::array<bool, DeckCount> jailCardReceived{};
+
+        bool operator==(const TradeProposalRecord&) const = default;
     };
 
     using TradeProposalList = std::array<
@@ -77,5 +79,18 @@ namespace monopoly::ai::trade
         const rules::GameState& state,
         const TradeProposalList& proposals,
         std::span<const FutureImmunityRecord> immunities = {}) noexcept;
+    void makeTradeProper(
+        const rules::GameState& state,
+        TradeProposalList& proposals,
+        std::span<const FutureImmunityRecord> immunities = {}) noexcept;
+    void applyTradeToState(
+        rules::GameState& state,
+        const TradeProposalList& proposals) noexcept;
+    [[nodiscard]] bool isMonopolyTrade(
+        const rules::GameState& state,
+        const TradeProposalList& proposals) noexcept;
+    [[nodiscard]] bool playerHasFutureOrImmunity(
+        rules::PlayerNumber player,
+        std::span<const FutureImmunityRecord> immunities) noexcept;
 
 }

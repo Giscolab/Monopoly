@@ -253,4 +253,142 @@ namespace monopoly::ai::trade
         return someoneInTrade;
     }
 
+    void makeTradeProper(
+        const rules::GameState& state,
+        TradeProposalList& proposals,
+        std::span<const FutureImmunityRecord> immunities) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers)
+            return;
+
+        auto dollarPlayer = rules::NobodyPlayer;
+        int firstPlayerNeed{};
+        for (rules::PlayerNumber player = 0;
+             player < state.numberOfPlayers; ++player)
+        {
+            auto& proposal = proposals[player];
+            if (!playerInvolvedInTrade(proposal))
+                continue;
+
+            bool given = proposal.propertiesGiven != 0 || proposal.cashGiven != 0;
+            bool received = proposal.propertiesReceived != 0 || proposal.cashReceived != 0;
+            for (std::size_t deck = 0; deck < DeckCount; ++deck)
+            {
+                given = given || proposal.jailCardGiven[deck];
+                received = received || proposal.jailCardReceived[deck];
+            }
+            for (const auto& immunity : immunities)
+            {
+                if (immunity.count == 0)
+                    continue;
+                if (immunity.fromPlayer == player)
+                    given = true;
+                if (immunity.toPlayer == player)
+                    received = true;
+            }
+
+            if (!given)
+            {
+                if (dollarPlayer == rules::NobodyPlayer)
+                    firstPlayerNeed = 1;
+                else
+                {
+                    proposals[dollarPlayer].cashReceived += 1;
+                    proposal.cashGiven += 1;
+                }
+            }
+            if (!received)
+            {
+                if (dollarPlayer == rules::NobodyPlayer)
+                    firstPlayerNeed = 2;
+                else
+                {
+                    proposals[dollarPlayer].cashGiven += 1;
+                    proposal.cashReceived += 1;
+                }
+            }
+
+            if (dollarPlayer == rules::NobodyPlayer)
+                dollarPlayer = player;
+            else if (firstPlayerNeed != 0)
+            {
+                if (firstPlayerNeed == 1)
+                {
+                    proposals[dollarPlayer].cashGiven += 1;
+                    proposal.cashReceived += 1;
+                }
+                else
+                {
+                    proposals[dollarPlayer].cashReceived += 1;
+                    proposal.cashGiven += 1;
+                }
+            }
+        }
+    }
+
+    void applyTradeToState(
+        rules::GameState& state,
+        const TradeProposalList& proposals) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers)
+            return;
+
+        for (rules::PlayerNumber player = 0;
+             player < state.numberOfPlayers; ++player)
+        {
+            const auto& proposal = proposals[player];
+            for (std::size_t index = 0;
+                 index < static_cast<std::size_t>(rules::board::SquareType::InJail);
+                 ++index)
+            {
+                const auto square = static_cast<rules::board::SquareType>(index);
+                if ((rules::board::propertyBit(square) & proposal.propertiesReceived) != 0)
+                    state.squares[index].owner = player;
+            }
+            state.players[player].cash += proposal.cashReceived - proposal.cashGiven;
+            for (std::size_t deck = 0; deck < DeckCount; ++deck)
+            {
+                if (proposal.jailCardReceived[deck])
+                    state.cards[deck].jailOwner = player;
+            }
+        }
+    }
+
+    bool isMonopolyTrade(
+        const rules::GameState& state,
+        const TradeProposalList& proposals) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers)
+            return false;
+
+        auto after = state;
+        applyTradeToState(after, proposals);
+        for (const auto square : ai::ExpensiveMonopolySquares)
+        {
+            const auto oldOwner = ai::isMonopoly(state, square)
+                ? ai::firstOwnerInMonopoly(state, square)
+                : rules::NobodyPlayer;
+            const auto newOwner = ai::isMonopoly(after, square)
+                ? ai::firstOwnerInMonopoly(after, square)
+                : rules::NobodyPlayer;
+            if (oldOwner != newOwner)
+                return true;
+        }
+        return false;
+    }
+
+    bool playerHasFutureOrImmunity(
+        rules::PlayerNumber player,
+        std::span<const FutureImmunityRecord> immunities) noexcept
+    {
+        for (const auto& immunity : immunities)
+        {
+            if (immunity.count == 0)
+                continue;
+            if (immunity.fromPlayer == player || immunity.toPlayer == player)
+                return true;
+        }
+        return false;
+    }
+
 }
