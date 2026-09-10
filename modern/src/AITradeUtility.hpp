@@ -43,7 +43,12 @@ namespace monopoly::ai::trade
         rules::PlayerNumber toPlayer = rules::NobodyPlayer;
         std::uint8_t count{};
         rules::TradeItemKind hitType = rules::TradeItemKind::Immunity;
+
+        bool operator==(const FutureImmunityRecord&) const = default;
     };
+
+    using FutureImmunityList = std::array<
+        FutureImmunityRecord, rules::MaxCountHitSets>;
 
     [[nodiscard]] MonopolyTradeGroup findSmallestMonopolyTrade(
         rules::PlayerNumber player,
@@ -92,5 +97,13 @@ namespace monopoly::ai::trade
     [[nodiscard]] bool playerHasFutureOrImmunity(
         rules::PlayerNumber player,
         std::span<const FutureImmunityRecord> immunities) noexcept;
+    [[nodiscard]] bool addTradeItem(
+        TradeProposalList& proposals,
+        FutureImmunityList& immunities,
+        rules::TradeItemKind kind,
+        std::int64_t amount,
+        rules::PlayerNumber fromPlayer,
+        rules::PlayerNumber toPlayer,
+        rules::board::PropertySet propertySet = 0) noexcept;
 
 }

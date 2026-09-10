@@ -1,5 +1,6 @@
 #include "AITradeUtility.hpp"
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -226,6 +227,109 @@ namespace
             "AI income lag above twenty percent requires monopoly trade");
     }
 
+    void testAddTradeItemContracts()
+    {
+        using ai::trade::FutureImmunityList;
+        using ai::trade::TradeProposalList;
+        TradeProposalList proposals{};
+        FutureImmunityList immunities{};
+
+        proposals[3].cashGiven = 10;
+        proposals[3].cashReceived = 4;
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::Cash,
+                    50, 0, 1),
+            "AI add-trade-item accepts cash transfer");
+        require(proposals[0].cashGiven == 50 && proposals[1].cashReceived == 50,
+            "AI add-trade-item records cash giver and receiver");
+        require(proposals[3].cashGiven == 6 && proposals[3].cashReceived == 0,
+            "AI add-trade-item fixes retail normalization pointer bug for every player");
+
+        const auto med = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::Square,
+                    static_cast<std::int64_t>(SquareType::MediterraneanAvenue),
+                    0, 1),
+            "AI add-trade-item accepts property transfer");
+        require((proposals[0].propertiesGiven & med) != 0 &&
+                (proposals[1].propertiesReceived & med) != 0,
+            "AI add-trade-item records property on both trade sides");
+        proposals[4].propertiesGiven |= med;
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::Square,
+                    static_cast<std::int64_t>(SquareType::MediterraneanAvenue),
+                    0, rules::NobodyPlayer),
+            "AI add-trade-item accepts retail property clear-to-Nobody");
+        require(std::all_of(proposals.begin(), proposals.end(),
+                    [&](const auto& proposal) {
+                        return (proposal.propertiesGiven & med) == 0 &&
+                            (proposal.propertiesReceived & med) == 0;
+                    }),
+            "AI property clear-to-Nobody removes property from every proposal record");
+
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::JailCard,
+                    static_cast<std::int64_t>(rules::DeckType::Chance), 0, 1),
+            "AI add-trade-item accepts jail-card transfer");
+        require(proposals[0].jailCardGiven[0] && proposals[1].jailCardReceived[0],
+            "AI add-trade-item records jail card on both trade sides");
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::JailCard,
+                    static_cast<std::int64_t>(rules::DeckType::Chance),
+                    0, rules::NobodyPlayer),
+            "AI add-trade-item accepts jail-card clear-to-Nobody");
+        require(std::all_of(proposals.begin(), proposals.end(),
+                    [](const auto& proposal) {
+                        return !proposal.jailCardGiven[0] &&
+                            !proposal.jailCardReceived[0];
+                    }),
+            "AI jail-card clear-to-Nobody removes card from every proposal record");
+
+        const auto brown = ai::monopolySet(SquareType::MediterraneanAvenue);
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::Immunity,
+                    3, 0, 1, brown),
+            "AI add-trade-item allocates first immunity slot");
+        require(immunities[0].properties == brown && immunities[0].fromPlayer == 0 &&
+                immunities[0].toPlayer == 1 && immunities[0].count == 3 &&
+                immunities[0].hitType == rules::TradeItemKind::Immunity,
+            "AI add-trade-item stores immunity contract fields");
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::Immunity,
+                    5, 2, 1, brown),
+            "AI add-trade-item updates matching immunity");
+        require(immunities[0].count == 5 && immunities[0].fromPlayer == 0,
+            "AI matching immunity preserves retail from-player while updating count only");
+        require(ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::FutureRent,
+                    257, 2, 1, brown),
+            "AI add-trade-item stores distinct future-rent slot");
+        require(immunities[1].count == 1 &&
+                immunities[1].hitType == rules::TradeItemKind::FutureRent,
+            "AI future count preserves retail unsigned-char wrapping");
+
+        FutureImmunityList full{};
+        for (std::size_t index = 0; index < full.size(); ++index)
+            full[index] = {static_cast<rules::board::PropertySet>(index + 1),
+                0, 1, 1, rules::TradeItemKind::Immunity};
+        const auto fullBefore = full;
+        require(!ai::trade::addTradeItem(
+                    proposals, full, rules::TradeItemKind::FutureRent,
+                    1, 0, 1, 0x80000000u),
+            "AI add-trade-item rejects immunity when retail table is full");
+        require(full == fullBefore,
+            "AI full immunity table remains unchanged on rejected insert");
+
+        require(!ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::Square,
+                    999, 0, 1),
+            "AI add-trade-item rejects invalid property safely");
+        require(!ai::trade::addTradeItem(
+                    proposals, immunities, rules::TradeItemKind::JailCard,
+                    9, 0, 1),
+            "AI add-trade-item rejects invalid deck safely");
+    }
+
     void testTradeMutationAndMonopolyDetection()
     {
         using ai::trade::TradeProposalList;
@@ -396,6 +500,7 @@ int main()
         testTransferAndPossibleMonopolyContracts();
         testShouldTradeForMonopoly();
         testTradeProposalContracts();
+        testAddTradeItemContracts();
         testTradeMutationAndMonopolyDetection();
         return 0;
     }
