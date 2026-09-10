@@ -800,6 +800,111 @@ namespace
         require(!ai::trade::tradeIsProper(state, proposals),
             "AI proper-trade check rejects oversized player count safely");
     }
+    void testAddTradePropertyTypes()
+    {
+        using ai::trade::PropertyClassification;
+        using ai::trade::TradeImportanceItem;
+        using ai::trade::TradeProposalList;
+        using ai::trade::WhatToTradeTable;
+        rules::GameState state{};
+        state.numberOfPlayers = 3;
+        state.players[0].cash = 0;
+        const auto brown = bits({SquareType::MediterraneanAvenue, SquareType::BalticAvenue});
+        const auto lightBlue = bits({SquareType::OrientalAvenue,
+            SquareType::VermontAvenue, SquareType::ConnecticutAvenue});
+        for (const auto square : {SquareType::MediterraneanAvenue, SquareType::BalticAvenue,
+                 SquareType::OrientalAvenue, SquareType::VermontAvenue,
+                 SquareType::ConnecticutAvenue})
+            state.squares[static_cast<std::size_t>(square)].owner = 1;
+
+        auto available = brown | lightBlue;
+        TradeProposalList proposals{};
+        require(ai::trade::addTradeMonopoly(state, 0, available,
+                    PropertyClassification::Best, proposals) &&
+                proposals[0].propertiesReceived == lightBlue &&
+                proposals[1].propertiesGiven == lightBlue &&
+                available == brown,
+            "AI add-trade-monopoly gives Darzinskis-best complete group first");
+        available = brown | lightBlue;
+        proposals = {};
+        require(ai::trade::addTradeMonopoly(state, 0, available,
+                    PropertyClassification::Worst, proposals) &&
+                proposals[0].propertiesReceived == brown &&
+                proposals[1].propertiesGiven == brown &&
+                available == lightBlue,
+            "AI add-trade-monopoly gives Darzinskis-worst complete group first");
+
+        rules::GameState rails{};
+        rails.numberOfPlayers = 2;
+        rails.squares[static_cast<std::size_t>(SquareType::ReadingRailroad)].owner = 1;
+        rails.squares[static_cast<std::size_t>(SquareType::PennsylvaniaRailroad)].owner = 1;
+        ai::trade::PropertySets railProperties{};
+        railProperties[0] = ai::propertiesOwnedByPlayer(rails, 0);
+        railProperties[1] = ai::propertiesOwnedByPlayer(rails, 1);
+        auto railCombined = railProperties[1];
+        proposals = {};
+        WhatToTradeTable whatToTrade{};
+        const auto reading = rules::board::propertyBit(SquareType::ReadingRailroad);
+        require(ai::trade::addTypeProperty(rails, rails, 0, 0, railCombined,
+                    TradeImportanceItem::Railroad, proposals, railProperties, true,
+                    whatToTrade, 0.0) &&
+                proposals[0].propertiesReceived == reading &&
+                proposals[1].propertiesGiven == reading &&
+                (railCombined & reading) == 0,
+            "AI add-type-property takes first available railroad bit like retail");
+        auto blockedRailCombined = railProperties[1];
+        auto blockedRailTrade = TradeProposalList{};
+        blockedRailTrade[0].propertiesGiven = reading;
+        require(!ai::trade::addTypeProperty(rails, rails, 0, 0, blockedRailCombined,
+                    TradeImportanceItem::Railroad, blockedRailTrade, railProperties, true,
+                    whatToTrade, 0.0),
+            "AI add-type-property refuses to give and receive railroad in same trade");
+
+        rules::GameState generosityState{};
+        generosityState.numberOfPlayers = 2;
+        for (const auto square : {SquareType::OrientalAvenue,
+                 SquareType::VermontAvenue, SquareType::ConnecticutAvenue})
+            generosityState.squares[static_cast<std::size_t>(square)].owner = 1;
+        ai::trade::PropertySets generosityProperties{};
+        generosityProperties[0] = ai::propertiesOwnedByPlayer(generosityState, 0);
+        generosityProperties[1] = ai::propertiesOwnedByPlayer(generosityState, 1);
+        auto generosityCombined = generosityProperties[1];
+        proposals = {};
+        whatToTrade[10].giveMonopoly = PropertyClassification::Best;
+        require(ai::trade::addTypeProperty(generosityState, generosityState, 0, 1,
+                    generosityCombined, TradeImportanceItem::Monopoly, proposals,
+                    generosityProperties, true, whatToTrade, 0.0) &&
+                proposals[0].propertiesReceived == lightBlue && generosityCombined == 0,
+            "AI add-type-property uses attitude-indexed monopoly generosity table");
+        rules::GameState tradeBefore{};
+        tradeBefore.numberOfPlayers = 3;
+        tradeBefore.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        tradeBefore.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        for (const auto square : {SquareType::OrientalAvenue,
+                 SquareType::VermontAvenue, SquareType::ConnecticutAvenue})
+            tradeBefore.squares[static_cast<std::size_t>(square)].owner = 1;
+        auto tradeAfter = tradeBefore;
+        tradeAfter.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].owner = 2;
+        ai::trade::PropertySets tradeProperties{};
+        for (rules::PlayerNumber p = 0; p < tradeBefore.numberOfPlayers; ++p)
+            tradeProperties[p] = ai::propertiesOwnedByPlayer(tradeBefore, p);
+        auto tradeCombined = rules::board::propertyBit(SquareType::BalticAvenue);
+        proposals = {};
+        require(ai::trade::addTypeProperty(tradeBefore, tradeAfter, 0, 1,
+                    tradeCombined, TradeImportanceItem::Trade, proposals,
+                    tradeProperties, true, whatToTrade, 0.0) &&
+                proposals[0].propertiesReceived == rules::board::propertyBit(SquareType::BalticAvenue) &&
+                proposals[1].propertiesGiven == rules::board::propertyBit(SquareType::BalticAvenue),
+            "AI add-type-property finds reciprocal monopoly trade opportunity");
+
+        auto junkCombined = tradeProperties[1];
+        const auto junkBefore = proposals;
+        require(!ai::trade::addTypeProperty(tradeBefore, tradeAfter, 0, 1,
+                    junkCombined, TradeImportanceItem::Junk, proposals,
+                    tradeProperties, true, whatToTrade, 0.0) && proposals == junkBefore,
+            "AI add-type-property preserves retail junk branch no-op return");
+    }
+
 }
 
 int main()
@@ -819,6 +924,7 @@ int main()
         testFindNonmonopolyPlayer();
         testTradeCadenceContracts();
         testCounterProposalPreparation();
+        testAddTradePropertyTypes();
         testCashMultiplierContracts();
         testTradeProposalContracts();
         testAddTradeItemContracts();

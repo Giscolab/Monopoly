@@ -41,14 +41,17 @@ namespace monopoly::ai::trade
             return (power + offset) / (power + offset + 1.0);
         }
 
-        [[nodiscard]] std::array<std::size_t, 8> monopolyImportanceOrder(std::int64_t assets)
+        [[nodiscard]] std::array<std::size_t, 8> monopolyImportanceOrder(
+            std::int64_t assets, bool descending = true)
         {
             std::array<std::size_t, 8> order{};
             for (std::size_t index = 0; index < order.size(); ++index)
                 order[index] = index;
             const auto chart = darzinskisIndex(assets);
             std::stable_sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
-                return DarzinskisImportance[lhs][chart] > DarzinskisImportance[rhs][chart];
+                return descending
+                    ? DarzinskisImportance[lhs][chart] > DarzinskisImportance[rhs][chart]
+                    : DarzinskisImportance[lhs][chart] < DarzinskisImportance[rhs][chart];
             });
             return order;
         }
@@ -560,6 +563,45 @@ namespace monopoly::ai::trade
         return inputs.proposalRoll <= probability;
     }
 
+    bool addTradeMonopoly(
+        const rules::GameState& state,
+        rules::PlayerNumber toPlayer,
+        rules::board::PropertySet& properties,
+        PropertyClassification type,
+        TradeProposalList& proposals,
+        std::int64_t moneyOwed) noexcept
+    {
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            toPlayer >= state.numberOfPlayers ||
+            (type != PropertyClassification::Best && type != PropertyClassification::Worst))
+            return false;
+
+        const auto assets = ai::liquidAssets(state, toPlayer, false, false, moneyOwed);
+        const auto order = monopolyImportanceOrder(
+            assets, type == PropertyClassification::Best);
+        for (const auto group : order)
+        {
+            const auto representative = ai::ExpensiveMonopolySquares[group];
+            const auto groupSet = ai::monopolySet(representative);
+            if ((properties & groupSet) != groupSet)
+                continue;
+
+            auto next = proposals;
+            for (rules::PlayerNumber owner = 0; owner < state.numberOfPlayers; ++owner)
+            {
+                const auto owned = ai::propertiesOwnedByPlayer(state, owner) & groupSet;
+                if (owner == toPlayer || owned == 0)
+                    continue;
+                next[toPlayer].propertiesReceived |= owned;
+                next[owner].propertiesGiven |= owned;
+            }
+            proposals = next;
+            properties &= ~groupSet;
+            return true;
+        }
+        return false;
+    }
+
     PlayerPropertyAttitudeList createPlayerPropertyAttitudeList(
         const rules::GameState& state,
         rules::PlayerNumber player,
@@ -652,6 +694,202 @@ namespace monopoly::ai::trade
             }
         }
         return result;
+    }
+
+    bool addTypeProperty(
+        const rules::GameState& before,
+        const rules::GameState& after,
+        rules::PlayerNumber player,
+        rules::PlayerNumber strategyPlayer,
+        rules::board::PropertySet& combinedProperties,
+        TradeImportanceItem item,
+        TradeProposalList& proposals,
+        const PropertySets& properties,
+        bool giveDescending,
+        const WhatToTradeTable& whatToTrade,
+        double strategyAttitudeTowardPlayer,
+        std::int64_t playerMoneyOwed) noexcept
+    {
+        if (before.numberOfPlayers == 0 || before.numberOfPlayers > rules::MaxPlayers ||
+            after.numberOfPlayers != before.numberOfPlayers ||
+            player >= before.numberOfPlayers || strategyPlayer >= before.numberOfPlayers)
+            return false;
+
+        rules::board::PropertySet combinedTraded{};
+        for (rules::PlayerNumber current = 0; current < before.numberOfPlayers; ++current)
+            combinedTraded |= proposals[current].propertiesGiven |
+                proposals[current].propertiesReceived;
+
+        std::uint16_t monopoliesTraded{};
+        for (std::size_t group = 0; group < ai::ExpensiveMonopolySquares.size(); ++group)
+        {
+            if ((combinedTraded & ai::monopolySet(ai::ExpensiveMonopolySquares[group])) != 0)
+                monopoliesTraded |= static_cast<std::uint16_t>(1u << group);
+        }
+
+        std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+        std::size_t candidateCount{};
+        for (rules::PlayerNumber current = 0; current < after.numberOfPlayers; ++current)
+        {
+            if (current == player ||
+                after.players[current].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard) ||
+                ai::playerOwnsMonopoly(after, current, false))
+                continue;
+            candidates[candidateCount++] = current;
+        }
+
+        const auto order = monopolyImportanceOrder(
+            ai::liquidAssets(after, player, false, false, playerMoneyOwed),
+            giveDescending);
+        rules::board::PropertySet selected{};
+
+        if (item == TradeImportanceItem::Monopoly)
+        {
+            if (player == strategyPlayer)
+                return addTradeMonopoly(before, player, combinedProperties,
+                    PropertyClassification::Best, proposals, playerMoneyOwed);
+
+            int generosityIndex = strategyAttitudeTowardPlayer < -1.0
+                ? 0 : static_cast<int>((strategyAttitudeTowardPlayer + 1.0) * 10.0);
+            generosityIndex = std::clamp(generosityIndex, 0,
+                static_cast<int>(WhatToTradeEntries) - 1);
+            const auto& generosity = whatToTrade[static_cast<std::size_t>(generosityIndex)];
+            if (generosity.giveMonopoly == PropertyClassification::Best ||
+                generosity.giveMonopoly == PropertyClassification::Worst)
+            {
+                if (!addTradeMonopoly(before, player, combinedProperties,
+                        generosity.giveMonopoly, proposals, playerMoneyOwed))
+                    return false;
+            }
+
+            int counter = generosity.giveGroupTrades;
+            for (; counter > 0; --counter)
+            {
+                if (!addTypeProperty(before, after, player, strategyPlayer,
+                        combinedProperties, TradeImportanceItem::Trade, proposals,
+                        properties, giveDescending, whatToTrade,
+                        strategyAttitudeTowardPlayer, playerMoneyOwed) &&
+                    !addTypeProperty(before, after, player, strategyPlayer,
+                        combinedProperties, TradeImportanceItem::OneUnowned, proposals,
+                        properties, giveDescending, whatToTrade,
+                        strategyAttitudeTowardPlayer, playerMoneyOwed) &&
+                    !addTypeProperty(before, after, player, strategyPlayer,
+                        combinedProperties, TradeImportanceItem::TwoUnowned, proposals,
+                        properties, giveDescending, whatToTrade,
+                        strategyAttitudeTowardPlayer, playerMoneyOwed))
+                    break;
+            }
+            counter += generosity.giveCashCows;
+            for (; counter > 0; --counter)
+            {
+                if (!addTypeProperty(before, after, player, strategyPlayer,
+                        combinedProperties, TradeImportanceItem::Railroad, proposals,
+                        properties, giveDescending, whatToTrade,
+                        strategyAttitudeTowardPlayer, playerMoneyOwed) &&
+                    !addTypeProperty(before, after, player, strategyPlayer,
+                        combinedProperties, TradeImportanceItem::Utility, proposals,
+                        properties, giveDescending, whatToTrade,
+                        strategyAttitudeTowardPlayer, playerMoneyOwed))
+                    break;
+            }
+            counter += generosity.giveJunk;
+            for (; counter > 0; --counter)
+            {
+                if (!addTypeProperty(before, after, player, strategyPlayer,
+                        combinedProperties, TradeImportanceItem::Junk, proposals,
+                        properties, giveDescending, whatToTrade,
+                        strategyAttitudeTowardPlayer, playerMoneyOwed))
+                    break;
+            }
+            return true;
+        }
+
+        if (item == TradeImportanceItem::Railroad ||
+            item == TradeImportanceItem::Utility)
+        {
+            const auto representative = item == TradeImportanceItem::Railroad
+                ? rules::board::SquareType::ReadingRailroad
+                : rules::board::SquareType::ElectricCompany;
+            const auto groupSet = ai::monopolySet(representative);
+            if ((groupSet & proposals[player].propertiesGiven) != 0)
+                return false;
+            auto available = combinedProperties & groupSet & ~properties[player];
+            if (available == 0)
+                return false;
+            selected = available & (0u - available);
+        }
+        else if (item == TradeImportanceItem::Junk)
+        {
+            // Retail scans for junk but then returns FALSE unconditionally.
+            return false;
+        }
+        else if (item == TradeImportanceItem::Trade ||
+                 item == TradeImportanceItem::OneUnowned ||
+                 item == TradeImportanceItem::TwoUnowned)
+        {
+            const int expectedPossible = item == TradeImportanceItem::Trade
+                ? 99
+                : static_cast<int>(item) -
+                    (static_cast<int>(TradeImportanceItem::OneUnowned) + 1);
+            bool found{};
+            for (const auto group : order)
+            {
+                if (player == strategyPlayer && group == 0)
+                    continue;
+                if ((monopoliesTraded & static_cast<std::uint16_t>(1u << group)) != 0)
+                    continue;
+                const auto groupSet = ai::monopolySet(ai::ExpensiveMonopolySquares[group]);
+                const auto availableInGroup = combinedProperties & groupSet;
+                if (availableInGroup == 0 || availableInGroup == groupSet)
+                    continue;
+                if (availableInGroup == (properties[player] & groupSet))
+                    continue;
+                const auto external = availableInGroup & ~properties[player];
+                if (external == 0)
+                    continue;
+
+                if (item == TradeImportanceItem::Trade)
+                {
+                    auto simulatedProperties = properties;
+                    for (rules::PlayerNumber current = 0;
+                         current < before.numberOfPlayers; ++current)
+                        simulatedProperties[current] &= ~external;
+                    simulatedProperties[player] |= external;
+                    const auto trade = findSmallestMonopolyTrade(
+                        player, groupSet,
+                        std::span<const rules::PlayerNumber>(candidates.data(), candidateCount),
+                        simulatedProperties);
+                    if (trade.count == 0)
+                        continue;
+                }
+                else if (possibleMonopoly(after, player,
+                             ai::ExpensiveMonopolySquares[group]) != expectedPossible)
+                {
+                    continue;
+                }
+                selected = external;
+                found = true;
+                break;
+            }
+            if (!found)
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+
+        proposals[player].propertiesReceived |= selected;
+        for (rules::PlayerNumber current = 0; current < before.numberOfPlayers; ++current)
+        {
+            const auto given = selected & properties[current];
+            if (given == 0)
+                continue;
+            proposals[current].propertiesGiven |= given;
+            combinedProperties &= ~selected;
+        }
+        return true;
     }
 
     double cashMultiplier(
