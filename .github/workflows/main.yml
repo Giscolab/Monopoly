@@ -9,30 +9,50 @@ jobs:
   calculate-progress:
     runs-on: ubuntu-latest
     permissions:
-      issues: read
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Calculate project progress
-        run: |
-          # Get closed and total issues count (limit raised to 10000)
-          CLOSED=$(gh issue list --state closed --limit 10000 --json title --jq '. | length')
-          TOTAL=$(gh issue list --state all --limit 10000 --json title --jq '. | length')
+      - uses: actions/checkout@v7
 
-          # Calculate percentage
-          if [ "$TOTAL" -gt 0 ]; then
-            PERCENT=$((CLOSED * 100 / TOTAL))
-          else
-            PERCENT=0
+      - name: Calculate project progress
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS_FILE="modern/PORTING_STATUS.md"
+
+          if [[ ! -f "$STATUS_FILE" ]]; then
+            echo "Missing $STATUS_FILE" >&2
+            exit 1
           fi
-          
-          # Display in step logs AND output to Job Summary
+
+          count_status() {
+            grep -cF "| \`$1\` |" "$STATUS_FILE" || true
+          }
+          COMPLETE=$(count_status PORTED_COMPLETE)
+          REPLACED=$(count_status REPLACED_PORTABLE)
+          PARTIAL=$(count_status PORTED_PARTIAL)
+          NOT_STARTED=$(count_status NOT_STARTED)
+          BLOCKED=$(count_status BLOCKED_MISSING_DATA)
+          TOOLING=$(count_status MISSING_TOOLING)
+          UNUSED=$(count_status LEGACY_UNUSED)
+
+          ACTIVE=$((COMPLETE + REPLACED + PARTIAL + NOT_STARTED))
+          FULLY_DONE=$((COMPLETE + REPLACED))
+          if (( ACTIVE > 0 )); then
+            INDEX=$(((FULLY_DONE * 100 + PARTIAL * 50) / ACTIVE))
+          else
+            INDEX=0
+          fi
+
           {
             echo "## 📊 Progress Stats"
-            echo "- **Closed Issues**: $CLOSED / $TOTAL"
-            echo "- **Completion**: $PERCENT%"
-            echo "- **Last Updated**: $(date)"
-          } | tee -a $GITHUB_STEP_SUMMARY
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
+            echo "- **Porting index**: ${INDEX}%"
+            echo "- **Complete / portable replacements**: ${FULLY_DONE} / ${ACTIVE}"
+            echo "- **Partial**: ${PARTIAL}"
+            echo "- **Not started**: ${NOT_STARTED}"
+            echo "- **Blocked / missing data**: ${BLOCKED}"
+            echo "- **Missing tooling**: ${TOOLING}"
+            echo "- **Legacy unused**: ${UNUSED}"
+            echo "- **Last updated**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo "> Index formula: complete/replaced = 100%, partial = 50%, not started = 0%. Blocked/tooling/unused entries are excluded from the denominator."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
