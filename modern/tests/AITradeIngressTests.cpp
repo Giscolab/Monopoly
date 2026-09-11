@@ -2,7 +2,10 @@
 #include "AITradeIngress.hpp"
 #include "BoardRules.hpp"
 #include "Messaging.hpp"
+#include "LegacyTextIds.hpp"
 
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -488,6 +491,367 @@ namespace
         localAIPlayer = false;
     }
 
+    void testTradeResponseAttitudes()
+    {
+        auto state = baseState();
+        state.numberOfPlayers = 4;
+        state.players[2].cash = 500;
+        state.players[3].cash = 500;
+        ai::trade::TradeIngressState ingress{};
+        ai::profile::ProfileSet profiles{};
+        ai::profile::ConfigContext context{};
+        context.localAIPlayer = {true, false, true, false};
+        for (auto& p : profiles)
+        {
+            p.cashFactor = 1.0;
+            p.chancesThreshold = 1000000.0;
+            p.attitudeLostForRejectedTrade = 10.0;
+            p.attitudeChangeTradeObserving = 1.0;
+            p.neutralAttitude = 50.0;
+        }
+        profiles[2].attitudeLostForRejectedTrade = 7.0;
+        ingress.currentTrade[0].cashGiven = 100;
+        ingress.currentTrade[1].cashReceived = 100;
+        auto changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, false, ingress, profiles, context);
+        require(changes[0] == -20.0 && changes[2] == -7.0 &&
+                changes[1] == 0.0 && changes[3] == 0.0,
+            "rejected good trade stacks proposer penalty and capped local observer penalty");
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, true, ingress, profiles, context);
+        require(changes[0] == 10.0 && changes[2] == 0.0,
+            "accepted good trade rewards proposer personally without observer penalty");
+
+        ingress.currentTrade = {};
+        ingress.currentTrade[1].cashGiven = 100;
+        ingress.currentTrade[0].cashReceived = 100;
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, true, ingress, profiles, context);
+        require(changes[0] == 20.0 && changes[2] == 7.0,
+            "accepted bad trade stacks personal reward and capped positive observer change");
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, false, ingress, profiles, context);
+        require(changes[0] == -10.0 && changes[2] == 0.0,
+            "rejected bad trade only changes proposer personal attitude");
+
+        ingress.currentTrade = {};
+        ingress.currentTrade[0].cashGiven = 2;
+        ingress.currentTrade[1].cashReceived = 2;
+        profiles[2].cashFactor = 0.5;
+        profiles[2].attitudeChangeTradeObserving = 0.25;
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, false, ingress, profiles, context);
+        require(changes[0] == -12.0 && changes[2] == -0.25,
+            "observer uses its own strategy and preserves sub-cap fractional change");
+        ingress.immunities[0].count = 1;
+        ingress.immunities[0].fromPlayer = 1;
+        ingress.immunities[0].toPlayer = 0;
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, false, ingress, profiles, context);
+        require(changes[0] == -10.0 && changes[2] == 0.0,
+            "futures-immunities skip observation but retain personal rejection");
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, true, ingress, profiles, context);
+        require(changes[0] == 10.0 && changes[2] == 0.0,
+            "futures-immunities retain personal acceptance");
+        context.localAIPlayer[0] = false;
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, 0, 1, false, ingress, profiles, context);
+        require(changes == std::array<double, rules::MaxPlayers>{},
+            "nonlocal proposer and observers excluded by immunity remain unchanged");
+        changes = ai::trade::tradeResponseAttitudeChanges(
+            state, rules::NobodyPlayer, 1, false, ingress, profiles, context);
+        require(changes == std::array<double, rules::MaxPlayers>{},
+            "invalid proposer produces no attitude changes");
+    }
+
+    void testTradeAttitudeMessageRouting()
+    {
+        auto state = baseState();
+        require(messaging::initialize(), "attitude routing initializes messaging");
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "attitude routing loads profiles");
+        localAIPlayer = true;
+        localRecipient = true;
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        ai::processMessage(state, named);
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 0;
+        ai::processMessage(state, started);
+        const auto initial = ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1];
+        const auto loss = ai::profileRuntimeStateReadOnly().players[0].attitudeLostForRejectedTrade;
+        actions::Message response{};
+        response.action = actions::Type::NotifyErrorMessage;
+        response.toPlayer = rules::AllPlayers;
+        response.numberA = legacy_text::ErrorTradeAccepted;
+        response.numberC = 1;
+        ai::processMessage(state, response);
+        require(ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1] == initial + loss,
+            "RULE NotifyErrorMessage acceptance updates proposer attitude");
+        response.numberA = legacy_text::ErrorTradeRejected;
+        ai::processMessage(state, response);
+        require(std::abs(ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1] - initial) < 1e-12,
+            "RULE rejection applies signed personal loss");
+        response.action = actions::Type::NotifyTextChat;
+        ai::processMessage(state, response);
+        require(std::abs(ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1] - initial) < 1e-12,
+            "TextChat does not masquerade as a trade response");
+
+        localAIPlayer = false;
+        actions::Message offered{};
+        offered.action = actions::Type::NotifyTradeAcceptanceDecision;
+        offered.toPlayer = rules::AllPlayers;
+        ai::processMessage(state, offered);
+        localAIPlayer = true;
+        ai::processMessage(state, editorMessage(1));
+        require(std::abs(ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1] - (initial - loss)) < 1e-12,
+            "editor counter counts rejection before ingress overwrites previous editor");
+        ai::processMessage(state, editorMessage(1));
+        require(std::abs(ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1] - (initial - loss)) < 1e-12,
+            "editor message outside acceptance does not repeat attitude change");
+        response.action = actions::Type::NotifyErrorMessage;
+        response.numberA = legacy_text::ErrorTradeChanging;
+        ai::processMessage(state, response);
+        require(ai::tradeIngressStateReadOnly().proposedPlayer == 1,
+            "trade-changing RULE message promotes last editor to proposer");
+        const auto beforeTurn = ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1];
+        const auto& strategy = ai::profileRuntimeStateReadOnly().players[0];
+        const auto expected = beforeTurn > strategy.neutralAttitude
+            ? beforeTurn - strategy.attitudeTickChange
+            : beforeTurn + strategy.attitudeTickChange;
+        const auto expectedCounter = strategy.turnsToForgetPropertyTrade <= 1 ? 0 : 1;
+        actions::Message turn{};
+        turn.action = actions::Type::NotifyStartTurn;
+        turn.toPlayer = rules::AllPlayers;
+        turn.numberA = 1;
+        ai::processMessage(state, turn);
+        require(std::abs(ai::profileRuntimeStateReadOnly().players[0].playerAttitude[1] - expected) < 1e-12 &&
+                ai::tradeIngressStateReadOnly().turnState[0].turnsAfterForgettingLast == expectedCounter &&
+                ai::tradeIngressStateReadOnly().turnState[1].turnsAfterForgettingLast == 0,
+            "every RULE start-turn maintains loaded local AI, including another player's turn");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
+    void testPublicAndPrivateAcceptance()
+    {
+        auto state = baseState();
+        state.numberOfPlayers = 3;
+        state.players[2].cash = 500;
+        require(messaging::initialize(), "multi-AI acceptance initializes messaging");
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "multi-AI acceptance loads profiles");
+        localAIPlayer = true;
+        localRecipient = true;
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        for (rules::PlayerNumber player = 0; player < 2; ++player)
+        {
+            named.numberA = player;
+            state.players[player].token = player;
+            state.players[player].aiPlayerLevel = 3;
+            ai::processMessage(state, named);
+        }
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 2;
+        ai::processMessage(state, started);
+        ai::processMessage(state, tradeItemMessage(0, 2, rules::TradeItemKind::Cash, 100));
+        actions::Message auction{};
+        auction.action = actions::Type::NotifyNewHighBid;
+        auction.toPlayer = rules::AllPlayers;
+        ai::processMessage(state, auction);
+        actions::Message offer{};
+        offer.action = actions::Type::NotifyTradeAcceptanceDecision;
+        offer.toPlayer = rules::AllPlayers;
+        offer.numberA = 3;
+        offer.numberB = 5;
+        messaging::clearActionQueue();
+        ai::processMessage(state, offer);
+        ai::processMessage(state, offer);
+        actions::Message sent{};
+        require(messaging::receiveAction(sent) && sent.fromPlayer == 0 &&
+                sent.action == actions::Type::TradeAccept && sent.numberA == 0 &&
+                messaging::currentQueueSize() == 0,
+            "public offer first AI rejection blocks peer and duplicate answers");
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::TradeAccept);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        offer.numberA = 2;
+        ai::processMessage(state, offer);
+        require(messaging::receiveAction(sent) && sent.fromPlayer == 1 &&
+                sent.action == actions::Type::TradeAccept && sent.numberA == 1 &&
+                sent.numberB == 3 && messaging::currentQueueSize() == 0,
+            "completed rejection lets requested uninvolved peer answer true/3");
+        ai::processMessage(state, started);
+        ai::processMessage(state, tradeItemMessage(2, 0, rules::TradeItemKind::Cash, 100));
+        offer.numberA = 1;
+        ai::processMessage(state, offer);
+        require(messaging::receiveAction(sent) && sent.fromPlayer == 0 &&
+                sent.action == actions::Type::TradeAccept && sent.numberA == 1 &&
+                sent.numberB == 1 && messaging::currentQueueSize() == 0,
+            "private participant mask leaves loaded exterior AI silent");
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
+    void testAcceptanceCounterRuntime()
+    {
+        auto state = baseState();
+        state.options.housesPerHotel = 5;
+        state.options.evenBuildRule = true;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::MediterraneanAvenue)].owner = 0;
+        require(messaging::initialize(), "acceptance counter initializes messaging");
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "acceptance counter loads profiles");
+        localAIPlayer = true;
+        localRecipient = true;
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        ai::processMessage(state, named);
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 1;
+        ai::processMessage(state, started);
+        ai::processMessage(state, tradeItemMessage(
+            0, 1, rules::TradeItemKind::Square,
+            static_cast<std::int64_t>(rules::board::SquareType::MediterraneanAvenue)));
+        const auto probability = ai::profileRuntimeStateReadOnly().players[0].tradeCounterProbability;
+        unsigned seed = 0;
+        for (; seed < 10000; ++seed)
+        {
+            std::srand(seed);
+            if (static_cast<double>(std::rand()) / RAND_MAX <= probability)
+                break;
+        }
+        require(seed < 10000, "counter fixture selects reproducible accepted probability roll");
+        std::srand(seed);
+        actions::Message offer{};
+        offer.action = actions::Type::NotifyTradeAcceptanceDecision;
+        offer.toPlayer = rules::AllPlayers;
+        offer.numberA = 1;
+        offer.numberB = 3;
+        messaging::clearActionQueue();
+        ai::processMessage(state, offer);
+        actions::Message sent{};
+        require(messaging::receiveAction(sent) &&
+                sent.action == actions::Type::StartTradeEditing &&
+                ai::tradeIngressStateReadOnly().counterSessions[0].timesCounteredTrade == 1 &&
+                messaging::currentQueueSize() == 0,
+            "successful acceptance counter emits editor request without separate rejection");
+        ai::processMessage(state, offer);
+        require(messaging::currentQueueSize() == 0,
+            "counter guard suppresses repeated acceptance notification");
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::StartTradeEditing);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        ai::processMessage(state, editorMessage(0));
+        bool sawItems = false;
+        bool sawDone = false;
+        while (messaging::receiveAction(sent))
+        {
+            require(sent.action != actions::Type::TradeAccept && !sawDone,
+                "counter item stream contains no reject and finalization is last");
+            if (sent.action == actions::Type::TradeItem) sawItems = true;
+            if (sent.action == actions::Type::TradeEditingDone) sawDone = true;
+        }
+        require(sawItems && sawDone, "counter resumes stored items and finalization after editor grant");
+        ai::processMessage(state, offer);
+        require(ai::tradeIngressStateReadOnly().deferredAcceptancePlayers == 1 &&
+                messaging::currentQueueSize() == 0,
+            "busy counter remembers deferred restart without duplicate acceptance");
+        completed.numberA = static_cast<std::int64_t>(actions::Type::TradeEditingDone);
+        ai::processMessage(state, completed);
+        require(messaging::receiveAction(sent) && sent.action == actions::Type::RestartPhase &&
+                sent.fromPlayer == 0 && messaging::currentQueueSize() == 0 &&
+                ai::tradeIngressStateReadOnly().deferredAcceptancePlayers == 0,
+            "counter completion sends and clears the deferred retail RestartPhase");
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
+    void testTradeStartTurnMaintenance()
+    {
+        ai::trade::TradeIngressState ingress{};
+        ai::profile::ProfileSet profiles{};
+        std::array<bool, rules::MaxPlayers> local{};
+        local[0] = true;
+        profiles[0].turnsToForgetPropertyTrade = 2;
+        profiles[0].neutralAttitude = 0.5;
+        profiles[0].attitudeTickChange = 0.25;
+        profiles[0].playerAttitude = {0.75, 0.25, 0.5, 0.6};
+        ingress.turnState[0].timeLastTrade[0] = 2;
+        ingress.turnState[0].timeLastTrade[1] = 0;
+        ingress.turnState[0].timeLastTrade[2] = -1;
+        ingress.turnState[0].timeLastTrade.back() = 3;
+        ingress.counterSessions[0].propertyMemory.bit1[1] = 1;
+        ingress.counterSessions[0].propertyMemory.bit2[2] = 2;
+        ingress.counterSessions[1].propertyMemory.bit1[0] = 1;
+        ai::trade::advanceTradeTurn(2, profiles, local, ingress);
+        require(ingress.turnState[0].turnsAfterForgettingLast == 1 &&
+                ingress.counterSessions[0].propertyMemory.bit1[1] == 1,
+            "start turn retains property memory before configured forgetting interval");
+        require(ingress.turnState[0].timeLastTrade[0] == 1 &&
+                ingress.turnState[0].timeLastTrade[1] == 0 &&
+                ingress.turnState[0].timeLastTrade[2] == -1 &&
+                ingress.turnState[0].timeLastTrade.back() == 2,
+            "start turn decrements every positive timer only, including last retail slot");
+        require(profiles[0].playerAttitude[0] == 0.5 &&
+                profiles[0].playerAttitude[1] == 0.5 &&
+                profiles[0].playerAttitude[2] == 0.75 &&
+                std::abs(profiles[0].playerAttitude[3] - 0.35) < 1e-12,
+            "attitude drift preserves retail equality and overshoot quirks without clamp");
+        require(ingress.turnState[1].turnsAfterForgettingLast == 0 &&
+                ingress.counterSessions[1].propertyMemory.bit1[0] == 1 &&
+                profiles[1].playerAttitude[0] == 0.0,
+            "start turn leaves nonlocal AI state unchanged");
+        ai::trade::advanceTradeTurn(2, profiles, local, ingress);
+        require(ingress.turnState[0].turnsAfterForgettingLast == 0 &&
+                ingress.counterSessions[0].propertyMemory.bit1[1] == 0 &&
+                ingress.counterSessions[0].propertyMemory.bit1[2] == 2 &&
+                ingress.counterSessions[0].propertyMemory.bit2[2] == 0,
+            "forget interval invokes existing retail bit-plane memory decay");
+        actions::Message finished{};
+        finished.action = actions::Type::NotifyTradeFinished;
+        auto game = baseState();
+        ingress.turnState[0].turnsAfterForgettingLast = 1;
+        (void)ai::trade::processTradeRuleMessage(game, finished, ingress);
+        require(ingress.turnState[0].turnsAfterForgettingLast == 1 &&
+                ingress.turnState[0].timeLastTrade.back() == 1 &&
+                ingress.counterSessions[0].propertyMemory.bit1[2] == 2,
+            "trade finish preserves turn cadence and decaying property memory");
+        profiles[0].turnsToForgetPropertyTrade = 0;
+        ai::trade::advanceTradeTurn(2, profiles, local, ingress);
+        require(ingress.turnState[0].turnsAfterForgettingLast == 0 &&
+                ingress.counterSessions[0].propertyMemory.bit1[2] == 0,
+            "zero forgetting interval still forgets every turn like retail");
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -536,6 +900,11 @@ int main()
         testProfileDrivenCounterFromEditorNotification();
         testTradeAcceptanceDecisionCore();
         testAcceptanceNotificationRuntime();
+        testTradeResponseAttitudes();
+        testTradeAttitudeMessageRouting();
+        testPublicAndPrivateAcceptance();
+        testAcceptanceCounterRuntime();
+        testTradeStartTurnMaintenance();
         testTradeFinishAndMessageFilter();
         return 0;
     }

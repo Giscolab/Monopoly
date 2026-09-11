@@ -1,12 +1,20 @@
 #pragma once
 
 #include "AICounterTradeRuntime.hpp"
+#include "AIProfile.hpp"
 
 #include <array>
 #include <cstdint>
 
 namespace monopoly::ai::trade
 {
+    struct TradeTurnState
+    {
+        std::int64_t turnsAfterForgettingLast{};
+        // Retail Ai.h: AI_MAX_TRADES is 20, independent of configured maxTrades.
+        std::array<std::int64_t, 20> timeLastTrade{};
+    };
+
     struct TradeIngressState
     {
         TradeProposalList currentTrade{};
@@ -17,6 +25,7 @@ namespace monopoly::ai::trade
         rules::PlayerNumber proposedPlayer = rules::NobodyPlayer;
         rules::PlayerNumber lastEditor = rules::NobodyPlayer;
         bool tradeStarted{};
+        std::array<TradeTurnState, rules::MaxPlayers> turnState{};
         bool tradeOfferedForAcceptance{};
         bool tradeJustRejectedCountered{};
         rules::PlayerNumber playerJustRejectedCountered = rules::NobodyPlayer;
@@ -30,6 +39,21 @@ namespace monopoly::ai::trade
         const rules::GameState& gameState,
         const actions::Message& message,
         TradeIngressState& state) noexcept;
+
+    void advanceTradeTurn(
+        std::uint8_t numberOfPlayers,
+        profile::ProfileSet& profiles,
+        const std::array<bool, rules::MaxPlayers>& localAIPlayers,
+        TradeIngressState& state) noexcept;
+
+    [[nodiscard]] std::array<double, rules::MaxPlayers> tradeResponseAttitudeChanges(
+        const rules::GameState& gameState,
+        rules::PlayerNumber proposer,
+        rules::PlayerNumber respondingPlayer,
+        bool accepted,
+        const TradeIngressState& state,
+        const profile::ProfileSet& profiles,
+        const profile::ConfigContext& context) noexcept;
 
     enum class TradeAcceptanceStatus : std::uint8_t
     {
