@@ -182,6 +182,23 @@ namespace
                 ingress.counterRuntime.sending.state ==
                     ai::trade::SendingTradeState::TradeItems,
             "AI trade ingress advances granted editor request to trade items");
+        ingress.tradeJustRejectedCountered = true;
+        ingress.playerJustRejectedCountered = 0;
+        completed.numberC = 1;
+        (void)ai::trade::processTradeRuleMessage(state, completed, ingress);
+        require(ingress.tradeJustRejectedCountered,
+            "another player's completion cannot release reject-counter guard");
+        completed.numberC = 0;
+        completed.numberB = 0;
+        auto failed = ingress;
+        (void)ai::trade::processTradeRuleMessage(state, completed, failed);
+        require(!failed.tradeJustRejectedCountered &&
+                failed.counterRuntime.sending.state == ai::trade::SendingTradeState::Nothing,
+            "failed StartTradeEditing clears sending state and reject-counter guard");
+        completed.numberB = 1;
+        (void)ai::trade::processTradeRuleMessage(state, completed, ingress);
+        require(!ingress.tradeJustRejectedCountered,
+            "successful StartTradeEditing releases reject-counter guard");
 
         require(ai::trade::processTradeRuleMessage(
                     state, editorMessage(0), ingress) &&
@@ -314,6 +331,163 @@ namespace
         localAIPlayer = false;
     }
 
+    void testTradeAcceptanceDecisionCore()
+    {
+        auto state = baseState();
+        ai::trade::TradeIngressState ingress{};
+        ai::trade::TradeAcceptanceConfig config{};
+        ingress.proposedPlayer = 1;
+
+        auto result = ai::trade::evaluateCurrentTradeAcceptance(
+            state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::AcceptUninvolved,
+            "AI trade acceptance auto-accepts a requested non-participant");
+
+        ingress.pendingTradeAcceptPlayers = 1u;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::Busy,
+            "AI trade acceptance suppresses duplicate pending accepts");
+        ingress.pendingTradeAcceptPlayers = 0;
+
+        ingress.tradeJustRejectedCountered = true;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::Suppressed,
+            "AI trade acceptance suppresses peers after reject or counter");
+        ingress.tradeJustRejectedCountered = false;
+
+        ingress.currentTrade[0].cashReceived = 100;
+        ingress.currentTrade[1].cashGiven = 100;
+        config.minEvaluationThreshold = -1000000.0;
+        config.minEvaluationIfFedUp = -1000000.0;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::Accept,
+            "AI trade acceptance accepts an involved trade above threshold");
+
+        config.minEvaluationThreshold = 1000000.0;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::CounterOrReject,
+            "AI trade acceptance requests counter path below normal threshold");
+
+        ingress.immunities[0].count = 1;
+        ingress.immunities[0].fromPlayer = 0;
+        ingress.immunities[0].toPlayer = 1;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::RejectFutureOrImmunity,
+            "AI trade acceptance rejects futures or immunities before evaluation");
+        ingress.immunities = {};
+
+        const auto property = rules::board::propertyBit(
+            rules::board::SquareType::MediterraneanAvenue);
+        ingress.currentTrade = {};
+        ingress.currentTrade[0].propertiesReceived = property;
+        ingress.currentTrade[1].propertiesGiven = property;
+        ingress.counterSessions[0].propertyMemory.bit1[1] = property;
+        config.numberTimesAllowPropertyTrade = 1;
+        config.minEvaluationIfFedUp = 1000000.0;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::RejectFedUp && result.fedUp,
+            "AI trade acceptance applies fed-up threshold to repeated properties");
+        config.minEvaluationIfFedUp = -1000000.0;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(result.status == ai::trade::TradeAcceptanceStatus::Accept && result.fedUp,
+            "fed-up trade accepts using its own threshold rather than normal threshold");
+        ingress.counterSessions[0].propertyMemory = {};
+        ingress.counterSessions[1].propertyMemory.bit1[0] = property;
+        result = ai::trade::evaluateCurrentTradeAcceptance(state, 0, config, ingress);
+        require(!result.fedUp && result.status == ai::trade::TradeAcceptanceStatus::CounterOrReject,
+            "acceptance reads only the deciding player's proposer-specific memory");
+    }
+
+    void testAcceptanceNotificationRuntime()
+    {
+        auto state = baseState();
+        require(messaging::initialize(),
+            "trade acceptance runtime fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "trade acceptance runtime loads retail profiles");
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        localRecipient = true;
+        localAIPlayer = true;
+        ai::processMessage(state, named);
+
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 1;
+        ai::processMessage(state, started);
+        messaging::clearActionQueue();
+
+        actions::Message acceptance{};
+        acceptance.action = actions::Type::NotifyTradeAcceptanceDecision;
+        acceptance.toPlayer = rules::AllPlayers;
+        acceptance.numberA = 1u << 0;
+        ai::processMessage(state, acceptance);
+        const auto firstCount = messaging::currentQueueSize();
+        ai::processMessage(state, acceptance);
+        require(firstCount == 1 && messaging::currentQueueSize() == 1,
+            "NotifyTradeAcceptanceDecision does not duplicate pending AI accept");
+
+        actions::Message sent{};
+        require(messaging::receiveAction(sent) &&
+                sent.action == actions::Type::TradeAccept &&
+                sent.fromPlayer == 0 && sent.numberA == 1 && sent.numberB == 3,
+            "non-participant AI emits retail TradeAccept true status 3");
+
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::TradeAccept);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        require((ai::tradeIngressStateReadOnly().pendingTradeAcceptPlayers & 1u) == 0,
+            "TradeAccept completion releases pending AI acceptance guard");
+        acceptance.numberA = 1u << 1;
+        acceptance.numberB = 1u << 0;
+        ai::processMessage(state, acceptance);
+        require(messaging::currentQueueSize() == 0,
+            "requested unloaded AI is silent and involvedSet is not mistaken for playerSet");
+        acceptance.numberA = 1u << 0;
+        localAIPlayer = false;
+        ai::processMessage(state, acceptance);
+        require(messaging::currentQueueSize() == 0,
+            "loaded non-local AI does not answer acceptance");
+        localAIPlayer = true;
+        ai::processMessage(state, tradeItemMessage(1, 0, rules::TradeItemKind::Cash, 100));
+        ai::processMessage(state, acceptance);
+        require(messaging::receiveAction(sent) && sent.action == actions::Type::TradeAccept &&
+                sent.numberA == 1 && sent.numberB == 1 && messaging::currentQueueSize() == 0,
+            "involved AI accepts a gift with retail true status 1");
+        ai::processMessage(state, completed);
+        ai::processMessage(state, started);
+        ai::processMessage(state, tradeItemMessage(0, 1, rules::TradeItemKind::Cash, 100));
+        actions::Message auction{};
+        auction.action = actions::Type::NotifyNewHighBid;
+        auction.toPlayer = rules::AllPlayers;
+        ai::processMessage(state, auction);
+        ai::processMessage(state, acceptance);
+        ai::processMessage(state, acceptance);
+        require(messaging::receiveAction(sent) && sent.action == actions::Type::TradeAccept &&
+                sent.numberA == 0 && sent.numberB == 0 && messaging::currentQueueSize() == 0 &&
+                ai::tradeIngressStateReadOnly().tradeJustRejectedCountered,
+            "failed counter emits one rejection and suppresses duplicate notifications");
+        ai::processMessage(state, completed);
+        require(!ai::tradeIngressStateReadOnly().tradeJustRejectedCountered,
+            "reject completion releases the global reject-counter guard");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -360,6 +534,8 @@ int main()
         testCounterSendContinuation();
         testProfileNotificationLifecycle();
         testProfileDrivenCounterFromEditorNotification();
+        testTradeAcceptanceDecisionCore();
+        testAcceptanceNotificationRuntime();
         testTradeFinishAndMessageFilter();
         return 0;
     }
