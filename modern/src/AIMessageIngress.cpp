@@ -3,6 +3,8 @@
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
 
+#include <cstdlib>
+
 namespace monopoly::ai
 {
     namespace
@@ -78,6 +80,121 @@ namespace monopoly::ai
             }
         }
 
+        [[nodiscard]] trade::TradeAcceptanceConfig makeAcceptanceConfig(
+            rules::PlayerNumber player,
+            const profile::ConfigContext& context) noexcept
+        {
+            trade::TradeAcceptanceConfig config{};
+            config.evaluation = profile::makeTradeEvaluationConfig(
+                profileRuntime.players, player, context);
+            const auto& strategy = profileRuntime.players[player];
+            config.numberTimesAllowPropertyTrade =
+                strategy.numberTimesAllowPropertyTrade;
+            config.minEvaluationThreshold = strategy.minEvaluationThreshold;
+            config.minEvaluationIfFedUp = strategy.minEvaluationIfFedUp;
+            return config;
+        }
+
+        [[nodiscard]] double retailCounterRoll() noexcept
+        {
+            return static_cast<double>(std::rand()) /
+                static_cast<double>(RAND_MAX);
+        }
+
+        [[nodiscard]] bool sendTradeAcceptance(
+            rules::PlayerNumber player, bool accept, std::int64_t status) noexcept
+        {
+            if (!messaging::sendAction(
+                    actions::Type::TradeAccept, player, rules::BankPlayer,
+                    accept ? 1 : 0, status))
+                return false;
+            tradeIngress.pendingTradeAcceptPlayers |= 1u << player;
+            return true;
+        }
+
+        void maybeChooseTradeAcceptance(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action != actions::Type::NotifyTradeAcceptanceDecision ||
+                message.numberA < 0 || tradeIngress.tradeJustRejectedCountered)
+                return;
+
+            const auto requested = static_cast<std::uint32_t>(message.numberA);
+            const auto context = makeConfigContext();
+            for (rules::PlayerNumber player = 0;
+                 player < state.numberOfPlayers; ++player)
+            {
+                const auto playerBit = 1u << player;
+                if ((requested & playerBit) == 0 ||
+                    !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player])
+                    continue;
+
+                const auto config = makeAcceptanceConfig(player, context);
+                const auto decision = trade::evaluateCurrentTradeAcceptance(
+                    state, player, config, tradeIngress);
+                switch (decision.status)
+                {
+                case trade::TradeAcceptanceStatus::Suppressed:
+                case trade::TradeAcceptanceStatus::InvalidInput:
+                    return;
+
+                case trade::TradeAcceptanceStatus::Busy:
+                    if ((tradeIngress.pendingTradeAcceptPlayers & playerBit) == 0)
+                        tradeIngress.deferredAcceptancePlayers |= playerBit;
+                    return;
+
+                case trade::TradeAcceptanceStatus::AcceptUninvolved:
+                    (void)sendTradeAcceptance(player, true, 3);
+                    continue;
+
+                case trade::TradeAcceptanceStatus::RejectFutureOrImmunity:
+                case trade::TradeAcceptanceStatus::RejectFedUp:
+                    (void)sendTradeAcceptance(player, false, 0);
+                    return;
+
+                case trade::TradeAcceptanceStatus::Accept:
+                    (void)sendTradeAcceptance(player, true, 1);
+                    continue;
+
+                case trade::TradeAcceptanceStatus::CounterOrReject:
+                    break;
+                }
+
+                tradeIngress.tradeJustRejectedCountered = true;
+                tradeIngress.playerJustRejectedCountered = player;
+                const auto preflight = profile::makeCounterPreflightConfig(
+                    profileRuntime.players, player, context);
+                const auto balance = profile::makeCounterBalanceConfig(
+                    profileRuntime.players, player, context);
+                const auto counter = trade::counterProposeCurrentTrade(
+                    state, player, true,
+                    tradeIngress.counterSessions[player].timesCounteredTrade == 0
+                        ? retailCounterRoll() : 0.0,
+                    0, auctionOn,
+                    preflight, balance, tradeIngress);
+                if (!counter.acted())
+                    (void)sendTradeAcceptance(player, false, 0);
+                return;
+            }
+        }
+
+        void maybeRestartDeferredAcceptance(
+            const actions::Message& message) noexcept
+        {
+            if (message.action != actions::Type::NotifyActionCompleted ||
+                message.numberC < 0 || message.numberC >= rules::MaxPlayers)
+                return;
+            const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+            const auto bit = 1u << player;
+            if ((tradeIngress.deferredAcceptancePlayers & bit) == 0)
+                return;
+            tradeIngress.deferredAcceptancePlayers &= ~bit;
+            (void)messaging::sendAction(
+                actions::Type::RestartPhase, player, rules::BankPlayer);
+        }
+
         void maybeCounterTrade(
             const rules::GameState& state,
             const actions::Message& message) noexcept
@@ -142,6 +259,8 @@ namespace monopoly::ai
         processProfileMessage(state, message);
         (void)trade::processTradeRuleMessage(
             state, message, tradeIngress);
+        maybeRestartDeferredAcceptance(message);
+        maybeChooseTradeAcceptance(state, message);
         maybeCounterTrade(state, message);
     }
 

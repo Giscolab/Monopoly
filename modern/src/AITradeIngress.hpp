@@ -3,6 +3,7 @@
 #include "AICounterTradeRuntime.hpp"
 
 #include <array>
+#include <cstdint>
 
 namespace monopoly::ai::trade
 {
@@ -17,6 +18,10 @@ namespace monopoly::ai::trade
         rules::PlayerNumber lastEditor = rules::NobodyPlayer;
         bool tradeStarted{};
         bool tradeOfferedForAcceptance{};
+        bool tradeJustRejectedCountered{};
+        rules::PlayerNumber playerJustRejectedCountered = rules::NobodyPlayer;
+        std::uint32_t pendingTradeAcceptPlayers{};
+        std::uint32_t deferredAcceptancePlayers{};
     };
 
     void resetTradeIngress(TradeIngressState& state) noexcept;
@@ -25,6 +30,39 @@ namespace monopoly::ai::trade
         const rules::GameState& gameState,
         const actions::Message& message,
         TradeIngressState& state) noexcept;
+
+    enum class TradeAcceptanceStatus : std::uint8_t
+    {
+        InvalidInput = 0,
+        Suppressed,
+        Busy,
+        Accept,
+        AcceptUninvolved,
+        RejectFutureOrImmunity,
+        RejectFedUp,
+        CounterOrReject
+    };
+
+    struct TradeAcceptanceConfig
+    {
+        decision::TradeEvaluationConfig evaluation{};
+        int numberTimesAllowPropertyTrade{};
+        double minEvaluationThreshold{};
+        double minEvaluationIfFedUp{};
+    };
+
+    struct TradeAcceptanceResult
+    {
+        TradeAcceptanceStatus status = TradeAcceptanceStatus::InvalidInput;
+        double evaluation{};
+        bool fedUp{};
+    };
+
+    [[nodiscard]] TradeAcceptanceResult evaluateCurrentTradeAcceptance(
+        const rules::GameState& gameState,
+        rules::PlayerNumber player,
+        const TradeAcceptanceConfig& config,
+        const TradeIngressState& state) noexcept;
 
     [[nodiscard]] CounterTradeRunResult counterProposeCurrentTrade(
         const rules::GameState& gameState,

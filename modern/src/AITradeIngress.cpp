@@ -30,6 +30,10 @@ namespace monopoly::ai::trade
             state.lastEditor = rules::NobodyPlayer;
             state.tradeStarted = false;
             state.tradeOfferedForAcceptance = false;
+            state.tradeJustRejectedCountered = false;
+            state.playerJustRejectedCountered = rules::NobodyPlayer;
+            state.pendingTradeAcceptPlayers = 0;
+            state.deferredAcceptancePlayers = 0;
             for (auto& session : state.counterSessions)
                 session.timesCounteredTrade = 0;
         }
@@ -64,6 +68,10 @@ namespace monopoly::ai::trade
             }
             state.tradeStarted = true;
             state.tradeOfferedForAcceptance = false;
+            state.tradeJustRejectedCountered = false;
+            state.playerJustRejectedCountered = rules::NobodyPlayer;
+            state.pendingTradeAcceptPlayers = 0;
+            state.deferredAcceptancePlayers = 0;
             return true;
         }
 
@@ -126,22 +134,39 @@ namespace monopoly::ai::trade
 
         case actions::Type::NotifyActionCompleted:
         {
-            if (message.numberC < 0 ||
-                message.numberC >= rules::MaxPlayers ||
-                static_cast<rules::PlayerNumber>(message.numberC) !=
-                    state.counterRuntime.player)
+            if (message.numberC < 0 || message.numberC >= rules::MaxPlayers)
                 return false;
 
+            const auto player = static_cast<rules::PlayerNumber>(message.numberC);
             const auto actionValue = message.numberA;
-            if (actionValue != static_cast<std::int64_t>(
-                    actions::Type::StartTradeEditing) &&
-                actionValue != static_cast<std::int64_t>(
-                    actions::Type::TradeEditingDone))
+            if (actionValue == static_cast<std::int64_t>(actions::Type::TradeAccept))
+            {
+                state.pendingTradeAcceptPlayers &= ~(1u << player);
+                if (state.tradeJustRejectedCountered &&
+                    state.playerJustRejectedCountered == player)
+                {
+                    state.tradeJustRejectedCountered = false;
+                    state.playerJustRejectedCountered = rules::NobodyPlayer;
+                }
+                return true;
+            }
+
+            if (actionValue != static_cast<std::int64_t>(actions::Type::StartTradeEditing) &&
+                actionValue != static_cast<std::int64_t>(actions::Type::TradeEditingDone))
                 return false;
+            if (player != state.counterRuntime.player)
+                return false;
+
             processCounterProposalActionCompleted(
-                state.counterRuntime,
-                static_cast<actions::Type>(actionValue),
+                state.counterRuntime, static_cast<actions::Type>(actionValue),
                 message.numberB != 0);
+            if (actionValue == static_cast<std::int64_t>(actions::Type::StartTradeEditing) &&
+                state.tradeJustRejectedCountered &&
+                state.playerJustRejectedCountered == player)
+            {
+                state.tradeJustRejectedCountered = false;
+                state.playerJustRejectedCountered = rules::NobodyPlayer;
+            }
             return true;
         }
 
@@ -152,6 +177,66 @@ namespace monopoly::ai::trade
         default:
             return false;
         }
+    }
+
+    TradeAcceptanceResult evaluateCurrentTradeAcceptance(
+        const rules::GameState& gameState,
+        rules::PlayerNumber player,
+        const TradeAcceptanceConfig& config,
+        const TradeIngressState& state) noexcept
+    {
+        TradeAcceptanceResult result{};
+        if (gameState.numberOfPlayers == 0 ||
+            gameState.numberOfPlayers > rules::MaxPlayers ||
+            player >= gameState.numberOfPlayers ||
+            state.proposedPlayer >= gameState.numberOfPlayers)
+            return result;
+
+        if (state.tradeJustRejectedCountered)
+        {
+            result.status = TradeAcceptanceStatus::Suppressed;
+            return result;
+        }
+
+        const auto playerBit = 1u << player;
+        if ((state.pendingTradeAcceptPlayers & playerBit) != 0 ||
+            (state.counterRuntime.player == player &&
+             state.counterRuntime.sending.state != SendingTradeState::Nothing))
+        {
+            result.status = TradeAcceptanceStatus::Busy;
+            return result;
+        }
+
+        if (!playerInvolvedInTrade(state.currentTrade[player]))
+        {
+            result.status = TradeAcceptanceStatus::AcceptUninvolved;
+            return result;
+        }
+
+        if (playerHasFutureOrImmunity(player, state.immunities))
+        {
+            result.status = TradeAcceptanceStatus::RejectFutureOrImmunity;
+            return result;
+        }
+
+        result.fedUp = propertiesAlreadyTraded(
+            state.counterSessions[player].propertyMemory,
+            state.proposedPlayer, state.currentTrade[player],
+            config.numberTimesAllowPropertyTrade) != 0;
+        result.evaluation = decision::evaluateTrade(
+            gameState, player, player, state.currentTrade, config.evaluation);
+        const double threshold = result.fedUp ?
+            config.minEvaluationIfFedUp : config.minEvaluationThreshold;
+        if (result.evaluation >= threshold)
+        {
+            result.status = TradeAcceptanceStatus::Accept;
+            return result;
+        }
+
+        result.status = result.fedUp ?
+            TradeAcceptanceStatus::RejectFedUp :
+            TradeAcceptanceStatus::CounterOrReject;
+        return result;
     }
 
     CounterTradeRunResult counterProposeCurrentTrade(
