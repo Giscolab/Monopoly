@@ -8,14 +8,16 @@ on:
 jobs:
   calculate-progress:
     runs-on: ubuntu-latest
+    permissions:
+      issues: read
     steps:
       - uses: actions/checkout@v4
       
       - name: Calculate project progress
         run: |
-          # Get closed issues count
-CLOSED=$(gh issue list --state closed --json title --jq '. | length')
-TOTAL=$(gh issue list --state all --json title --jq '. | length')
+          # Get closed and total issues count (limit raised to 10000)
+          CLOSED=$(gh issue list --state closed --limit 10000 --json title --jq '. | length')
+          TOTAL=$(gh issue list --state all --limit 10000 --json title --jq '. | length')
 
           # Calculate percentage
           if [ "$TOTAL" -gt 0 ]; then
@@ -24,9 +26,13 @@ TOTAL=$(gh issue list --state all --json title --jq '. | length')
             PERCENT=0
           fi
           
-          echo "## 📊 Progress Stats"
-          echo "- **Closed Issues**: $CLOSED / $TOTAL"
-          echo "- **Completion**: $PERCENT%"
-          echo "- **Last Updated**: $(date)"
+          # Display in step logs AND output to Job Summary
+          {
+            echo "## 📊 Progress Stats"
+            echo "- **Closed Issues**: $CLOSED / $TOTAL"
+            echo "- **Completion**: $PERCENT%"
+            echo "- **Last Updated**: $(date)"
+          } | tee -a $GITHUB_STEP_SUMMARY
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
