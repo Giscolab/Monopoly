@@ -11,6 +11,8 @@ reste disponible dans [`Source/`](Source/).
 
 ![Workflow](https://github.com/Giscolab/Monopoly/actions/workflows/main.yml/badge.svg)
 
+![Portabilite du code](modern/porting-progress.svg)
+
 Le suivi est automatisé à partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md),
 la matrice de référence du portage. Le workflow publie quotidiennement la répartition
 des composants et un indice reproductible de progression.
