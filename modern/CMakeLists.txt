@@ -1287,6 +1287,7 @@ target_sources(
     src/AICounterTradeRuntime.cpp
     src/AITradeIngress.cpp
     src/AIMessageIngress.cpp
+    src/AIProfile.cpp
     src/AIDecisionUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
@@ -1489,6 +1490,30 @@ if(BUILD_TESTING)
     )
 endif()
 
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAIProfileTests
+        tests/AIProfileTests.cpp
+        src/AIProfile.cpp
+    )
+    target_include_directories(
+        MonopolyAIProfileTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(
+        MonopolyAIProfileTests PRIVATE
+        MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}"
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAIProfileTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AIProfile
+        COMMAND MonopolyAIProfileTests
+    )
+endif()
 
 if(BUILD_TESTING)
     add_executable(
