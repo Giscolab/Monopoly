@@ -769,6 +769,13 @@ namespace
         completed.numberB = 1;
         completed.numberC = 0;
         ai::processMessage(state, completed);
+        ai::processMessage(state, started);
+        require(ai::tradeIngressStateReadOnly().counterRuntime.hasPendingProposal &&
+                ai::tradeIngressStateReadOnly().counterRuntime.player == 0,
+            "counter synchronization from original proposer preserves editor pending proposal");
+        ai::processMessage(state, tradeItemMessage(
+            0, 1, rules::TradeItemKind::Square,
+            static_cast<std::int64_t>(rules::board::SquareType::MediterraneanAvenue)));
         ai::processMessage(state, editorMessage(0));
         bool sawItems = false;
         bool sawDone = false;
@@ -959,6 +966,48 @@ namespace
         messaging::shutdown();
     }
 
+    void testTradeResyncPreservesResponses()
+    {
+        auto game = baseState();
+        ai::trade::TradeIngressState ingress{};
+        ingress.tradeStarted = true;
+        ingress.lastEditor = ingress.proposedPlayer = 1;
+        ingress.tradeOfferedForAcceptance = true;
+        ingress.tradeJustRejectedCountered = true;
+        ingress.playerJustRejectedCountered = 0;
+        ingress.pendingTradeAcceptPlayers = 1;
+        ingress.deferredAcceptancePlayers = 2;
+        ingress.currentTrade[0].cashGiven = 20;
+        ingress.immunities[0].count = 1;
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.numberA = 1;
+        (void)ai::trade::processTradeRuleMessage(game, started, ingress);
+        require(ingress.currentTrade[0].cashGiven == 0 && ingress.immunities[0].count == 0,
+            "resynchronization clears only mirrored trade items like retail reset");
+        require(ingress.tradeOfferedForAcceptance && ingress.tradeJustRejectedCountered &&
+                ingress.playerJustRejectedCountered == 0 &&
+                ingress.pendingTradeAcceptPlayers == 1 && ingress.deferredAcceptancePlayers == 2,
+            "resynchronization preserves acceptance phase and outstanding response guards");
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::TradeAccept);
+        completed.numberC = 0;
+        (void)ai::trade::processTradeRuleMessage(game, completed, ingress);
+        require(!ingress.tradeJustRejectedCountered && ingress.pendingTradeAcceptPlayers == 0 &&
+                ingress.tradeOfferedForAcceptance,
+            "completion still releases its response guard after resynchronization");
+        (void)ai::trade::processTradeRuleMessage(game, editorMessage(0), ingress);
+        require(!ingress.tradeOfferedForAcceptance,
+            "editor transition clears preserved acceptance phase at the retail event");
+        actions::Message finished{};
+        finished.action = actions::Type::NotifyTradeFinished;
+        (void)ai::trade::processTradeRuleMessage(game, finished, ingress);
+        require(!ingress.tradeStarted && ingress.deferredAcceptancePlayers == 0 &&
+                !ingress.tradeJustRejectedCountered,
+            "actual trade finish clears remaining response state");
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -1013,6 +1062,7 @@ int main()
         testAcceptanceCounterRuntime();
         testTradeStartTurnMaintenance();
         testProactiveSendHistory();
+        testTradeResyncPreservesResponses();
         testTradeFinishAndMessageFilter();
         return 0;
     }

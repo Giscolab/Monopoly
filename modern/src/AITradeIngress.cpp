@@ -60,23 +60,26 @@ namespace monopoly::ai::trade
 
             state.currentTrade = {};
             state.immunities = {};
-            const bool pendingOwnRequest = state.counterRuntime.hasPendingProposal &&
-                state.counterRuntime.player == proposer &&
+            // RULE resynchronizes a counter using the original proposer,
+            // even when a different player has just received editing permission.
+            const bool pendingEditorRequest = state.counterRuntime.hasPendingProposal &&
+                (state.counterRuntime.player == proposer ||
+                 state.counterRuntime.proposedPlayer == proposer) &&
                 (state.counterRuntime.sending.state == SendingTradeState::AskingTradeEdit ||
                  state.counterRuntime.sending.state == SendingTradeState::TradeItems);
-            if (!pendingOwnRequest)
+            if (!pendingEditorRequest)
                 state.counterRuntime = {};
             if (!state.tradeStarted)
             {
                 state.proposedPlayer = proposer;
                 state.lastEditor = proposer;
+                state.tradeOfferedForAcceptance = false;
+                state.tradeJustRejectedCountered = false;
+                state.playerJustRejectedCountered = rules::NobodyPlayer;
+                state.pendingTradeAcceptPlayers = 0;
+                state.deferredAcceptancePlayers = 0;
             }
             state.tradeStarted = true;
-            state.tradeOfferedForAcceptance = false;
-            state.tradeJustRejectedCountered = false;
-            state.playerJustRejectedCountered = rules::NobodyPlayer;
-            state.pendingTradeAcceptPlayers = 0;
-            state.deferredAcceptancePlayers = 0;
             return true;
         }
 
