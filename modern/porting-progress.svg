@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="44" viewBox="0 0 620 44" role="img" aria-label="Portability 52%">
+  <title>Code portability: 52%</title>
+  <rect x="10" y="10" width="600" height="24" rx="12" fill="#d0d7de"/>
+  <rect x="10" y="10" width="312" height="24" rx="12" fill="#2da44e"/>
+  <text x="310" y="27" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#111827">52% portability</text>
+</svg>
