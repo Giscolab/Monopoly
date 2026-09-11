@@ -777,6 +777,106 @@ namespace
             "AI make-trade-fair rejects empty partner list safely");
     }
 
+    ai::decision::MonopolyProposalConfig monopolyProposalConfig()
+    {
+        ai::decision::MonopolyProposalConfig config{};
+        config.fairTrade.evaluation.chancesThreshold = 1000000.0;
+        config.fairTrade.evaluation.cashFactor = 1.0;
+        config.fairTrade.evaluation.worthFactors.property.fill(1.0);
+        config.fairTrade.minEvaluationThreshold = -1000000.0;
+        config.fairTrade.minGiveMonopolyEvaluation = -1000000.0;
+        config.fairTrade.cashMultipliers.fill(1.0);
+        for (auto& generosity : config.whatToTrade)
+            generosity.giveMonopoly = ai::trade::PropertyClassification::Best;
+        return config;
+    }
+
+    void testProactiveMonopolyBuilders()
+    {
+        auto state = baseState();
+        state.players[0].cash = state.players[1].cash = 100000;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        own(state, SquareType::BalticAvenue, 1);
+        ai::trade::PropertySets properties{};
+        properties[0] = ai::propertiesOwnedByPlayer(state, 0);
+        properties[1] = ai::propertiesOwnedByPlayer(state, 1);
+        auto config = monopolyProposalConfig();
+        const std::array<rules::PlayerNumber, 1> partners{1};
+        const auto group = rules::board::definition(SquareType::BalticAvenue).group;
+        const auto mediterranean = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+        const auto baltic = rules::board::propertyBit(SquareType::BalticAvenue);
+        ai::trade::TradeProposalList proposal{};
+        require(ai::decision::buildMonopolyTrade(
+                    state, 0, group, partners, properties, proposal, config) &&
+                proposal[0].propertiesReceived == baltic &&
+                proposal[1].propertiesGiven == baltic &&
+                (proposal[0].propertiesGiven & mediterranean) == 0,
+            "proactive monopoly acquisition requests missing lots without trading own lot to self");
+        require(state.players[0].cash == 100000 &&
+                state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner == 1,
+            "monopoly construction leaves real game state unchanged");
+
+        const auto previous = proposal;
+        auto invalid = state;
+        invalid.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = rules::BankPlayer;
+        require(!ai::decision::buildMonopolyTrade(
+                    invalid, 0, group, partners, properties, proposal, config) &&
+                proposal == previous,
+            "bank-owned target lot rejects safely without publishing partial proposal");
+        require(!ai::decision::buildMonopolyTrade(
+                    state, 0, group, {}, properties, proposal, config) && proposal == previous,
+            "empty monopoly partner list leaves proposal unchanged");
+
+        proposal = {};
+        require(ai::decision::buildMonopolyForCash(
+                    state, 0, 1, properties, proposal, config) &&
+                proposal[0].propertiesGiven == mediterranean &&
+                proposal[1].propertiesReceived == mediterranean &&
+                ai::trade::tradeIsProper(state, proposal),
+            "monopoly cash sale completes partner group and validates balanced proposal");
+        const auto successfulSale = proposal;
+        auto impossible = config;
+        impossible.fairTrade.minGiveMonopolyEvaluation = 1000000.0;
+        auto insolvent = state;
+        insolvent.players[1].cash = 0;
+        require(!ai::decision::buildMonopolyForCash(
+                    insolvent, 0, 1, properties, proposal, impossible) &&
+                proposal == successfulSale,
+            "unaffordable monopoly cash sale preserves prior proposal");
+
+        state.numberOfPlayers = 3;
+        state.players[2].cash = 100000;
+        state.players[2].currentSquare = static_cast<std::uint8_t>(SquareType::OffBoard);
+        proposal = {};
+        require(ai::decision::buildMonopolyForCash(
+                    state, 0, 2, properties, proposal, config) &&
+                proposal[1].propertiesReceived == mediterranean &&
+                proposal[2] == ai::trade::TradeProposalRecord{},
+            "cash sale wraps candidate order and skips bankrupt player and initiator");
+        state.players[2].currentSquare = 0;
+        own(state, SquareType::ParkPlace, 2);
+        own(state, SquareType::Boardwalk, 2);
+        properties[2] = ai::propertiesOwnedByPlayer(state, 2);
+        proposal = {};
+        require(ai::decision::buildMonopolyForCash(
+                    state, 0, 2, properties, proposal, config) &&
+                proposal[1].propertiesReceived == mediterranean &&
+                proposal[2] == ai::trade::TradeProposalRecord{},
+            "cash sale skips recipient already owning a monopoly");
+        own(state, SquareType::MediterraneanAvenue, 1);
+        own(state, SquareType::BalticAvenue, 0);
+        own(state, SquareType::OrientalAvenue, 0);
+        own(state, SquareType::VermontAvenue, 0);
+        own(state, SquareType::ConnecticutAvenue, 0);
+        properties[0] = ai::propertiesOwnedByPlayer(state, 0);
+        properties[1] = ai::propertiesOwnedByPlayer(state, 1);
+        proposal = {};
+        require(ai::decision::buildMonopolyForCash(
+                    state, 0, 1, properties, proposal, config) &&
+                proposal[0].propertiesGiven == baltic,
+            "cash sale excludes initiator's existing complete monopolies from offerings");
+    }
+
     void testCounterProposalBalance()
     {
         using ai::decision::CounterProposalBalanceConfig;
@@ -871,6 +971,7 @@ int main()
         testEvaluateTrade();
         testEvaluateTradePlayerList();
         testMakeTradeFair();
+        testProactiveMonopolyBuilders();
         testCounterProposalBalance();
         testCounterProposalPreflight();
         testHypotheticalUnmortgageAndGiveAway();
