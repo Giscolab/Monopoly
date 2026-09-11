@@ -9,14 +9,17 @@ reste disponible dans [`Source/`](Source/).
 
 ## 📊 Progression
 
-![Workflow](https://github.com/Giscolab/Monopoly/actions/workflows/progress-stats.yml/badge.svg)
+![Workflow](https://github.com/Giscolab/Monopoly/actions/workflows/main.yml/badge.svg)
 
-Le suivi de la progression du projet est automatisé via GitHub Actions. Les statistiques sont mises à jour quotidiennement :
+Le suivi est automatisé à partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md),
+la matrice de référence du portage. Le workflow publie quotidiennement la répartition
+des composants et un indice reproductible de progression.
 
 - **Statut** : Work In Progress
-- **Dernière mise à jour** : Voir les [logs du workflow](https://github.com/Giscolab/Monopoly/actions/workflows/progress-stats.yml)
+- **Dernière mise à jour** : voir les [logs du workflow](https://github.com/Giscolab/Monopoly/actions/workflows/main.yml)
+- **Formule de l'indice** : complet/remplacé = 100 %, partiel = 50 %, non démarré = 0 % ; les éléments bloqués, tooling manquant et legacy inutilisé sont exclus du dénominateur.
 
-Pour consulter la progression détaillée, consultez les [Issues du projet](https://github.com/Giscolab/Monopoly/issues).
+Cet indice est un indicateur mécanique de la matrice de portage, pas une estimation de la jouabilité globale.
 
 ## Sources et crédits
 
