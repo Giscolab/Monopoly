@@ -1165,6 +1165,201 @@ namespace monopoly::ai::trade
         return false;
     }
 
+    ProposedTradeSendPlan buildProposedTradeSendPlan(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const TradeProposalList& proposals,
+        const ProposedTradeSendInputs& inputs) noexcept
+    {
+        ProposedTradeSendPlan plan{};
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return plan;
+
+        if (inputs.playerSendingTrade && !state.tradeInProgress)
+        {
+            plan.status = ProposedTradeSendStatus::Busy;
+            return plan;
+        }
+
+        std::size_t involved{};
+        for (rules::PlayerNumber current = 0; current < state.numberOfPlayers; ++current)
+        {
+            if (playerInvolvedInTrade(proposals[current]))
+                ++involved;
+        }
+        if (involved != 2)
+        {
+            plan.status = ProposedTradeSendStatus::NotTwoPlayers;
+            return plan;
+        }
+
+        auto append = [&](actions::Type type,
+                std::int64_t a = 0, std::int64_t b = 0,
+                std::int64_t c = 0, std::int64_t d = 0,
+                std::int64_t e = 0) mutable {
+            if (plan.count >= plan.actions.size())
+                return false;
+            auto& message = plan.actions[plan.count++];
+            message.action = type;
+            message.fromPlayer = player;
+            message.toPlayer = rules::BankPlayer;
+            message.numberA = a;
+            message.numberB = b;
+            message.numberC = c;
+            message.numberD = d;
+            message.numberE = e;
+            return true;
+        };
+
+        if (!state.tradeInProgress || inputs.tradeAccept)
+        {
+            if (!append(actions::Type::StartTradeEditing))
+                plan.status = ProposedTradeSendStatus::CapacityExceeded;
+            else
+                plan.status = ProposedTradeSendStatus::RequestEditing;
+            return plan;
+        }
+
+        for (rules::PlayerNumber from = 0; from < state.numberOfPlayers; ++from)
+        {
+            for (rules::PlayerNumber to = 0; to < state.numberOfPlayers; ++to)
+            {
+                if (state.players[from].cashGivenInTrade[to] == 0)
+                    continue;
+                if (!append(actions::Type::TradeItem, from, to,
+                        static_cast<std::int64_t>(rules::TradeItemKind::Cash), 0))
+                {
+                    plan.status = ProposedTradeSendStatus::CapacityExceeded;
+                    return plan;
+                }
+            }
+        }
+
+        auto working = proposals;
+        for (auto& proposal : working)
+        {
+            proposal.cashGiven -= proposal.cashReceived;
+            proposal.cashReceived = 0;
+            if (proposal.cashGiven < 0)
+            {
+                proposal.cashReceived = -proposal.cashGiven;
+                proposal.cashGiven = 0;
+            }
+        }
+
+        for (;;)
+        {
+            const auto needCashPlayer = nextPlayerWantingCash(working);
+            if (needCashPlayer == rules::NobodyPlayer)
+                break;
+
+            bool foundGiver{};
+            for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
+            {
+                auto& giver = working[current];
+                if (giver.cashGiven == 0)
+                    continue;
+
+                foundGiver = true;
+                auto& receiver = working[needCashPlayer];
+                const auto amount = std::min(receiver.cashReceived, giver.cashGiven);
+                if (!append(actions::Type::TradeItem, current, needCashPlayer,
+                        static_cast<std::int64_t>(rules::TradeItemKind::Cash), amount))
+                {
+                    plan.status = ProposedTradeSendStatus::CapacityExceeded;
+                    return plan;
+                }
+                giver.cashGiven -= amount;
+                receiver.cashReceived -= amount;
+                if (receiver.cashReceived == 0)
+                    break;
+            }
+            if (!foundGiver)
+                break;
+        }
+
+        rules::board::PropertySet propertiesTraded{};
+        const auto inJail = static_cast<std::size_t>(rules::board::SquareType::InJail);
+        for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
+        {
+            for (std::size_t squareNo = 0; squareNo < inJail; ++squareNo)
+            {
+                const auto square = static_cast<rules::board::SquareType>(squareNo);
+                const auto bit = rules::board::propertyBit(square);
+                if (bit == 0)
+                    continue;
+                const auto owner = state.squares[squareNo].owner;
+                const auto currentReceiver = state.squares[squareNo].offeredInTradeTo;
+
+                if ((proposals[current].propertiesReceived & bit) != 0)
+                {
+                    if (currentReceiver != current &&
+                        !append(actions::Type::TradeItem, owner, current,
+                            static_cast<std::int64_t>(rules::TradeItemKind::Square),
+                            static_cast<std::int64_t>(squareNo)))
+                    {
+                        plan.status = ProposedTradeSendStatus::CapacityExceeded;
+                        return plan;
+                    }
+                    propertiesTraded |= bit;
+                }
+                else if (currentReceiver == current &&
+                    (propertiesTraded & bit) == 0)
+                {
+                    if (!append(actions::Type::TradeItem, owner, owner,
+                            static_cast<std::int64_t>(rules::TradeItemKind::Square),
+                            static_cast<std::int64_t>(squareNo)))
+                    {
+                        plan.status = ProposedTradeSendStatus::CapacityExceeded;
+                        return plan;
+                    }
+                }
+            }
+        }
+
+        std::array<rules::PlayerNumber, DeckCount> cardReceived{};
+        cardReceived.fill(rules::NobodyPlayer);
+        for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
+        {
+            for (std::size_t deck = 0; deck < DeckCount; ++deck)
+            {
+                if (proposals[current].jailCardReceived[deck])
+                    cardReceived[deck] = current;
+            }
+        }
+
+        for (std::size_t deck = 0; deck < DeckCount; ++deck)
+        {
+            const auto currentReceiver = state.cards[deck].jailOfferedInTradeTo;
+            if (cardReceived[deck] == currentReceiver)
+                continue;
+            const auto owner = state.cards[deck].jailOwner;
+            const auto target = cardReceived[deck] == rules::NobodyPlayer
+                ? owner : cardReceived[deck];
+            if (!append(actions::Type::TradeItem, owner, target,
+                    static_cast<std::int64_t>(rules::TradeItemKind::JailCard),
+                    static_cast<std::int64_t>(deck)))
+            {
+                plan.status = ProposedTradeSendStatus::CapacityExceeded;
+                return plan;
+            }
+        }
+
+        const auto doneA = inputs.sendTradeOffer ? 1 : 0;
+        const auto doneB = inputs.sendTradeOffer
+            ? static_cast<std::int64_t>(inputs.proposedPlayer)
+            : 1;
+        if (!append(actions::Type::TradeEditingDone, doneA, doneB))
+        {
+            plan.status = ProposedTradeSendStatus::CapacityExceeded;
+            return plan;
+        }
+
+        plan.status = ProposedTradeSendStatus::Ready;
+        return plan;
+    }
+
     bool addTradeItem(
         TradeProposalList& proposals,
         FutureImmunityList& immunities,

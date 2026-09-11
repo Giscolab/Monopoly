@@ -955,6 +955,102 @@ namespace
             "AI add-type-property preserves retail junk branch no-op return");
     }
 
+    void testProposedTradeSendPlan()
+    {
+        using ai::trade::ProposedTradeSendInputs;
+        using ai::trade::ProposedTradeSendStatus;
+        using ai::trade::TradeProposalList;
+
+        rules::GameState state{};
+        state.numberOfPlayers = 2;
+        TradeProposalList proposals{};
+        proposals[0].cashReceived = 10;
+        proposals[1].cashGiven = 10;
+        ProposedTradeSendInputs inputs{};
+
+        auto plan = ai::trade::buildProposedTradeSendPlan(state, 0, proposals, inputs);
+        require(plan.status == ProposedTradeSendStatus::RequestEditing &&
+                plan.count == 1 && plan.actions[0].action == actions::Type::StartTradeEditing,
+            "AI send-plan requests editor before changing trade items");
+
+        inputs.playerSendingTrade = true;
+        plan = ai::trade::buildProposedTradeSendPlan(state, 0, proposals, inputs);
+        require(plan.status == ProposedTradeSendStatus::Busy && plan.count == 0,
+            "AI send-plan preserves retail busy guard before editing starts");
+
+        inputs = {};
+        state.tradeInProgress = true;
+        const auto med = rules::board::propertyBit(SquareType::MediterraneanAvenue);
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].offeredInTradeTo = 1;
+        state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].offeredInTradeTo = 0;
+        state.players[0].cashGivenInTrade[1] = 9;
+        const auto chance = static_cast<std::size_t>(rules::DeckType::Chance);
+        const auto community = static_cast<std::size_t>(rules::DeckType::Community);
+        state.cards[chance].jailOwner = 0;
+        state.cards[chance].jailOfferedInTradeTo = 1;
+        state.cards[community].jailOwner = 1;
+        state.cards[community].jailOfferedInTradeTo = rules::NobodyPlayer;
+
+        proposals = {};
+        proposals[0].cashReceived = 17;
+        proposals[0].propertiesGiven = med;
+        proposals[0].jailCardReceived[community] = true;
+        proposals[1].cashGiven = 17;
+        proposals[1].propertiesReceived = med;
+        proposals[1].jailCardGiven[community] = true;
+        plan = ai::trade::buildProposedTradeSendPlan(state, 0, proposals, inputs);
+        require(plan.status == ProposedTradeSendStatus::Ready && plan.count == 6,
+            "AI send-plan builds complete retail two-player replacement sequence");
+
+        const auto& clearCash = plan.actions[0];
+        require(clearCash.action == actions::Type::TradeItem &&
+                clearCash.numberA == 0 && clearCash.numberB == 1 &&
+                clearCash.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Cash) &&
+                clearCash.numberD == 0,
+            "AI send-plan clears existing cash before proposing new cash");
+        const auto& newCash = plan.actions[1];
+        require(newCash.action == actions::Type::TradeItem &&
+                newCash.numberA == 1 && newCash.numberB == 0 && newCash.numberD == 17,
+            "AI send-plan emits normalized replacement cash after clears");
+
+        const auto& clearBaltic = plan.actions[2];
+        require(clearBaltic.action == actions::Type::TradeItem &&
+                clearBaltic.numberA == 1 && clearBaltic.numberB == 1 &&
+                clearBaltic.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Square) &&
+                clearBaltic.numberD == static_cast<std::int64_t>(SquareType::BalticAvenue),
+            "AI send-plan clears obsolete property assignment before card changes");
+        const auto& clearChance = plan.actions[3];
+        require(clearChance.numberA == 0 && clearChance.numberB == 0 &&
+                clearChance.numberC == static_cast<std::int64_t>(rules::TradeItemKind::JailCard) &&
+                clearChance.numberD == static_cast<std::int64_t>(rules::DeckType::Chance),
+            "AI send-plan clears obsolete jail card by returning it to owner");
+        const auto& addCommunity = plan.actions[4];
+        require(addCommunity.numberA == 1 && addCommunity.numberB == 0 &&
+                addCommunity.numberC == static_cast<std::int64_t>(rules::TradeItemKind::JailCard) &&
+                addCommunity.numberD == static_cast<std::int64_t>(rules::DeckType::Community),
+            "AI send-plan adds replacement jail card after property changes");
+        const auto& done = plan.actions[5];
+        require(done.action == actions::Type::TradeEditingDone &&
+                done.numberA == 0 && done.numberB == 1,
+            "AI send-plan finishes by submitting trade for acceptance");
+
+        inputs.sendTradeOffer = true;
+        inputs.proposedPlayer = 1;
+        plan = ai::trade::buildProposedTradeSendPlan(state, 0, proposals, inputs);
+        require(plan.status == ProposedTradeSendStatus::Ready &&
+                plan.actions[plan.count - 1].action == actions::Type::TradeEditingDone &&
+                plan.actions[plan.count - 1].numberA == 1 &&
+                plan.actions[plan.count - 1].numberB == 1,
+            "AI send-plan preserves retail return-editor TradeEditingDone form");
+
+        proposals[1] = {};
+        plan = ai::trade::buildProposedTradeSendPlan(state, 0, proposals, inputs);
+        require(plan.status == ProposedTradeSendStatus::NotTwoPlayers && plan.count == 0,
+            "AI send-plan rejects anything other than exactly two involved players");
+    }
+
 }
 
 int main()
@@ -980,6 +1076,7 @@ int main()
         testTradeProposalContracts();
         testAddTradeItemContracts();
         testTradeMutationAndMonopolyDetection();
+        testProposedTradeSendPlan();
         return 0;
     }
     catch (const std::exception& error)
