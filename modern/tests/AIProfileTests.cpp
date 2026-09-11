@@ -122,9 +122,9 @@ namespace
     void testTokenMappingAndErrors()
     {
         using namespace monopoly;
-        expect(ai::profile::tokenFileName(0) == "Cannon.AI",
+        expect(ai::profile::tokenFileName(0) == "Cannon.ai",
             "token 0 maps to retail Cannon profile");
-        expect(ai::profile::tokenFileName(10) == "Moneybag.AI",
+        expect(ai::profile::tokenFileName(10) == "Moneybag.ai",
             "token 10 maps to retail Moneybag profile");
         expect(ai::profile::tokenFileName(11).empty(),
             "out-of-range token has no invented profile");

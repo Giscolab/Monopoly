@@ -3,6 +3,7 @@
 #include "BoardRules.hpp"
 #include "Messaging.hpp"
 
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -10,6 +11,9 @@ namespace
 {
     using namespace monopoly;
     bool localRecipient = true;
+    bool localAIPlayer = false;
+    bool removeRequested = false;
+    rules::PlayerNumber removedPlayer = rules::NobodyPlayer;
 
     void require(bool condition, const char* description)
     {
@@ -34,6 +38,19 @@ namespace monopoly::ui::localplayers
     bool isLocalRecipient(rules::PlayerNumber)
     {
         return localRecipient;
+    }
+
+    bool slotIsLocalAIPlayer(rules::PlayerNumber)
+    {
+        return localAIPlayer;
+    }
+
+    bool requestRemoveLocalPlayer(
+        const rules::GameState&, rules::PlayerNumber player)
+    {
+        removeRequested = true;
+        removedPlayer = player;
+        return true;
     }
 }
 
@@ -110,6 +127,34 @@ namespace
             "AI trade ingress rejects invalid trade-item kind safely");
     }
 
+    void testTradeLifecycleTracking()
+    {
+        auto state = baseState();
+        ai::trade::TradeIngressState ingress{};
+        ai::trade::resetTradeIngress(ingress);
+
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.numberA = 1;
+        require(ai::trade::processTradeRuleMessage(state, started, ingress) &&
+                ingress.tradeStarted && ingress.proposedPlayer == 1 &&
+                ingress.lastEditor == 1,
+            "AI trade ingress tracks retail trade proposer on start");
+
+        actions::Message acceptance{};
+        acceptance.action = actions::Type::NotifyTradeAcceptanceDecision;
+        require(ai::trade::processTradeRuleMessage(state, acceptance, ingress) &&
+                ingress.tradeOfferedForAcceptance &&
+                ingress.proposedPlayer == 1,
+            "AI trade ingress tracks offer-for-acceptance phase");
+
+        require(ai::trade::processTradeRuleMessage(
+                    state, editorMessage(0), ingress) &&
+                !ingress.tradeOfferedForAcceptance &&
+                ingress.proposedPlayer == 1 && ingress.lastEditor == 0,
+            "AI trade ingress clears acceptance phase when editor changes");
+    }
+
     void testCounterSendContinuation()
     {
         auto state = baseState();
@@ -171,6 +216,104 @@ namespace
         messaging::shutdown();
     }
 
+    std::filesystem::path profileDirectory()
+    {
+        return std::filesystem::path(MONOPOLY_LEGACY_SOURCE_DIR) /
+            "monopoly";
+    }
+
+    void testProfileNotificationLifecycle()
+    {
+        auto state = baseState();
+        require(ai::initializeMessageIngressProfiles(
+                    profileDirectory()).has_value(),
+            "AI message ingress initializes retail profiles");
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.fromPlayer = rules::BankPlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        localRecipient = true;
+        localAIPlayer = true;
+        ai::processMessage(state, named);
+        const auto& loaded = ai::profileRuntimeStateReadOnly();
+        require(loaded.playerLoaded[0] && loaded.loadedToken[0] == 0 &&
+                loaded.loadedLevel[0] == 3,
+            "NotifyNamePlayer loads local AI token profile");
+
+        localAIPlayer = false;
+        ai::processMessage(state, named);
+        require(!ai::profileRuntimeStateReadOnly().playerLoaded[0],
+            "NotifyNamePlayer clears profile when slot is no longer local AI");
+
+        localAIPlayer = true;
+        removeRequested = false;
+        removedPlayer = rules::NobodyPlayer;
+        state.players[0].token = 99;
+        state.players[0].aiPlayerLevel = 2;
+        ai::processMessage(state, named);
+        require(removeRequested && removedPlayer == 0,
+            "failed local AI profile load requests retail slot removal");
+        ai::resetMessageIngress();
+        require(ai::profileRuntimeStateReadOnly().expertLoaded,
+            "message ingress reset preserves initialized expert profile");
+    }
+
+    void testProfileDrivenCounterFromEditorNotification()
+    {
+        auto state = baseState();
+        state.options.housesPerHotel = 5;
+        state.options.evenBuildRule = true;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::MediterraneanAvenue)].owner = 1;
+
+        require(messaging::initialize(),
+            "profile-driven counter fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(
+                    profileDirectory()).has_value(),
+            "profile-driven counter loads retail profiles");
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        localRecipient = true;
+        localAIPlayer = true;
+        ai::processMessage(state, named);
+
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 1;
+        ai::processMessage(state, started);
+
+        const auto property = tradeItemMessage(
+            1, 0, rules::TradeItemKind::Square,
+            static_cast<std::int64_t>(
+                rules::board::SquareType::MediterraneanAvenue));
+        ai::processMessage(state, property);
+        messaging::clearActionQueue();
+
+        ai::processMessage(state, editorMessage(0));
+        const auto& ingress = ai::tradeIngressStateReadOnly();
+        require(ingress.counterSessions[0].timesCounteredTrade == 1 &&
+                ingress.counterRuntime.sending.state !=
+                    ai::trade::SendingTradeState::Nothing,
+            "NotifyTradeEditor runs retail-profile counter proposal");
+        require(messaging::currentQueueSize() > 0,
+            "profile-driven counter emits rule actions");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -213,7 +356,10 @@ int main()
                     monopoly::rules::GameOptions{}),
             "AI trade ingress fixture initializes board definitions");
         testTradeNotificationTracking();
+        testTradeLifecycleTracking();
         testCounterSendContinuation();
+        testProfileNotificationLifecycle();
+        testProfileDrivenCounterFromEditorNotification();
         testTradeFinishAndMessageFilter();
         return 0;
     }

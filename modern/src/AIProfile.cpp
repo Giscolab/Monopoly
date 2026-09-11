@@ -333,8 +333,8 @@ namespace monopoly::ai::profile
     std::string_view tokenFileName(std::uint8_t token) noexcept
     {
         static constexpr std::array<std::string_view, TokenProfileCount> Names{
-            "Cannon.AI", "RaceCar.AI", "Dog.AI", "TopHat.AI", "Iron.AI",
-            "Horse.AI", "Ship.AI", "Boot.AI", "Thimble.AI", "Barrow.AI", "Moneybag.AI"};
+            "Cannon.ai", "RaceCar.ai", "Dog.ai", "TopHat.ai", "Iron.ai",
+            "Horse.ai", "Ship.ai", "Boot.ai", "Thimble.ai", "Barrow.AI", "Moneybag.ai"};
         return token < Names.size() ? Names[token] : std::string_view{};
     }
 

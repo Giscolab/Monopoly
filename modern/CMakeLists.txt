@@ -119,6 +119,18 @@ else()
     set(MONOPOLY_LEGACY_BACKGROUNDS_AVAILABLE FALSE)
 endif()
 
+set(MONOPOLY_LEGACY_AI_PROFILE_FILES
+    Cannon.ai RaceCar.ai Dog.ai TopHat.ai Iron.ai Horse.ai
+    Boot.ai Ship.ai Thimble.ai Barrow.AI Moneybag.ai Normal.ai
+)
+set(MONOPOLY_LEGACY_AI_PROFILES_AVAILABLE TRUE)
+foreach(LEGACY_AI_PROFILE IN LISTS MONOPOLY_LEGACY_AI_PROFILE_FILES)
+    if(NOT EXISTS
+        "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/${LEGACY_AI_PROFILE}")
+        set(MONOPOLY_LEGACY_AI_PROFILES_AVAILABLE FALSE)
+    endif()
+endforeach()
+
 # Source/ZLib/ZImplode.c proves that the historical implode/explode names
 # wrap ordinary zlib streams (windowBits = 15). Prefer an installed package;
 # otherwise build the pinned upstream release, never the private SDL copy.
@@ -1277,6 +1289,24 @@ if(MONOPOLY_LEGACY_BACKGROUNDS_AVAILABLE)
     )
 endif()
 
+if(MONOPOLY_LEGACY_AI_PROFILES_AVAILABLE)
+    add_custom_command(
+        TARGET MonopolyModern
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:MonopolyModern>/assets/ai"
+    )
+    foreach(LEGACY_AI_PROFILE IN LISTS MONOPOLY_LEGACY_AI_PROFILE_FILES)
+        add_custom_command(
+            TARGET MonopolyModern
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/${LEGACY_AI_PROFILE}"
+                "$<TARGET_FILE_DIR:MonopolyModern>/assets/ai/${LEGACY_AI_PROFILE}"
+        )
+    endforeach()
+endif()
+
 target_sources(
     MonopolyModern
     PRIVATE
@@ -1288,6 +1318,7 @@ target_sources(
     src/AITradeIngress.cpp
     src/AIMessageIngress.cpp
     src/AIProfile.cpp
+    src/AIProfileRuntime.cpp
     src/AIDecisionUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
@@ -1517,9 +1548,36 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(
+        MonopolyAIProfileRuntimeTests
+        tests/AIProfileRuntimeTests.cpp
+        src/AIProfileRuntime.cpp
+        src/AIProfile.cpp
+    )
+    target_include_directories(
+        MonopolyAIProfileRuntimeTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(
+        MonopolyAIProfileRuntimeTests PRIVATE
+        MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}"
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAIProfileRuntimeTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AIProfileRuntime
+        COMMAND MonopolyAIProfileRuntimeTests
+    )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
         MonopolyAITradeIngressTests
         tests/AITradeIngressTests.cpp
         src/AIMessageIngress.cpp
+        src/AIProfileRuntime.cpp
+        src/AIProfile.cpp
         src/AITradeIngress.cpp
         src/AICounterTradeRuntime.cpp
         src/AITradeSendRuntime.cpp
@@ -1532,6 +1590,10 @@ if(BUILD_TESTING)
     target_include_directories(
         MonopolyAITradeIngressTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(
+        MonopolyAITradeIngressTests PRIVATE
+        MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}"
     )
     if(MSVC)
         target_compile_options(
