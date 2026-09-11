@@ -1284,6 +1284,7 @@ target_sources(
     src/AIUtility.cpp
     src/AITradeUtility.cpp
     src/AITradeSendRuntime.cpp
+    src/AICounterTradeRuntime.cpp
     src/AIDecisionUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
@@ -1458,6 +1459,34 @@ if(BUILD_TESTING)
         COMMAND MonopolyAITradeSendRuntimeTests
     )
 endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAICounterTradeRuntimeTests
+        tests/AICounterTradeRuntimeTests.cpp
+        src/AICounterTradeRuntime.cpp
+        src/AITradeSendRuntime.cpp
+        src/AIDecisionUtility.cpp
+        src/AITradeUtility.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
+        src/Messaging.cpp
+    )
+    target_include_directories(
+        MonopolyAICounterTradeRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAICounterTradeRuntimeTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AICounterTradeRuntime
+        COMMAND MonopolyAICounterTradeRuntimeTests
+    )
+endif()
+
 
 if(BUILD_TESTING)
     add_executable(
