@@ -1,5 +1,6 @@
 #include "TimeStep.hpp"
 
+#include "AIMessageIngress.hpp"
 #include "UserInterface.hpp"
 #include "Actions.hpp"
 #include "Messaging.hpp"
@@ -30,6 +31,7 @@ namespace monopoly::userinterface
         lastTickTime = {};
         firstTimeStep = true;
         gameQueueGate.reset();
+        ai::resetMessageIngress();
     }
 
     void lockGameQueue()
@@ -91,8 +93,7 @@ namespace monopoly::userinterface
             // ProcessPlayersUI(&NewMessage) original.
             processRuleMessage(message);
             update();
-
-            // AI_ProcessMessage() viendra avec le port AI.
+            ai::processMessage(ruleStateReadOnly(), message);
 
             return;
         }
@@ -128,6 +129,7 @@ namespace monopoly::userinterface
             // ProcessPlayersUI(&NewMessage);
             processRuleMessage(tick);
             update();
+            ai::processMessage(ruleStateReadOnly(), tick);
 
             return;
         }

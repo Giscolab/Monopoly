@@ -1285,6 +1285,8 @@ target_sources(
     src/AITradeUtility.cpp
     src/AITradeSendRuntime.cpp
     src/AICounterTradeRuntime.cpp
+    src/AITradeIngress.cpp
+    src/AIMessageIngress.cpp
     src/AIDecisionUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
@@ -1487,6 +1489,35 @@ if(BUILD_TESTING)
     )
 endif()
 
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAITradeIngressTests
+        tests/AITradeIngressTests.cpp
+        src/AIMessageIngress.cpp
+        src/AITradeIngress.cpp
+        src/AICounterTradeRuntime.cpp
+        src/AITradeSendRuntime.cpp
+        src/AIDecisionUtility.cpp
+        src/AITradeUtility.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
+        src/Messaging.cpp
+    )
+    target_include_directories(
+        MonopolyAITradeIngressTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAITradeIngressTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AITradeIngress
+        COMMAND MonopolyAITradeIngressTests
+    )
+endif()
 
 if(BUILD_TESTING)
     add_executable(
