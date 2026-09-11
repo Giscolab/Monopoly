@@ -164,6 +164,29 @@ namespace monopoly::ai::decision
         const FairTradeConfig& config,
         std::span<const ai::trade::FutureImmunityRecord> immunities = {}) noexcept;
 
+    struct MonopolyProposalConfig
+    {
+        FairTradeConfig fairTrade{};
+        ai::trade::WhatToTradeTable whatToTrade{};
+    };
+
+    [[nodiscard]] bool buildMonopolyTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::SquareGroup group,
+        std::span<const rules::PlayerNumber> partners,
+        const ai::trade::PropertySets& properties,
+        ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept;
+
+    [[nodiscard]] bool buildMonopolyForCash(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber firstPartner,
+        const ai::trade::PropertySets& properties,
+        ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept;
+
     enum class CounterProposalStatus : std::uint8_t
     {
         Ready = 0,

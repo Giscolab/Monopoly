@@ -998,6 +998,103 @@ namespace monopoly::ai::decision
         return ai::trade::tradeIsProper(state, proposals, immunities);
     }
 
+    bool buildMonopolyTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::SquareGroup group,
+        std::span<const rules::PlayerNumber> partners,
+        const ai::trade::PropertySets& properties,
+        ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept
+    {
+        const auto groupIndex = static_cast<std::size_t>(group);
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || groupIndex >= ai::ExpensiveMonopolySquares.size() ||
+            partners.empty() || partners.size() >= rules::MaxPlayers)
+            return false;
+        auto combined = properties[player];
+        for (const auto partner : partners)
+        {
+            if (partner >= state.numberOfPlayers || partner == player)
+                return false;
+            combined |= properties[partner];
+        }
+        auto next = proposals;
+        const auto lots = ai::monopolyLots(ai::ExpensiveMonopolySquares[groupIndex]);
+        for (std::size_t index = 0; index < lots.count; ++index)
+        {
+            const auto square = lots.squares[index];
+            const auto owner = state.squares[static_cast<std::size_t>(square)].owner;
+            if (owner == player)
+                continue;
+            if (owner >= state.numberOfPlayers)
+                return false;
+            const auto bit = rules::board::propertyBit(square);
+            next[player].propertiesReceived |= bit;
+            next[owner].propertiesGiven |= bit;
+        }
+        combined &= ~next[player].propertiesReceived;
+        auto after = state;
+        for (const auto partner : partners)
+        {
+            // Preserve retail's successive updates of the same simulation.
+            ai::trade::applyTradeToState(after, next);
+            (void)ai::trade::addTypeProperty(
+                state, after, partner, player, combined,
+                ai::trade::TradeImportanceItem::Monopoly, next, properties, false,
+                config.whatToTrade, config.fairTrade.playerAttitude[partner],
+                config.fairTrade.evaluation.winningChance.moneyOwed[partner]);
+        }
+        if (!makeTradeFair(state, player, partners, 2500, false, next, config.fairTrade))
+            return false;
+        proposals = next;
+        return true;
+    }
+
+    bool buildMonopolyForCash(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber firstPartner,
+        const ai::trade::PropertySets& properties,
+        ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept
+    {
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || firstPartner >= state.numberOfPlayers)
+            return false;
+        auto available = properties[player];
+        const auto owned = ai::monopoliesOwned(state, player, false);
+        for (std::size_t index = 0; index < owned.count; ++index)
+            available ^= ai::monopolySet(owned.representatives[index]);
+
+        for (std::size_t offset = 0; offset < state.numberOfPlayers; ++offset)
+        {
+            const auto partner = static_cast<rules::PlayerNumber>(
+                (firstPartner + offset) % state.numberOfPlayers);
+            if (partner == player ||
+                state.players[partner].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard) ||
+                ai::playerOwnsMonopoly(state, partner, false))
+                continue;
+            ai::trade::TradeProposalList next{};
+            auto combined = available | properties[partner];
+            if (!ai::trade::addTypeProperty(
+                    state, state, partner, player, combined,
+                    ai::trade::TradeImportanceItem::Monopoly, next, properties, false,
+                    config.whatToTrade, config.fairTrade.playerAttitude[partner],
+                    config.fairTrade.evaluation.winningChance.moneyOwed[partner]))
+                continue;
+            const std::array<rules::PlayerNumber, 1> partners{partner};
+            if (makeTradeFair(state, player, partners, 16000, true, next, config.fairTrade) &&
+                ai::trade::tradeIsProper(state, next))
+            {
+                proposals = next;
+                return true;
+            }
+        }
+        return false;
+    }
+
     CounterProposalPreflightResult counterProposalPreflight(
         const rules::GameState& state,
         rules::PlayerNumber player,

@@ -60,7 +60,12 @@ namespace monopoly::ai::trade
 
             state.currentTrade = {};
             state.immunities = {};
-            state.counterRuntime = {};
+            const bool pendingOwnRequest = state.counterRuntime.hasPendingProposal &&
+                state.counterRuntime.player == proposer &&
+                (state.counterRuntime.sending.state == SendingTradeState::AskingTradeEdit ||
+                 state.counterRuntime.sending.state == SendingTradeState::TradeItems);
+            if (!pendingOwnRequest)
+                state.counterRuntime = {};
             if (!state.tradeStarted)
             {
                 state.proposedPlayer = proposer;
@@ -177,6 +182,39 @@ namespace monopoly::ai::trade
         default:
             return false;
         }
+    }
+
+    bool sendProactiveTrade(
+        const rules::GameState& gameState,
+        rules::PlayerNumber player,
+        const TradeProposalList& proposal,
+        const profile::Profile& strategy,
+        TradeIngressState& state) noexcept
+    {
+        if (gameState.numberOfPlayers > rules::MaxPlayers ||
+            player >= gameState.numberOfPlayers ||
+            state.counterRuntime.sending.state != SendingTradeState::Nothing ||
+            !playerInvolvedInTrade(proposal[player]) ||
+            !tradeIsProper(gameState, proposal))
+            return false;
+        const int spot = findFreeTradeSpot(
+            state.turnState[player].timeLastTrade, strategy.maxTrades);
+        if (spot < 0)
+            return false;
+        CounterTradeRuntimeState next{};
+        next.player = player;
+        next.proposedPlayer = player;
+        next.pendingProposal = proposal;
+        next.hasPendingProposal = true;
+        next.sending.sendTradeOffer = true;
+        if (!sendProposedTrade(gameState, player, proposal, false, player, next.sending))
+            return false;
+        state.counterRuntime = next;
+        // Retail records the slot once the send starts, including an edit
+        // request that RULE may subsequently deny.
+        state.turnState[player].timeLastTrade[static_cast<std::size_t>(spot)] =
+            strategy.timeForgetTrade;
+        return true;
     }
 
     void advanceTradeTurn(

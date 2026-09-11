@@ -852,6 +852,113 @@ namespace
             "zero forgetting interval still forgets every turn like retail");
     }
 
+    void testProactiveSendHistory()
+    {
+        auto game = baseState();
+        game.tradeInProgress = false;
+        game.squares[static_cast<std::size_t>(
+            rules::board::SquareType::MediterraneanAvenue)].owner = 0;
+        ai::trade::TradeProposalList proposal{};
+        const auto property = rules::board::propertyBit(
+            rules::board::SquareType::MediterraneanAvenue);
+        proposal[0].propertiesGiven = proposal[1].propertiesReceived = property;
+        proposal[0].cashReceived = proposal[1].cashGiven = 50;
+        ai::profile::Profile strategy{};
+        strategy.maxTrades = 2;
+        strategy.timeForgetTrade = 7;
+        ai::trade::TradeIngressState ingress{};
+        ingress.turnState[0].timeLastTrade[0] = 2;
+        require(messaging::initialize(), "proactive history initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::trade::sendProactiveTrade(game, 0, proposal, strategy, ingress) &&
+                ingress.turnState[0].timeLastTrade[0] == 2 &&
+                ingress.turnState[0].timeLastTrade[1] == 7 &&
+                ingress.counterSessions[0].timesCounteredTrade == 0,
+            "proactive send consumes first free configured slot without counting a counter");
+        require(!ai::trade::sendProactiveTrade(game, 0, proposal, strategy, ingress) &&
+                messaging::currentQueueSize() == 1,
+            "busy proactive sender neither duplicates request nor consumes another slot");
+        actions::Message message{};
+        require(messaging::receiveAction(message) &&
+                message.action == actions::Type::StartTradeEditing,
+            "new proactive offer first requests RULE editing permission");
+        const auto pending = ingress;
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.numberA = 0;
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::StartTradeEditing);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        auto completedFirst = pending;
+        (void)ai::trade::processTradeRuleMessage(game, completed, completedFirst);
+        (void)ai::trade::processTradeRuleMessage(game, started, completedFirst);
+        require(completedFirst.counterRuntime.hasPendingProposal &&
+                completedFirst.counterRuntime.pendingProposal == proposal,
+            "trade synchronization retains own proposal after completed edit grant");
+        (void)ai::trade::processTradeRuleMessage(game, started, ingress);
+        require(ingress.counterRuntime.hasPendingProposal &&
+                ingress.counterRuntime.pendingProposal == proposal,
+            "trade synchronization retains own proposal before edit grant completes");
+        (void)ai::trade::processTradeRuleMessage(game, completed, ingress);
+        game.tradeInProgress = true;
+        (void)ai::trade::processTradeRuleMessage(game, editorMessage(0), ingress);
+        require(messaging::receiveAction(message) &&
+                message.action == actions::Type::TradeItem &&
+                message.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Cash) &&
+                message.numberD == 50,
+            "proactive continuation sends cash first");
+        require(messaging::receiveAction(message) &&
+                message.action == actions::Type::TradeItem &&
+                message.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Square),
+            "proactive continuation sends property after cash");
+        require(messaging::receiveAction(message) &&
+                message.action == actions::Type::TradeEditingDone &&
+                message.numberA == 1 && messaging::currentQueueSize() == 0,
+            "proactive continuation finalizes as offer rather than acceptance counter");
+        completed.numberA = static_cast<std::int64_t>(actions::Type::TradeEditingDone);
+        (void)ai::trade::processTradeRuleMessage(game, completed, ingress);
+        require(!ingress.counterRuntime.hasPendingProposal &&
+                ingress.turnState[0].timeLastTrade[1] == 7,
+            "proactive finalization releases sending state and retains history cooldown");
+        auto denied = pending;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::StartTradeEditing);
+        completed.numberB = 0;
+        (void)ai::trade::processTradeRuleMessage(game, completed, denied);
+        require(denied.counterRuntime.sending.state == ai::trade::SendingTradeState::Nothing &&
+                denied.turnState[0].timeLastTrade[1] == 7,
+            "RULE-denied edit still retains cooldown recorded when request was queued");
+        auto foreign = pending;
+        started.numberA = 1;
+        (void)ai::trade::processTradeRuleMessage(game, started, foreign);
+        require(!foreign.counterRuntime.hasPendingProposal,
+            "unrelated player's trade synchronization discards stale pending offer");
+
+        game.tradeInProgress = false;
+        ingress = {};
+        ingress.turnState[0].timeLastTrade[0] = -1;
+        ingress.turnState[0].timeLastTrade[1] = 1;
+        require(!ai::trade::sendProactiveTrade(game, 0, proposal, strategy, ingress) &&
+                messaging::currentQueueSize() == 0,
+            "proactive history requires exactly zero slot inside configured maxTrades");
+        ingress = {};
+        for (std::size_t index = 0; index < messaging::MessageQueueCapacity; ++index)
+            (void)messaging::sendAction(actions::Type::RestartPhase, 0, rules::BankPlayer);
+        require(!ai::trade::sendProactiveTrade(game, 0, proposal, strategy, ingress) &&
+                ingress.turnState[0].timeLastTrade[0] == 0 &&
+                !ingress.counterRuntime.hasPendingProposal,
+            "full queue publishes neither pending proactive offer nor cooldown");
+        messaging::clearActionQueue();
+        auto invalid = proposal;
+        invalid[1].propertiesReceived = 0;
+        require(!ai::trade::sendProactiveTrade(game, 0, invalid, strategy, ingress) &&
+                ingress.turnState[0].timeLastTrade[0] == 0 &&
+                messaging::currentQueueSize() == 0,
+            "invalid proactive offer does not consume history or emit RULE action");
+        messaging::shutdown();
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -905,6 +1012,7 @@ int main()
         testPublicAndPrivateAcceptance();
         testAcceptanceCounterRuntime();
         testTradeStartTurnMaintenance();
+        testProactiveSendHistory();
         testTradeFinishAndMessageFilter();
         return 0;
     }

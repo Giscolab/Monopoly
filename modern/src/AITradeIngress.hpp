@@ -40,6 +40,13 @@ namespace monopoly::ai::trade
         const actions::Message& message,
         TradeIngressState& state) noexcept;
 
+    [[nodiscard]] bool sendProactiveTrade(
+        const rules::GameState& gameState,
+        rules::PlayerNumber player,
+        const TradeProposalList& proposal,
+        const profile::Profile& strategy,
+        TradeIngressState& state) noexcept;
+
     void advanceTradeTurn(
         std::uint8_t numberOfPlayers,
         profile::ProfileSet& profiles,
