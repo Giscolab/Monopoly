@@ -47,6 +47,31 @@ namespace monopoly::ai::trade
     {
         switch (message.action)
         {
+        case actions::Type::NotifyTradeStarted:
+        {
+            rules::PlayerNumber proposer = rules::NobodyPlayer;
+            if (!decodePlayer(message.numberA, proposer) ||
+                proposer == rules::NobodyPlayer)
+                return false;
+
+            state.currentTrade = {};
+            state.immunities = {};
+            state.counterRuntime = {};
+            if (!state.tradeStarted)
+            {
+                state.proposedPlayer = proposer;
+                state.lastEditor = proposer;
+            }
+            state.tradeStarted = true;
+            state.tradeOfferedForAcceptance = false;
+            return true;
+        }
+
+        case actions::Type::NotifyTradeAcceptanceDecision:
+            state.proposedPlayer = state.lastEditor;
+            state.tradeOfferedForAcceptance = true;
+            return true;
+
         case actions::Type::NotifyTradeItem:
         {
             rules::PlayerNumber from = rules::NobodyPlayer;
@@ -74,6 +99,9 @@ namespace monopoly::ai::trade
 
         case actions::Type::NotifyTradeEditor:
         {
+            if (state.tradeOfferedForAcceptance)
+                state.tradeOfferedForAcceptance = false;
+
             rules::PlayerNumber editor = rules::NobodyPlayer;
             if (!decodePlayer(message.numberA, editor) ||
                 editor == rules::NobodyPlayer)

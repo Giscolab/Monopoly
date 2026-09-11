@@ -1,4 +1,5 @@
 #include "Application.hpp"
+#include "AIMessageIngress.hpp"
 #include "Engine.hpp"
 #include "Game.hpp"
 #include "LogicalViewport.hpp"
@@ -7,6 +8,7 @@
 #include <SDL3/SDL.h>
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 
@@ -32,6 +34,29 @@ namespace
             static_cast<double>(x),
             static_cast<double>(y)
         );
+    }
+
+
+    [[nodiscard]] bool initializeAIProfiles()
+    {
+        const char* basePath = SDL_GetBasePath();
+        if (basePath == nullptr || *basePath == '\0')
+        {
+            std::cerr << "SDL_GetBasePath failed for AI profiles.\n";
+            return false;
+        }
+
+        const auto directory = std::filesystem::path(basePath) /
+            "assets" / "ai";
+        const auto loaded = monopoly::ai::initializeMessageIngressProfiles(
+            directory);
+        if (!loaded)
+        {
+            std::cerr << "AI profile initialization failed: "
+                      << loaded.error().detail << '\n';
+            return false;
+        }
+        return true;
     }
 
 
@@ -120,6 +145,15 @@ namespace monopoly
 
         if (!engine::initialize(window))
         {
+            SDL_StopTextInput(window);
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+
+        if (!initializeAIProfiles())
+        {
+            engine::shutdown();
             SDL_StopTextInput(window);
             SDL_DestroyWindow(window);
             SDL_Quit();
