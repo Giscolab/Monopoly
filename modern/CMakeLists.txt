@@ -1283,6 +1283,7 @@ target_sources(
     src/BoardRules.cpp
     src/AIUtility.cpp
     src/AITradeUtility.cpp
+    src/AITradeSendRuntime.cpp
     src/AIDecisionUtility.cpp
     src/BoardGeometry.cpp
     src/BoardOwnershipHighlight.cpp
@@ -1430,6 +1431,31 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.AITradeUtility
         COMMAND MonopolyAITradeUtilityTests
+    )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAITradeSendRuntimeTests
+        tests/AITradeSendRuntimeTests.cpp
+        src/AITradeSendRuntime.cpp
+        src/AITradeUtility.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
+        src/Messaging.cpp
+    )
+    target_include_directories(
+        MonopolyAITradeSendRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAITradeSendRuntimeTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AITradeSendRuntime
+        COMMAND MonopolyAITradeSendRuntimeTests
     )
 endif()
 

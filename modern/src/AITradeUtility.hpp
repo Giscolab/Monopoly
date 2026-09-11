@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AIUtility.hpp"
+#include "Actions.hpp"
 
 #include <array>
 #include <cstddef>
@@ -284,6 +285,49 @@ namespace monopoly::ai::trade
     [[nodiscard]] bool playerHasFutureOrImmunity(
         rules::PlayerNumber player,
         std::span<const FutureImmunityRecord> immunities) noexcept;
+    enum class ProposedTradeSendStatus : std::uint8_t
+    {
+        InvalidInput = 0,
+        Busy,
+        NotTwoPlayers,
+        RequestEditing,
+        Ready,
+        CapacityExceeded
+    };
+
+    struct ProposedTradeSendInputs
+    {
+        bool playerSendingTrade{};
+        bool tradeAccept{};
+        bool sendTradeOffer{};
+        rules::PlayerNumber proposedPlayer = rules::NobodyPlayer;
+    };
+
+    inline constexpr std::size_t MaxProposedTradeSendActions =
+        (rules::MaxPlayers * rules::MaxPlayers) +
+        ((2 * rules::MaxPlayers) - 1) +
+        static_cast<std::size_t>(rules::board::SquareType::InJail) +
+        DeckCount + 1;
+
+    struct ProposedTradeSendPlan
+    {
+        ProposedTradeSendStatus status = ProposedTradeSendStatus::InvalidInput;
+        std::array<actions::Message, MaxProposedTradeSendActions> actions{};
+        std::size_t count{};
+
+        [[nodiscard]] bool sendable() const noexcept
+        {
+            return status == ProposedTradeSendStatus::RequestEditing ||
+                status == ProposedTradeSendStatus::Ready;
+        }
+    };
+
+    [[nodiscard]] ProposedTradeSendPlan buildProposedTradeSendPlan(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        const TradeProposalList& proposals,
+        const ProposedTradeSendInputs& inputs) noexcept;
+
     [[nodiscard]] bool addTradeItem(
         TradeProposalList& proposals,
         FutureImmunityList& immunities,
