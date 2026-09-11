@@ -14,10 +14,9 @@ jobs:
       - name: Calculate project progress
         run: |
           # Get closed issues count
-          CLOSED=$(gh issue list --state closed --jq '. | length')
-          # Get total issues count
-          TOTAL=$(gh issue list --state all --jq '. | length')
-          
+CLOSED=$(gh issue list --state closed --json title --jq '. | length')
+TOTAL=$(gh issue list --state all --json title --jq '. | length')
+
           # Calculate percentage
           if [ "$TOTAL" -gt 0 ]; then
             PERCENT=$((CLOSED * 100 / TOTAL))
