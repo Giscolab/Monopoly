@@ -179,6 +179,88 @@ namespace monopoly::ai::trade
         }
     }
 
+    void advanceTradeTurn(
+        std::uint8_t numberOfPlayers,
+        profile::ProfileSet& profiles,
+        const std::array<bool, rules::MaxPlayers>& localAIPlayers,
+        TradeIngressState& state) noexcept
+    {
+        if (numberOfPlayers > rules::MaxPlayers)
+            return;
+        for (rules::PlayerNumber player = 0; player < numberOfPlayers; ++player)
+        {
+            if (!localAIPlayers[player])
+                continue;
+            auto& turn = state.turnState[player];
+            auto& strategy = profiles[player];
+            ++turn.turnsAfterForgettingLast;
+            if (turn.turnsAfterForgettingLast >= strategy.turnsToForgetPropertyTrade)
+            {
+                forgetTradedProperties(state.counterSessions[player].propertyMemory);
+                turn.turnsAfterForgettingLast = 0;
+            }
+            for (auto& timer : turn.timeLastTrade)
+                if (timer > 0)
+                    --timer;
+            for (auto& attitude : strategy.playerAttitude)
+            {
+                if (attitude > strategy.neutralAttitude)
+                    attitude -= strategy.attitudeTickChange;
+                else
+                    attitude += strategy.attitudeTickChange;
+            }
+        }
+    }
+
+    std::array<double, rules::MaxPlayers> tradeResponseAttitudeChanges(
+        const rules::GameState& gameState,
+        rules::PlayerNumber proposer,
+        rules::PlayerNumber respondingPlayer,
+        bool accepted,
+        const TradeIngressState& state,
+        const profile::ProfileSet& profiles,
+        const profile::ConfigContext& context) noexcept
+    {
+        std::array<double, rules::MaxPlayers> changes{};
+        if (gameState.numberOfPlayers > rules::MaxPlayers ||
+            proposer >= rules::MaxPlayers ||
+            respondingPlayer >= gameState.numberOfPlayers)
+            return changes;
+
+        if (!playerHasFutureOrImmunity(respondingPlayer, state.immunities))
+        {
+            for (rules::PlayerNumber observer = 0;
+                 observer < gameState.numberOfPlayers; ++observer)
+            {
+                if (!context.localAIPlayer[observer])
+                    continue;
+                const auto& strategy = profiles[observer];
+                double evaluation = decision::evaluateTrade(
+                    gameState, respondingPlayer, observer, state.currentTrade,
+                    profile::makeTradeEvaluationConfig(profiles, observer, context));
+                evaluation *= strategy.attitudeChangeTradeObserving;
+                if (evaluation < 0)
+                {
+                    if (evaluation < -strategy.attitudeLostForRejectedTrade)
+                        evaluation = -strategy.attitudeLostForRejectedTrade;
+                }
+                else if (evaluation > strategy.attitudeLostForRejectedTrade)
+                    evaluation = strategy.attitudeLostForRejectedTrade;
+
+                if ((accepted && evaluation < 0) ||
+                    (!accepted && evaluation > 0))
+                    changes[observer] -= evaluation;
+            }
+        }
+        // Retail applies this separately, even with futures/immunities.
+        // It clamps the observed delta, not the resulting player attitude.
+        if (context.localAIPlayer[proposer])
+            changes[proposer] += accepted
+                ? profiles[proposer].attitudeLostForRejectedTrade
+                : -profiles[proposer].attitudeLostForRejectedTrade;
+        return changes;
+    }
+
     TradeAcceptanceResult evaluateCurrentTradeAcceptance(
         const rules::GameState& gameState,
         rules::PlayerNumber player,

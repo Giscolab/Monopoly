@@ -1,6 +1,7 @@
 #include "AIMessageIngress.hpp"
 
 #include "LocalPlayers.hpp"
+#include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 
 #include <cstdlib>
@@ -78,6 +79,59 @@ namespace monopoly::ai
                 (void)ui::localplayers::requestRemoveLocalPlayer(
                     state, player);
             }
+        }
+
+        void processTradeAttitudeMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyStartTurn)
+            {
+                auto context = makeConfigContext();
+                for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                    context.localAIPlayer[player] = context.localAIPlayer[player] &&
+                        profileRuntime.playerLoaded[player];
+                trade::advanceTradeTurn(state.numberOfPlayers, profileRuntime.players,
+                    context.localAIPlayer, tradeIngress);
+                return;
+            }
+            auto proposer = tradeIngress.proposedPlayer;
+            std::int64_t respondingPlayer = -1;
+            bool accepted = false;
+            if (message.action == actions::Type::NotifyErrorMessage)
+            {
+                if (message.numberA == legacy_text::ErrorTradeChanging)
+                {
+                    tradeIngress.proposedPlayer = tradeIngress.lastEditor;
+                    return;
+                }
+                if (message.numberA != legacy_text::ErrorTradeAccepted &&
+                    message.numberA != legacy_text::ErrorTradeRejected)
+                    return;
+                accepted = message.numberA == legacy_text::ErrorTradeAccepted;
+                respondingPlayer = message.numberC;
+            }
+            else if (message.action == actions::Type::NotifyTradeEditor &&
+                     tradeIngress.tradeOfferedForAcceptance)
+            {
+                proposer = tradeIngress.lastEditor;
+                respondingPlayer = message.numberA;
+            }
+            else
+                return;
+
+            if (respondingPlayer < 0 || respondingPlayer >= state.numberOfPlayers)
+                return;
+            auto context = makeConfigContext();
+            for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                context.localAIPlayer[player] = context.localAIPlayer[player] &&
+                    profileRuntime.playerLoaded[player];
+            const auto player = static_cast<rules::PlayerNumber>(respondingPlayer);
+            const auto changes = trade::tradeResponseAttitudeChanges(
+                state, proposer, player, accepted, tradeIngress,
+                profileRuntime.players, context);
+            for (rules::PlayerNumber observer = 0; observer < rules::MaxPlayers; ++observer)
+                profileRuntime.players[observer].playerAttitude[player] += changes[observer];
         }
 
         [[nodiscard]] trade::TradeAcceptanceConfig makeAcceptanceConfig(
@@ -257,6 +311,7 @@ namespace monopoly::ai
 
         updateRuntimeFlags(message);
         processProfileMessage(state, message);
+        processTradeAttitudeMessage(state, message);
         (void)trade::processTradeRuleMessage(
             state, message, tradeIngress);
         maybeRestartDeferredAcceptance(message);
