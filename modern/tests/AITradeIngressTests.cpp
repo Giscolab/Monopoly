@@ -1071,6 +1071,185 @@ namespace
         localAIPlayer = false;
     }
 
+    void testAutonomousEconomicBssmRuntime()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.options.aiTakesTimeToThink = false;
+        state.numberOfPendingPhases = 1;
+        state.phaseStack[0].phase = rules::GamePhase::WaitEndTurn;
+        state.players[0].cash = 1000;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 1;
+        state.players[1].currentSquare = static_cast<std::uint8_t>(
+            rules::board::SquareType::FreeParking);
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::MediterraneanAvenue)].owner = 0;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::BalticAvenue)].owner = 0;
+
+        require(messaging::initialize(),
+            "autonomous economy fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "autonomous economy loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+        actions::Message tick{};
+        tick.action = actions::Type::Tick;
+        tick.fromPlayer = rules::BankPlayer;
+        tick.toPlayer = rules::AllPlayers;
+        std::srand(12345);
+        ai::processMessage(state, tick);
+
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::PlayerBuySellMort &&
+                queued.fromPlayer == 0,
+            "autonomous economy requests BuySellMortgage control before building");
+        require(messaging::currentQueueSize() == 0,
+            "autonomous economy emits only the control request before ownership");
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(
+            actions::Type::PlayerBuySellMort);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        require(messaging::currentQueueSize() == 0,
+            "control acknowledgement waits for retail control notification");
+
+        auto controlled = state;
+        controlled.phaseStack[0].phase = rules::GamePhase::BuySellMortgage;
+        controlled.phaseStack[0].fromPlayer = 0;
+        actions::Message control{};
+        control.action = actions::Type::NotifyPlayerBuySellMort;
+        control.toPlayer = rules::AllPlayers;
+        control.numberA = 0;
+        ai::processMessage(controlled, control);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::BuyHouse &&
+                queued.fromPlayer == 0,
+            "BSSM control dispatches the queued economic action");
+        const auto firstSquare = static_cast<rules::board::SquareType>(queued.numberA);
+        require(firstSquare == rules::board::SquareType::BalticAvenue,
+            "AI builds first on the highest-rent legal brown lot");
+        ++controlled.squares[static_cast<std::size_t>(firstSquare)].houses;
+        controlled.players[0].cash -=
+            rules::board::definition(firstSquare).housePurchaseCost;
+
+        completed.numberA = static_cast<std::int64_t>(actions::Type::BuyHouse);
+        completed.numberB = 1;
+        ai::processMessage(controlled, completed);
+        require(messaging::currentQueueSize() == 0,
+            "completed house action waits for the restarted BSSM notification");
+
+        ai::processMessage(controlled, control);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::BuyHouse,
+            "AI continues spending assets while retaining BSSM control");
+        const auto secondSquare = static_cast<rules::board::SquareType>(queued.numberA);
+        require(secondSquare == rules::board::SquareType::MediterraneanAvenue,
+            "even-build continuation moves to the other brown lot");
+        ++controlled.squares[static_cast<std::size_t>(secondSquare)].houses;
+        controlled.players[0].cash = 0;
+
+        ai::processMessage(controlled, completed);
+        ai::processMessage(controlled, control);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::PlayerDoneBuySellMort,
+            "AI releases BSSM control when no economic action remains");
+
+        completed.numberA = static_cast<std::int64_t>(
+            actions::Type::PlayerDoneBuySellMort);
+        ai::processMessage(controlled, completed);
+        control.numberA = rules::NobodyPlayer;
+        ai::processMessage(state, control);
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
+    void testAutonomousEconomicUnmortgageRuntime()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.options.aiTakesTimeToThink = false;
+        state.numberOfPendingPhases = 1;
+        state.phaseStack[0].phase = rules::GamePhase::WaitEndTurn;
+        state.players[0].cash = 200;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 1;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::ReadingRailroad)].owner = 0;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::ReadingRailroad)].mortgaged = true;
+
+        require(messaging::initialize(),
+            "autonomous unmortgage fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "autonomous unmortgage loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+        actions::Message tick{};
+        tick.action = actions::Type::Tick;
+        tick.fromPlayer = rules::BankPlayer;
+        tick.toPlayer = rules::AllPlayers;
+        std::srand(12345);
+        ai::processMessage(state, tick);
+
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::PlayerBuySellMort,
+            "unmortgage path requests BSSM control first");
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(
+            actions::Type::PlayerBuySellMort);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+
+        auto controlled = state;
+        controlled.phaseStack[0].phase = rules::GamePhase::BuySellMortgage;
+        controlled.phaseStack[0].fromPlayer = 0;
+        actions::Message control{};
+        control.action = actions::Type::NotifyPlayerBuySellMort;
+        control.toPlayer = rules::AllPlayers;
+        control.numberA = 0;
+        ai::processMessage(controlled, control);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::Mortgaging &&
+                queued.numberA == static_cast<std::int64_t>(
+                    rules::board::SquareType::ReadingRailroad),
+            "BSSM control dispatches the selected unmortgage action");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -1127,6 +1306,8 @@ int main()
         testProactiveSendHistory();
         testTradeResyncPreservesResponses();
         testAutonomousTradeTick();
+        testAutonomousEconomicBssmRuntime();
+        testAutonomousEconomicUnmortgageRuntime();
         testTradeFinishAndMessageFilter();
         return 0;
     }
