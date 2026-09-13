@@ -1,6 +1,13 @@
 name: Update Progress Stats
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'modern/PORTING_STATUS.md'
+      - '.github/scripts/update_porting_progress.py'
+      - '.github/workflows/main.yml'
   schedule:
     - cron: '0 0 * * *'  # Daily at midnight
   workflow_dispatch:  # Manual trigger

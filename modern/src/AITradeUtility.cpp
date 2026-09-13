@@ -191,6 +191,70 @@ namespace monopoly::ai::trade
             return findRecursiveFromBase(
                 properties[player], monopoly, list, count, properties);
         }
+
+        [[nodiscard]] bool importantGroupMatches(
+            const rules::GameState& state,
+            rules::board::SquareType property,
+            std::span<const rules::PlayerNumber> players) noexcept
+        {
+            if (players.empty())
+                return false;
+            const int before = ai::monopoliesBetweenPlayers(
+                state, players, rules::board::SquareType::Go);
+            const int after = property == rules::board::SquareType::Go
+                ? before
+                : ai::monopoliesBetweenPlayers(state, players, property);
+            if (before < static_cast<int>(players.size()) &&
+                after >= static_cast<int>(players.size()))
+                return true;
+            if (property == rules::board::SquareType::Go &&
+                before >= static_cast<int>(players.size()))
+                return true;
+            return players.size() == 1 && before != after;
+        }
+
+        [[nodiscard]] MonopolyTradeGroup findNthImportantGroup(
+            const rules::GameState& state,
+            rules::board::SquareType property,
+            std::span<const rules::PlayerNumber> players,
+            rules::PlayerNumber requiredPlayer,
+            std::size_t nth) noexcept
+        {
+            MonopolyTradeGroup result{};
+            if (players.empty() || players.size() > rules::MaxPlayers || nth == 0)
+                return result;
+            std::size_t bestSize = rules::MaxPlayers + 1;
+            std::size_t found{};
+            const std::uint32_t combinations = 1u << players.size();
+            for (std::uint32_t mask = 1; mask < combinations; ++mask)
+            {
+                std::array<rules::PlayerNumber, rules::MaxPlayers> subset{};
+                std::size_t count{};
+                bool hasRequired = requiredPlayer == rules::NobodyPlayer;
+                for (std::size_t index = 0; index < players.size(); ++index)
+                    if ((mask & (1u << index)) != 0)
+                    {
+                        subset[count++] = players[index];
+                        hasRequired = hasRequired || players[index] == requiredPlayer;
+                    }
+                if (!hasRequired || count > bestSize ||
+                    !importantGroupMatches(state, property,
+                        std::span<const rules::PlayerNumber>(subset.data(), count)))
+                    continue;
+                if (count < bestSize)
+                {
+                    bestSize = count;
+                    found = 0;
+                }
+                if (count == bestSize && ++found == nth)
+                {
+                    result.count = count;
+                    std::copy_n(subset.begin(), count, result.players.begin());
+                    return result;
+                }
+            }
+            return {};
+        }
     }
 
     std::array<rules::board::SquareGroup, 8> orderMonopolyImportance(
@@ -585,6 +649,79 @@ namespace monopoly::ai::trade
                 return true;
         }
         return false;
+    }
+
+    StrategicPropertyImportance strategicPropertyImportance(
+        const rules::GameState& state, rules::board::SquareType property,
+        rules::PlayerNumber excludedPlayer, rules::PlayerNumber includedPlayer,
+        rules::PlayerNumber purchasingPlayer,
+        rules::board::SquareType purchasingProperty) noexcept
+    {
+        using Importance = StrategicPropertyImportance;
+        using rules::board::SquareType;
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            property >= SquareType::InJail)
+            return Importance::NotImportant;
+
+        auto simulated = state;
+        if (purchasingPlayer < simulated.numberOfPlayers &&
+            purchasingProperty < SquareType::InJail && purchasingProperty != property)
+            simulated.squares[static_cast<std::size_t>(purchasingProperty)].owner = purchasingPlayer;
+        if (ai::isCashCow(property))
+            return Importance::CashCow;
+
+        const auto directFor = [&](rules::PlayerNumber candidate) {
+            if (candidate >= simulated.numberOfPlayers) return false;
+            const std::array<rules::PlayerNumber, 1> one{candidate};
+            return findNthImportantGroup(simulated, property, one,
+                rules::NobodyPlayer, 1).count == 1;
+        };
+        if (includedPlayer != rules::NobodyPlayer)
+        {
+            if (directFor(includedPlayer))
+                return Importance::GivesDirectMonopoly;
+        }
+        else
+        {
+            for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+                if (current != excludedPlayer && directFor(current))
+                    return Importance::GivesDirectMonopoly;
+        }
+
+        std::array<rules::PlayerNumber, rules::MaxPlayers> original{};
+        std::size_t originalCount{};
+        for (rules::PlayerNumber current = 0; current < simulated.numberOfPlayers; ++current)
+            if (current != excludedPlayer && !ai::playerOwnsMonopoly(simulated, current, false))
+                original[originalCount++] = current;
+
+        for (std::size_t tradeNumber = 1; tradeNumber <= (1u << rules::MaxPlayers); ++tradeNumber)
+        {
+            auto players = original;
+            std::size_t playerCount = originalCount;
+            bool removedAny{};
+            while (playerCount != 0)
+            {
+                const auto existing = findNthImportantGroup(
+                    simulated, SquareType::Go,
+                    std::span<const rules::PlayerNumber>(players.data(), playerCount),
+                    includedPlayer, tradeNumber);
+                if (existing.count == 0) break;
+                playerCount = ai::removePlayersFromList(
+                    std::span<rules::PlayerNumber>(players.data(), players.size()), playerCount,
+                    std::span<const rules::PlayerNumber>(existing.players.data(), existing.count));
+                removedAny = true;
+            }
+            if (removedAny && playerCount != 0 && playerCount != originalCount)
+            {
+                const auto enabled = findNthImportantGroup(
+                    simulated, property,
+                    std::span<const rules::PlayerNumber>(players.data(), playerCount),
+                    includedPlayer, 1);
+                if (enabled.count != 0) return Importance::AllowsTrade;
+            }
+            if (!removedAny) break;
+        }
+        return Importance::NotImportant;
     }
 
     int findFreeTradeSpot(
