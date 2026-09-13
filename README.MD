@@ -11,19 +11,19 @@ reste disponible dans [`Source/`](Source/).
 
 ![Workflow](https://github.com/Giscolab/Monopoly/actions/workflows/main.yml/badge.svg)
 
-![Portabilite du code](modern/porting-progress.svg)
+![Portabilité du code](modern/porting-progress.svg)
 
-Le suivi est automatis? ? partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md).
-Le SVG ci-dessus est r?g?n?r? par GitHub Actions a chaque changement suivi sous `modern/`
-(hors SVG g?n?r?), lors d'une modification du workflow/script, chaque nuit ou manuellement.
+Le suivi est automatisé à partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md).
+Le SVG ci-dessus est régénéré par GitHub Actions à chaque changement suivi sous `modern/`
+(hors SVG généré), lors d'une modification du workflow/script, chaque nuit ou manuellement.
 
-Les trois barres ont volontairement des sens diff?rents :
+Les trois barres ont volontairement des sens différents :
 
-- **Estimation fonctionnelle** : estimation prudente maintenue dans `PORTING_STATUS.md`; GitHub Actions la lit et l'affiche automatiquement.
-- **Familles engag?es** : calcul automatique des familles `Jeu Monopoly` + `Services ArtLib` qui ne sont plus `NOT_STARTED`.
-- **Indice m?canique** : calcul automatique sur toute la matrice active : complet/remplac? = 100 %, partiel = 50 %, non d?marr? = 0 %; bloqu?/tooling/legacy-unused sont exclus.
+- **Estimation fonctionnelle** : estimation prudente maintenue dans `PORTING_STATUS.md` ; GitHub Actions la lit et l'affiche automatiquement.
+- **Familles engagées** : calcul automatique des familles `Jeu Monopoly` + `Services ArtLib` qui ne sont plus `NOT_STARTED`.
+- **Indice mécanique** : calcul automatique sur toute la matrice active : complet/remplacé = 100 %, partiel = 50 %, non démarré = 0 % ; bloqué/tooling/legacy-unused sont exclus.
 
-Ainsi, l'indice m?canique peut rester stable pendant qu'une grosse famille d?j? `PORTED_PARTIAL` progresse fortement; les trois barres ?vitent de confondre cette mesure avec la progression fonctionnelle globale.
+Ainsi, l'indice mécanique peut rester stable pendant qu'une grosse famille déjà `PORTED_PARTIAL` progresse fortement ; les trois barres évitent de confondre cette mesure avec la progression fonctionnelle globale.
 
 
 ## Sources et crédits
