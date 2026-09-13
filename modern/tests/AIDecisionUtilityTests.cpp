@@ -120,6 +120,68 @@ namespace
             "AI cash-after-housing rejects invalid player safely");
     }
 
+    void testShouldBuyProperty()
+    {
+        using ai::decision::CashStrategy;
+        const auto decide = [](const rules::GameState& state, rules::PlayerNumber player,
+                               SquareType property, std::int64_t reserve = 0) {
+            return ai::decision::shouldBuyProperty(
+                state, player, property, CashStrategy::MinimumAmount, reserve);
+        };
+
+        auto broke = baseState();
+        broke.players[0].cash = 20;
+        broke.players[1].cash = 500;
+        require(!decide(broke, 0, SquareType::ReadingRailroad),
+            "AI property purchase rejects unaffordable property before strategy checks");
+
+        auto noAuctionThreat = baseState();
+        noAuctionThreat.players[0].cash = 500;
+        require(!decide(noAuctionThreat, 0, SquareType::MediterraneanAvenue),
+            "AI property purchase auctions when no opponent can fund retail price");
+
+        auto cashCow = baseState();
+        cashCow.players[0].cash = 500;
+        cashCow.players[1].cash = 500;
+        require(decide(cashCow, 0, SquareType::ReadingRailroad),
+            "AI property purchase buys affordable railroad cash cow");
+
+        auto ours = baseState();
+        ours.players[0].cash = 150;
+        ours.players[1].cash = 500;
+        own(ours, SquareType::MediterraneanAvenue, 0);
+        require(decide(ours, 0, SquareType::BalticAvenue),
+            "AI property purchase takes direct monopoly when affordable");
+
+        auto block = baseState();
+        block.players[0].cash = 150;
+        block.players[1].cash = 500;
+        own(block, SquareType::MediterraneanAvenue, 1);
+        require(decide(block, 0, SquareType::BalticAvenue),
+            "AI property purchase blocks opponent direct monopoly when funded");
+
+        auto sellHouses = baseState();
+        sellHouses.players[0].cash = 0;
+        sellHouses.players[1].cash = 500;
+        own(sellHouses, SquareType::MediterraneanAvenue, 0);
+        for (const auto square : {SquareType::StJamesPlace, SquareType::TennesseeAvenue,
+                 SquareType::NewYorkAvenue})
+            own(sellHouses, square, 0);
+        sellHouses.squares[static_cast<std::size_t>(SquareType::StJamesPlace)].houses = 3;
+        sellHouses.squares[static_cast<std::size_t>(SquareType::TennesseeAvenue)].houses = 3;
+        sellHouses.squares[static_cast<std::size_t>(SquareType::NewYorkAvenue)].houses = 3;
+        require(decide(sellHouses, 0, SquareType::BalticAvenue, 100),
+            "AI property purchase may sell houses for cheap direct monopoly like retail");
+
+        auto housingFirst = baseState();
+        housingFirst.players[0].cash = 250;
+        housingFirst.players[1].cash = 500;
+        own(housingFirst, SquareType::MediterraneanAvenue, 0);
+        own(housingFirst, SquareType::BalticAvenue, 0);
+        require(!decide(housingFirst, 0, SquareType::ReadingRailroad),
+            "AI property purchase preserves cash needed for planned monopoly housing");
+    }
+
     void testHypotheticalBuilding()
     {
         auto brown = baseState();
@@ -1250,6 +1312,7 @@ int main()
         testRetailConstants();
         testExcessCashStrategies();
         testCashAvailableAfterHousing();
+        testShouldBuyProperty();
         testHypotheticalBuilding();
         testShouldUnmortgageAndBuyHouse();
         testEconomicActionPlanning();
