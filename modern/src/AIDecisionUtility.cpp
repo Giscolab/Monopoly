@@ -1208,6 +1208,85 @@ namespace monopoly::ai::decision
         return true;
     }
 
+    EconomicActionPlan planHouseSaleAction(
+        const rules::GameState& state,
+        rules::board::SquareType referenceSquare) noexcept
+    {
+        using rules::board::SquareType;
+        const auto raw = static_cast<std::size_t>(referenceSquare);
+        if (raw >= static_cast<std::size_t>(SquareType::InJail))
+            return {};
+
+        const auto lots = ai::monopolyLots(referenceSquare);
+        if (lots.count == 0)
+            return {};
+
+        auto simulated = state;
+        ai::testSellHouses(simulated, lots, referenceSquare);
+
+        SquareType soldSquare = SquareType::InJail;
+        std::uint8_t maxHouses{};
+        for (std::size_t index = 0; index < lots.count; ++index)
+        {
+            const auto square = lots.squares[index];
+            const auto squareIndex = static_cast<std::size_t>(square);
+            if (simulated.squares[squareIndex].houses >=
+                state.squares[squareIndex].houses)
+                continue;
+            if (soldSquare == SquareType::InJail ||
+                state.squares[squareIndex].houses > maxHouses)
+            {
+                soldSquare = square;
+                maxHouses = state.squares[squareIndex].houses;
+            }
+        }
+        if (soldSquare == SquareType::InJail)
+            return {};
+        return {EconomicActionKind::SellBuilding, soldSquare};
+    }
+
+    EconomicActionPlan planDebtLiquidationStep(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool sellHouses) noexcept
+    {
+        using rules::board::SquareType;
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return {};
+
+        auto simulated = state;
+        if (!mortgageWorstProperty(simulated, player, sellHouses, true))
+            return {};
+
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            if (!state.squares[index].mortgaged &&
+                simulated.squares[index].mortgaged)
+                return {EconomicActionKind::MortgageProperty,
+                    static_cast<SquareType>(index)};
+        }
+
+        SquareType soldSquare = SquareType::InJail;
+        std::uint8_t maxHouses{};
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(SquareType::InJail); ++index)
+        {
+            if (simulated.squares[index].houses >= state.squares[index].houses)
+                continue;
+            if (soldSquare == SquareType::InJail ||
+                state.squares[index].houses > maxHouses)
+            {
+                soldSquare = static_cast<SquareType>(index);
+                maxHouses = state.squares[index].houses;
+            }
+        }
+        if (soldSquare != SquareType::InJail)
+            return {EconomicActionKind::SellBuilding, soldSquare};
+        return {};
+    }
+
     void mortgageNegativeCashPlayers(rules::GameState& state) noexcept
     {
         if (state.numberOfPlayers > rules::MaxPlayers)
