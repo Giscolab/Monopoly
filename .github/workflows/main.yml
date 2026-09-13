@@ -5,7 +5,8 @@ on:
     branches:
       - master
     paths:
-      - 'modern/PORTING_STATUS.md'
+      - 'modern/**'
+      - '!modern/porting-progress.svg'
       - '.github/scripts/update_porting_progress.py'
       - '.github/workflows/main.yml'
   schedule:
