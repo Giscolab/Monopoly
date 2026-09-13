@@ -4,15 +4,19 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 
+#include <chrono>
 #include <cstdlib>
 
 namespace monopoly::ai
 {
     namespace
     {
+        using Clock = std::chrono::steady_clock;
+
         trade::TradeIngressState tradeIngress{};
         profile::RuntimeState profileRuntime{};
         bool auctionOn{};
+        Clock::time_point gracePeriodForHumanActivity{};
 
         void updateRuntimeFlags(const actions::Message& message) noexcept
         {
@@ -21,6 +25,13 @@ namespace monopoly::ai
             else if (message.action == actions::Type::NotifyAuctionGoing &&
                      message.numberD >= 3)
                 auctionOn = false;
+
+            if (message.action == actions::Type::NotifyPleasePay)
+                gracePeriodForHumanActivity = {};
+            else if (message.action == actions::Type::NotifyTradeFinished ||
+                     (message.action == actions::Type::NotifyPlayerBuySellMort &&
+                      message.numberA == rules::NobodyPlayer))
+                gracePeriodForHumanActivity = Clock::now();
         }
 
         [[nodiscard]] profile::ConfigContext makeConfigContext() noexcept
@@ -153,6 +164,177 @@ namespace monopoly::ai
         {
             return static_cast<double>(std::rand()) /
                 static_cast<double>(RAND_MAX);
+        }
+
+        [[nodiscard]] std::array<std::uint32_t, 8> retailRandomKeys() noexcept
+        {
+            std::array<std::uint32_t, 8> keys{};
+            for (auto& key : keys)
+                key = static_cast<std::uint32_t>(std::rand());
+            return keys;
+        }
+
+        [[nodiscard]] rules::PlayerNumber buySellMortgagePlayer(
+            const rules::GameState& state) noexcept
+        {
+            if (state.numberOfPendingPhases == 0)
+                return rules::NobodyPlayer;
+            const auto& phase = state.phaseStack[0];
+            if (phase.phase == rules::GamePhase::BuySellMortgage ||
+                phase.phase == rules::GamePhase::DecomposeHotel)
+                return phase.fromPlayer;
+            return rules::NobodyPlayer;
+        }
+
+        [[nodiscard]] bool autonomousTradeBlocked(
+            const rules::GameState& state, rules::PlayerNumber player) noexcept
+        {
+            if (auctionOn || state.tradeInProgress ||
+                tradeIngress.counterRuntime.sending.state !=
+                    trade::SendingTradeState::Nothing ||
+                state.players[player].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
+                return true;
+
+            if (state.numberOfPendingPhases != 0)
+            {
+                const auto phase = state.phaseStack[0].phase;
+                if (phase == rules::GamePhase::PlaceBuilding ||
+                    phase == rules::GamePhase::HousingShortageQuestion ||
+                    phase == rules::GamePhase::CollectingPayment)
+                    return true;
+            }
+
+            const auto controlPlayer = buySellMortgagePlayer(state);
+            if (controlPlayer != rules::NobodyPlayer && controlPlayer != player)
+                return true;
+
+            return state.options.aiTakesTimeToThink &&
+                gracePeriodForHumanActivity != Clock::time_point{} &&
+                Clock::now() - gracePeriodForHumanActivity < std::chrono::seconds(10);
+        }
+
+        [[nodiscard]] decision::SemiImportantTradeInputs makeSemiImportantInputs(
+            const rules::GameState& state, rules::PlayerNumber player,
+            std::uint8_t importance, const profile::Profile& strategy,
+            const profile::ConfigContext& context) noexcept
+        {
+            decision::SemiImportantTradeInputs inputs{};
+            inputs.partnerRoll = retailCounterRoll();
+            const auto assets = ai::liquidAssets(
+                state, player, false, false, context.moneyOwed[player]);
+            if ((importance & trade::TradeForCash) != 0 ||
+                state.players[player].aiPlayerLevel != 3)
+            {
+                const auto keys = retailRandomKeys();
+                inputs.wantedGroups = trade::orderMonopolyImportance(
+                    assets, trade::MonopolySortOrder::Random, keys);
+            }
+            else
+            {
+                inputs.wantedGroups = trade::orderMonopolyImportance(
+                    assets, trade::MonopolySortOrder::Descending);
+            }
+            inputs.deriveOfferedGroups = true;
+            inputs.wantedPropertyRoll = static_cast<std::uint32_t>(std::rand());
+            inputs.offeredPropertyRoll = static_cast<std::uint32_t>(std::rand());
+            inputs.minimumNonmonopolyTradeAttitude =
+                strategy.minimumNonmonopolyTradeAttitude;
+            return inputs;
+        }
+
+        void maybeProposeAutonomousTrade(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action != actions::Type::Tick &&
+                !(message.action == actions::Type::NotifyStartTurn &&
+                  !state.options.aiTakesTimeToThink))
+                return;
+
+            auto context = makeConfigContext();
+            for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
+                context.localAIPlayer[current] = context.localAIPlayer[current] &&
+                    profileRuntime.playerLoaded[current];
+
+            for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            {
+                if (!context.localAIPlayer[player] || autonomousTradeBlocked(state, player))
+                    continue;
+
+                const auto& strategy = profileRuntime.players[player];
+                const bool shouldGiveAway = decision::shouldGiveAwayMonopoly(
+                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                    strategy.maxHousesPerSquareForGiveAway, context.moneyOwed);
+
+                trade::TradeCadenceInputs cadence{};
+                cadence.playerSendingTrade =
+                    tradeIngress.counterRuntime.sending.state !=
+                        trade::SendingTradeState::Nothing;
+                cadence.buySellMortgagePlayer = buySellMortgagePlayer(state);
+                cadence.shouldGiveAwayMonopoly = shouldGiveAway;
+                cadence.giveAwayProbability = strategy.proposeMonopolyGiveAwayProbability;
+                cadence.monopolyProbability = strategy.monopolyTradeProbability;
+                cadence.proposalProbability = strategy.proposeTradeProbability;
+
+                bool wantsTrade{};
+                if (shouldGiveAway)
+                {
+                    cadence.giveAwayRoll = retailCounterRoll();
+                    cadence.proposalRoll = 2.0;
+                    wantsTrade = trade::shouldTrade(
+                        state, player, 0, tradeIngress.turnState[player].timeLastTrade,
+                        strategy.maxTrades, cadence);
+                    cadence.shouldGiveAwayMonopoly = false;
+                }
+                if (!wantsTrade)
+                {
+                    cadence.proposalRoll = retailCounterRoll();
+                    wantsTrade = trade::shouldTrade(
+                        state, player, 0, tradeIngress.turnState[player].timeLastTrade,
+                        strategy.maxTrades, cadence);
+                }
+                if (!wantsTrade)
+                    continue;
+
+                trade::PropertySets properties{};
+                for (rules::PlayerNumber owner = 0; owner < state.numberOfPlayers; ++owner)
+                    properties[owner] = ai::propertiesOwnedByPlayer(state, owner);
+
+                decision::ProactiveTradeInputs inputs{};
+                inputs.shouldGiveAwayMonopoly = shouldGiveAway;
+                const auto assets = ai::liquidAssets(
+                    state, player, false, false, context.moneyOwed[player]);
+                if (state.players[player].aiPlayerLevel == 3)
+                {
+                    inputs.monopolyGroups = trade::orderMonopolyImportance(
+                        assets, trade::MonopolySortOrder::Descending);
+                }
+                else
+                {
+                    const auto keys = retailRandomKeys();
+                    inputs.monopolyGroups = trade::orderMonopolyImportance(
+                        assets, trade::MonopolySortOrder::Random, keys);
+                }
+
+                const auto config = profile::makeMonopolyProposalConfig(
+                    profileRuntime.players, player, context);
+                auto proposal = decision::buildProactiveTrade(
+                    state, player, strategy.playerAttitude, properties, inputs, config);
+                if (proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+                {
+                    inputs.semiImportant = makeSemiImportantInputs(
+                        state, player, 0, strategy, context);
+                    proposal = decision::buildProactiveTrade(
+                        state, player, strategy.playerAttitude, properties, inputs, config);
+                }
+                if (proposal.kind == decision::ProactiveTradeKind::None ||
+                    proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+                    continue;
+                if (trade::sendProactiveTrade(
+                        state, player, proposal.proposal, strategy, tradeIngress))
+                    return;
+            }
         }
 
         [[nodiscard]] bool sendTradeAcceptance(
@@ -293,6 +475,7 @@ namespace monopoly::ai
     {
         trade::resetTradeIngress(tradeIngress);
         auctionOn = false;
+        gracePeriodForHumanActivity = {};
 
         for (rules::PlayerNumber player = 0;
              player < rules::MaxPlayers;
@@ -317,6 +500,7 @@ namespace monopoly::ai
         maybeRestartDeferredAcceptance(message);
         maybeChooseTradeAcceptance(state, message);
         maybeCounterTrade(state, message);
+        maybeProposeAutonomousTrade(state, message);
     }
 
     const trade::TradeIngressState&

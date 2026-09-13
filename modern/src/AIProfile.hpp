@@ -105,4 +105,8 @@ namespace monopoly::ai::profile
         const ProfileSet& profiles,
         rules::PlayerNumber strategyPlayer,
         const ConfigContext& context = {}) noexcept;
+    [[nodiscard]] decision::MonopolyProposalConfig makeMonopolyProposalConfig(
+        const ProfileSet& profiles,
+        rules::PlayerNumber strategyPlayer,
+        const ConfigContext& context = {}) noexcept;
 }

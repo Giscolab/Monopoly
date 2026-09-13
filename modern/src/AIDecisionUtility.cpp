@@ -1110,9 +1110,12 @@ namespace monopoly::ai::decision
         for (const auto group : inputs.wantedGroups)
             if (static_cast<std::size_t>(group) >= ai::ExpensiveMonopolySquares.size())
                 return false;
-        for (const auto group : inputs.offeredGroups)
-            if (static_cast<std::size_t>(group) >= ai::ExpensiveMonopolySquares.size())
-                return false;
+        if (!inputs.deriveOfferedGroups)
+        {
+            for (const auto group : inputs.offeredGroups)
+                if (static_cast<std::size_t>(group) >= ai::ExpensiveMonopolySquares.size())
+                    return false;
+        }
 
         std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
         std::size_t candidateCount{};
@@ -1210,11 +1213,20 @@ namespace monopoly::ai::decision
             }
 
             auto available = properties[player];
+            auto offeredGroups = inputs.offeredGroups;
+            if (inputs.deriveOfferedGroups)
+            {
+                offeredGroups = ai::trade::orderMonopolyImportance(
+                    ai::liquidAssets(
+                        state, target, false, false,
+                        config.fairTrade.evaluation.winningChance.moneyOwed[target]),
+                    ai::trade::MonopolySortOrder::Ascending);
+            }
             const std::size_t groupLimit = (inputs.importance & ai::trade::TradeForCash) != 0 ? 8 : 4;
             for (std::size_t index = 0; index < groupLimit; ++index)
             {
                 const auto representative = ai::ExpensiveMonopolySquares[
-                    static_cast<std::size_t>(inputs.offeredGroups[index])];
+                    static_cast<std::size_t>(offeredGroups[index])];
                 const auto groupSet = ai::monopolySet(representative);
                 auto offered = available & groupSet;
                 if (offered == 0 || ai::testForMonopoly(offered, representative) ||
@@ -1258,6 +1270,138 @@ namespace monopoly::ai::decision
             return true;
         }
         return false;
+    }
+
+    ProactiveTradeResult buildProactiveTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const double> playerAttitudes,
+        const ai::trade::PropertySets& properties,
+        const ProactiveTradeInputs& inputs,
+        const MonopolyProposalConfig& config) noexcept
+    {
+        ProactiveTradeResult result{};
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || playerAttitudes.size() < state.numberOfPlayers)
+            return result;
+        for (const auto group : inputs.monopolyGroups)
+            if (static_cast<std::size_t>(group) >= ai::ExpensiveMonopolySquares.size())
+                return result;
+
+        std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+        std::size_t candidateCount{};
+        const bool desperate = (inputs.importance & ai::trade::TradeDesperate) != 0;
+        for (rules::PlayerNumber candidate = 0; candidate < state.numberOfPlayers; ++candidate)
+        {
+            if (candidate == player || candidate == inputs.excludedPlayer ||
+                state.players[candidate].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
+                continue;
+            if (!desperate &&
+                (ai::playerOwnsMonopoly(state, candidate, false) ||
+                 playerAttitudes[candidate] < -1.0))
+                continue;
+            candidates[candidateCount++] = candidate;
+        }
+        // Retail exits before the give-away path when no trade partner is eligible.
+        if (candidateCount == 0)
+            return result;
+
+        if (inputs.shouldGiveAwayMonopoly)
+        {
+            const auto partner = ai::trade::findNonmonopolyPlayer(
+                state, player, config.fairTrade.evaluation.winningChance.moneyOwed);
+            if (partner != rules::NobodyPlayer)
+            {
+                ai::trade::TradeProposalList proposal{};
+                if (buildMonopolyForCash(
+                        state, player, partner, properties, proposal, config))
+                {
+                    result.kind = ProactiveTradeKind::GiveMonopolyForCash;
+                    result.proposal = proposal;
+                }
+                // Retail returns immediately if a cash-sale target exists but the
+                // monopoly-for-cash builder cannot produce a proposal.
+                return result;
+            }
+        }
+
+        std::size_t monopolyLimit{};
+        switch (ai::trade::shouldTradeForMonopoly(state, player))
+        {
+        case ai::trade::MonopolyTradeDecision::Maybe:
+            monopolyLimit = 2;
+            break;
+        case ai::trade::MonopolyTradeDecision::Required:
+            monopolyLimit = 7; // SG_PARK_PLACE: all but the worst-ranked group.
+            break;
+        case ai::trade::MonopolyTradeDecision::Avoid:
+            monopolyLimit = 0;
+            break;
+        }
+        if ((inputs.importance & ai::trade::TradeForCash) != 0)
+            monopolyLimit = 0;
+
+        if ((inputs.importance & ai::trade::TradeGiveMonopoly) == 0)
+        {
+            for (std::size_t rank = 0; rank < monopolyLimit; ++rank)
+            {
+                const auto group = inputs.monopolyGroups[rank];
+                const auto representative = ai::ExpensiveMonopolySquares[
+                    static_cast<std::size_t>(group)];
+                const auto smallest = ai::trade::findSmallestMonopolyTrade(
+                    player, ai::monopolySet(representative),
+                    std::span<const rules::PlayerNumber>(candidates.data(), candidateCount),
+                    properties);
+                // The retail build deliberately restricts this path to exactly
+                // two partners despite the recursive helper supporting larger trades.
+                if (smallest.count != 2)
+                    continue;
+
+                ai::trade::TradeProposalList proposal{};
+                if (!buildMonopolyTrade(
+                        state, player, group,
+                        std::span<const rules::PlayerNumber>(
+                            smallest.players.data(), smallest.count),
+                        properties, proposal, config))
+                    continue;
+
+                if (inputs.importance == 0 ||
+                    inputs.importance == ai::trade::TradeSomewhatImportant)
+                {
+                    if (evaluateTrade(
+                            state, player, player, proposal,
+                            config.fairTrade.evaluation) <
+                        config.fairTrade.minEvaluationThreshold)
+                        continue;
+                }
+                if (!ai::trade::tradeIsProper(state, proposal))
+                    continue;
+
+                result.kind = ProactiveTradeKind::AcquireMonopoly;
+                result.proposal = proposal;
+                return result;
+            }
+        }
+
+        if (!inputs.semiImportant)
+        {
+            result.kind = ProactiveTradeKind::NeedsSemiImportant;
+            return result;
+        }
+        auto semiInputs = *inputs.semiImportant;
+        semiInputs.importance = inputs.importance;
+        semiInputs.excludedPlayer = inputs.excludedPlayer;
+        ai::trade::TradeProposalList proposal{};
+        if (buildSemiImportantTrade(
+                state, player, playerAttitudes, properties, semiInputs,
+                proposal, config) &&
+            ai::trade::tradeIsProper(state, proposal))
+        {
+            result.kind = ProactiveTradeKind::SemiImportant;
+            result.proposal = proposal;
+        }
+        return result;
     }
 
     CounterProposalPreflightResult counterProposalPreflight(

@@ -193,6 +193,43 @@ namespace monopoly::ai::trade
         }
     }
 
+    std::array<rules::board::SquareGroup, 8> orderMonopolyImportance(
+        std::int64_t liquidAssets,
+        MonopolySortOrder order,
+        std::span<const std::uint32_t> randomKeys) noexcept
+    {
+        std::array<std::size_t, 8> indices{};
+        for (std::size_t index = 0; index < indices.size(); ++index)
+            indices[index] = index;
+
+        if (order == MonopolySortOrder::Random)
+        {
+            if (randomKeys.size() >= indices.size())
+            {
+                std::stable_sort(indices.begin(), indices.end(),
+                    [&](std::size_t lhs, std::size_t rhs) {
+                        return randomKeys[lhs] < randomKeys[rhs];
+                    });
+            }
+        }
+        else
+        {
+            const auto chart = darzinskisIndex(liquidAssets);
+            const bool descending = order == MonopolySortOrder::Descending;
+            std::stable_sort(indices.begin(), indices.end(),
+                [&](std::size_t lhs, std::size_t rhs) {
+                    return descending
+                        ? DarzinskisImportance[lhs][chart] > DarzinskisImportance[rhs][chart]
+                        : DarzinskisImportance[lhs][chart] < DarzinskisImportance[rhs][chart];
+                });
+        }
+
+        std::array<rules::board::SquareGroup, 8> result{};
+        for (std::size_t index = 0; index < result.size(); ++index)
+            result[index] = static_cast<rules::board::SquareGroup>(indices[index]);
+        return result;
+    }
+
     MonopolyTradeGroup findSmallestMonopolyTrade(
         rules::PlayerNumber player,
         rules::board::PropertySet monopoly,
