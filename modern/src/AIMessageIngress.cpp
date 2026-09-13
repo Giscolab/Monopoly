@@ -3,6 +3,7 @@
 #include "LocalPlayers.hpp"
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
+#include "RuleConfiguration.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -42,6 +43,65 @@ namespace monopoly::ai
         enum class PendingTurnPrompt : std::uint8_t { None = 0, RollDice, EndTurn };
         std::array<PendingTurnPrompt, rules::MaxPlayers> pendingTurnPrompt{};
         std::array<bool, rules::MaxPlayers> turnActionInFlight{};
+        std::array<bool, rules::MaxPlayers> configurationAcceptInFlight{};
+        std::array<bool, rules::MaxPlayers> cardSeenInFlight{};
+
+        void clearPlayerTransientState(
+            rules::PlayerNumber player) noexcept
+        {
+            if (player >= rules::MaxPlayers)
+                return;
+
+            economicRuntime.pendingControlAction[player] = {};
+            economicRuntime.hasPendingControlAction[player] = false;
+            economicRuntime.controlRequestInFlight[player] = false;
+            economicRuntime.actionInFlight[player] = false;
+            economicRuntime.controlReleaseInFlight[player] = false;
+            jailDecisionInFlight[player] = false;
+            taxDecisionInFlight[player] = false;
+            buyDecisionInFlight[player] = false;
+            housingAuctionRequestInFlight[player] = false;
+            buildingPlacementInFlight[player] = false;
+            debtActionInFlight[player] = false;
+            debtMoneyOwed[player] = 0;
+            freeUnmortgageInFlight[player] = false;
+            freeUnmortgageDoneInFlight[player] = false;
+            pendingTurnPrompt[player] = PendingTurnPrompt::None;
+            turnActionInFlight[player] = false;
+            configurationAcceptInFlight[player] = false;
+            cardSeenInFlight[player] = false;
+
+            const auto bit = 1u << player;
+            tradeIngress.pendingTradeAcceptPlayers &= ~bit;
+            tradeIngress.deferredAcceptancePlayers &= ~bit;
+            tradeIngress.counterSessions[player] = {};
+            tradeIngress.turnState[player] = {};
+            if (tradeIngress.counterRuntime.player == player ||
+                tradeIngress.counterRuntime.proposedPlayer == player)
+                tradeIngress.counterRuntime = {};
+            if (tradeIngress.playerJustRejectedCountered == player)
+            {
+                tradeIngress.tradeJustRejectedCountered = false;
+                tradeIngress.playerJustRejectedCountered = rules::NobodyPlayer;
+            }
+            if (auctionBiddingPlayer == player)
+            {
+                auctionBidInFlight = false;
+                auctionBiddingPlayer = rules::NobodyPlayer;
+            }
+        }
+
+        void resetGlobalTransientStateForResync() noexcept
+        {
+            auctionBidInFlight = false;
+            auctionBiddingPlayer = rules::NobodyPlayer;
+            auctionOn = false;
+
+            tradeIngress.tradeJustRejectedCountered = false;
+            tradeIngress.playerJustRejectedCountered = rules::NobodyPlayer;
+            tradeIngress.proposedPlayer = rules::NobodyPlayer;
+            tradeIngress.lastEditor = rules::NobodyPlayer;
+        }
 
         void updateRuntimeFlags(const actions::Message& message) noexcept
         {
@@ -115,6 +175,102 @@ namespace monopoly::ai
                 // empty name so RULE releases the slot.
                 (void)ui::localplayers::requestRemoveLocalPlayer(
                     state, player);
+            }
+        }
+
+        void processPassiveRuntimeMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto player =
+                    static_cast<rules::PlayerNumber>(message.numberC);
+                const auto completed =
+                    static_cast<actions::Type>(message.numberA);
+                if (completed == actions::Type::AcceptConfiguration)
+                    configurationAcceptInFlight[player] = false;
+                else if (completed == actions::Type::CardSeen)
+                    cardSeenInFlight[player] = false;
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyProposedConfiguration)
+            {
+                if (message.numberB <= 0)
+                    return;
+                const auto requested =
+                    static_cast<std::uint32_t>(message.numberB);
+                auto acceptedOptions = state.options;
+                if (message.numberC < 1)
+                {
+                    acceptedOptions.futureRentTradingAllowed = false;
+                    acceptedOptions.immunitiesTradingAllowed = false;
+                }
+
+                for (rules::PlayerNumber player = 0;
+                     player < state.numberOfPlayers && player < rules::MaxPlayers;
+                     ++player)
+                {
+                    const auto bit = 1u << player;
+                    if ((requested & bit) == 0 ||
+                        !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                        configurationAcceptInFlight[player])
+                        continue;
+
+                    actions::Message acceptance{};
+                    if (rules::configuration::acceptedConfigurationMessage(
+                            acceptedOptions, player, false, acceptance) &&
+                        messaging::sendAction(acceptance))
+                    {
+                        configurationAcceptInFlight[player] = true;
+                    }
+                }
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyPickedUpCard &&
+                message.numberA >= 0 &&
+                message.numberA < rules::MaxPlayers)
+            {
+                const auto player =
+                    static_cast<rules::PlayerNumber>(message.numberA);
+                if (player < state.numberOfPlayers &&
+                    ui::localplayers::slotIsLocalAIPlayer(player) &&
+                    !cardSeenInFlight[player] &&
+                    messaging::sendAction(
+                        actions::Type::CardSeen,
+                        player, rules::BankPlayer))
+                {
+                    cardSeenInFlight[player] = true;
+                }
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyClientResyncInfo)
+            {
+                resetGlobalTransientStateForResync();
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyPlayerDeleted &&
+                message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+            {
+                clearPlayerTransientState(
+                    static_cast<rules::PlayerNumber>(message.numberA));
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyJumpToSquare &&
+                message.numberA == static_cast<std::int64_t>(
+                    rules::board::SquareType::OffBoard) &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto player =
+                    static_cast<rules::PlayerNumber>(message.numberC);
+                if (ui::localplayers::slotIsLocalAIPlayer(player))
+                    clearPlayerTransientState(player);
             }
         }
 
@@ -1377,6 +1533,8 @@ namespace monopoly::ai
         freeUnmortgageDoneInFlight.fill(false);
         pendingTurnPrompt.fill(PendingTurnPrompt::None);
         turnActionInFlight.fill(false);
+        configurationAcceptInFlight.fill(false);
+        cardSeenInFlight.fill(false);
         auctionOn = false;
         gracePeriodForHumanActivity = {};
 
@@ -1397,6 +1555,7 @@ namespace monopoly::ai
 
         updateRuntimeFlags(message);
         processProfileMessage(state, message);
+        processPassiveRuntimeMessage(state, message);
         processTradeAttitudeMessage(state, message);
         (void)trade::processTradeRuleMessage(
             state, message, tradeIngress);

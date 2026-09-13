@@ -1586,6 +1586,9 @@ if(BUILD_TESTING)
         src/AIUtility.cpp
         src/BoardRules.cpp
         src/Messaging.cpp
+        src/RuleArchive.cpp
+        src/RuleConfiguration.cpp
+        src/RuleOptions.cpp
     )
     target_include_directories(
         MonopolyAITradeIngressTests PRIVATE
