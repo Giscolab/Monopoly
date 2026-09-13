@@ -1,4 +1,5 @@
 #include "AIMessageIngress.hpp"
+#include "AISaveState.hpp"
 
 #include "LocalPlayers.hpp"
 #include "LegacyTextIds.hpp"
@@ -193,6 +194,53 @@ namespace monopoly::ai
                     configurationAcceptInFlight[player] = false;
                 else if (completed == actions::Type::CardSeen)
                     cardSeenInFlight[player] = false;
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyAINeedParametersForSave)
+            {
+                if (message.numberA <= 0)
+                    return;
+                const auto requested = static_cast<std::uint32_t>(message.numberA);
+                for (rules::PlayerNumber player = 0;
+                     player < state.numberOfPlayers && player < rules::MaxPlayers;
+                     ++player)
+                {
+                    if ((requested & (1u << player)) == 0 ||
+                        !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                        !profileRuntime.playerLoaded[player])
+                        continue;
+
+                    save::State persisted{};
+                    persisted.profile = profileRuntime.players[player];
+                    persisted.timeLastTrade = tradeIngress.turnState[player].timeLastTrade;
+                    actions::Message response{};
+                    response.action = actions::Type::AISaveParameters;
+                    response.fromPlayer = player;
+                    response.toPlayer = rules::BankPlayer;
+                    if (save::encode(persisted, response.binaryDataA))
+                        (void)messaging::sendAction(response);
+                }
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyAIParameters &&
+                message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+                if (player >= state.numberOfPlayers ||
+                    !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player])
+                    return;
+
+                save::State persisted{};
+                if (!save::decode(
+                        std::span<const std::uint8_t>(message.binaryDataA),
+                        persisted))
+                    return;
+
+                profileRuntime.players[player] = std::move(persisted.profile);
+                tradeIngress.turnState[player].timeLastTrade = persisted.timeLastTrade;
                 return;
             }
 
