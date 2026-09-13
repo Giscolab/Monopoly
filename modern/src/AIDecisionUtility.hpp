@@ -310,6 +310,7 @@ namespace monopoly::ai::decision
         std::uint8_t importance{};
         double minimumNonmonopolyTradeAttitude{};
         rules::PlayerNumber excludedPlayer = rules::NobodyPlayer;
+        rules::PlayerNumber requiredTarget = rules::NobodyPlayer;
     };
 
     [[nodiscard]] bool buildSemiImportantTrade(

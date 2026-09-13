@@ -46,6 +46,8 @@ namespace monopoly::ai
         std::array<bool, rules::MaxPlayers> turnActionInFlight{};
         std::array<bool, rules::MaxPlayers> configurationAcceptInFlight{};
         std::array<bool, rules::MaxPlayers> cardSeenInFlight{};
+        rules::PlayerNumber purchasingPlayer = rules::NobodyPlayer;
+        rules::board::SquareType purchasingProperty = rules::board::SquareType::Count;
 
         void clearPlayerTransientState(
             rules::PlayerNumber player) noexcept
@@ -85,6 +87,11 @@ namespace monopoly::ai
                 tradeIngress.tradeJustRejectedCountered = false;
                 tradeIngress.playerJustRejectedCountered = rules::NobodyPlayer;
             }
+            if (purchasingPlayer == player)
+            {
+                purchasingPlayer = rules::NobodyPlayer;
+                purchasingProperty = rules::board::SquareType::Count;
+            }
             if (auctionBiddingPlayer == player)
             {
                 auctionBidInFlight = false;
@@ -97,6 +104,8 @@ namespace monopoly::ai
             auctionBidInFlight = false;
             auctionBiddingPlayer = rules::NobodyPlayer;
             auctionOn = false;
+            purchasingPlayer = rules::NobodyPlayer;
+            purchasingProperty = rules::board::SquareType::Count;
 
             tradeIngress.tradeJustRejectedCountered = false;
             tradeIngress.playerJustRejectedCountered = rules::NobodyPlayer;
@@ -130,6 +139,8 @@ namespace monopoly::ai
                     ui::localplayers::slotIsLocalAIPlayer(player);
             }
             context.moneyOwed = debtMoneyOwed;
+            context.purchasingPlayer = purchasingPlayer;
+            context.purchasingProperty = purchasingProperty;
             return context;
         }
 
@@ -176,6 +187,28 @@ namespace monopoly::ai
                 // empty name so RULE releases the slot.
                 (void)ui::localplayers::requestRemoveLocalPlayer(
                     state, player);
+            }
+        }
+
+        void processPurchaseContextMessage(
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyBuyOrAuctionDecision &&
+                message.numberA >= 0 && message.numberA < rules::MaxPlayers &&
+                message.numberB >= 0 &&
+                message.numberB < static_cast<std::int64_t>(rules::board::SquareType::InJail))
+            {
+                purchasingPlayer = static_cast<rules::PlayerNumber>(message.numberA);
+                purchasingProperty = static_cast<rules::board::SquareType>(message.numberB);
+                return;
+            }
+
+            if (message.action == actions::Type::NotifySquareOwnership &&
+                purchasingPlayer != rules::NobodyPlayer &&
+                message.numberA == static_cast<std::int64_t>(purchasingProperty))
+            {
+                purchasingPlayer = rules::NobodyPlayer;
+                purchasingProperty = rules::board::SquareType::Count;
             }
         }
 
@@ -1008,13 +1041,12 @@ namespace monopoly::ai
             }
         }
 
-        [[nodiscard]] decision::SemiImportantTradeInputs makeSemiImportantInputs(
+        [[nodiscard]] decision::SemiImportantTradeInputs makeSemiImportantAttemptInputs(
             const rules::GameState& state, rules::PlayerNumber player,
             std::uint8_t importance, const profile::Profile& strategy,
             const profile::ConfigContext& context) noexcept
         {
             decision::SemiImportantTradeInputs inputs{};
-            inputs.partnerRoll = retailCounterRoll();
             const auto assets = ai::liquidAssets(
                 state, player, false, false, context.moneyOwed[player]);
             if ((importance & trade::TradeForCash) != 0 ||
@@ -1032,9 +1064,87 @@ namespace monopoly::ai
             inputs.deriveOfferedGroups = true;
             inputs.wantedPropertyRoll = static_cast<std::uint32_t>(std::rand());
             inputs.offeredPropertyRoll = static_cast<std::uint32_t>(std::rand());
+            inputs.importance = importance;
             inputs.minimumNonmonopolyTradeAttitude =
                 strategy.minimumNonmonopolyTradeAttitude;
             return inputs;
+        }
+
+        struct SemiImportantPartnerOrder
+        {
+            std::array<rules::PlayerNumber, rules::MaxPlayers> players{};
+            std::size_t count{};
+        };
+
+        [[nodiscard]] SemiImportantPartnerOrder semiImportantPartnerOrder(
+            const rules::GameState& state, rules::PlayerNumber player,
+            std::span<const double> attitudes,
+            rules::PlayerNumber excludedPlayer) noexcept
+        {
+            SemiImportantPartnerOrder result{};
+            std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+            std::size_t candidateCount{};
+            double totalWeight{};
+            for (rules::PlayerNumber candidate = 0;
+                 candidate < state.numberOfPlayers; ++candidate)
+            {
+                if (candidate == player || candidate == excludedPlayer ||
+                    state.players[candidate].currentSquare ==
+                        static_cast<std::uint8_t>(rules::board::SquareType::OffBoard) ||
+                    candidate >= attitudes.size() || attitudes[candidate] < -1.0)
+                    continue;
+                candidates[candidateCount++] = candidate;
+                totalWeight += (attitudes[candidate] + 1.0) / 2.0;
+            }
+            if (candidateCount == 0 || totalWeight <= 0.0)
+                return result;
+
+            double choice = retailCounterRoll();
+            std::size_t start{};
+            for (; start < candidateCount; ++start)
+            {
+                choice -= (attitudes[candidates[start]] + 1.0) / 2.0 / totalWeight;
+                if (choice <= 0.0)
+                    break;
+            }
+            if (start >= candidateCount)
+                start = candidateCount - 1;
+            for (std::size_t offset = 0; offset < candidateCount; ++offset)
+                result.players[result.count++] =
+                    candidates[(start + offset) % candidateCount];
+            return result;
+        }
+
+        [[nodiscard]] bool buildSemiImportantTradeRetail(
+            const rules::GameState& state, rules::PlayerNumber player,
+            std::uint8_t importance, rules::PlayerNumber excludedPlayer,
+            const profile::Profile& strategy,
+            const profile::ConfigContext& context,
+            const trade::PropertySets& properties,
+            const decision::MonopolyProposalConfig& config,
+            trade::TradeProposalList& proposal) noexcept
+        {
+            const auto order = semiImportantPartnerOrder(
+                state, player, strategy.playerAttitude, excludedPlayer);
+            for (std::size_t index = 0; index < order.count; ++index)
+            {
+                auto attempt = makeSemiImportantAttemptInputs(
+                    state, player, importance, strategy, context);
+                attempt.excludedPlayer = excludedPlayer;
+                attempt.requiredTarget = order.players[index];
+                attempt.partnerRoll = 0.0;
+
+                trade::TradeProposalList next{};
+                if (decision::buildSemiImportantTrade(
+                        state, player, strategy.playerAttitude, properties,
+                        attempt, next, config) &&
+                    trade::tradeIsProper(state, next))
+                {
+                    proposal = next;
+                    return true;
+                }
+            }
+            return false;
         }
 
         [[nodiscard]] bool tryProposeAutonomousTradeForPlayer(
@@ -1103,13 +1213,15 @@ namespace monopoly::ai
                 state, player, strategy.playerAttitude, properties, inputs, config);
             if (proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
             {
-                inputs.semiImportant = makeSemiImportantInputs(
-                    state, player, 0, strategy, context);
-                proposal = decision::buildProactiveTrade(
-                    state, player, strategy.playerAttitude, properties, inputs, config);
+                trade::TradeProposalList semiProposal{};
+                if (!buildSemiImportantTradeRetail(
+                        state, player, 0, rules::NobodyPlayer, strategy, context,
+                        properties, config, semiProposal))
+                    return false;
+                return trade::sendProactiveTrade(
+                    state, player, semiProposal, strategy, tradeIngress);
             }
-            if (proposal.kind == decision::ProactiveTradeKind::None ||
-                proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+            if (proposal.kind == decision::ProactiveTradeKind::None)
                 return false;
             return trade::sendProactiveTrade(
                 state, player, proposal.proposal, strategy, tradeIngress);
@@ -1191,16 +1303,15 @@ namespace monopoly::ai
                 state, player, strategy.playerAttitude, properties, inputs, config);
             if (proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
             {
-                auto semi = makeSemiImportantInputs(
-                    state, player, importance, strategy, context);
-                semi.excludedPlayer = creditor;
-                inputs.semiImportant = semi;
-                proposal = decision::buildProactiveTrade(
-                    state, player, strategy.playerAttitude,
-                    properties, inputs, config);
+                trade::TradeProposalList semiProposal{};
+                if (!buildSemiImportantTradeRetail(
+                        state, player, importance, creditor, strategy, context,
+                        properties, config, semiProposal))
+                    return false;
+                return trade::sendProactiveTrade(
+                    state, player, semiProposal, strategy, tradeIngress);
             }
-            if (proposal.kind == decision::ProactiveTradeKind::None ||
-                proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+            if (proposal.kind == decision::ProactiveTradeKind::None)
                 return false;
             return trade::sendProactiveTrade(
                 state, player, proposal.proposal, strategy, tradeIngress);
@@ -1602,6 +1713,7 @@ namespace monopoly::ai
             return;
 
         updateRuntimeFlags(message);
+        processPurchaseContextMessage(message);
         processProfileMessage(state, message);
         processPassiveRuntimeMessage(state, message);
         processTradeAttitudeMessage(state, message);
