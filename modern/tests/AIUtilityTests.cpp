@@ -623,6 +623,25 @@ namespace
             "AI player liquid assets subtract explicitly injected AI money owed");
         require(ai::liquidAssets(state, 1, false, true) == 0,
             "AI player liquid assets reject invalid player safely");
+
+        rules::GameState opponents{};
+        opponents.numberOfPlayers = 3;
+        opponents.players[0].cash = 100;
+        opponents.players[1].cash = 250;
+        opponents.players[2].cash = 300;
+        opponents.players[1].currentSquare = static_cast<std::uint8_t>(SquareType::Go);
+        opponents.players[2].currentSquare = static_cast<std::uint8_t>(SquareType::Go);
+        own(opponents, SquareType::ReadingRailroad, 1);
+        own(opponents, SquareType::MediterraneanAvenue, 2);
+        own(opponents, SquareType::BalticAvenue, 2);
+        require(ai::mostLiquidAssets(opponents, 0, false) == 350,
+            "AI most-liquid-assets excludes protected opponent monopoly value");
+        require(ai::mostLiquidAssets(opponents, 0, true) == 360,
+            "AI most-liquid-assets includes opponent monopoly mortgage value when requested");
+        opponents.players[2].currentSquare =
+            static_cast<std::uint8_t>(SquareType::OffBoard);
+        require(ai::mostLiquidAssets(opponents, 0, true) == 350,
+            "AI most-liquid-assets ignores off-board bankrupt opponents");
         state.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].houses = 2;
         state.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].houses = 2;
         require(ai::liquidAssetsForProperties(state, owned, true, true) == 260,

@@ -593,6 +593,25 @@ namespace
         require(!ai::trade::onlyPlayerHasMonopoly(synthetic, 0),
             "AI only-monopoly detects opponent subset able to form enough monopolies");
 
+        rules::GameState possible{};
+        possible.numberOfPlayers = 3;
+        for (rules::PlayerNumber current = 0; current < 3; ++current)
+            possible.players[current].currentSquare =
+                static_cast<std::uint8_t>(SquareType::Go);
+        possible.squares[static_cast<std::size_t>(SquareType::MediterraneanAvenue)].owner = 0;
+        possible.squares[static_cast<std::size_t>(SquareType::OrientalAvenue)].owner = 0;
+        possible.squares[static_cast<std::size_t>(SquareType::BalticAvenue)].owner = 1;
+        possible.squares[static_cast<std::size_t>(SquareType::VermontAvenue)].owner = 1;
+        possible.squares[static_cast<std::size_t>(SquareType::ConnecticutAvenue)].owner = 1;
+        require(ai::trade::hasMonopolyTrade(possible, 0),
+            "AI monopoly-trade helper finds two-player completion trade");
+        require(!ai::trade::hasMonopolyTrade(possible, 0, 1),
+            "AI monopoly-trade helper honors excluded partner");
+        possible.players[1].currentSquare =
+            static_cast<std::uint8_t>(SquareType::OffBoard);
+        require(!ai::trade::hasMonopolyTrade(possible, 0),
+            "AI monopoly-trade helper ignores bankrupt partner");
+
         const std::array<std::int64_t, 4> tradeTimes{9, 0, 3, 0};
         require(ai::trade::findFreeTradeSpot(tradeTimes, 3) == 1,
             "AI free-trade spot preserves first-zero scan order");

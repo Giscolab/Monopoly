@@ -1250,6 +1250,197 @@ namespace
         localAIPlayer = false;
     }
 
+    void testFreeUnmortgageRuntime()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        state.players[0].cash = 1000;
+        const auto reading = rules::board::SquareType::ReadingRailroad;
+        state.squares[static_cast<std::size_t>(reading)].owner = 0;
+        state.squares[static_cast<std::size_t>(reading)].mortgaged = true;
+
+        require(messaging::initialize(),
+            "free unmortgage runtime fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "free unmortgage runtime loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+
+        actions::Message free{};
+        free.action = actions::Type::NotifyFreeUnmortgaging;
+        free.fromPlayer = rules::BankPlayer;
+        free.toPlayer = rules::AllPlayers;
+        free.numberA = 0;
+        free.numberB = static_cast<std::int64_t>(rules::board::propertyBit(reading));
+        ai::processMessage(state, free);
+
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::Mortgaging &&
+                queued.fromPlayer == 0 &&
+                queued.numberA == static_cast<std::int64_t>(reading),
+            "free-unmortgage notification dispatches retail unmortgage action");
+        ai::processMessage(state, free);
+        require(messaging::currentQueueSize() == 0,
+            "free-unmortgage action guard suppresses duplicate RULE answer");
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::Mortgaging);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::RestartPhase,
+            "free-unmortgage completion requests retail phase restart");
+
+        state.squares[static_cast<std::size_t>(reading)].mortgaged = false;
+        ai::processMessage(state, free);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::FreeUnmortgageDone &&
+                queued.fromPlayer == 0,
+            "free-unmortgage runtime finishes when no desired mortgage remains");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
+    void testTaxDecisionRuntime()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        state.players[0].cash = 2010;
+        state.options.taxRate = 10;
+        state.options.flatTaxFee = 200;
+
+        require(messaging::initialize(),
+            "tax decision runtime fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "tax decision runtime loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+
+        actions::Message tax{};
+        tax.action = actions::Type::NotifyFlatOrFractionTaxDecision;
+        tax.fromPlayer = rules::BankPlayer;
+        tax.toPlayer = rules::AllPlayers;
+        tax.numberA = 0;
+        ai::processMessage(state, tax);
+
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::TaxDecision &&
+                queued.fromPlayer == 0 && queued.numberA == 0,
+            "tax notification makes wealthy local AI choose retail flat fee");
+        ai::processMessage(state, tax);
+        require(messaging::currentQueueSize() == 0,
+            "pending tax decision suppresses duplicate RULE answer");
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::TaxDecision);
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        state.players[0].cash = 1000;
+        ai::processMessage(state, tax);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::TaxDecision && queued.numberA == 1,
+            "tax completion releases guard and lower worth selects percentage tax");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
+    void testJailDecisionRuntime()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+
+        require(messaging::initialize(),
+            "jail decision runtime fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "jail decision runtime loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+
+        actions::Message jail{};
+        jail.action = actions::Type::NotifyJailExitChoice;
+        jail.fromPlayer = rules::BankPlayer;
+        jail.toPlayer = rules::AllPlayers;
+        jail.numberA = 0;
+        jail.numberB = 0;
+        jail.numberC = 0;
+        jail.numberD = 0;
+        ai::processMessage(state, jail);
+
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::ExitJailDecision &&
+                queued.fromPlayer == 0 && queued.numberA == 1,
+            "NotifyJailExitChoice makes local AI send retail pay decision");
+        ai::processMessage(state, jail);
+        require(messaging::currentQueueSize() == 0,
+            "pending jail decision suppresses duplicate RULE answer");
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::ExitJailDecision);
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+
+        state.players[0].turnsInJail = 2;
+        jail.numberB = 1;
+        jail.numberC = 1;
+        jail.numberD = 1;
+        ai::processMessage(state, jail);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::ExitJailDecision &&
+                queued.numberA == 2,
+            "third-turn jail notification makes local AI use its card");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -1306,6 +1497,9 @@ int main()
         testProactiveSendHistory();
         testTradeResyncPreservesResponses();
         testAutonomousTradeTick();
+        testFreeUnmortgageRuntime();
+        testTaxDecisionRuntime();
+        testJailDecisionRuntime();
         testAutonomousEconomicBssmRuntime();
         testAutonomousEconomicUnmortgageRuntime();
         testTradeFinishAndMessageFilter();
