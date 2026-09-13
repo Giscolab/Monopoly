@@ -392,7 +392,8 @@ namespace monopoly::ai
     std::int64_t mostLiquidAssets(
         const rules::GameState& state,
         rules::PlayerNumber excludedPlayer,
-        bool countMonopolies) noexcept
+        bool countMonopolies,
+        std::span<const std::int64_t> moneyOwed) noexcept
     {
         if (state.numberOfPlayers > rules::MaxPlayers ||
             excludedPlayer >= state.numberOfPlayers)
@@ -405,8 +406,9 @@ namespace monopoly::ai
                 state.players[current].currentSquare ==
                     static_cast<std::uint8_t>(SquareType::OffBoard))
                 continue;
+            const auto debt = current < moneyOwed.size() ? moneyOwed[current] : 0;
             most = std::max(most, liquidAssets(
-                state, current, countMonopolies, countMonopolies));
+                state, current, countMonopolies, countMonopolies, debt));
         }
         return most;
     }

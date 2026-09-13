@@ -139,6 +139,22 @@ namespace monopoly::ai::trade
         const rules::GameState& state,
         rules::PlayerNumber player,
         rules::PlayerNumber excludedPlayer = rules::NobodyPlayer) noexcept;
+
+    enum class StrategicPropertyImportance : std::uint8_t
+    {
+        NotImportant = 0,
+        GivesDirectMonopoly = 1,
+        AllowsTrade = 2,
+        CashCow = 3
+    };
+
+    [[nodiscard]] StrategicPropertyImportance strategicPropertyImportance(
+        const rules::GameState& state,
+        rules::board::SquareType property,
+        rules::PlayerNumber excludedPlayer = rules::NobodyPlayer,
+        rules::PlayerNumber includedPlayer = rules::NobodyPlayer,
+        rules::PlayerNumber purchasingPlayer = rules::NobodyPlayer,
+        rules::board::SquareType purchasingProperty = rules::board::SquareType::Count) noexcept;
     [[nodiscard]] int findFreeTradeSpot(
         std::span<const std::int64_t> timeLastTrade,
         std::size_t maxTrades) noexcept;

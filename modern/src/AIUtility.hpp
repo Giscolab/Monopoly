@@ -133,7 +133,8 @@ namespace monopoly::ai
     [[nodiscard]] std::int64_t mostLiquidAssets(
         const rules::GameState& state,
         rules::PlayerNumber excludedPlayer,
-        bool countMonopolies) noexcept;
+        bool countMonopolies,
+        std::span<const std::int64_t> moneyOwed = {}) noexcept;
     [[nodiscard]] std::int64_t totalWorth(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;

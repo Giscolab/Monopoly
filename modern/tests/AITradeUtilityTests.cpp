@@ -559,6 +559,63 @@ namespace
             "AI non-monopoly partner rejects invalid seeker safely");
     }
 
+    void testStrategicPropertyImportance()
+    {
+        using Importance = ai::trade::StrategicPropertyImportance;
+        const auto makeState = [] {
+            rules::GameState state{};
+            state.numberOfPlayers = 2;
+            for (auto& square : state.squares)
+                square.owner = rules::NobodyPlayer;
+            for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+                state.players[player].currentSquare = static_cast<std::uint8_t>(SquareType::Go);
+            return state;
+        };
+        const auto own = [](rules::GameState& state, SquareType square, rules::PlayerNumber player) {
+            state.squares[static_cast<std::size_t>(square)].owner = player;
+        };
+        auto cashCow = makeState();
+        require(ai::trade::strategicPropertyImportance(
+                    cashCow, SquareType::ReadingRailroad) == Importance::CashCow,
+            "AI strategic property importance classifies railroad as retail cash cow");
+
+        auto direct = makeState();
+        own(direct, SquareType::MediterraneanAvenue, 0);
+        require(ai::trade::strategicPropertyImportance(
+                    direct, SquareType::BalticAvenue, rules::NobodyPlayer, 0) ==
+                Importance::GivesDirectMonopoly,
+            "AI strategic property importance detects direct monopoly for included player");
+
+        auto trade = makeState();
+        trade.numberOfPlayers = 4;
+        for (rules::PlayerNumber player = 0; player < trade.numberOfPlayers; ++player)
+            trade.players[player].currentSquare = static_cast<std::uint8_t>(SquareType::Go);
+        own(trade, SquareType::MediterraneanAvenue, 0);
+        own(trade, SquareType::OrientalAvenue, 0);
+        own(trade, SquareType::VermontAvenue, 0);
+        own(trade, SquareType::BalticAvenue, 1);
+        own(trade, SquareType::ConnecticutAvenue, 1);
+        own(trade, SquareType::StCharlesPlace, 2);
+        own(trade, SquareType::StJamesPlace, 2);
+        own(trade, SquareType::TennesseeAvenue, 2);
+        own(trade, SquareType::StatesAvenue, 3);
+        own(trade, SquareType::NewYorkAvenue, 3);
+        require(ai::trade::strategicPropertyImportance(
+                    trade, SquareType::VirginiaAvenue) == Importance::AllowsTrade,
+            "AI strategic property importance preserves retail residual-group trade detection");
+        require(ai::trade::strategicPropertyImportance(
+                    trade, SquareType::VirginiaAvenue, 0) ==
+                Importance::NotImportant,
+            "AI strategic property importance respects excluded player for prerequisite trade");
+
+        auto pending = makeState();
+        own(pending, SquareType::VermontAvenue, 0);
+        require(ai::trade::strategicPropertyImportance(
+                    pending, SquareType::ConnecticutAvenue, rules::NobodyPlayer, 0,
+                    0, SquareType::OrientalAvenue) == Importance::GivesDirectMonopoly,
+            "AI strategic property importance includes a different pending purchase like retail");
+    }
+
     void testTradeCadenceContracts()
     {
         rules::GameState monopoly{};
@@ -1087,6 +1144,7 @@ int main()
         testTradePropertyImportance();
         testShouldTradeForMonopoly();
         testFindNonmonopolyPlayer();
+        testStrategicPropertyImportance();
         testTradeCadenceContracts();
         testCounterProposalPreparation();
         testAddTradePropertyTypes();
