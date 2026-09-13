@@ -38,6 +38,14 @@ namespace monopoly::ai::decision
         std::int64_t minCashOnHand,
         std::int64_t moneyOwed = 0) noexcept;
 
+    [[nodiscard]] bool shouldBuyProperty(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::board::SquareType property,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::span<const std::int64_t> moneyOwed = {}) noexcept;
+
     [[nodiscard]] bool hypotheticalBuyHouse(
         rules::GameState& state,
         rules::PlayerNumber player,
@@ -110,6 +118,22 @@ namespace monopoly::ai::decision
         CashStrategy strategy,
         std::int64_t minCashOnHand,
         std::uint8_t housingPurchaseStrategy,
+        std::int64_t moneyOwed = 0) noexcept;
+
+    enum class HousingAuctionBuilding : std::uint8_t
+    {
+        House = 0,
+        Hotel
+    };
+
+    [[nodiscard]] std::optional<rules::board::SquareType> chooseHousingAuctionSquare(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        HousingAuctionBuilding building,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        rules::board::PropertySet legalSquares = 0,
+        bool reservedBuilding = false,
         std::int64_t moneyOwed = 0) noexcept;
 
     [[nodiscard]] EconomicActionPlan planUnmortgagePropertyAction(
@@ -187,6 +211,24 @@ namespace monopoly::ai::decision
         rules::PlayerNumber purchasingPlayer = rules::NobodyPlayer;
         rules::board::SquareType purchasingProperty = rules::board::SquareType::Count;
     };
+
+    struct AuctionBidConfig
+    {
+        TradeEvaluationConfig evaluation{};
+        std::uint8_t housingPurchaseStrategy{};
+        double monopolySuicideFactor{};
+    };
+
+    [[nodiscard]] std::int64_t tradeBidForProperty(
+        const rules::GameState& state, rules::PlayerNumber player,
+        rules::board::SquareType property, std::int64_t currentBid,
+        rules::PlayerNumber currentBidder, const AuctionBidConfig& config) noexcept;
+
+    [[nodiscard]] std::int64_t bidForAuctionItem(
+        const rules::GameState& state, rules::PlayerNumber player,
+        rules::board::SquareType item, std::int64_t currentBid,
+        rules::PlayerNumber currentBidder, const AuctionBidConfig& config,
+        bool useTenDollarIncrement) noexcept;
 
     [[nodiscard]] double evaluateTrade(
         const rules::GameState& state,

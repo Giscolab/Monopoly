@@ -1318,6 +1318,65 @@ namespace
         localAIPlayer = false;
     }
 
+    void testBuyDecisionRuntime()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        state.players[0].cash = 500;
+        state.players[1].cash = 500;
+        state.squares[static_cast<std::size_t>(rules::board::SquareType::MediterraneanAvenue)].owner = 0;
+
+        require(messaging::initialize(),
+            "buy decision runtime fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "buy decision runtime loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+
+        actions::Message buy{};
+        buy.action = actions::Type::NotifyBuyOrAuctionDecision;
+        buy.fromPlayer = rules::BankPlayer;
+        buy.toPlayer = rules::AllPlayers;
+        buy.numberA = 0;
+        buy.numberB = static_cast<std::int64_t>(rules::board::SquareType::BalticAvenue);
+        buy.numberC = rules::board::definition(rules::board::SquareType::BalticAvenue).purchaseCost;
+        ai::processMessage(state, buy);
+
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::BuyOrAuctionDecision &&
+                queued.fromPlayer == 0 && queued.numberA == 1,
+            "buy notification makes local AI buy direct monopoly");
+        ai::processMessage(state, buy);
+        require(messaging::currentQueueSize() == 0,
+            "pending buy decision suppresses duplicate RULE answer");
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::BuyOrAuctionDecision);
+        completed.numberC = 0;
+        ai::processMessage(state, completed);
+        ai::processMessage(state, buy);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::BuyOrAuctionDecision && queued.numberA == 1,
+            "buy completion releases duplicate guard");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
     void testTaxDecisionRuntime()
     {
         auto state = baseState();
@@ -1498,6 +1557,7 @@ int main()
         testTradeResyncPreservesResponses();
         testAutonomousTradeTick();
         testFreeUnmortgageRuntime();
+        testBuyDecisionRuntime();
         testTaxDecisionRuntime();
         testJailDecisionRuntime();
         testAutonomousEconomicBssmRuntime();

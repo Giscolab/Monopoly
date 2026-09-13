@@ -30,8 +30,16 @@ namespace monopoly::ai
         EconomicRuntimeState economicRuntime{};
         std::array<bool, rules::MaxPlayers> jailDecisionInFlight{};
         std::array<bool, rules::MaxPlayers> taxDecisionInFlight{};
+        std::array<bool, rules::MaxPlayers> buyDecisionInFlight{};
+        bool auctionBidInFlight{};
+        rules::PlayerNumber auctionBiddingPlayer = rules::NobodyPlayer;
+        std::array<bool, rules::MaxPlayers> housingAuctionRequestInFlight{};
+        std::array<bool, rules::MaxPlayers> buildingPlacementInFlight{};
         std::array<bool, rules::MaxPlayers> freeUnmortgageInFlight{};
         std::array<bool, rules::MaxPlayers> freeUnmortgageDoneInFlight{};
+        enum class PendingTurnPrompt : std::uint8_t { None = 0, RollDice, EndTurn };
+        std::array<PendingTurnPrompt, rules::MaxPlayers> pendingTurnPrompt{};
+        std::array<bool, rules::MaxPlayers> turnActionInFlight{};
 
         void updateRuntimeFlags(const actions::Message& message) noexcept
         {
@@ -492,6 +500,183 @@ namespace monopoly::ai
             }
         }
 
+        void processBuyDecisionMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberA == static_cast<std::int64_t>(actions::Type::BuyOrAuctionDecision) &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                buyDecisionInFlight[static_cast<rules::PlayerNumber>(message.numberC)] = false;
+                return;
+            }
+            if (message.action != actions::Type::NotifyBuyOrAuctionDecision ||
+                message.numberA < 0 || message.numberA >= state.numberOfPlayers ||
+                message.numberB < 0 ||
+                message.numberB >= static_cast<std::int64_t>(rules::board::SquareType::InJail))
+                return;
+
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player] || buyDecisionInFlight[player])
+                return;
+            const auto property = static_cast<rules::board::SquareType>(message.numberB);
+            const auto& strategy = profileRuntime.players[player];
+            const auto context = makeConfigContext();
+            const bool buy = decision::shouldBuyProperty(
+                state, player, property, strategy.cashStrategy,
+                strategy.minCashOnHand, context.moneyOwed);
+            if (messaging::sendAction(
+                    actions::Type::BuyOrAuctionDecision,
+                    player, rules::BankPlayer, buy ? 1 : 0))
+                buyDecisionInFlight[player] = true;
+        }
+
+        void processAuctionMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberA == static_cast<std::int64_t>(actions::Type::Bid))
+            {
+                if (message.numberC == auctionBiddingPlayer)
+                {
+                    auctionBidInFlight = false;
+                    auctionBiddingPlayer = rules::NobodyPlayer;
+                }
+                return;
+            }
+            if ((message.action != actions::Type::NotifyNewHighBid &&
+                 message.action != actions::Type::NotifyAuctionGoing) ||
+                auctionBidInFlight || state.numberOfPlayers == 0 ||
+                state.numberOfPlayers > rules::MaxPlayers)
+                return;
+            if (message.action == actions::Type::NotifyAuctionGoing && message.numberD >= 3)
+                return;
+            if (message.numberB < 0 || message.numberC < 0 ||
+                message.numberC >= static_cast<std::int64_t>(rules::board::SquareType::Count))
+                return;
+
+            const auto currentBidder = message.numberA >= 0 &&
+                message.numberA < state.numberOfPlayers
+                ? static_cast<rules::PlayerNumber>(message.numberA)
+                : rules::NobodyPlayer;
+            const auto item = static_cast<rules::board::SquareType>(message.numberC);
+            const auto start = static_cast<rules::PlayerNumber>(
+                (static_cast<unsigned long long>(std::rand()) * state.numberOfPlayers) /
+                (static_cast<unsigned long long>(RAND_MAX) + 1ull));
+            const auto context = makeConfigContext();
+            for (std::size_t checked = 0; checked < state.numberOfPlayers; ++checked)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(
+                    (start + checked) % state.numberOfPlayers);
+                if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player] ||
+                    state.players[player].currentSquare == static_cast<std::uint8_t>(
+                        rules::board::SquareType::OffBoard))
+                    continue;
+
+                const auto& strategy = profileRuntime.players[player];
+                decision::AuctionBidConfig config{};
+                config.evaluation = profile::makeTradeEvaluationConfig(
+                    profileRuntime.players, player, context);
+                config.housingPurchaseStrategy = strategy.housingPurchaseStrategy;
+                config.monopolySuicideFactor = strategy.monopolySuicideFactor;
+                const auto bid = decision::bidForAuctionItem(
+                    state, player, item, message.numberB, currentBidder, config,
+                    (std::rand() % 2) != 0);
+                if (bid == 0)
+                    continue;
+                if (messaging::sendAction(
+                        actions::Type::Bid, player, rules::BankPlayer, bid))
+                {
+                    auctionBidInFlight = true;
+                    auctionBiddingPlayer = player;
+                }
+                return;
+            }
+        }
+
+        void processHousingShortageMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                const auto completed = static_cast<actions::Type>(message.numberA);
+                if (completed == actions::Type::StartHousingAuction)
+                    housingAuctionRequestInFlight[player] = false;
+                else if (completed == actions::Type::BuyHouse && buildingPlacementInFlight[player])
+                    buildingPlacementInFlight[player] = false;
+                return;
+            }
+            if (message.action == actions::Type::NotifyPlaceBuilding)
+            {
+                if (message.numberA < 0 || message.numberA >= state.numberOfPlayers ||
+                    message.numberC <= 0)
+                    return;
+                const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+                if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player] || buildingPlacementInFlight[player])
+                    return;
+                const auto& strategy = profileRuntime.players[player];
+                const auto context = makeConfigContext();
+                const auto building = message.numberB > 0
+                    ? decision::HousingAuctionBuilding::Hotel
+                    : decision::HousingAuctionBuilding::House;
+                const auto square = decision::chooseHousingAuctionSquare(
+                    state, player, building, strategy.cashStrategy,
+                    strategy.minCashOnHand,
+                    static_cast<rules::board::PropertySet>(message.numberC), true,
+                    context.moneyOwed[player]);
+                if (square && messaging::sendAction(
+                        actions::Type::BuyHouse, player, rules::BankPlayer,
+                        static_cast<std::int64_t>(*square)))
+                    buildingPlacementInFlight[player] = true;
+                return;
+            }
+            if (message.action != actions::Type::NotifyHousingShortage ||
+                message.numberD >= 3 || message.numberE <= 0)
+                return;
+
+            const auto allowed = static_cast<std::uint32_t>(message.numberE);
+            const auto originalBuyer = message.numberA >= 0 &&
+                message.numberA < state.numberOfPlayers
+                ? static_cast<rules::PlayerNumber>(message.numberA)
+                : rules::NobodyPlayer;
+            const auto building = message.numberC > 0
+                ? decision::HousingAuctionBuilding::Hotel
+                : decision::HousingAuctionBuilding::House;
+            const auto context = makeConfigContext();
+            for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            {
+                if ((allowed & (1u << player)) == 0 || player == originalBuyer ||
+                    !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player] ||
+                    housingAuctionRequestInFlight[player] || economicBusy(player))
+                    continue;
+                const auto& strategy = profileRuntime.players[player];
+                if (decision::shouldBuyHouse(
+                        state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                        strategy.housingPurchaseStrategy, context.moneyOwed[player]) ==
+                    decision::HousePurchaseDecision::No)
+                    continue;
+                const auto square = decision::chooseHousingAuctionSquare(
+                    state, player, building, strategy.cashStrategy,
+                    strategy.minCashOnHand, 0, false, context.moneyOwed[player]);
+                if (!square)
+                    continue;
+                if (messaging::sendAction(
+                        actions::Type::StartHousingAuction,
+                        player, rules::BankPlayer))
+                    housingAuctionRequestInFlight[player] = true;
+                return;
+            }
+        }
+
         void processTaxDecisionMessage(
             const rules::GameState& state,
             const actions::Message& message) noexcept
@@ -602,7 +787,8 @@ namespace monopoly::ai
             {
                 if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
                     !profileRuntime.playerLoaded[player] || economicBusy(player) ||
-                    autonomousTradeBlocked(state, player))
+                    pendingTurnPrompt[player] != PendingTurnPrompt::None ||
+                    turnActionInFlight[player] || autonomousTradeBlocked(state, player))
                     continue;
 
                 const auto next = nextEconomicDecision(state, player, context);
@@ -642,97 +828,191 @@ namespace monopoly::ai
             return inputs;
         }
 
+        [[nodiscard]] bool tryProposeAutonomousTradeForPlayer(
+            const rules::GameState& state, rules::PlayerNumber player,
+            const profile::ConfigContext& context) noexcept
+        {
+            if (player >= state.numberOfPlayers || !context.localAIPlayer[player] ||
+                autonomousTradeBlocked(state, player))
+                return false;
+
+            const auto& strategy = profileRuntime.players[player];
+            const bool shouldGiveAway = decision::shouldGiveAwayMonopoly(
+                state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                strategy.maxHousesPerSquareForGiveAway, context.moneyOwed);
+
+            trade::TradeCadenceInputs cadence{};
+            cadence.playerSendingTrade = tradeIngress.counterRuntime.sending.state !=
+                trade::SendingTradeState::Nothing;
+            cadence.buySellMortgagePlayer = buySellMortgagePlayer(state);
+            cadence.shouldGiveAwayMonopoly = shouldGiveAway;
+            cadence.giveAwayProbability = strategy.proposeMonopolyGiveAwayProbability;
+            cadence.monopolyProbability = strategy.monopolyTradeProbability;
+            cadence.proposalProbability = strategy.proposeTradeProbability;
+
+            bool wantsTrade{};
+            if (shouldGiveAway)
+            {
+                cadence.giveAwayRoll = retailCounterRoll();
+                cadence.proposalRoll = 2.0;
+                wantsTrade = trade::shouldTrade(
+                    state, player, 0, tradeIngress.turnState[player].timeLastTrade,
+                    strategy.maxTrades, cadence);
+                cadence.shouldGiveAwayMonopoly = false;
+            }
+            if (!wantsTrade)
+            {
+                cadence.proposalRoll = retailCounterRoll();
+                wantsTrade = trade::shouldTrade(
+                    state, player, 0, tradeIngress.turnState[player].timeLastTrade,
+                    strategy.maxTrades, cadence);
+            }
+            if (!wantsTrade)
+                return false;
+
+            trade::PropertySets properties{};
+            for (rules::PlayerNumber owner = 0; owner < state.numberOfPlayers; ++owner)
+                properties[owner] = ai::propertiesOwnedByPlayer(state, owner);
+
+            decision::ProactiveTradeInputs inputs{};
+            inputs.shouldGiveAwayMonopoly = shouldGiveAway;
+            const auto assets = ai::liquidAssets(
+                state, player, false, false, context.moneyOwed[player]);
+            if (state.players[player].aiPlayerLevel == 3)
+                inputs.monopolyGroups = trade::orderMonopolyImportance(
+                    assets, trade::MonopolySortOrder::Descending);
+            else
+            {
+                const auto keys = retailRandomKeys();
+                inputs.monopolyGroups = trade::orderMonopolyImportance(
+                    assets, trade::MonopolySortOrder::Random, keys);
+            }
+
+            const auto config = profile::makeMonopolyProposalConfig(
+                profileRuntime.players, player, context);
+            auto proposal = decision::buildProactiveTrade(
+                state, player, strategy.playerAttitude, properties, inputs, config);
+            if (proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+            {
+                inputs.semiImportant = makeSemiImportantInputs(
+                    state, player, 0, strategy, context);
+                proposal = decision::buildProactiveTrade(
+                    state, player, strategy.playerAttitude, properties, inputs, config);
+            }
+            if (proposal.kind == decision::ProactiveTradeKind::None ||
+                proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+                return false;
+            return trade::sendProactiveTrade(
+                state, player, proposal.proposal, strategy, tradeIngress);
+        }
+
         void maybeProposeAutonomousTrade(
-            const rules::GameState& state,
-            const actions::Message& message) noexcept
+            const rules::GameState& state, const actions::Message& message) noexcept
         {
             if (message.action != actions::Type::Tick &&
                 !(message.action == actions::Type::NotifyStartTurn &&
                   !state.options.aiTakesTimeToThink))
                 return;
+            auto context = makeConfigContext();
+            for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
+                context.localAIPlayer[current] = context.localAIPlayer[current] &&
+                    profileRuntime.playerLoaded[current];
+            for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            {
+                if (pendingTurnPrompt[player] != PendingTurnPrompt::None ||
+                    turnActionInFlight[player])
+                    continue;
+                if (tryProposeAutonomousTradeForPlayer(state, player, context))
+                    return;
+            }
+        }
 
+        [[nodiscard]] bool sendPendingTurnAction(
+            rules::PlayerNumber player) noexcept
+        {
+            if (player >= rules::MaxPlayers || turnActionInFlight[player])
+                return false;
+            const auto pending = pendingTurnPrompt[player];
+            if (pending == PendingTurnPrompt::None)
+                return false;
+            const auto action = pending == PendingTurnPrompt::RollDice
+                ? actions::Type::RollDice : actions::Type::EndTurn;
+            if (!messaging::sendAction(action, player, rules::BankPlayer))
+                return false;
+            pendingTurnPrompt[player] = PendingTurnPrompt::None;
+            turnActionInFlight[player] = true;
+            return true;
+        }
+
+        void attemptPendingTurnPrompt(
+            const rules::GameState& state, rules::PlayerNumber player) noexcept
+        {
+            if (player >= state.numberOfPlayers ||
+                pendingTurnPrompt[player] == PendingTurnPrompt::None ||
+                turnActionInFlight[player] || !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player])
+                return;
+            if (economicBusy(player) ||
+                tradeIngress.counterRuntime.sending.state != trade::SendingTradeState::Nothing)
+                return;
             auto context = makeConfigContext();
             for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
                 context.localAIPlayer[current] = context.localAIPlayer[current] &&
                     profileRuntime.playerLoaded[current];
 
-            for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            if (!autonomousTradeBlocked(state, player) &&
+                tryProposeAutonomousTradeForPlayer(state, player, context))
+                return;
+
+            if (!autonomousTradeBlocked(state, player))
             {
-                if (!context.localAIPlayer[player] || autonomousTradeBlocked(state, player))
-                    continue;
-
-                const auto& strategy = profileRuntime.players[player];
-                const bool shouldGiveAway = decision::shouldGiveAwayMonopoly(
-                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
-                    strategy.maxHousesPerSquareForGiveAway, context.moneyOwed);
-
-                trade::TradeCadenceInputs cadence{};
-                cadence.playerSendingTrade =
-                    tradeIngress.counterRuntime.sending.state !=
-                        trade::SendingTradeState::Nothing;
-                cadence.buySellMortgagePlayer = buySellMortgagePlayer(state);
-                cadence.shouldGiveAwayMonopoly = shouldGiveAway;
-                cadence.giveAwayProbability = strategy.proposeMonopolyGiveAwayProbability;
-                cadence.monopolyProbability = strategy.monopolyTradeProbability;
-                cadence.proposalProbability = strategy.proposeTradeProbability;
-
-                bool wantsTrade{};
-                if (shouldGiveAway)
+                const auto next = nextEconomicDecision(state, player, context);
+                if (!next.defer && next.plan.acted())
                 {
-                    cadence.giveAwayRoll = retailCounterRoll();
-                    cadence.proposalRoll = 2.0;
-                    wantsTrade = trade::shouldTrade(
-                        state, player, 0, tradeIngress.turnState[player].timeLastTrade,
-                        strategy.maxTrades, cadence);
-                    cadence.shouldGiveAwayMonopoly = false;
-                }
-                if (!wantsTrade)
-                {
-                    cadence.proposalRoll = retailCounterRoll();
-                    wantsTrade = trade::shouldTrade(
-                        state, player, 0, tradeIngress.turnState[player].timeLastTrade,
-                        strategy.maxTrades, cadence);
-                }
-                if (!wantsTrade)
-                    continue;
-
-                trade::PropertySets properties{};
-                for (rules::PlayerNumber owner = 0; owner < state.numberOfPlayers; ++owner)
-                    properties[owner] = ai::propertiesOwnedByPlayer(state, owner);
-
-                decision::ProactiveTradeInputs inputs{};
-                inputs.shouldGiveAwayMonopoly = shouldGiveAway;
-                const auto assets = ai::liquidAssets(
-                    state, player, false, false, context.moneyOwed[player]);
-                if (state.players[player].aiPlayerLevel == 3)
-                {
-                    inputs.monopolyGroups = trade::orderMonopolyImportance(
-                        assets, trade::MonopolySortOrder::Descending);
-                }
-                else
-                {
-                    const auto keys = retailRandomKeys();
-                    inputs.monopolyGroups = trade::orderMonopolyImportance(
-                        assets, trade::MonopolySortOrder::Random, keys);
-                }
-
-                const auto config = profile::makeMonopolyProposalConfig(
-                    profileRuntime.players, player, context);
-                auto proposal = decision::buildProactiveTrade(
-                    state, player, strategy.playerAttitude, properties, inputs, config);
-                if (proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
-                {
-                    inputs.semiImportant = makeSemiImportantInputs(
-                        state, player, 0, strategy, context);
-                    proposal = decision::buildProactiveTrade(
-                        state, player, strategy.playerAttitude, properties, inputs, config);
-                }
-                if (proposal.kind == decision::ProactiveTradeKind::None ||
-                    proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
-                    continue;
-                if (trade::sendProactiveTrade(
-                        state, player, proposal.proposal, strategy, tradeIngress))
+                    if (queueEconomicAction(state, player, next.plan))
+                        return;
                     return;
+                }
+            }
+            (void)sendPendingTurnAction(player);
+        }
+
+        void processTurnPromptMessage(
+            const rules::GameState& state, const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto completed = static_cast<actions::Type>(message.numberA);
+                if (completed == actions::Type::RollDice || completed == actions::Type::EndTurn)
+                {
+                    const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                    turnActionInFlight[player] = false;
+                    pendingTurnPrompt[player] = PendingTurnPrompt::None;
+                }
+            }
+
+            if (message.action == actions::Type::NotifyPleaseRollDice ||
+                message.action == actions::Type::NotifyEndTurn)
+            {
+                if (message.numberA < 0 || message.numberA >= state.numberOfPlayers)
+                    return;
+                const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+                if (turnActionInFlight[player])
+                    return;
+                pendingTurnPrompt[player] = message.action == actions::Type::NotifyPleaseRollDice
+                    ? PendingTurnPrompt::RollDice : PendingTurnPrompt::EndTurn;
+                attemptPendingTurnPrompt(state, player);
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyTradeFinished ||
+                (message.action == actions::Type::NotifyPlayerBuySellMort &&
+                 message.numberA == rules::NobodyPlayer) ||
+                message.action == actions::Type::Tick)
+            {
+                for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+                    attemptPendingTurnPrompt(state, player);
             }
         }
 
@@ -876,8 +1156,15 @@ namespace monopoly::ai
         economicRuntime = {};
         jailDecisionInFlight.fill(false);
         taxDecisionInFlight.fill(false);
+        buyDecisionInFlight.fill(false);
+        auctionBidInFlight = false;
+        auctionBiddingPlayer = rules::NobodyPlayer;
+        housingAuctionRequestInFlight.fill(false);
+        buildingPlacementInFlight.fill(false);
         freeUnmortgageInFlight.fill(false);
         freeUnmortgageDoneInFlight.fill(false);
+        pendingTurnPrompt.fill(PendingTurnPrompt::None);
+        turnActionInFlight.fill(false);
         auctionOn = false;
         gracePeriodForHumanActivity = {};
 
@@ -906,8 +1193,12 @@ namespace monopoly::ai
         maybeCounterTrade(state, message);
         processEconomicRuntimeMessage(state, message);
         processFreeUnmortgageMessage(state, message);
+        processBuyDecisionMessage(state, message);
+        processAuctionMessage(state, message);
+        processHousingShortageMessage(state, message);
         processTaxDecisionMessage(state, message);
         processJailDecisionMessage(state, message);
+        processTurnPromptMessage(state, message);
         maybeProposeAutonomousTrade(state, message);
         maybeSpendAutonomousAssets(state, message);
     }
