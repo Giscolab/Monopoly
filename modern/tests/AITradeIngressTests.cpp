@@ -1008,6 +1008,69 @@ namespace
             "actual trade finish clears remaining response state");
     }
 
+    void testAutonomousTradeTick()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.options.aiTakesTimeToThink = false;
+        state.players[0].cash = 100000;
+        state.players[1].cash = 100000;
+        state.players[0].token = 0;
+        state.players[0].aiPlayerLevel = 3;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::MediterraneanAvenue)].owner = 0;
+        state.squares[static_cast<std::size_t>(
+            rules::board::SquareType::PacificAvenue)].owner = 1;
+
+        require(messaging::initialize(),
+            "autonomous trade tick fixture initializes messaging");
+        messaging::clearActionQueue();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "autonomous trade tick loads retail profiles");
+        ai::resetMessageIngress();
+        localRecipient = true;
+        localAIPlayer = true;
+
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        messaging::clearActionQueue();
+
+        actions::Message tick{};
+        tick.action = actions::Type::Tick;
+        tick.fromPlayer = rules::BankPlayer;
+        tick.toPlayer = rules::AllPlayers;
+        std::srand(1);
+        for (int attempt = 0; attempt < 10000 &&
+             ai::tradeIngressStateReadOnly().counterRuntime.sending.state ==
+                ai::trade::SendingTradeState::Nothing; ++attempt)
+        {
+            ai::processMessage(state, tick);
+        }
+
+        const auto& ingress = ai::tradeIngressStateReadOnly();
+        bool recordedTrade{};
+        for (const auto remaining : ingress.turnState[0].timeLastTrade)
+            recordedTrade = recordedTrade || remaining != 0;
+        require(ingress.counterRuntime.sending.state !=
+                    ai::trade::SendingTradeState::Nothing && recordedTrade,
+            "ACTION_TICK autonomously builds and starts a retail AI trade");
+
+        actions::Message queued{};
+        bool sawEditRequest{};
+        while (messaging::receiveAction(queued))
+            sawEditRequest = sawEditRequest ||
+                queued.action == actions::Type::StartTradeEditing;
+        require(sawEditRequest,
+            "autonomous trade tick emits the retail trade-editor request");
+
+        messaging::shutdown();
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+    }
+
     void testTradeFinishAndMessageFilter()
     {
         auto state = baseState();
@@ -1063,6 +1126,7 @@ int main()
         testTradeStartTurnMaintenance();
         testProactiveSendHistory();
         testTradeResyncPreservesResponses();
+        testAutonomousTradeTick();
         testTradeFinishAndMessageFilter();
         return 0;
     }

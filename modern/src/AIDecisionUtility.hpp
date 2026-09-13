@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace monopoly::ai::decision
@@ -191,6 +192,7 @@ namespace monopoly::ai::decision
     {
         std::array<rules::board::SquareGroup, 8> wantedGroups{};
         std::array<rules::board::SquareGroup, 8> offeredGroups{};
+        bool deriveOfferedGroups{};
         double partnerRoll{};
         std::uint32_t wantedPropertyRoll{};
         std::uint32_t offeredPropertyRoll{};
@@ -206,6 +208,38 @@ namespace monopoly::ai::decision
         const ai::trade::PropertySets& properties,
         const SemiImportantTradeInputs& inputs,
         ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept;
+
+    enum class ProactiveTradeKind : std::uint8_t
+    {
+        None = 0,
+        GiveMonopolyForCash,
+        AcquireMonopoly,
+        SemiImportant,
+        NeedsSemiImportant
+    };
+
+    struct ProactiveTradeInputs
+    {
+        std::uint8_t importance{};
+        rules::PlayerNumber excludedPlayer = rules::NobodyPlayer;
+        bool shouldGiveAwayMonopoly{};
+        std::array<rules::board::SquareGroup, 8> monopolyGroups{};
+        std::optional<SemiImportantTradeInputs> semiImportant{};
+    };
+
+    struct ProactiveTradeResult
+    {
+        ProactiveTradeKind kind = ProactiveTradeKind::None;
+        ai::trade::TradeProposalList proposal{};
+    };
+
+    [[nodiscard]] ProactiveTradeResult buildProactiveTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const double> playerAttitudes,
+        const ai::trade::PropertySets& properties,
+        const ProactiveTradeInputs& inputs,
         const MonopolyProposalConfig& config) noexcept;
 
     enum class CounterProposalStatus : std::uint8_t

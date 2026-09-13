@@ -409,4 +409,26 @@ namespace monopoly::ai::profile
         config.lowestPropertyImportanceForCounter = strategy.lowestPropertyImportanceForCounter;
         return config;
     }
+
+    decision::MonopolyProposalConfig makeMonopolyProposalConfig(
+        const ProfileSet& profiles,
+        rules::PlayerNumber strategyPlayer,
+        const ConfigContext& context) noexcept
+    {
+        decision::MonopolyProposalConfig config{};
+        if (strategyPlayer >= rules::MaxPlayers)
+            return config;
+        const auto& strategy = profiles[strategyPlayer];
+        config.fairTrade.evaluation = makeTradeEvaluationConfig(
+            profiles, strategyPlayer, context);
+        config.fairTrade.playerAttitude = strategy.playerAttitude;
+        config.fairTrade.localAIPlayer = context.localAIPlayer;
+        for (std::size_t index = 0; index < trade::WhatToTradeEntries; ++index)
+            config.fairTrade.cashMultipliers[index] =
+                strategy.whatToTrade[index].cashMultiplier;
+        config.fairTrade.minEvaluationThreshold = strategy.minEvaluationThreshold;
+        config.fairTrade.minGiveMonopolyEvaluation = strategy.minGiveMonopolyEvaluation;
+        config.whatToTrade = strategy.whatToTrade;
+        return config;
+    }
 }

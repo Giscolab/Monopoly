@@ -791,6 +791,108 @@ namespace
         return config;
     }
 
+    void testMonopolyImportanceOrdering()
+    {
+        using ai::trade::MonopolySortOrder;
+        using rules::board::SquareGroup;
+        const auto descending = ai::trade::orderMonopolyImportance(
+            0, MonopolySortOrder::Descending);
+        require(descending.front() == SquareGroup::OrientalAvenue &&
+                descending.back() == SquareGroup::MediterraneanAvenue,
+            "AI monopoly order uses retail Darzinskis descending chart");
+
+        const auto ascending = ai::trade::orderMonopolyImportance(
+            0, MonopolySortOrder::Ascending);
+        require(ascending.front() == SquareGroup::MediterraneanAvenue &&
+                ascending.back() == SquareGroup::OrientalAvenue,
+            "AI monopoly order uses retail Darzinskis ascending chart");
+
+        const std::array<std::uint32_t, 8> randomKeys{70, 10, 60, 20, 50, 30, 40, 0};
+        const auto random = ai::trade::orderMonopolyImportance(
+            5000, MonopolySortOrder::Random, randomKeys);
+        require(random[0] == SquareGroup::ParkPlace &&
+                random[1] == SquareGroup::OrientalAvenue &&
+                random[7] == SquareGroup::MediterraneanAvenue,
+            "AI random monopoly order sorts injected retail rand keys ascending");
+    }
+
+    void testProactiveTradeOrchestration()
+    {
+        using ai::decision::ProactiveTradeInputs;
+        using ai::decision::ProactiveTradeKind;
+        using rules::board::SquareGroup;
+
+        auto state = baseState();
+        state.players[0].cash = state.players[1].cash = 100000;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        own(state, SquareType::OrientalAvenue, 1);
+        ai::trade::PropertySets properties{};
+        properties[0] = ai::propertiesOwnedByPlayer(state, 0);
+        properties[1] = ai::propertiesOwnedByPlayer(state, 1);
+        std::array<double, rules::MaxPlayers> attitudes{};
+        attitudes.fill(0.0);
+        ProactiveTradeInputs inputs{};
+        inputs.monopolyGroups = ai::trade::orderMonopolyImportance(
+            ai::liquidAssets(state, 0, false, false),
+            ai::trade::MonopolySortOrder::Descending);
+        ai::decision::SemiImportantTradeInputs semiInputs{};
+        semiInputs.wantedGroups.fill(SquareGroup::OrientalAvenue);
+        semiInputs.offeredGroups.fill(SquareGroup::MediterraneanAvenue);
+        semiInputs.partnerRoll = 0.0;
+        semiInputs.wantedPropertyRoll = 0;
+        semiInputs.offeredPropertyRoll = 1;
+        inputs.semiImportant = semiInputs;
+        const auto semi = ai::decision::buildProactiveTrade(
+            state, 0, attitudes, properties, inputs, monopolyProposalConfig());
+        require(semi.kind == ProactiveTradeKind::SemiImportant &&
+                semi.proposal[0].propertiesReceived ==
+                    rules::board::propertyBit(SquareType::OrientalAvenue),
+            "AI proactive orchestrator falls through to retail semi-important trade");
+
+        attitudes[1] = -1.1;
+        const auto refused = ai::decision::buildProactiveTrade(
+            state, 0, attitudes, properties, inputs, monopolyProposalConfig());
+        require(refused.kind == ProactiveTradeKind::None,
+            "AI proactive orchestrator excludes hostile partner before all trade branches");
+        attitudes[1] = 0.0;
+        inputs.importance = ai::trade::TradeDesperate;
+        const auto desperate = ai::decision::buildProactiveTrade(
+            state, 0, attitudes, properties, inputs, monopolyProposalConfig());
+        require(desperate.kind == ProactiveTradeKind::SemiImportant,
+            "AI desperate proactive trade bypasses retail attitude exclusion");
+
+        auto giveawayState = baseState();
+        giveawayState.players[0].cash = 100000;
+        giveawayState.players[1].cash = 100000;
+        own(giveawayState, SquareType::ParkPlace, 0);
+        own(giveawayState, SquareType::Boardwalk, 0);
+        own(giveawayState, SquareType::MediterraneanAvenue, 0);
+        own(giveawayState, SquareType::BalticAvenue, 1);
+        ai::trade::PropertySets giveawayProperties{};
+        giveawayProperties[0] = ai::propertiesOwnedByPlayer(giveawayState, 0);
+        giveawayProperties[1] = ai::propertiesOwnedByPlayer(giveawayState, 1);
+        ProactiveTradeInputs giveawayInputs = inputs;
+        giveawayInputs.importance = 0;
+        giveawayInputs.shouldGiveAwayMonopoly = true;
+        giveawayInputs.monopolyGroups = ai::trade::orderMonopolyImportance(
+            ai::liquidAssets(giveawayState, 0, false, false),
+            ai::trade::MonopolySortOrder::Descending);
+        auto giveawayConfig = monopolyProposalConfig();
+        const auto giveaway = ai::decision::buildProactiveTrade(
+            giveawayState, 0, attitudes, giveawayProperties, giveawayInputs, giveawayConfig);
+        require(giveaway.kind == ProactiveTradeKind::GiveMonopolyForCash &&
+                (giveaway.proposal[0].propertiesGiven &
+                 rules::board::propertyBit(SquareType::MediterraneanAvenue)) != 0,
+            "AI proactive orchestrator prioritizes retail monopoly-for-cash branch");
+
+        giveawayConfig.fairTrade.minGiveMonopolyEvaluation = 1000000.0;
+        giveawayState.players[1].cash = 0;
+        const auto failedGiveaway = ai::decision::buildProactiveTrade(
+            giveawayState, 0, attitudes, giveawayProperties, giveawayInputs, giveawayConfig);
+        require(failedGiveaway.kind == ProactiveTradeKind::None,
+            "AI failed monopoly-for-cash target aborts instead of falling through like retail");
+    }
+
     void testProactiveMonopolyBuilders()
     {
         auto state = baseState();
@@ -1006,7 +1108,9 @@ int main()
         testEvaluateTrade();
         testEvaluateTradePlayerList();
         testMakeTradeFair();
+        testMonopolyImportanceOrdering();
         testProactiveMonopolyBuilders();
+        testProactiveTradeOrchestration();
         testSemiImportantTradeBuilder();
         testCounterProposalBalance();
         testCounterProposalPreflight();
