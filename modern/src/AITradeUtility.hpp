@@ -135,6 +135,10 @@ namespace monopoly::ai::trade
     [[nodiscard]] bool onlyPlayerHasMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept;
+    [[nodiscard]] bool hasMonopolyTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber excludedPlayer = rules::NobodyPlayer) noexcept;
     [[nodiscard]] int findFreeTradeSpot(
         std::span<const std::int64_t> timeLastTrade,
         std::size_t maxTrades) noexcept;

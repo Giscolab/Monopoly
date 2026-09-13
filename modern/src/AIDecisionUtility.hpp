@@ -31,6 +31,13 @@ namespace monopoly::ai::decision
         std::int64_t minCashOnHand,
         std::int64_t moneyOwed = 0) noexcept;
 
+    [[nodiscard]] std::int64_t cashAvailableAfterHousing(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed = 0) noexcept;
+
     [[nodiscard]] bool hypotheticalBuyHouse(
         rules::GameState& state,
         rules::PlayerNumber player,
@@ -111,6 +118,24 @@ namespace monopoly::ai::decision
         CashStrategy strategy,
         std::int64_t minCashOnHand,
         std::int64_t moneyOwed = 0) noexcept;
+
+    [[nodiscard]] std::optional<bool> chooseFractionTax(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept;
+
+    enum class JailExitChoice : std::uint8_t
+    {
+        Roll = 0,
+        Pay = 1,
+        Card = 2
+    };
+
+    [[nodiscard]] std::optional<JailExitChoice> chooseJailExitChoice(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool canRollDoubles,
+        bool canPayFee,
+        bool canUseCard) noexcept;
 
     struct WorthFactors
     {

@@ -552,6 +552,41 @@ namespace monopoly::ai::trade
         return true;
     }
 
+    bool hasMonopolyTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        rules::PlayerNumber excludedPlayer) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return false;
+
+        PropertySets properties{};
+        std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+        std::size_t count{};
+        for (rules::PlayerNumber current = 0; current < state.numberOfPlayers; ++current)
+        {
+            properties[current] = ai::propertiesOwnedByPlayer(state, current);
+            if (current == player || current == excludedPlayer ||
+                state.players[current].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
+                continue;
+            candidates[count++] = current;
+        }
+        if (count == 0)
+            return false;
+
+        for (const auto representative : ai::ExpensiveMonopolySquares)
+        {
+            if (findSmallestMonopolyTrade(
+                    player, ai::monopolySet(representative),
+                    std::span<const rules::PlayerNumber>(candidates.data(), count),
+                    properties).count != 0)
+                return true;
+        }
+        return false;
+    }
+
     int findFreeTradeSpot(
         std::span<const std::int64_t> timeLastTrade,
         std::size_t maxTrades) noexcept

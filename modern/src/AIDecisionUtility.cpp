@@ -113,6 +113,31 @@ namespace monopoly::ai::decision
         return std::max<std::int64_t>(0, liquid - payments);
     }
 
+    std::int64_t cashAvailableAfterHousing(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategy >= CashStrategy::Count)
+            return 0;
+
+        auto simulated = state;
+        const bool shortage = ai::housingShortage(state, CriticalHousingLevel);
+        do
+        {
+            if (!shortage)
+                while (hypotheticalBuyHouse(simulated, player, moneyOwed)) {}
+        } while (hypotheticalUnmortgageProperty(
+            simulated, player, true, strategy, minCashOnHand, moneyOwed) !=
+            rules::board::SquareType::Go);
+
+        return excessCashAvailable(
+            simulated, player, false, strategy, minCashOnHand, moneyOwed);
+    }
+
     bool hypotheticalBuyHouse(
         rules::GameState& state,
         rules::PlayerNumber player,
@@ -694,6 +719,77 @@ namespace monopoly::ai::decision
         if (static_cast<double>(cash) < rawCost)
             return none;
         return {EconomicActionKind::UnmortgageProperty, square};
+    }
+
+    std::optional<bool> chooseFractionTax(
+        const rules::GameState& state,
+        rules::PlayerNumber player) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return std::nullopt;
+        const auto percentage =
+            ai::totalWorth(state, player) * state.options.taxRate / 100;
+        return percentage <= state.options.flatTaxFee;
+    }
+
+    std::optional<JailExitChoice> chooseJailExitChoice(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool canRollDoubles,
+        bool canPayFee,
+        bool canUseCard) noexcept
+    {
+        using rules::board::SquareType;
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers)
+            return std::nullopt;
+
+        // Retail receives can_pay_fifty but never consults it.
+        (void)canPayFee;
+
+        if (canUseCard && state.players[player].turnsInJail == 2)
+            return JailExitChoice::Card;
+        if (!canRollDoubles)
+            return canUseCard ? JailExitChoice::Card : JailExitChoice::Pay;
+
+        const auto directMonopoly = [&](SquareType square) noexcept {
+            const auto index = static_cast<std::size_t>(square);
+            if (state.squares[index].owner != rules::NobodyPlayer)
+                return false;
+            const auto bit = rules::board::propertyBit(square);
+            if (bit == 0)
+                return false;
+            for (rules::PlayerNumber current = 0;
+                 current < state.numberOfPlayers; ++current)
+            {
+                const auto owned = ai::propertiesOwnedByPlayer(state, current);
+                if (ai::testForMonopoly(owned | bit, square))
+                    return true;
+            }
+            return false;
+        };
+
+        const auto electric = static_cast<std::size_t>(SquareType::ElectricCompany);
+        const auto water = static_cast<std::size_t>(SquareType::WaterWorks);
+        if (state.squares[electric].owner == rules::NobodyPlayer &&
+            state.squares[water].owner == player &&
+            ai::propertiesLeftToBuy(state) <= 3)
+            return JailExitChoice::Roll;
+
+        if (directMonopoly(SquareType::VirginiaAvenue) ||
+            directMonopoly(SquareType::TennesseeAvenue) ||
+            directMonopoly(SquareType::StJamesPlace))
+            return JailExitChoice::Roll;
+
+        double averageRent = static_cast<double>(state.options.passingGoAmount) -
+            static_cast<double>(ai::averageRentPaid(state, player, 0, true, 1.0));
+        averageRent /= 5.0;
+        averageRent *= 2.5;
+        if (averageRent < static_cast<double>(state.options.getOutOfJailFee))
+            return JailExitChoice::Roll;
+
+        return canUseCard ? JailExitChoice::Card : JailExitChoice::Pay;
     }
 
     std::int64_t totalWorthWithFactors(

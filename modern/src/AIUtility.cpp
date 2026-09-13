@@ -389,6 +389,28 @@ namespace monopoly::ai
             moneyOwed;
     }
 
+    std::int64_t mostLiquidAssets(
+        const rules::GameState& state,
+        rules::PlayerNumber excludedPlayer,
+        bool countMonopolies) noexcept
+    {
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            excludedPlayer >= state.numberOfPlayers)
+            return 0;
+        std::int64_t most{};
+        for (rules::PlayerNumber current = 0;
+             current < state.numberOfPlayers; ++current)
+        {
+            if (current == excludedPlayer ||
+                state.players[current].currentSquare ==
+                    static_cast<std::uint8_t>(SquareType::OffBoard))
+                continue;
+            most = std::max(most, liquidAssets(
+                state, current, countMonopolies, countMonopolies));
+        }
+        return most;
+    }
+
     std::int64_t totalWorth(
         const rules::GameState& state,
         rules::PlayerNumber player) noexcept

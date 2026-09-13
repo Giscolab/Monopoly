@@ -28,6 +28,10 @@ namespace monopoly::ai
         };
 
         EconomicRuntimeState economicRuntime{};
+        std::array<bool, rules::MaxPlayers> jailDecisionInFlight{};
+        std::array<bool, rules::MaxPlayers> taxDecisionInFlight{};
+        std::array<bool, rules::MaxPlayers> freeUnmortgageInFlight{};
+        std::array<bool, rules::MaxPlayers> freeUnmortgageDoneInFlight{};
 
         void updateRuntimeFlags(const actions::Message& message) noexcept
         {
@@ -429,6 +433,132 @@ namespace monopoly::ai
             runControlledEconomicStep(state, player);
         }
 
+        void processFreeUnmortgageMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                const auto completed = static_cast<actions::Type>(message.numberA);
+                if (completed == actions::Type::Mortgaging &&
+                    freeUnmortgageInFlight[player])
+                {
+                    freeUnmortgageInFlight[player] = false;
+                    (void)messaging::sendAction(
+                        actions::Type::RestartPhase, player, rules::BankPlayer);
+                    return;
+                }
+                if (completed == actions::Type::FreeUnmortgageDone)
+                {
+                    freeUnmortgageDoneInFlight[player] = false;
+                    return;
+                }
+            }
+
+            if (message.action != actions::Type::NotifyFreeUnmortgaging ||
+                message.numberA < 0 || message.numberA >= state.numberOfPlayers ||
+                message.numberB == 0)
+                return;
+
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player] ||
+                freeUnmortgageInFlight[player] || freeUnmortgageDoneInFlight[player])
+                return;
+
+            const auto& strategy = profileRuntime.players[player];
+            auto context = makeConfigContext();
+            if (decision::shouldUnmortgageProperty(
+                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                    context.moneyOwed[player]))
+            {
+                const auto plan = decision::planUnmortgagePropertyAction(
+                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                    context.moneyOwed[player]);
+                if (plan.acted() && sendEconomicAction(player, plan))
+                {
+                    freeUnmortgageInFlight[player] = true;
+                    return;
+                }
+            }
+
+            if (messaging::sendAction(
+                    actions::Type::FreeUnmortgageDone,
+                    player, rules::BankPlayer))
+            {
+                freeUnmortgageDoneInFlight[player] = true;
+            }
+        }
+
+        void processTaxDecisionMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberA == static_cast<std::int64_t>(actions::Type::TaxDecision) &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                taxDecisionInFlight[static_cast<rules::PlayerNumber>(message.numberC)] = false;
+                return;
+            }
+            if (message.action != actions::Type::NotifyFlatOrFractionTaxDecision ||
+                message.numberA < 0 || message.numberA >= state.numberOfPlayers)
+                return;
+
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player] || taxDecisionInFlight[player])
+                return;
+
+            const auto percentage = decision::chooseFractionTax(state, player);
+            if (!percentage)
+                return;
+            if (messaging::sendAction(
+                    actions::Type::TaxDecision, player, rules::BankPlayer,
+                    *percentage ? 1 : 0))
+            {
+                taxDecisionInFlight[player] = true;
+            }
+        }
+
+        void processJailDecisionMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberA == static_cast<std::int64_t>(actions::Type::ExitJailDecision) &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                jailDecisionInFlight[static_cast<rules::PlayerNumber>(message.numberC)] = false;
+                return;
+            }
+            if (message.action != actions::Type::NotifyJailExitChoice ||
+                message.numberA < 0 || message.numberA >= state.numberOfPlayers)
+                return;
+
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player] || jailDecisionInFlight[player])
+                return;
+
+            const auto choice = decision::chooseJailExitChoice(
+                state, player,
+                message.numberB != 0,
+                message.numberC != 0,
+                message.numberD != 0);
+            if (!choice)
+                return;
+            if (messaging::sendAction(
+                    actions::Type::ExitJailDecision,
+                    player, rules::BankPlayer,
+                    static_cast<std::int64_t>(*choice)))
+            {
+                jailDecisionInFlight[player] = true;
+            }
+        }
+
         [[nodiscard]] bool autonomousTradeBlocked(
             const rules::GameState& state, rules::PlayerNumber player) noexcept
         {
@@ -744,6 +874,10 @@ namespace monopoly::ai
     {
         trade::resetTradeIngress(tradeIngress);
         economicRuntime = {};
+        jailDecisionInFlight.fill(false);
+        taxDecisionInFlight.fill(false);
+        freeUnmortgageInFlight.fill(false);
+        freeUnmortgageDoneInFlight.fill(false);
         auctionOn = false;
         gracePeriodForHumanActivity = {};
 
@@ -771,6 +905,9 @@ namespace monopoly::ai
         maybeChooseTradeAcceptance(state, message);
         maybeCounterTrade(state, message);
         processEconomicRuntimeMessage(state, message);
+        processFreeUnmortgageMessage(state, message);
+        processTaxDecisionMessage(state, message);
+        processJailDecisionMessage(state, message);
         maybeProposeAutonomousTrade(state, message);
         maybeSpendAutonomousAssets(state, message);
     }

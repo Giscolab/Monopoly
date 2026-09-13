@@ -100,6 +100,26 @@ namespace
             "AI excess-cash decision rejects invalid player safely");
     }
 
+    void testCashAvailableAfterHousing()
+    {
+        using ai::decision::CashStrategy;
+        auto state = baseState();
+        state.players[0].cash = 150;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        own(state, SquareType::BalticAvenue, 0);
+        require(ai::decision::cashAvailableAfterHousing(
+                    state, 0, CashStrategy::MinimumAmount, 0) == 0,
+            "AI cash-after-housing spends affordable brown development first");
+
+        state.options.maximumHouses = ai::decision::CriticalHousingLevel;
+        require(ai::decision::cashAvailableAfterHousing(
+                    state, 0, CashStrategy::MinimumAmount, 0) == 150,
+            "AI cash-after-housing skips building during retail critical shortage");
+        require(ai::decision::cashAvailableAfterHousing(
+                    state, 2, CashStrategy::MinimumAmount, 0) == 0,
+            "AI cash-after-housing rejects invalid player safely");
+    }
+
     void testHypotheticalBuilding()
     {
         auto brown = baseState();
@@ -322,6 +342,68 @@ namespace
             ai::decision::HouseBuyWithin12);
         require(!plan.acted(),
             "AI house execution retains within-12 gate during shortage like AI_Buy_Houses retail");
+    }
+
+    void testTaxDecision()
+    {
+        auto state = baseState();
+        state.options.taxRate = 10;
+        state.options.flatTaxFee = 200;
+        state.players[0].cash = 2009;
+        require(ai::decision::chooseFractionTax(state, 0) == true,
+            "AI tax decision preserves retail integer truncation at flat-fee boundary");
+        state.players[0].cash = 2010;
+        require(ai::decision::chooseFractionTax(state, 0) == false,
+            "AI tax decision selects flat fee once percentage tax exceeds it");
+        require(!ai::decision::chooseFractionTax(state, 2).has_value(),
+            "AI tax decision rejects invalid player safely");
+    }
+
+    void testJailExitChoice()
+    {
+        using ai::decision::JailExitChoice;
+
+        auto state = baseState();
+        state.players[0].turnsInJail = 2;
+        require(ai::decision::chooseJailExitChoice(
+                    state, 0, true, true, true) == JailExitChoice::Card,
+            "AI jail choice uses a card on the retail third turn");
+
+        state.players[0].turnsInJail = 0;
+        require(ai::decision::chooseJailExitChoice(
+                    state, 0, false, false, false) == JailExitChoice::Pay,
+            "AI jail choice preserves retail ignored can-pay flag when rolling is unavailable");
+        require(ai::decision::chooseJailExitChoice(
+                    state, 0, false, false, true) == JailExitChoice::Card,
+            "AI jail choice prefers card when rolling is unavailable");
+
+        auto monopoly = baseState();
+        monopoly.options.passingGoAmount = 1000;
+        own(monopoly, SquareType::StCharlesPlace, 1);
+        own(monopoly, SquareType::StatesAvenue, 1);
+        require(ai::decision::chooseJailExitChoice(
+                    monopoly, 0, true, true, false) == JailExitChoice::Roll,
+            "AI jail choice stays for Virginia when it gives a direct monopoly");
+
+        auto cheapStay = baseState();
+        cheapStay.options.passingGoAmount = 0;
+        cheapStay.options.getOutOfJailFee = 50;
+        require(ai::decision::chooseJailExitChoice(
+                    cheapStay, 0, true, true, false) == JailExitChoice::Roll,
+            "AI jail choice stays when expected saved exposure is below jail fee");
+
+        auto leave = baseState();
+        leave.options.passingGoAmount = 1000;
+        leave.options.getOutOfJailFee = 50;
+        require(ai::decision::chooseJailExitChoice(
+                    leave, 0, true, true, false) == JailExitChoice::Pay,
+            "AI jail choice pays when leaving is economically preferable");
+        require(ai::decision::chooseJailExitChoice(
+                    leave, 0, true, true, true) == JailExitChoice::Card,
+            "AI jail choice uses card instead of cash when choosing to leave");
+        require(!ai::decision::chooseJailExitChoice(
+                    leave, 2, true, true, false).has_value(),
+            "AI jail choice rejects invalid player safely");
     }
 
     void testWorthFactorsAndMortgageWorstProperty()
@@ -1167,9 +1249,12 @@ int main()
             "AI decision fixture initializes retail board definitions");
         testRetailConstants();
         testExcessCashStrategies();
+        testCashAvailableAfterHousing();
         testHypotheticalBuilding();
         testShouldUnmortgageAndBuyHouse();
         testEconomicActionPlanning();
+        testTaxDecision();
+        testJailExitChoice();
         testWorthFactorsAndMortgageWorstProperty();
         testWinningChances();
         testMortgageNegativeCashPlayers();
