@@ -2023,6 +2023,8 @@ namespace monopoly::ai::decision
         for (rules::PlayerNumber candidate = 0; candidate < state.numberOfPlayers; ++candidate)
         {
             if (candidate == player || candidate == inputs.excludedPlayer ||
+                (inputs.requiredTarget != rules::NobodyPlayer &&
+                 candidate != inputs.requiredTarget) ||
                 state.players[candidate].currentSquare ==
                     static_cast<std::uint8_t>(rules::board::SquareType::OffBoard) ||
                 playerAttitudes[candidate] < -1.0)
