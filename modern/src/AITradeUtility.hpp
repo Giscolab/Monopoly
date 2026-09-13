@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 
 namespace monopoly::ai::trade
@@ -72,6 +73,18 @@ namespace monopoly::ai::trade
         Required = 1,
         Maybe = 2
     };
+
+    enum class MonopolySortOrder : std::uint8_t
+    {
+        Ascending = 0,
+        Descending,
+        Random
+    };
+
+    [[nodiscard]] std::array<rules::board::SquareGroup, 8> orderMonopolyImportance(
+        std::int64_t liquidAssets,
+        MonopolySortOrder order,
+        std::span<const std::uint32_t> randomKeys = {}) noexcept;
 
     struct PropertyImportanceConfig
     {
