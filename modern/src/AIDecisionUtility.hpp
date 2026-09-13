@@ -98,7 +98,8 @@ namespace monopoly::ai::decision
         None = 0,
         MortgageProperty,
         UnmortgageProperty,
-        BuyHouse
+        BuyHouse,
+        SellBuilding
     };
 
     struct EconomicActionPlan
@@ -135,6 +136,15 @@ namespace monopoly::ai::decision
         rules::board::PropertySet legalSquares = 0,
         bool reservedBuilding = false,
         std::int64_t moneyOwed = 0) noexcept;
+
+    [[nodiscard]] EconomicActionPlan planHouseSaleAction(
+        const rules::GameState& state,
+        rules::board::SquareType referenceSquare) noexcept;
+
+    [[nodiscard]] EconomicActionPlan planDebtLiquidationStep(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        bool sellHouses) noexcept;
 
     [[nodiscard]] EconomicActionPlan planUnmortgagePropertyAction(
         const rules::GameState& state,

@@ -35,6 +35,8 @@ namespace monopoly::ai
         rules::PlayerNumber auctionBiddingPlayer = rules::NobodyPlayer;
         std::array<bool, rules::MaxPlayers> housingAuctionRequestInFlight{};
         std::array<bool, rules::MaxPlayers> buildingPlacementInFlight{};
+        std::array<bool, rules::MaxPlayers> debtActionInFlight{};
+        std::array<std::int64_t, rules::MaxPlayers> debtMoneyOwed{};
         std::array<bool, rules::MaxPlayers> freeUnmortgageInFlight{};
         std::array<bool, rules::MaxPlayers> freeUnmortgageDoneInFlight{};
         enum class PendingTurnPrompt : std::uint8_t { None = 0, RollDice, EndTurn };
@@ -66,6 +68,7 @@ namespace monopoly::ai
                 context.localAIPlayer[player] =
                     ui::localplayers::slotIsLocalAIPlayer(player);
             }
+            context.moneyOwed = debtMoneyOwed;
             return context;
         }
 
@@ -228,6 +231,8 @@ namespace monopoly::ai
                 return actions::Type::Mortgaging;
             case decision::EconomicActionKind::BuyHouse:
                 return actions::Type::BuyHouse;
+            case decision::EconomicActionKind::SellBuilding:
+                return actions::Type::SellBuildings;
             case decision::EconomicActionKind::None:
                 return actions::Type::Tick;
             }
@@ -906,6 +911,211 @@ namespace monopoly::ai
                 state, player, proposal.proposal, strategy, tradeIngress);
         }
 
+        [[nodiscard]] bool sendDebtEconomicAction(
+            rules::PlayerNumber player,
+            const decision::EconomicActionPlan& plan) noexcept
+        {
+            if (!plan.acted() || player >= rules::MaxPlayers ||
+                debtActionInFlight[player])
+                return false;
+
+            actions::Type action{};
+            if (plan.kind == decision::EconomicActionKind::MortgageProperty)
+                action = actions::Type::Mortgaging;
+            else if (plan.kind == decision::EconomicActionKind::SellBuilding)
+                action = actions::Type::SellBuildings;
+            else
+                return false;
+
+            if (!messaging::sendAction(
+                    action, player, rules::BankPlayer,
+                    static_cast<std::int64_t>(plan.square), 0, 0, 1))
+                return false;
+            debtActionInFlight[player] = true;
+            return true;
+        }
+
+        [[nodiscard]] bool tryProposeDebtTrade(
+            const rules::GameState& state,
+            rules::PlayerNumber player,
+            rules::PlayerNumber creditor,
+            std::uint8_t importance,
+            const profile::ConfigContext& context) noexcept
+        {
+            if (player >= state.numberOfPlayers ||
+                !profileRuntime.playerLoaded[player] ||
+                state.tradeInProgress ||
+                tradeIngress.counterRuntime.sending.state !=
+                    trade::SendingTradeState::Nothing)
+                return false;
+
+            const auto& strategy = profileRuntime.players[player];
+            if ((importance & trade::TradeDesperate) == 0)
+            {
+                trade::TradeCadenceInputs cadence{};
+                cadence.buySellMortgagePlayer = buySellMortgagePlayer(state);
+                if (!trade::shouldTrade(
+                        state, player, importance,
+                        tradeIngress.turnState[player].timeLastTrade,
+                        strategy.maxTrades, cadence))
+                    return false;
+            }
+
+            trade::PropertySets properties{};
+            for (rules::PlayerNumber owner = 0;
+                 owner < state.numberOfPlayers; ++owner)
+                properties[owner] = ai::propertiesOwnedByPlayer(state, owner);
+
+            decision::ProactiveTradeInputs inputs{};
+            inputs.importance = importance;
+            inputs.excludedPlayer = creditor;
+            const auto assets = ai::liquidAssets(
+                state, player, false, false, context.moneyOwed[player]);
+            if (state.players[player].aiPlayerLevel == 3)
+                inputs.monopolyGroups = trade::orderMonopolyImportance(
+                    assets, trade::MonopolySortOrder::Descending);
+            else
+            {
+                const auto keys = retailRandomKeys();
+                inputs.monopolyGroups = trade::orderMonopolyImportance(
+                    assets, trade::MonopolySortOrder::Random, keys);
+            }
+
+            const auto config = profile::makeMonopolyProposalConfig(
+                profileRuntime.players, player, context);
+            auto proposal = decision::buildProactiveTrade(
+                state, player, strategy.playerAttitude, properties, inputs, config);
+            if (proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+            {
+                auto semi = makeSemiImportantInputs(
+                    state, player, importance, strategy, context);
+                semi.excludedPlayer = creditor;
+                inputs.semiImportant = semi;
+                proposal = decision::buildProactiveTrade(
+                    state, player, strategy.playerAttitude,
+                    properties, inputs, config);
+            }
+            if (proposal.kind == decision::ProactiveTradeKind::None ||
+                proposal.kind == decision::ProactiveTradeKind::NeedsSemiImportant)
+                return false;
+            return trade::sendProactiveTrade(
+                state, player, proposal.proposal, strategy, tradeIngress);
+        }
+
+        void processDebtMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyPlayerDeleted &&
+                message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+                debtActionInFlight[player] = false;
+                debtMoneyOwed[player] = 0;
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                const auto completed = static_cast<actions::Type>(message.numberA);
+                if (completed == actions::Type::Mortgaging ||
+                    completed == actions::Type::SellBuildings)
+                    debtActionInFlight[player] = false;
+
+                if (completed == actions::Type::NotifyPleasePay ||
+                    completed == actions::Type::GoBankrupt)
+                {
+                    debtActionInFlight[player] = false;
+                    debtMoneyOwed[player] = 0;
+                }
+                return;
+            }
+
+            if (message.action == actions::Type::NotifyDecomposeSale)
+            {
+                if (message.numberA < 0 || message.numberA >= rules::MaxPlayers)
+                    return;
+                const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+                if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player] ||
+                    debtMoneyOwed[player] <= 0 || debtActionInFlight[player] ||
+                    state.numberOfPendingPhases == 0)
+                    return;
+                const auto& phase = state.phaseStack[0];
+                if (phase.phase != rules::GamePhase::DecomposeHotel ||
+                    phase.fromPlayer != player || phase.amount < 0 ||
+                    phase.amount >= static_cast<std::int64_t>(rules::board::SquareType::InJail))
+                    return;
+
+                const auto plan = decision::planHouseSaleAction(
+                    state, static_cast<rules::board::SquareType>(phase.amount));
+                if (plan.acted())
+                    (void)sendDebtEconomicAction(player, plan);
+                return;
+            }
+
+            if (message.action != actions::Type::NotifyPleasePay ||
+                message.numberA < 0 || message.numberA >= rules::MaxPlayers)
+                return;
+
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            if (player >= state.numberOfPlayers ||
+                !ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player] || debtActionInFlight[player] ||
+                state.tradeInProgress ||
+                tradeIngress.counterRuntime.sending.state !=
+                    trade::SendingTradeState::Nothing)
+                return;
+
+            debtMoneyOwed[player] = message.numberC > 0 ? message.numberC : 0;
+            auto context = makeConfigContext();
+
+            if (message.numberB < 0 ||
+                message.numberB > static_cast<std::int64_t>(rules::BankPlayer))
+            {
+                debtMoneyOwed[player] = 0;
+                return;
+            }
+            const auto creditor = static_cast<rules::PlayerNumber>(message.numberB);
+            for (rules::PlayerNumber current = 0;
+                 current < rules::MaxPlayers; ++current)
+                context.localAIPlayer[current] = context.localAIPlayer[current] &&
+                    profileRuntime.playerLoaded[current];
+
+            const auto first = decision::planDebtLiquidationStep(
+                state, player, false);
+            if (first.acted())
+            {
+                (void)sendDebtEconomicAction(player, first);
+                return;
+            }
+
+            if (tryProposeDebtTrade(
+                    state, player, creditor,
+                    trade::TradeSomewhatImportant | trade::TradeForCash, context))
+                return;
+
+            const auto lastResort = decision::planDebtLiquidationStep(
+                state, player, true);
+            if (lastResort.acted())
+            {
+                (void)sendDebtEconomicAction(player, lastResort);
+                return;
+            }
+
+            if (tryProposeDebtTrade(
+                    state, player, creditor,
+                    trade::TradeDesperate | trade::TradeForCash, context))
+                return;
+
+            if (messaging::sendAction(
+                    actions::Type::GoBankrupt,
+                    player, rules::BankPlayer))
+                debtActionInFlight[player] = true;
+        }
+
         void maybeProposeAutonomousTrade(
             const rules::GameState& state, const actions::Message& message) noexcept
         {
@@ -1161,6 +1371,8 @@ namespace monopoly::ai
         auctionBiddingPlayer = rules::NobodyPlayer;
         housingAuctionRequestInFlight.fill(false);
         buildingPlacementInFlight.fill(false);
+        debtActionInFlight.fill(false);
+        debtMoneyOwed.fill(0);
         freeUnmortgageInFlight.fill(false);
         freeUnmortgageDoneInFlight.fill(false);
         pendingTurnPrompt.fill(PendingTurnPrompt::None);
@@ -1196,6 +1408,7 @@ namespace monopoly::ai
         processBuyDecisionMessage(state, message);
         processAuctionMessage(state, message);
         processHousingShortageMessage(state, message);
+        processDebtMessage(state, message);
         processTaxDecisionMessage(state, message);
         processJailDecisionMessage(state, message);
         processTurnPromptMessage(state, message);
