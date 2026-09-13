@@ -1317,6 +1317,7 @@ target_sources(
     src/AICounterTradeRuntime.cpp
     src/AITradeIngress.cpp
     src/AIMessageIngress.cpp
+    src/AISaveState.cpp
     src/AIProfile.cpp
     src/AIProfileRuntime.cpp
     src/AIDecisionUtility.cpp
@@ -1576,6 +1577,7 @@ if(BUILD_TESTING)
         MonopolyAITradeIngressTests
         tests/AITradeIngressTests.cpp
         src/AIMessageIngress.cpp
+        src/AISaveState.cpp
         src/AIProfileRuntime.cpp
         src/AIProfile.cpp
         src/AITradeIngress.cpp
