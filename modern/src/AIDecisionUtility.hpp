@@ -78,6 +78,40 @@ namespace monopoly::ai::decision
         std::uint8_t housingPurchaseStrategy,
         std::int64_t moneyOwed = 0) noexcept;
 
+    enum class EconomicActionKind : std::uint8_t
+    {
+        None = 0,
+        MortgageProperty,
+        UnmortgageProperty,
+        BuyHouse
+    };
+
+    struct EconomicActionPlan
+    {
+        EconomicActionKind kind = EconomicActionKind::None;
+        rules::board::SquareType square = rules::board::SquareType::Go;
+
+        [[nodiscard]] bool acted() const noexcept
+        {
+            return kind != EconomicActionKind::None;
+        }
+    };
+
+    [[nodiscard]] EconomicActionPlan planBuyHouseAction(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::uint8_t housingPurchaseStrategy,
+        std::int64_t moneyOwed = 0) noexcept;
+
+    [[nodiscard]] EconomicActionPlan planUnmortgagePropertyAction(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed = 0) noexcept;
+
     struct WorthFactors
     {
         std::array<double, 8> property{};

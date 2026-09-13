@@ -18,6 +18,17 @@ namespace monopoly::ai
         bool auctionOn{};
         Clock::time_point gracePeriodForHumanActivity{};
 
+        struct EconomicRuntimeState
+        {
+            std::array<decision::EconomicActionPlan, rules::MaxPlayers> pendingControlAction{};
+            std::array<bool, rules::MaxPlayers> hasPendingControlAction{};
+            std::array<bool, rules::MaxPlayers> controlRequestInFlight{};
+            std::array<bool, rules::MaxPlayers> actionInFlight{};
+            std::array<bool, rules::MaxPlayers> controlReleaseInFlight{};
+        };
+
+        EconomicRuntimeState economicRuntime{};
+
         void updateRuntimeFlags(const actions::Message& message) noexcept
         {
             if (message.action == actions::Type::NotifyNewHighBid)
@@ -186,10 +197,243 @@ namespace monopoly::ai
             return rules::NobodyPlayer;
         }
 
+        [[nodiscard]] bool economicBusy(rules::PlayerNumber player) noexcept
+        {
+            return player < rules::MaxPlayers &&
+                (economicRuntime.hasPendingControlAction[player] ||
+                 economicRuntime.controlRequestInFlight[player] ||
+                 economicRuntime.actionInFlight[player] ||
+                 economicRuntime.controlReleaseInFlight[player]);
+        }
+
+        [[nodiscard]] actions::Type economicActionType(
+            decision::EconomicActionKind kind) noexcept
+        {
+            switch (kind)
+            {
+            case decision::EconomicActionKind::MortgageProperty:
+            case decision::EconomicActionKind::UnmortgageProperty:
+                return actions::Type::Mortgaging;
+            case decision::EconomicActionKind::BuyHouse:
+                return actions::Type::BuyHouse;
+            case decision::EconomicActionKind::None:
+                return actions::Type::Tick;
+            }
+            return actions::Type::Tick;
+        }
+
+        [[nodiscard]] bool sendEconomicAction(
+            rules::PlayerNumber player,
+            const decision::EconomicActionPlan& plan) noexcept
+        {
+            if (!plan.acted() || player >= rules::MaxPlayers)
+                return false;
+            const auto action = economicActionType(plan.kind);
+            if (action == actions::Type::Tick ||
+                !messaging::sendAction(
+                    action, player, rules::BankPlayer,
+                    static_cast<std::int64_t>(plan.square)))
+                return false;
+            economicRuntime.actionInFlight[player] = true;
+            return true;
+        }
+
+        [[nodiscard]] bool queueEconomicAction(
+            const rules::GameState& state,
+            rules::PlayerNumber player,
+            const decision::EconomicActionPlan& plan) noexcept
+        {
+            if (!plan.acted() || player >= state.numberOfPlayers || economicBusy(player))
+                return false;
+            const auto control = buySellMortgagePlayer(state);
+            if (control == player)
+                return sendEconomicAction(player, plan);
+            if (control != rules::NobodyPlayer)
+                return false;
+
+            economicRuntime.pendingControlAction[player] = plan;
+            economicRuntime.hasPendingControlAction[player] = true;
+            if (!messaging::sendAction(
+                    actions::Type::PlayerBuySellMort,
+                    player, rules::BankPlayer))
+            {
+                economicRuntime.pendingControlAction[player] = {};
+                economicRuntime.hasPendingControlAction[player] = false;
+                return false;
+            }
+            economicRuntime.controlRequestInFlight[player] = true;
+            return true;
+        }
+
+        [[nodiscard]] bool playerPayingDebt(
+            const rules::GameState& state,
+            rules::PlayerNumber player) noexcept
+        {
+            if (state.numberOfPendingPhases == 0)
+                return false;
+            if (state.phaseStack[0].phase == rules::GamePhase::CollectingPayment &&
+                state.phaseStack[0].fromPlayer == player)
+                return true;
+            return state.numberOfPendingPhases >= 2 &&
+                state.phaseStack[0].phase == rules::GamePhase::BuySellMortgage &&
+                state.phaseStack[1].phase == rules::GamePhase::CollectingPayment &&
+                state.phaseStack[1].fromPlayer == player;
+        }
+
+        struct EconomicDecision
+        {
+            decision::EconomicActionPlan plan{};
+            bool defer{};
+        };
+
+        [[nodiscard]] EconomicDecision nextEconomicDecision(
+            const rules::GameState& state,
+            rules::PlayerNumber player,
+            const profile::ConfigContext& context) noexcept
+        {
+            EconomicDecision result{};
+            if (player >= state.numberOfPlayers || !profileRuntime.playerLoaded[player])
+                return result;
+
+            const auto& strategy = profileRuntime.players[player];
+            const auto buy = decision::shouldBuyHouse(
+                state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                strategy.housingPurchaseStrategy, context.moneyOwed[player]);
+            if (buy == decision::HousePurchaseDecision::Later)
+            {
+                result.defer = true;
+                return result;
+            }
+            if (buy == decision::HousePurchaseDecision::Yes)
+            {
+                result.plan = decision::planBuyHouseAction(
+                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                    strategy.housingPurchaseStrategy, context.moneyOwed[player]);
+                if (result.plan.acted())
+                    return result;
+            }
+
+            if (decision::shouldUnmortgageProperty(
+                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                    context.moneyOwed[player]))
+            {
+                result.plan = decision::planUnmortgagePropertyAction(
+                    state, player, strategy.cashStrategy, strategy.minCashOnHand,
+                    context.moneyOwed[player]);
+            }
+            return result;
+        }
+
+        [[nodiscard]] bool sendEconomicControlDone(
+            rules::PlayerNumber player) noexcept
+        {
+            if (player >= rules::MaxPlayers ||
+                economicRuntime.controlReleaseInFlight[player])
+                return false;
+            if (!messaging::sendAction(
+                    actions::Type::PlayerDoneBuySellMort,
+                    player, rules::BankPlayer))
+                return false;
+            economicRuntime.controlReleaseInFlight[player] = true;
+            return true;
+        }
+
+        void runControlledEconomicStep(
+            const rules::GameState& state,
+            rules::PlayerNumber player) noexcept
+        {
+            if (player >= state.numberOfPlayers ||
+                economicRuntime.actionInFlight[player] ||
+                economicRuntime.controlReleaseInFlight[player])
+                return;
+
+            if (auctionOn || state.tradeInProgress || playerPayingDebt(state, player) ||
+                tradeIngress.counterRuntime.sending.state !=
+                    trade::SendingTradeState::Nothing)
+            {
+                (void)sendEconomicControlDone(player);
+                return;
+            }
+
+            auto context = makeConfigContext();
+            const auto next = nextEconomicDecision(state, player, context);
+            if (next.defer || !next.plan.acted())
+            {
+                (void)sendEconomicControlDone(player);
+                return;
+            }
+            (void)sendEconomicAction(player, next.plan);
+        }
+        void processEconomicRuntimeMessage(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action == actions::Type::NotifyActionCompleted &&
+                message.numberC >= 0 && message.numberC < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                const auto completed = static_cast<actions::Type>(message.numberA);
+                if (completed == actions::Type::PlayerBuySellMort)
+                {
+                    economicRuntime.controlRequestInFlight[player] = false;
+                    if (message.numberB == 0)
+                    {
+                        economicRuntime.pendingControlAction[player] = {};
+                        economicRuntime.hasPendingControlAction[player] = false;
+                    }
+                }
+                else if (completed == actions::Type::BuyHouse ||
+                         completed == actions::Type::Mortgaging)
+                {
+                    economicRuntime.actionInFlight[player] = false;
+                }
+                else if (completed == actions::Type::PlayerDoneBuySellMort)
+                {
+                    economicRuntime.controlReleaseInFlight[player] = false;
+                }
+                return;
+            }
+            if (message.action != actions::Type::NotifyPlayerBuySellMort)
+                return;
+
+            if (message.numberA == rules::NobodyPlayer)
+            {
+                for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                    economicRuntime.controlReleaseInFlight[player] = false;
+                return;
+            }
+            if (message.numberA < 0 || message.numberA >= state.numberOfPlayers)
+                return;
+
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                !profileRuntime.playerLoaded[player])
+                return;
+
+            economicRuntime.controlRequestInFlight[player] = false;
+            if (economicRuntime.actionInFlight[player] ||
+                economicRuntime.controlReleaseInFlight[player])
+                return;
+
+            if (economicRuntime.hasPendingControlAction[player])
+            {
+                const auto pending = economicRuntime.pendingControlAction[player];
+                if (sendEconomicAction(player, pending))
+                {
+                    economicRuntime.pendingControlAction[player] = {};
+                    economicRuntime.hasPendingControlAction[player] = false;
+                }
+                return;
+            }
+
+            runControlledEconomicStep(state, player);
+        }
+
         [[nodiscard]] bool autonomousTradeBlocked(
             const rules::GameState& state, rules::PlayerNumber player) noexcept
         {
-            if (auctionOn || state.tradeInProgress ||
+            if (auctionOn || state.tradeInProgress || economicBusy(player) ||
+                playerPayingDebt(state, player) ||
                 tradeIngress.counterRuntime.sending.state !=
                     trade::SendingTradeState::Nothing ||
                 state.players[player].currentSquare ==
@@ -212,6 +456,31 @@ namespace monopoly::ai
             return state.options.aiTakesTimeToThink &&
                 gracePeriodForHumanActivity != Clock::time_point{} &&
                 Clock::now() - gracePeriodForHumanActivity < std::chrono::seconds(10);
+        }
+
+        void maybeSpendAutonomousAssets(
+            const rules::GameState& state,
+            const actions::Message& message) noexcept
+        {
+            if (message.action != actions::Type::Tick &&
+                !(message.action == actions::Type::NotifyStartTurn &&
+                  !state.options.aiTakesTimeToThink))
+                return;
+
+            auto context = makeConfigContext();
+            for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            {
+                if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+                    !profileRuntime.playerLoaded[player] || economicBusy(player) ||
+                    autonomousTradeBlocked(state, player))
+                    continue;
+
+                const auto next = nextEconomicDecision(state, player, context);
+                if (next.defer || !next.plan.acted())
+                    continue;
+                if (queueEconomicAction(state, player, next.plan))
+                    return;
+            }
         }
 
         [[nodiscard]] decision::SemiImportantTradeInputs makeSemiImportantInputs(
@@ -474,6 +743,7 @@ namespace monopoly::ai
     void resetMessageIngress() noexcept
     {
         trade::resetTradeIngress(tradeIngress);
+        economicRuntime = {};
         auctionOn = false;
         gracePeriodForHumanActivity = {};
 
@@ -500,7 +770,9 @@ namespace monopoly::ai
         maybeRestartDeferredAcceptance(message);
         maybeChooseTradeAcceptance(state, message);
         maybeCounterTrade(state, message);
+        processEconomicRuntimeMessage(state, message);
         maybeProposeAutonomousTrade(state, message);
+        maybeSpendAutonomousAssets(state, message);
     }
 
     const trade::TradeIngressState&

@@ -166,7 +166,7 @@ namespace
         require(!ai::decision::shouldUnmortgageProperty(
                     nonMonopoly, 0, CashStrategy::MinimumAmount, 50),
             "AI should-unmortgage uses cash-only reserve for non-monopoly property");
-        nonMonopoly.players[0].cash = 160;
+        nonMonopoly.players[0].cash = 161;
         require(ai::decision::shouldUnmortgageProperty(
                     nonMonopoly, 0, CashStrategy::MinimumAmount, 50),
             "AI should-unmortgage accepts non-monopoly once cash-only reserve covers 110 percent");
@@ -255,6 +255,73 @@ namespace
                     mortgagedBrown, 0, CashStrategy::MinimumAmount, 0, 0) ==
                 HousePurchaseDecision::Yes,
             "AI should-buy-house accepts exact truncated unmortgage-plus-house budget");
+    }
+
+    void testEconomicActionPlanning()
+    {
+        using ai::decision::CashStrategy;
+        using ai::decision::EconomicActionKind;
+
+        auto brown = baseState();
+        brown.players[0].cash = 100;
+        own(brown, SquareType::MediterraneanAvenue, 0);
+        own(brown, SquareType::BalticAvenue, 0);
+        auto plan = ai::decision::planBuyHouseAction(
+            brown, 0, CashStrategy::MinimumAmount, 0, 0);
+        require(plan.kind == EconomicActionKind::BuyHouse &&
+                plan.square == SquareType::BalticAvenue,
+            "AI economic planner builds first on the highest-rent legal brown lot");
+
+        auto mortgagedBrown = brown;
+        mortgagedBrown.players[0].cash = 100;
+        mortgagedBrown.squares[
+            static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        plan = ai::decision::planBuyHouseAction(
+            mortgagedBrown, 0, CashStrategy::MinimumAmount, 0, 0);
+        require(plan.kind == EconomicActionKind::UnmortgageProperty &&
+                plan.square == SquareType::MediterraneanAvenue,
+            "AI house planner unmortgages selected monopoly before building");
+
+        auto financeMonopoly = baseState();
+        financeMonopoly.players[0].cash = 0;
+        own(financeMonopoly, SquareType::MediterraneanAvenue, 0);
+        own(financeMonopoly, SquareType::BalticAvenue, 0);
+        own(financeMonopoly, SquareType::ReadingRailroad, 0);
+        financeMonopoly.squares[
+            static_cast<std::size_t>(SquareType::MediterraneanAvenue)].mortgaged = true;
+        plan = ai::decision::planUnmortgagePropertyAction(
+            financeMonopoly, 0, CashStrategy::MinimumAmount, 0);
+        require(plan.kind == EconomicActionKind::MortgageProperty &&
+                plan.square == SquareType::ReadingRailroad,
+            "AI unmortgage planner first raises cash from worst non-monopoly asset");
+
+        auto nonMonopoly = baseState();
+        nonMonopoly.players[0].cash = 161;
+        own(nonMonopoly, SquareType::ReadingRailroad, 0);
+        own(nonMonopoly, SquareType::PennsylvaniaRailroad, 0);
+        nonMonopoly.squares[
+            static_cast<std::size_t>(SquareType::ReadingRailroad)].mortgaged = true;
+        plan = ai::decision::planUnmortgagePropertyAction(
+            nonMonopoly, 0, CashStrategy::MinimumAmount, 50);
+        require(plan.kind == EconomicActionKind::UnmortgageProperty &&
+                plan.square == SquareType::ReadingRailroad,
+            "AI unmortgage planner selects highest-rent affordable mortgaged property");
+
+        auto proximity = brown;
+        proximity.players[0].cash = 500;
+        proximity.players[1].currentSquare =
+            static_cast<std::uint8_t>(SquareType::FreeParking);
+        plan = ai::decision::planBuyHouseAction(
+            proximity, 0, CashStrategy::MinimumAmount, 0,
+            ai::decision::HouseBuyWithin12);
+        require(!plan.acted(),
+            "AI house action planner preserves retail within-12 execution gate");
+        proximity.options.maximumHouses = ai::decision::CriticalHousingLevel;
+        plan = ai::decision::planBuyHouseAction(
+            proximity, 0, CashStrategy::MinimumAmount, 0,
+            ai::decision::HouseBuyWithin12);
+        require(!plan.acted(),
+            "AI house execution retains within-12 gate during shortage like AI_Buy_Houses retail");
     }
 
     void testWorthFactorsAndMortgageWorstProperty()
@@ -1102,6 +1169,7 @@ int main()
         testExcessCashStrategies();
         testHypotheticalBuilding();
         testShouldUnmortgageAndBuyHouse();
+        testEconomicActionPlanning();
         testWorthFactorsAndMortgageWorstProperty();
         testWinningChances();
         testMortgageNegativeCashPlayers();

@@ -430,6 +430,272 @@ namespace monopoly::ai::decision
             ? HousePurchaseDecision::Later : HousePurchaseDecision::No;
     }
 
+    EconomicActionPlan planBuyHouseAction(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::uint8_t housingPurchaseStrategy,
+        std::int64_t moneyOwed) noexcept
+    {
+        using rules::board::SquareType;
+        EconomicActionPlan none{};
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategy >= CashStrategy::Count ||
+            state.options.housesPerHotel == 0)
+            return none;
+
+        const auto planMortgageWorst = [&]() -> EconomicActionPlan {
+            auto simulated = state;
+            if (!mortgageWorstProperty(simulated, player, false, false))
+                return {};
+            for (std::size_t index = 0;
+                 index < static_cast<std::size_t>(SquareType::InJail); ++index)
+            {
+                if (!state.squares[index].mortgaged && simulated.squares[index].mortgaged)
+                    return {EconomicActionKind::MortgageProperty,
+                        static_cast<SquareType>(index)};
+            }
+            return {};
+        };
+
+        const auto excess = excessCashAvailable(
+            state, player, false, strategy, minCashOnHand, moneyOwed);
+        if (excess == 0)
+            return none;
+
+        const int freeHouses = ai::freeHouses(state);
+        const int freeHotels = ai::freeHotels(state);
+        const auto ownedMonopolies = ai::monopoliesOwned(state, player, false);
+        if (ownedMonopolies.count == 0)
+            return none;
+
+        const bool shortage = ai::housingShortage(state, CriticalHousingLevel);
+        int topHousesOnLot = shortage
+            ? static_cast<int>(state.options.housesPerHotel) - 1
+            : static_cast<int>(state.options.housesPerHotel);
+
+        std::array<SquareType, 8> monopolies{};
+        std::size_t monopolyCount{};
+        for (std::size_t index = 0; index < ownedMonopolies.count; ++index)
+        {
+            const auto representative = ownedMonopolies.representatives[index];
+            const auto lots = ai::monopolyLots(representative);
+            if ((housingPurchaseStrategy & HouseBuyWithin12) != 0 &&
+                !ai::someoneCloseToMonopoly(state, player, lots))
+                continue;
+            monopolies[monopolyCount++] = representative;
+        }
+        if (monopolyCount == 0)
+            return none;
+
+        SquareType bestSquare = SquareType::Go;
+        double bestMetric{};
+        if (freeHouses > 0)
+        {
+            for (std::size_t index = 0; index < monopolyCount; ++index)
+            {
+                const auto representative = monopolies[index];
+                const auto lots = ai::monopolyLots(representative);
+                auto buyHouses = static_cast<std::int64_t>(lots.count * 3) -
+                    ai::housesOnMonopoly(state, representative);
+                if (buyHouses < 1)
+                    continue;
+                const auto unmortgageCost = ai::costUnmortgageMonopoly(state, representative);
+                const auto houseCost = rules::board::definition(representative).housePurchaseCost;
+                if (buyHouses * houseCost > excess - unmortgageCost)
+                    continue;
+                const auto baseRent = static_cast<double>(
+                    rules::board::definition(representative).rent[0]);
+                if (bestMetric < baseRent)
+                {
+                    bestMetric = baseRent;
+                    bestSquare = representative;
+                }
+            }
+
+            if (bestSquare == SquareType::Go)
+            {
+                for (std::size_t index = 0; index < monopolyCount; ++index)
+                {
+                    const auto representative = monopolies[index];
+                    const auto lots = ai::monopolyLots(representative);
+                    if (ai::housesOnMonopoly(state, representative) >=
+                        static_cast<int>(lots.count * 3))
+                        continue;
+                    if (rules::board::definition(representative).housePurchaseCost > excess)
+                        continue;
+                    const auto frequency = monopolyFrequency(representative);
+                    if (bestMetric < frequency)
+                    {
+                        bestMetric = frequency;
+                        bestSquare = representative;
+                    }
+                }
+            }
+        }
+
+        if (bestSquare == SquareType::Go)
+        {
+            bestMetric = 0.0;
+            for (std::size_t index = 0; index < monopolyCount; ++index)
+            {
+                const auto representative = monopolies[index];
+                const auto lots = ai::monopolyLots(representative);
+                const auto houses = ai::housesOnMonopoly(state, representative);
+                if (houses >= static_cast<int>(lots.count * topHousesOnLot))
+                    continue;
+                const auto unmortgageCost = ai::costUnmortgageMonopoly(state, representative);
+                const auto houseCost = rules::board::definition(representative).housePurchaseCost;
+                if (houseCost > excess - unmortgageCost)
+                    continue;
+                const auto hotelThreshold =
+                    (static_cast<int>(state.options.housesPerHotel) - 1) *
+                    static_cast<int>(lots.count);
+                if (houses >= hotelThreshold && freeHotels == 0)
+                    continue;
+                if (houses < hotelThreshold && freeHouses == 0)
+                    continue;
+                const auto frequency = monopolyFrequency(representative);
+                if (bestMetric < frequency)
+                {
+                    bestMetric = frequency;
+                    bestSquare = representative;
+                }
+            }
+        }
+
+        if (bestSquare == SquareType::Go)
+            return none;
+
+        const auto lots = ai::monopolyLots(bestSquare);
+        const auto unmortgageCost = ai::costUnmortgageMonopoly(state, bestSquare);
+        if (unmortgageCost > excess)
+            return none;
+        if (state.players[player].cash < unmortgageCost)
+            return planMortgageWorst();
+        if (unmortgageCost > 0)
+        {
+            for (std::size_t index = lots.count; index > 0; --index)
+            {
+                const auto square = lots.squares[index - 1];
+                if (state.squares[static_cast<std::size_t>(square)].mortgaged)
+                    return {EconomicActionKind::UnmortgageProperty, square};
+            }
+        }
+
+        if (state.options.evenBuildRule)
+        {
+            const auto balancedTop = ai::housesOnMonopoly(state, bestSquare) /
+                static_cast<int>(lots.count) + 1;
+            if (balancedTop < topHousesOnLot)
+                topHousesOnLot = balancedTop;
+        }
+
+        std::array<SquareType, 3> buildable{};
+        std::size_t buildableCount{};
+        for (std::size_t index = 0; index < lots.count; ++index)
+        {
+            const auto square = lots.squares[index];
+            if (state.squares[static_cast<std::size_t>(square)].houses < topHousesOnLot)
+                buildable[buildableCount++] = square;
+        }
+        if (buildableCount == 0)
+            return none;
+
+        for (std::size_t index = 0; index < buildableCount; ++index)
+        {
+            const auto square = buildable[index];
+            if (!ai::playerCloseToProperty(state, player, square, 7, 7))
+                continue;
+            if (state.players[player].cash < rules::board::definition(square).housePurchaseCost)
+                return planMortgageWorst();
+            return {EconomicActionKind::BuyHouse, square};
+        }
+
+        const auto square = buildable[0];
+        if (state.players[player].cash < rules::board::definition(square).housePurchaseCost)
+            return planMortgageWorst();
+        return {EconomicActionKind::BuyHouse, square};
+    }
+
+    EconomicActionPlan planUnmortgagePropertyAction(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        CashStrategy strategy,
+        std::int64_t minCashOnHand,
+        std::int64_t moneyOwed) noexcept
+    {
+        using rules::board::SquareType;
+        EconomicActionPlan none{};
+        if (state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || strategy >= CashStrategy::Count)
+            return none;
+
+        const auto planMortgageWorst = [&]() -> EconomicActionPlan {
+            auto simulated = state;
+            if (!mortgageWorstProperty(simulated, player, false, false))
+                return {};
+            for (std::size_t index = 0;
+                 index < static_cast<std::size_t>(SquareType::InJail); ++index)
+            {
+                if (!state.squares[index].mortgaged && simulated.squares[index].mortgaged)
+                    return {EconomicActionKind::MortgageProperty,
+                        static_cast<SquareType>(index)};
+            }
+            return {};
+        };
+
+        const auto owned = ai::propertiesOwnedByPlayer(state, player);
+        const auto cashOnly = excessCashAvailable(
+            state, player, true, strategy, minCashOnHand, moneyOwed);
+        const auto mortgageable = excessCashAvailable(
+            state, player, false, strategy, minCashOnHand, moneyOwed);
+        const auto cash = state.players[player].cash;
+
+        const auto tryMonopolyRange = [&](std::size_t begin, std::size_t endExclusive)
+            -> EconomicActionPlan {
+            for (std::size_t index = begin; index < endExclusive; ++index)
+            {
+                const auto square = static_cast<SquareType>(index);
+                const auto bit = rules::board::propertyBit(square);
+                if (bit == 0 || (owned & bit) == 0 ||
+                    !state.squares[index].mortgaged ||
+                    !ai::testForMonopoly(owned, square))
+                    continue;
+                const auto rawCost = static_cast<double>(
+                    rules::board::definition(square).mortgageCost) * 1.1;
+                if (static_cast<double>(mortgageable) < rawCost)
+                    continue;
+                if (static_cast<double>(cash) < rawCost)
+                    return planMortgageWorst();
+                return {EconomicActionKind::UnmortgageProperty, square};
+            }
+            return {};
+        };
+
+        auto plan = tryMonopolyRange(
+            static_cast<std::size_t>(SquareType::OrientalAvenue),
+            static_cast<std::size_t>(SquareType::InJail));
+        if (plan.acted())
+            return plan;
+        plan = tryMonopolyRange(
+            static_cast<std::size_t>(SquareType::Go),
+            static_cast<std::size_t>(SquareType::BalticAvenue) + 1);
+        if (plan.acted())
+            return plan;
+
+        const auto square = ai::findHighestRentMortgaged(
+            state, player, owned, cashOnly);
+        if (square == SquareType::Go)
+            return none;
+        const auto rawCost = static_cast<double>(
+            rules::board::definition(square).mortgageCost) * 1.1;
+        if (static_cast<double>(cash) < rawCost)
+            return none;
+        return {EconomicActionKind::UnmortgageProperty, square};
+    }
+
     std::int64_t totalWorthWithFactors(
         const rules::GameState& state,
         rules::PlayerNumber player,
