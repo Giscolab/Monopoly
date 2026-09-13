@@ -1095,6 +1095,171 @@ namespace monopoly::ai::decision
         return false;
     }
 
+    bool buildSemiImportantTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const double> playerAttitudes,
+        const ai::trade::PropertySets& properties,
+        const SemiImportantTradeInputs& inputs,
+        ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept
+    {
+        if (state.numberOfPlayers == 0 || state.numberOfPlayers > rules::MaxPlayers ||
+            player >= state.numberOfPlayers || playerAttitudes.size() < state.numberOfPlayers)
+            return false;
+        for (const auto group : inputs.wantedGroups)
+            if (static_cast<std::size_t>(group) >= ai::ExpensiveMonopolySquares.size())
+                return false;
+        for (const auto group : inputs.offeredGroups)
+            if (static_cast<std::size_t>(group) >= ai::ExpensiveMonopolySquares.size())
+                return false;
+
+        std::array<rules::PlayerNumber, rules::MaxPlayers> candidates{};
+        std::size_t candidateCount{};
+        double totalWeight{};
+        for (rules::PlayerNumber candidate = 0; candidate < state.numberOfPlayers; ++candidate)
+        {
+            if (candidate == player || candidate == inputs.excludedPlayer ||
+                state.players[candidate].currentSquare ==
+                    static_cast<std::uint8_t>(rules::board::SquareType::OffBoard) ||
+                playerAttitudes[candidate] < -1.0)
+                continue;
+            candidates[candidateCount++] = candidate;
+            totalWeight += (playerAttitudes[candidate] + 1.0) / 2.0;
+        }
+        if (candidateCount == 0 || totalWeight <= 0.0)
+            return false;
+
+        double choice = inputs.partnerRoll;
+        std::size_t start{};
+        for (; start < candidateCount; ++start)
+        {
+            choice -= (playerAttitudes[candidates[start]] + 1.0) / 2.0 / totalWeight;
+            if (choice <= 0.0)
+                break;
+        }
+        if (start >= candidateCount)
+            start = candidateCount - 1;
+
+        const int wantedLimit = static_cast<int>(inputs.wantedPropertyRoll % 3u) + 1;
+        const int offeredLimit = wantedLimit + static_cast<int>(inputs.offeredPropertyRoll % 2u) - 1;
+        for (std::size_t offset = 0; offset < candidateCount; ++offset)
+        {
+            const auto target = candidates[(start + offset) % candidateCount];
+            ai::trade::TradeProposalList next{};
+            int taken{};
+            int given{};
+
+            if ((inputs.importance & ai::trade::TradeForCash) == 0)
+            {
+                auto available = properties[target];
+                for (std::size_t index = 0; index < 3 && taken < wantedLimit; ++index)
+                {
+                    const auto representative = ai::ExpensiveMonopolySquares[
+                        static_cast<std::size_t>(inputs.wantedGroups[index])];
+                    const auto groupSet = ai::monopolySet(representative);
+                    auto wanted = available & groupSet;
+                    bool blockedOwner{};
+                    const auto lots = ai::monopolyLots(representative);
+                    for (std::size_t lot = 0; lot < lots.count; ++lot)
+                    {
+                        const auto owner = state.squares[
+                            static_cast<std::size_t>(lots.squares[lot])].owner;
+                        if (owner == player || owner >= state.numberOfPlayers)
+                            continue;
+                        if (playerAttitudes[owner] < -1.0 ||
+                            ai::playerOwnsMonopoly(state, owner, true))
+                        {
+                            blockedOwner = true;
+                            break;
+                        }
+                    }
+                    if (wanted == 0 || ai::testForMonopoly(wanted, representative) ||
+                        ai::testForMonopoly(properties[player] | wanted, representative) ||
+                        blockedOwner)
+                        continue;
+                    next[target].propertiesGiven |= wanted;
+                    next[player].propertiesReceived |= wanted;
+                    available &= ~wanted;
+                    taken += ai::propertyCount(wanted);
+                }
+                // Retail's loop breaks after the first railroad/utility square, even
+                // when the chosen partner does not own it.
+                if (taken == 0)
+                {
+                    for (std::size_t square = 0;
+                         square < static_cast<std::size_t>(rules::board::SquareType::InJail); ++square)
+                    {
+                        const auto type = static_cast<rules::board::SquareType>(square);
+                        const auto group = rules::board::definition(type).group;
+                        if (group != rules::board::SquareGroup::Utility &&
+                            group != rules::board::SquareGroup::Railroad)
+                            continue;
+                        const auto bit = rules::board::propertyBit(type);
+                        if ((available & bit) != 0)
+                        {
+                            next[target].propertiesGiven |= bit;
+                            next[player].propertiesReceived |= bit;
+                            ++taken;
+                        }
+                        break;
+                    }
+                    if (taken == 0)
+                        continue;
+                }
+            }
+
+            auto available = properties[player];
+            const std::size_t groupLimit = (inputs.importance & ai::trade::TradeForCash) != 0 ? 8 : 4;
+            for (std::size_t index = 0; index < groupLimit; ++index)
+            {
+                const auto representative = ai::ExpensiveMonopolySquares[
+                    static_cast<std::size_t>(inputs.offeredGroups[index])];
+                const auto groupSet = ai::monopolySet(representative);
+                auto offered = available & groupSet;
+                if (offered == 0 || ai::testForMonopoly(offered, representative) ||
+                    ((inputs.importance & ai::trade::TradeDesperate) == 0 &&
+                     ai::testForMonopoly(properties[target] | offered, representative)))
+                    continue;
+                next[target].propertiesReceived |= offered;
+                next[player].propertiesGiven |= offered;
+                available &= ~offered;
+                given += ai::propertyCount(offered);
+                if ((inputs.importance & ai::trade::TradeForCash) != 0)
+                    break;
+                if (given > offeredLimit)
+                {
+                    next[target].propertiesReceived ^= offered;
+                    next[player].propertiesGiven ^= offered;
+                    given -= ai::propertyCount(offered);
+                    break;
+                }
+            }
+            if (given == 0 && taken == 0)
+                continue;
+            const std::array<rules::PlayerNumber, 1> partners{target};
+            auto fair = config.fairTrade;
+            auto attitude = playerAttitudes[target];
+            if (attitude < inputs.minimumNonmonopolyTradeAttitude &&
+                (inputs.importance & (ai::trade::TradeDesperate |
+                                      ai::trade::TradeSomewhatImportant)) == 0)
+                attitude = inputs.minimumNonmonopolyTradeAttitude;
+            int attitudeIndex = attitude <= -1.0 ? 0 : static_cast<int>((attitude + 1.0) * 10.0);
+            if ((inputs.importance & ai::trade::TradeSomewhatImportant) != 0)
+                attitudeIndex -= 2;
+            if ((inputs.importance & ai::trade::TradeDesperate) != 0)
+                attitudeIndex -= 5;
+            attitudeIndex = std::clamp(attitudeIndex, 0,
+                static_cast<int>(ai::trade::WhatToTradeEntries) - 1);
+            fair.playerAttitude[target] = static_cast<double>(attitudeIndex) / 10.0 - 1.0;
+            if (!makeTradeFair(state, player, partners, 2500, false, next, fair))
+                continue;
+            proposals = next;
+            return true;
+        }
+        return false;
+    }
+
     CounterProposalPreflightResult counterProposalPreflight(
         const rules::GameState& state,
         rules::PlayerNumber player,
