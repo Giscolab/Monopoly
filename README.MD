@@ -13,15 +13,18 @@ reste disponible dans [`Source/`](Source/).
 
 ![Portabilite du code](modern/porting-progress.svg)
 
-Le suivi est automatisé à partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md),
-la matrice de référence du portage. Le workflow publie quotidiennement la répartition
-des composants et un indice reproductible de progression.
+Le suivi est automatis? ? partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md).
+Le SVG ci-dessus est r?g?n?r? par GitHub Actions a chaque changement suivi sous `modern/`
+(hors SVG g?n?r?), lors d'une modification du workflow/script, chaque nuit ou manuellement.
 
-- **Statut** : Work In Progress
-- **Dernière mise à jour** : voir les [logs du workflow](https://github.com/Giscolab/Monopoly/actions/workflows/main.yml)
-- **Formule de l'indice** : complet/remplacé = 100 %, partiel = 50 %, non démarré = 0 % ; les éléments bloqués, tooling manquant et legacy inutilisé sont exclus du dénominateur.
+Les trois barres ont volontairement des sens diff?rents :
 
-Cet indice est un indicateur mécanique de la matrice de portage, pas une estimation de la jouabilité globale.
+- **Estimation fonctionnelle** : estimation prudente maintenue dans `PORTING_STATUS.md`; GitHub Actions la lit et l'affiche automatiquement.
+- **Familles engag?es** : calcul automatique des familles `Jeu Monopoly` + `Services ArtLib` qui ne sont plus `NOT_STARTED`.
+- **Indice m?canique** : calcul automatique sur toute la matrice active : complet/remplac? = 100 %, partiel = 50 %, non d?marr? = 0 %; bloqu?/tooling/legacy-unused sont exclus.
+
+Ainsi, l'indice m?canique peut rester stable pendant qu'une grosse famille d?j? `PORTED_PARTIAL` progresse fortement; les trois barres ?vitent de confondre cette mesure avec la progression fonctionnelle globale.
+
 
 ## Sources et crédits
 
