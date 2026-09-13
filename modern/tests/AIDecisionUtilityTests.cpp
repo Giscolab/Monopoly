@@ -877,6 +877,41 @@ namespace
             "cash sale excludes initiator's existing complete monopolies from offerings");
     }
 
+    void testSemiImportantTradeBuilder()
+    {
+        auto state = baseState();
+        state.players[0].cash = state.players[1].cash = 100000;
+        own(state, SquareType::MediterraneanAvenue, 0);
+        own(state, SquareType::OrientalAvenue, 1);
+        ai::trade::PropertySets properties{};
+        properties[0] = ai::propertiesOwnedByPlayer(state, 0);
+        properties[1] = ai::propertiesOwnedByPlayer(state, 1);
+        std::array<double, rules::MaxPlayers> attitudes{};
+        attitudes.fill(0.0);
+        ai::decision::SemiImportantTradeInputs inputs{};
+        inputs.wantedGroups.fill(rules::board::SquareGroup::OrientalAvenue);
+        inputs.offeredGroups.fill(rules::board::SquareGroup::MediterraneanAvenue);
+        inputs.partnerRoll = 0.0;
+        inputs.wantedPropertyRoll = 0;
+        inputs.offeredPropertyRoll = 1;
+        ai::trade::TradeProposalList proposal{};
+        require(ai::decision::buildSemiImportantTrade(
+                    state, 0, attitudes, properties, inputs, proposal,
+                    monopolyProposalConfig()) &&
+                proposal[0].propertiesReceived ==
+                    rules::board::propertyBit(SquareType::OrientalAvenue) &&
+                proposal[1].propertiesGiven ==
+                    rules::board::propertyBit(SquareType::OrientalAvenue),
+            "semi-important trade requests a property from the weighted retail partner");
+
+        const auto previous = proposal;
+        inputs.excludedPlayer = 1;
+        require(!ai::decision::buildSemiImportantTrade(
+                    state, 0, attitudes, properties, inputs, proposal,
+                    monopolyProposalConfig()) && proposal == previous,
+            "semi-important trade excludes the requested bad player transactionally");
+    }
+
     void testCounterProposalBalance()
     {
         using ai::decision::CounterProposalBalanceConfig;
@@ -972,6 +1007,7 @@ int main()
         testEvaluateTradePlayerList();
         testMakeTradeFair();
         testProactiveMonopolyBuilders();
+        testSemiImportantTradeBuilder();
         testCounterProposalBalance();
         testCounterProposalPreflight();
         testHypotheticalUnmortgageAndGiveAway();

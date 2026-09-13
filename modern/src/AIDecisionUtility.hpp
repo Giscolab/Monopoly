@@ -187,6 +187,27 @@ namespace monopoly::ai::decision
         ai::trade::TradeProposalList& proposals,
         const MonopolyProposalConfig& config) noexcept;
 
+    struct SemiImportantTradeInputs
+    {
+        std::array<rules::board::SquareGroup, 8> wantedGroups{};
+        std::array<rules::board::SquareGroup, 8> offeredGroups{};
+        double partnerRoll{};
+        std::uint32_t wantedPropertyRoll{};
+        std::uint32_t offeredPropertyRoll{};
+        std::uint8_t importance{};
+        double minimumNonmonopolyTradeAttitude{};
+        rules::PlayerNumber excludedPlayer = rules::NobodyPlayer;
+    };
+
+    [[nodiscard]] bool buildSemiImportantTrade(
+        const rules::GameState& state,
+        rules::PlayerNumber player,
+        std::span<const double> playerAttitudes,
+        const ai::trade::PropertySets& properties,
+        const SemiImportantTradeInputs& inputs,
+        ai::trade::TradeProposalList& proposals,
+        const MonopolyProposalConfig& config) noexcept;
+
     enum class CounterProposalStatus : std::uint8_t
     {
         Ready = 0,
