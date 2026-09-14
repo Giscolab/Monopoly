@@ -14,10 +14,10 @@ namespace
     {
         if (!condition)
         {
-            std::cerr << "[FAIL] " << message << '\n';
+            std::cerr << "[FAIL] " << message << '\r\n';
             std::exit(1);
         }
-        std::cout << "[PASS] " << message << '\n';
+        std::cout << "[PASS] " << message << '\r\n';
     }
 
     bool lineIs(const std::optional<TokenReaction>& reaction,
@@ -180,6 +180,38 @@ namespace
                 TokenVoiceLine::HitGOWithDoubleCashRule),
             "AI landing on GO with double salary uses dedicated token line");
     }
+    void testTurnAndDiceReactions()
+    {
+        auto state = baseState();
+        state.players[0].token = 3;
+        state.players[0].firstMoveMade = false;
+        auto first = monopoly::penny::nextPlayerReactions(state, 0, 92);
+        require(first && first->host.voice == monopoly::udsound::PennybagsVoice::RollDice_Hat &&
+                first->host.watchAfterStart && first->token &&
+                first->token->line == TokenVoiceLine::Intro,
+            "first turn queues token intro behind token-specific Pennybags roll prompt");
+
+        state.players[0].firstMoveMade = true;
+        state.players[0].currentSquare = 35;
+        auto side4 = monopoly::penny::nextPlayerReactions(state, 0, 93, 0);
+        require(side4 && side4->host.voice == monopoly::udsound::PennybagsVoice::RollDice_Generic &&
+                side4->token && side4->token->line == TokenVoiceLine::StartSide4Only &&
+                side4->host.watchAfterStart,
+            "AI turn on side four preserves generic-host and one-in-eight side-four token line");
+        auto quiet = monopoly::penny::nextPlayerReactions(state, 0, 10, 1);
+        require(quiet && !quiet->token && !quiet->host.watchAfterStart,
+            "non-selected AI turn keeps only Pennybags prompt without voice lock");
+
+        const auto two = monopoly::penny::diceRollPennybagsReaction(2, true);
+        const auto twelve = monopoly::penny::diceRollPennybagsReaction(12, true);
+        require(two && two->voice == monopoly::udsound::PennybagsVoice::SayDiceRoll_2 &&
+                twelve && twelve->voice == monopoly::udsound::PennybagsVoice::SayDiceRoll_12,
+            "dice totals 2..12 map contiguously to retail Pennybags roll announcements");
+        require(!monopoly::penny::diceRollPennybagsReaction(1, true) &&
+                !monopoly::penny::diceRollPennybagsReaction(13, true) &&
+                !monopoly::penny::diceRollPennybagsReaction(7, false),
+            "invalid totals and disabled token animations suppress roll announcement");
+    }
 }
 
 int main()
@@ -191,6 +223,7 @@ int main()
     testJailAndLanding();
     testPropertyAndRentReactions();
     testFreeParkingAndSpecials();
-    std::cout << "UDPenny voice tests passed\n";
+    testTurnAndDiceReactions();
+    std::cout << "UDPenny voice tests passed\r\n";
     return 0;
 }

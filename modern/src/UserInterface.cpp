@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <utility>
 
 namespace monopoly::userinterface
@@ -424,6 +425,17 @@ namespace monopoly::userinterface
             message.numberA < uiRuleState.numberOfPlayers)
         {
             const auto newCurrent = static_cast<rules::PlayerNumber>(message.numberA);
+            const auto random100 = static_cast<std::uint32_t>(std::rand() % 100);
+            std::optional<std::uint32_t> random8;
+            if (uiRuleState.players[newCurrent].firstMoveMade &&
+                uiRuleState.players[newCurrent].aiPlayerLevel != 0)
+                random8 = static_cast<std::uint32_t>(std::rand() % 8);
+            if (const auto reactions = penny::nextPlayerReactions(
+                    uiRuleState, newCurrent, random100, random8))
+            {
+                playPennybagsReaction(reactions->host);
+                playTokenReaction(newCurrent, reactions->token);
+            }
             display::state().desiredBoardCamera = pieces::pickCameraFor3Squares(
                 uiRuleState.players[newCurrent].currentSquare);
             if (!pendingPieceIdleTransition)

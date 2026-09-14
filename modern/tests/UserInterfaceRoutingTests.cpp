@@ -843,7 +843,11 @@ namespace
         turn.action = actions::Type::NotifyStartTurn;
         turn.toPlayer = rules::AllPlayers;
         turn.numberA = 0;
+        route.clear();
         userinterface::processRuleMessage(turn);
+        expect(std::find(route.begin(), route.end(), "pennybags") != route.end() &&
+               std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
+            "first NotifyStartTurn routes Pennybags roll prompt then token intro");
         auto plan = userinterface::takePendingPieceIdleTransitionPlan();
 
         expect(plan && !plan->movingOut && plan->movingIn &&

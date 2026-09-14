@@ -2,6 +2,7 @@
 #include "AudioRuntime.hpp"
 #include "UDSoundRuntime.hpp"
 #include "UDPennyVoice.hpp"
+#include "UISound.hpp"
 #include "AIUtility.hpp"
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
@@ -429,6 +430,16 @@ namespace monopoly::engine
                 if (display::stateReadOnly().board3DOn)
                     randomFourteen = static_cast<std::uint8_t>(std::rand() % 14);
                 display::beginDiceCameraOverride(randomFourteen);
+            }
+            if (step->announceRoll)
+            {
+                const auto& projected = userinterface::ruleStateReadOnly();
+                const auto total = static_cast<std::uint8_t>(
+                    projected.dice[0] + projected.dice[1]);
+                if (const auto reaction = penny::diceRollPennybagsReaction(
+                        total, display::stateReadOnly().optionTokenAnimationsOn))
+                    engine::playPennybagsVoice(reaction->voice,
+                        reaction->policy, reaction->watchAfterStart);
             }
             if (step->cameraRelease)
                 display::releaseDiceCameraOverride();
