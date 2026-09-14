@@ -26,6 +26,19 @@ namespace monopoly::penny
         bool watchAfterStart{};
     };
 
+    struct TurnStartReactions
+    {
+        PennybagsReaction host{};
+        std::optional<TokenReaction> token;
+    };
+
+    [[nodiscard]] std::optional<TurnStartReactions> nextPlayerReactions(
+        const rules::GameState& state, rules::PlayerNumber player,
+        std::uint32_t random100,
+        std::optional<std::uint32_t> random8 = std::nullopt) noexcept;
+    [[nodiscard]] std::optional<PennybagsReaction> diceRollPennybagsReaction(
+        std::uint8_t total, bool tokenAnimationsOn) noexcept;
+
     struct LandingEconomics
     {
         std::int64_t totalWorth{};

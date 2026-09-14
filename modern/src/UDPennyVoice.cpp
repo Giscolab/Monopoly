@@ -89,6 +89,51 @@ namespace monopoly::penny
             return wait(udsound::TokenVoiceLine::LandOnLowestHit);
         }
     }
+    std::optional<TurnStartReactions> nextPlayerReactions(
+        const rules::GameState& state, rules::PlayerNumber player,
+        std::uint32_t random100, std::optional<std::uint32_t> random8) noexcept
+    {
+        if (!validPlayer(state, player)) return std::nullopt;
+        const auto token = state.players[player].token;
+        auto hostVoice = udsound::PennybagsVoice::RollDice_Generic;
+        if ((random100 % 100u) <= 92u && token < rules::MaxTokens)
+        {
+            hostVoice = static_cast<udsound::PennybagsVoice>(
+                static_cast<std::uint16_t>(udsound::PennybagsVoice::RollDice_Cannon) + token);
+        }
+        TurnStartReactions result{};
+        result.host = PennybagsReaction{hostVoice,
+            udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+        if (!state.players[player].firstMoveMade)
+        {
+            result.token = TokenReaction{udsound::TokenVoiceLine::Intro,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+        }
+        else if (state.players[player].aiPlayerLevel != 0 && random8 && (*random8 % 8u) == 0u)
+        {
+            const auto square = state.players[player].currentSquare;
+            result.token = TokenReaction{
+                square > 30 && square < 40
+                    ? udsound::TokenVoiceLine::StartSide4Only
+                    : udsound::TokenVoiceLine::StartTurnGeneric,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+        }
+        result.host.watchAfterStart = result.token.has_value();
+        return result;
+    }
+
+    std::optional<PennybagsReaction> diceRollPennybagsReaction(
+        std::uint8_t total, bool tokenAnimationsOn) noexcept
+    {
+        if (!tokenAnimationsOn || total < 2 || total > 12)
+            return std::nullopt;
+        const auto voice = static_cast<udsound::PennybagsVoice>(
+            static_cast<std::uint16_t>(udsound::PennybagsVoice::SayDiceRoll_2) +
+            static_cast<std::uint16_t>(total - 2u));
+        return PennybagsReaction{voice,
+            udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+    }
+
     bool propertyFormsMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,
