@@ -414,6 +414,11 @@ namespace monopoly::display
         globalState.lastBoardActivityTick = boardCameraTick;
     }
 
+    void applyTokenVoicesOption(bool enabled) noexcept
+    {
+        globalState.optionTokenVoicesOn = enabled;
+    }
+
     void applyMusicOption(bool musicOn) noexcept
     {
         globalState.optionMusicOn = musicOn;

@@ -72,6 +72,11 @@ namespace monopoly::display
         routingDisplayState.optionMusicTuneIndex = tuneIndex;
     }
 
+    void applyTokenVoicesOption(bool enabled) noexcept
+    {
+        routingDisplayState.optionTokenVoicesOn = enabled;
+    }
+
     void applyMusicOption(bool musicOn) noexcept
     {
         routingDisplayState.optionMusicOn = musicOn;
@@ -367,6 +372,7 @@ namespace
         routingDisplayState = {};
         routingDisplayState.current2DView = display::Screen2D::Trade;
         routingDisplayState.desired2DView = display::Screen2D::Trade;
+        routingDisplayState.optionTokenVoicesOn = true;
         routingDisplayState.optionTokenAnimationsOn = true;
         routingDisplayState.optionCameraMovementOn = true;
         routingDisplayState.optionLightingOn = true;

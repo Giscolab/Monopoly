@@ -82,6 +82,7 @@ namespace monopoly::pieces
             return std::unexpected(PieceMovePlanError::UnsupportedNotification);
 
         PieceMovePlan plan{};
+        plan.token = token;
         plan.sourceSquare = before;
         plan.destinationSquare = after;
         const auto finalCamera = pickCameraFor3Squares(after);
@@ -238,6 +239,7 @@ namespace monopoly::pieces
             return std::unexpected(PieceMovePlanError::InvalidSquare);
 
         PieceMovePlan plan{};
+        plan.token = token;
         plan.sourceSquare = before;
         plan.destinationSquare = OffBoard;
         if (outcome == OffBoardOutcome::Bankrupt)
