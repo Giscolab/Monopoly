@@ -237,6 +237,7 @@ namespace monopoly::userinterface
             tradeProjection.playerA < rules::MaxPlayers &&
             tradeProjection.playerB < rules::MaxPlayers &&
             !tradeProjection.items.empty();
+        const bool freshTrade = !storedTradeValid;
         if (!storedTradeValid &&
             !tradeui::beginLocalTrade(tradeProjection, uiRuleState, source))
         {
@@ -246,6 +247,12 @@ namespace monopoly::userinterface
             tradeProjection.ignoreEntryClick = true;
 
         display::setBackdrop(display::Screen2D::Trade);
+        if (freshTrade)
+            engine::playPennybagsVoice(
+                uiRuleState.numberOfPlayers < 3
+                    ? udsound::PennybagsVoice::TradeScreen
+                    : udsound::PennybagsVoice::TradeScreen_PickTradePartner,
+                udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
         return true;
     }
     bool beginOptionsFromIBar() noexcept
@@ -391,6 +398,16 @@ namespace monopoly::userinterface
             display::state().desired2DView, localHumanPlayerMask());
         if (tradeUpdate.requestedBackdrop)
             display::setBackdrop(*tradeUpdate.requestedBackdrop);
+        if (message.action == actions::Type::NotifyTradeFinished &&
+            message.numberA == 1)
+            engine::playPennybagsVoice(
+                udsound::PennybagsVoice::TradeScreen_TradeComplete,
+                udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
+        else if (message.action == actions::Type::NotifyTradeFinished &&
+                 message.numberA == 0)
+            engine::playPennybagsVoice(
+                udsound::PennybagsVoice::TradeScreen_TradeCancelled,
+                udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
         if (message.action == actions::Type::NotifyTradeEditor &&
             message.numberA >= 0 && message.numberA < rules::MaxPlayers)
         {
@@ -721,6 +738,10 @@ namespace monopoly::userinterface
         {
             const auto tradeInput = tradeui::processInput(
                 tradeProjection, uiRuleState, display::state().desired2DView, message);
+            if (tradeInput.proposeMissingOffer)
+                engine::playPennybagsVoice(
+                    udsound::PennybagsVoice::TradeScreen_ProposeClickedButOneSideHasNotOfferedAnything,
+                    udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
             if (tradeInput.requestedBackdrop)
                 display::setBackdrop(*tradeInput.requestedBackdrop);
             (void)dispatchTradeBatch(tradeInput.outgoing);

@@ -544,6 +544,8 @@ namespace
 
         expect(userinterface::beginTradeFromIBar(0),
             "IBar Trade entry accepts an active local source player");
+        expect(std::count(route.begin(), route.end(), "pennybags") == 1,
+            "fresh 3+ player Trade entry plays PickTradePartner host comment exactly once");
         const auto& opening = userinterface::tradeStateReadOnly();
         expect(requestedBackdrop == display::Screen2D::Trade &&
                 routingDisplayState.desired2DView == display::Screen2D::Trade &&
@@ -577,6 +579,14 @@ namespace
                 !userinterface::tradeStateReadOnly().playerSelectVisible &&
                 userinterface::tradeStateReadOnly().desiredTradePanels == 1,
             "second Trade mouse-down selects B through the full UserInterface route");
+        const auto beforeMissingOffer = std::count(route.begin(), route.end(), "pennybags");
+        uimsg::Message propose{};
+        propose.type = uimsg::Type::MouseLeftDown;
+        propose.numberA = 203;
+        propose.numberB = 421;
+        expect(userinterface::processUIMessage(propose) &&
+                std::count(route.begin(), route.end(), "pennybags") == beforeMissingOffer + 1,
+            "incomplete Propose click routes the retail Pennybags warning");
 
         auto& storedTrade = userinterface::tradeState();
         actions::Message storedItem{};
@@ -590,6 +600,8 @@ namespace
                 storedTrade.items.size() == 1 && !storedTrade.playerSelectVisible &&
                 storedTrade.ignoreEntryClick,
             "reopening Trade preserves a valid non-empty stored editor instead of clearing it");
+        expect(std::count(route.begin(), route.end(), "pennybags") == beforeMissingOffer + 1,
+            "reopening stored Trade does not replay the entry host comment");
 
         requestedBackdrop = display::Screen2D::Invalid;
         routingDisplayState.desired2DView = display::Screen2D::Main;
@@ -928,6 +940,17 @@ namespace
             "trade acceptance routing passes reconstructed TradeB and pending playerset");
         expect(projected.mode == ibar::RuleMode::Trading && projected.player == 3,
             "trade acceptance routing enters Trading for UDTrade-resolved player");
+
+        route.clear();
+        actions::Message finished{};
+        finished.action = actions::Type::NotifyTradeFinished;
+        finished.toPlayer = rules::AllPlayers;
+        finished.numberA = 1;
+        userinterface::processRuleMessage(finished);
+        finished.numberA = 0;
+        userinterface::processRuleMessage(finished);
+        expect(std::count(route.begin(), route.end(), "pennybags") == 2,
+            "accepted and rejected TradeFinished notifications route their retail host comments");
 
         tradeResolvedPlayer = rules::NobodyPlayer;
     }
