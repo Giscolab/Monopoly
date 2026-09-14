@@ -2,6 +2,7 @@
 
 #include "Actions.hpp"
 #include "RuleTypes.hpp"
+#include "UIMessages.hpp"
 
 #include <array>
 #include <cstddef>
@@ -28,11 +29,21 @@ namespace monopoly::chat
         std::size_t first{};
         std::size_t count{};
         std::size_t outputOffset{};
+        std::u16string draft{};
+        std::uint32_t recipientMask = (1u << rules::MaxPlayers) - 1u;
         bool boxActive{};
         bool shaded{};
     };
 
     void reset() noexcept;
+    void toggle() noexcept;
+    void setRecipientMask(std::uint32_t mask) noexcept;
+    [[nodiscard]] std::uint32_t recipientMask() noexcept;
+    [[nodiscard]] bool processInput(
+        const uimsg::Message& message,
+        rules::PlayerNumber sender,
+        std::uint32_t eligibleRecipients,
+        bool networkMode);
     [[nodiscard]] bool processRuleMessage(const actions::Message& message);
     [[nodiscard]] bool buildTextAction(
         rules::PlayerNumber from,
