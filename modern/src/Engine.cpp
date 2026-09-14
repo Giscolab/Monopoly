@@ -2,6 +2,7 @@
 #include "AudioRuntime.hpp"
 #include "UDSoundRuntime.hpp"
 #include "UDPennyVoice.hpp"
+#include "AIUtility.hpp"
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
 #include "Timers.hpp"
@@ -620,6 +621,43 @@ namespace monopoly::engine
 
             if (step->completed)
             {
+                if (activePieceMoveToken)
+                {
+                    const auto& projected = userinterface::ruleStateReadOnly();
+                    for (rules::PlayerNumber player = 0;
+                         player < projected.numberOfPlayers && player < rules::MaxPlayers; ++player)
+                    {
+                        if (projected.players[player].token != *activePieceMoveToken)
+                            continue;
+                        const auto square = projected.players[player].currentSquare;
+                        penny::LandingEconomics economics{};
+                        const bool cardMove = display::stateReadOnly().justReadACardHack;
+                        if (square == 4)
+                        {
+                            economics.totalWorth = ai::totalWorth(projected, player);
+                            economics.valid = true;
+                        }
+                        else if (square < 40 && projected.squares[square].owner != rules::NobodyPlayer &&
+                                 projected.squares[square].owner != player && !cardMove)
+                        {
+                            economics.totalWorth = ai::totalWorth(projected, player);
+                            economics.rent = ai::rentIfSteppedOn(projected,
+                                static_cast<rules::board::SquareType>(square),
+                                ai::propertiesOwnedByPlayer(projected, player));
+                            economics.valid = true;
+                        }
+                        const auto reaction = penny::landedOnSquareReaction(projected, player, square,
+                            static_cast<std::uint32_t>(std::rand() % 100), economics, cardMove);
+                        if (reaction)
+                        {
+                            const auto voice = playPieceTokenVoice(*activePieceMoveToken, reaction->line,
+                                reaction->policy, reaction->watchAfterStart);
+                            if (!voice) return voice;
+                        }
+                        display::state().justReadACardHack = false;
+                        break;
+                    }
+                }
                 if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
                 pieceMoveQueueLockHeld = false;
                 victoryQueueLockReleased = false;

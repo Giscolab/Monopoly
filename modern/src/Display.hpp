@@ -107,6 +107,7 @@ namespace monopoly::display
         bool optionMusicOn = true;
         std::uint8_t optionMusicTuneIndex = 0;
         bool optionLightingOn = true;
+        bool justReadACardHack = false;
         std::uint64_t boardTick = 0;
         bool mouseLeftPressed = false;
         bool mouseRightPressed = false;

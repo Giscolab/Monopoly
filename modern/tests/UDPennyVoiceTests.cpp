@@ -113,6 +113,10 @@ namespace
             "opponent mortgaged property uses safe-property reaction");
 
         state.squares[35].mortgaged = false;
+        auto cardMove = monopoly::penny::landedOnSquareReaction(
+            state, 0, 35, 99, monopoly::penny::LandingEconomics{1000, 600, true}, true);
+        require(!cardMove,
+            "card-directed landing suppresses premature opponent-rent reaction");
         const monopoly::penny::LandingEconomics hit{1000, 600, true};
         require(lineIs(monopoly::penny::landedOnSquareReaction(state, 0, 35, 80, hit),
                 TokenVoiceLine::LandOnBigHit),
