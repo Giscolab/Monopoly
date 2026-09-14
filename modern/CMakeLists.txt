@@ -1711,6 +1711,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/PlayerSetupFlow.cpp
+    src/PlayerSetupSound.cpp
 )
 
 if(BUILD_TESTING)
@@ -1719,6 +1720,7 @@ if(BUILD_TESTING)
         MonopolyPlayerSetupTests
         tests/PlayerSetupFlowTests.cpp
         src/PlayerSetupFlow.cpp
+        src/PlayerSetupSound.cpp
         src/RuleOptions.cpp
     )
 
