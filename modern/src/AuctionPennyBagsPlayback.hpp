@@ -2,6 +2,7 @@
 
 #include "AuctionUI.hpp"
 #include "DataBanks.hpp"
+#include "PennybagsCatalog.hpp"
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
 
@@ -34,9 +35,17 @@ namespace monopoly::auctionui
     inline constexpr data::DataTag PennyBagsAn16Tag = 0x001D;
     inline constexpr data::DataTag PennyBagsAn17Tag = 0x001E;
 
+    struct PennyBagsSoundRequest
+    {
+        udsound::PennybagsVoice voice{udsound::PennybagsVoice::Auction};
+        std::optional<std::uint8_t> specificOffset;
+        friend bool operator==(const PennyBagsSoundRequest&, const PennyBagsSoundRequest&) = default;
+    };
+
     struct PennyBagsUpdate
     {
         std::optional<display::Screen2D> requestedBackdrop;
+        std::optional<PennyBagsSoundRequest> sound;
     };
 
     using AuctionReadySender = std::function<std::expected<void, std::string>(
@@ -80,6 +89,7 @@ namespace monopoly::auctionui
         data::DataId currentSequence_{data::EmptyDataId};
         data::DataId desiredSequence_{data::EmptyDataId};
         bool animationReachedEnd_{true};
+        std::optional<PennyBagsSoundRequest> currentSound_;
         // UDAuct.cpp keeps this as a static process-lifetime flag; reset() must
         // not make later auctions replay the first-auction explanation.
         bool heardIntro_{};
