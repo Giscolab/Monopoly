@@ -80,6 +80,7 @@ namespace monopoly::sequence
         [[nodiscard]] std::int32_t clock() const noexcept { return clock_; }
         [[nodiscard]] std::int32_t endTime() const noexcept { return endTime_; }
         [[nodiscard]] std::uint8_t timeMultiple() const noexcept { return timeMultiple_; }
+        [[nodiscard]] std::uint8_t endingAction() const noexcept { return endingAction_; }
         [[nodiscard]] bool paused() const noexcept { return paused_; }
         [[nodiscard]] bool stopped() const noexcept { return stopped_; }
 

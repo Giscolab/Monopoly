@@ -239,11 +239,12 @@ namespace monopoly::sequence
             if (!record) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, record.error()));
             if (record->chunk.id != 1 && record->chunk.id != 2 &&
-                record->chunk.id != 3 && record->chunk.id != 7 &&
-                record->chunk.id != 9 && record->chunk.id != 10)
+                record->chunk.id != 3 && record->chunk.id != 5 &&
+                record->chunk.id != 7 && record->chunk.id != 9 &&
+                record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect, 2D bitmap, camera, 3D mesh and tweeker records only"));
+                    "runtime currently executes grouping, indirect, 2D bitmap, sound, camera, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -267,6 +268,9 @@ namespace monopoly::sequence
             if (const auto* bitmap = std::get_if<data::SequenceBitmapData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     bitmap->bitmapDataId, currentId);
+            else if (const auto* sound = std::get_if<data::SequenceSoundData>(&record->data))
+                contentsDataId = data::resolveSequenceDataId(record->header,
+                    sound->soundDataId, currentId);
             else if (const auto* mesh = std::get_if<data::SequenceMeshData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     mesh->modelDataId, currentId);
@@ -842,6 +846,25 @@ namespace monopoly::sequence
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
                         std::get<Matrix2D>(node->worldTransform)});
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
+        return result;
+    }
+
+
+    std::vector<SequenceSoundInstanceView> SequenceRuntime::soundInstances() const
+    {
+        std::vector<SequenceSoundInstanceView> result;
+        const auto visit = [&](const auto& self, const Nodes& nodes) -> void {
+            for (const auto& node : nodes)
+            {
+                const auto& definition = node->definition();
+                if (definition.contentsDataId &&
+                    std::holds_alternative<data::SequenceSoundData>(definition.record.data))
+                    result.push_back({node->id, *definition.contentsDataId,
+                        node->priority, node->clock.clock(), node->clock.endingAction()});
                 self(self, node->children);
             }
         };

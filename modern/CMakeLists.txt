@@ -478,6 +478,7 @@ target_sources(
 target_sources(
     MonopolyModern
     PRIVATE
+    src/AudioRuntime.cpp
     src/Engine.cpp
 )
 
