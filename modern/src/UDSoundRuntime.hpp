@@ -3,6 +3,7 @@
 #include "AudioRuntime.hpp"
 #include "DataBanks.hpp"
 #include "IBarScoreStripPlayback.hpp"
+#include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
 
 #include <array>
@@ -45,9 +46,16 @@ namespace monopoly::udsound
             audio::Runtime& audio, bool voicesOn, std::uint8_t token,
             TokenVoiceLine line, TokenVoiceClipPolicy policy,
             std::uint32_t randomValue);
+        [[nodiscard]] std::expected<TokenVoicePlayResult, std::string> pennybagsVoice(
+            audio::Runtime& audio, bool hostCommentsOn, PennybagsVoice voice,
+            TokenVoiceClipPolicy policy, std::uint32_t randomValue);
+        [[nodiscard]] std::expected<TokenVoicePlayResult, std::string> pennybagsSpecific(
+            audio::Runtime& audio, bool hostCommentsOn, data::DataId wave,
+            TokenVoiceClipPolicy policy);
         [[nodiscard]] std::expected<bool, std::string> syncTokenVoices(
             audio::Runtime& audio);
         void watchTokenVoice(audio::Runtime& audio, std::uint8_t token) noexcept;
+        void watchPennybags(audio::Runtime& audio) noexcept;
         [[nodiscard]] bool tokenVoiceActive(
             const audio::Runtime& audio, std::uint8_t token) const noexcept;
 
@@ -56,19 +64,24 @@ namespace monopoly::udsound
         { return currentMusic_; }
 
     private:
-        struct PendingTokenVoice
+        struct PendingTalkingVoice
         {
-            std::uint8_t token{};
+            std::optional<std::uint8_t> token;
             data::DataId wave{};
+            float gain{1.0F};
         };
         [[nodiscard]] bool anyTalking(const audio::Runtime& audio) const noexcept;
         void stopTalking(audio::Runtime& audio) noexcept;
         void watchTalking(const audio::Runtime& audio) noexcept;
-        [[nodiscard]] std::expected<void, std::string> startTokenVoice(
-            audio::Runtime& audio, std::uint8_t token, data::DataId wave);
+        [[nodiscard]] std::expected<void, std::string> startTalkingVoice(
+            audio::Runtime& audio, const PendingTalkingVoice& voice);
+        [[nodiscard]] std::expected<TokenVoicePlayResult, std::string> playTalkingVoice(
+            audio::Runtime& audio, PendingTalkingVoice voice,
+            TokenVoiceClipPolicy policy);
 
         std::optional<data::DataId> currentMusic_;
-        std::optional<PendingTokenVoice> pendingTokenVoice_;
+        std::optional<PendingTalkingVoice> pendingTalkingVoice_;
         std::array<bool, TokenVoiceTokenCount> watchedTokenVoices_{};
+        bool watchedPennybags_{};
     };
 }

@@ -154,6 +154,49 @@ namespace monopoly::penny
         return skip(udsound::TokenVoiceLine::ChoseAuction);
     }
 
+    std::optional<PennybagsReaction> buyOrAuctionPennybagsReaction(
+        const rules::GameState& state, rules::PlayerNumber player) noexcept
+    {
+        if (!validPlayer(state, player) || state.players[player].aiPlayerLevel != 0)
+            return std::nullopt;
+        return PennybagsReaction{udsound::PennybagsVoice::TokenLandsOnUnownedProperty,
+            udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+    }
+
+    std::optional<PennybagsReaction> boughtPropertyPennybagsReaction(
+        const rules::GameState& state, rules::PlayerNumber player,
+        std::uint8_t property) noexcept
+    {
+        if (!validPlayer(state, player) || property >= 40) return std::nullopt;
+        const auto waitPb = [](udsound::PennybagsVoice voice) {
+            return std::optional<PennybagsReaction>{PennybagsReaction{voice,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false}};
+        };
+        if (propertyFormsMonopoly(state, player, property, true))
+            return waitPb(udsound::PennybagsVoice::PlayerAcquiredMonopoly);
+        if (state.players[player].aiPlayerLevel != 0) return std::nullopt;
+        if (isUtility(property)) return waitPb(udsound::PennybagsVoice::BuyUtility);
+        if (isRailroad(property)) return waitPb(udsound::PennybagsVoice::BuyRailroad);
+        if (property >= 1 && property <= 9) return waitPb(udsound::PennybagsVoice::BuyBoardSide1);
+        if (property >= 11 && property <= 19) return waitPb(udsound::PennybagsVoice::BuyBoardSide2);
+        if (property >= 21 && property <= 29) return waitPb(udsound::PennybagsVoice::BuyBoardSide3);
+        if (property >= 31 && property <= 39) return waitPb(udsound::PennybagsVoice::BuyBoardSide4);
+        return std::nullopt;
+    }
+
+    std::optional<PennybagsReaction> goToJailPennybagsReaction(
+        const rules::GameState& state, rules::PlayerNumber player,
+        bool localHuman) noexcept
+    {
+        if (!validPlayer(state, player)) return std::nullopt;
+        int ownedSquares = 0;
+        for (const auto& square : state.squares)
+            if (square.owner != rules::NobodyPlayer) ++ownedSquares;
+        if (ownedSquares > 25 || !localHuman) return std::nullopt;
+        return PennybagsReaction{udsound::PennybagsVoice::LandOn_GoToJail_Negative,
+            udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+    }
+
     std::optional<TokenReaction> goToJailReaction(
         const rules::GameState& state,
         rules::PlayerNumber player,
@@ -170,6 +213,46 @@ namespace monopoly::penny
             return wait(udsound::TokenVoiceLine::LandOnGoToJailLate);
         if (!localHuman)
             return wait(udsound::TokenVoiceLine::LandOnGoToJailEarly);
+        return std::nullopt;
+    }
+
+    std::optional<PennybagsReaction> landedOnSquarePennybagsReaction(
+        const rules::GameState& state, rules::PlayerNumber player,
+        std::uint8_t square, std::uint32_t random100) noexcept
+    {
+        if (!validPlayer(state, player) || square >= rules::SquareCount)
+            return std::nullopt;
+        const bool computer = state.players[player].aiPlayerLevel != 0;
+        const auto waitPb = [](udsound::PennybagsVoice voice) {
+            return std::optional<PennybagsReaction>{PennybagsReaction{voice,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false}};
+        };
+        if (square == 7 || square == 22 || square == 36)
+            return waitPb(udsound::PennybagsVoice::LandOn_Chance);
+        if (square == 2 || square == 17 || square == 33)
+            return waitPb(udsound::PennybagsVoice::LandOn_CommunityChest);
+        if (square == 20 && (random100 % 100u) < 20u)
+            return waitPb(state.options.freeParkingPot
+                ? udsound::PennybagsVoice::LandOn_FreeParkingWithFreeParkingRuleOn
+                : udsound::PennybagsVoice::LandOn_FreeParking);
+        if (square == 0)
+            return computer && state.options.doubleSalaryOnGo ? std::nullopt
+                : waitPb(state.options.doubleSalaryOnGo
+                    ? udsound::PennybagsVoice::CollectMoney_LandedOnGoAndDoublePayRuleInEffect
+                    : udsound::PennybagsVoice::CollectMoney_Go);
+        if (square == 4 && !computer)
+            return waitPb(udsound::PennybagsVoice::LandOn_IncomeTax);
+        if (square == 38 && !computer)
+            return waitPb(udsound::PennybagsVoice::LandOn_LuxuryTax);
+        if (square == 10)
+        {
+            bool jailOccupied = false;
+            for (rules::PlayerNumber index = 0;
+                 index < state.numberOfPlayers && index < rules::MaxPlayers; ++index)
+                jailOccupied = jailOccupied || state.players[index].currentSquare == 40;
+            if (!jailOccupied && !computer)
+                return waitPb(udsound::PennybagsVoice::LandOn_JustVisiting);
+        }
         return std::nullopt;
     }
 

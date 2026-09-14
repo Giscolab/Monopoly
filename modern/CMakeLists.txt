@@ -481,6 +481,7 @@ target_sources(
     src/AudioRuntime.cpp
     src/UDSoundRuntime.cpp
     src/TokenVoiceCatalog.cpp
+    src/PennybagsCatalog.cpp
     src/UDPennyVoice.cpp
     src/Engine.cpp
 )
@@ -774,6 +775,7 @@ if(BUILD_TESTING)
         tests/UDPennyVoiceTests.cpp
         src/UDPennyVoice.cpp
         src/TokenVoiceCatalog.cpp
+        src/PennybagsCatalog.cpp
     )
     target_include_directories(MonopolyUDPennyVoiceTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

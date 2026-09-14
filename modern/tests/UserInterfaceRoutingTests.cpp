@@ -6,6 +6,7 @@
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
 #include "ChatRuntime.hpp"
+#include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
 
 #include <iostream>
@@ -41,12 +42,12 @@ namespace
     {
         if (condition)
         {
-            std::cout << "[PASS] " << description << '\n';
+            std::cout << "[PASS] " << description << '\r\n';
             return;
         }
 
         ++failures;
-        std::cerr << "[FAIL] " << description << '\n';
+        std::cerr << "[FAIL] " << description << '\r\n';
     }
 }
 
@@ -58,6 +59,11 @@ namespace monopoly::engine
         udsound::TokenVoiceClipPolicy, bool) noexcept
     {
         route.push_back("tokenvoice");
+    }
+    void playPennybagsVoice(udsound::PennybagsVoice,
+        udsound::TokenVoiceClipPolicy, bool) noexcept
+    {
+        route.push_back("pennybags");
     }
 }
 
@@ -81,6 +87,11 @@ namespace monopoly::display
     void applyTokenVoicesOption(bool enabled) noexcept
     {
         routingDisplayState.optionTokenVoicesOn = enabled;
+    }
+
+    void applyHostCommentsOption(bool enabled) noexcept
+    {
+        routingDisplayState.optionHostCommentsOn = enabled;
     }
 
     void applyMusicOption(bool musicOn) noexcept
@@ -379,6 +390,7 @@ namespace
         routingDisplayState.current2DView = display::Screen2D::Trade;
         routingDisplayState.desired2DView = display::Screen2D::Trade;
         routingDisplayState.optionTokenVoicesOn = true;
+        routingDisplayState.optionHostCommentsOn = true;
         routingDisplayState.optionTokenAnimationsOn = true;
         routingDisplayState.optionCameraMovementOn = true;
         routingDisplayState.optionLightingOn = true;
@@ -395,7 +407,9 @@ namespace
         expect(userinterface::processUIMessage(tab) &&
                 userinterface::optionsStateReadOnly().optionSnapshotLoaded &&
                 userinterface::optionsStateReadOnly().optionOn[
-                    static_cast<std::size_t>(optionsui::OptionToggle::Camera)],
+                    static_cast<std::size_t>(optionsui::OptionToggle::Camera)] &&
+                userinterface::optionsStateReadOnly().optionOn[
+                    static_cast<std::size_t>(optionsui::OptionToggle::HostComments)],
             "entering Option tab snapshots supported DISPLAY runtime owners");
 
         const auto cameraRect = optionsui::optionToggleRect(
@@ -410,12 +424,23 @@ namespace
                 routingDisplayState.optionCameraMovementOn,
             "Option toggle remains temporary until retail OK is pressed");
 
+        const auto hostRect = optionsui::optionToggleRect(
+            optionsui::OptionToggle::HostComments, true);
+        toggle.numberA = hostRect.left + 1;
+        toggle.numberB = hostRect.top + 1;
+        expect(userinterface::processUIMessage(toggle) &&
+                !userinterface::optionsStateReadOnly().optionOn[
+                    static_cast<std::size_t>(optionsui::OptionToggle::HostComments)] &&
+                routingDisplayState.optionHostCommentsOn,
+            "Host Comments toggle remains temporary until retail OK is pressed");
+
         uimsg::Message okay{};
         okay.type = uimsg::Type::MouseLeftDown;
         okay.numberA = 350;
         okay.numberB = 450;
         expect(userinterface::processUIMessage(okay) &&
                 !routingDisplayState.optionCameraMovementOn &&
+                !routingDisplayState.optionHostCommentsOn &&
                 requestedBackdrop == display::Screen2D::Trade &&
                 !userinterface::optionsStateReadOnly().active,
             "Option OK applies supported runtime values then restores saved IBar view");
@@ -665,6 +690,15 @@ namespace
         expect(std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
             "accepted AI auction choice routes UDPenny token voice");
 
+        state.players[1].aiPlayerLevel = 0;
+        state.players[1].currentSquare = 6;
+        route.clear();
+        completed.numberC = 1;
+        completed.numberD = 1;
+        userinterface::processRuleMessage(completed);
+        expect(std::find(route.begin(), route.end(), "pennybags") != route.end(),
+            "accepted human property purchase routes Pennybags host comment");
+
         route.clear();
         localHumanMask = 0;
         state.players[0].currentSquare = 30;
@@ -676,6 +710,19 @@ namespace
         userinterface::processRuleMessage(jail);
         expect(std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
             "GoToJail movement routes UDPenny token voice");
+
+        userinterface::resetRuleProjection();
+        state.numberOfPlayers = 2;
+        state.currentPlayer = 1;
+        state.players[1].token = 3;
+        state.players[1].aiPlayerLevel = 0;
+        route.clear();
+        localHumanMask = 0x3Fu;
+        state.players[1].currentSquare = 30;
+        jail.numberC = 1;
+        userinterface::processRuleMessage(jail);
+        expect(std::find(route.begin(), route.end(), "pennybags") != route.end(),
+            "local human GoToJail routes Pennybags negative host comment");
         localHumanMask = 0x3Fu;
     }
 
@@ -1057,8 +1104,8 @@ namespace
 int main()
 {
     std::cout
-        << "Monopoly UserInterface routing tests\n"
-        << "====================================\n";
+        << "Monopoly UserInterface routing tests\r\n"
+        << "====================================\r\n";
 
     testUiModuleOrder();
     testOptionsEntryAndCancelRouting();
@@ -1083,10 +1130,10 @@ int main()
 
     if (failures != 0)
     {
-        std::cerr << failures << " UserInterface test(s) failed.\n";
+        std::cerr << failures << " UserInterface test(s) failed.\r\n";
         return 1;
     }
 
-    std::cout << "All UserInterface routing tests passed.\n";
+    std::cout << "All UserInterface routing tests passed.\r\n";
     return 0;
 }

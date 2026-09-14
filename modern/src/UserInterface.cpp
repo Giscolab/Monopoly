@@ -76,6 +76,14 @@ namespace monopoly::userinterface
                 reaction->line, reaction->policy, reaction->watchAfterStart);
         }
 
+        void playPennybagsReaction(
+            const std::optional<penny::PennybagsReaction>& reaction) noexcept
+        {
+            if (!reaction) return;
+            engine::playPennybagsVoice(reaction->voice,
+                reaction->policy, reaction->watchAfterStart);
+        }
+
         [[nodiscard]] rules::PlayerNumber chatSender() noexcept
         {
             const auto count = std::min<rules::PlayerNumber>(
@@ -313,6 +321,14 @@ namespace monopoly::userinterface
             display::state().justReadACardHack = true;
         }
 
+        if (message.action == actions::Type::NotifyBuyOrAuctionDecision &&
+            message.numberA >= 0 && message.numberA < uiRuleState.numberOfPlayers &&
+            message.numberA < rules::MaxPlayers)
+        {
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            playPennybagsReaction(penny::buyOrAuctionPennybagsReaction(uiRuleState, player));
+        }
+
         if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberB != 0 &&
             message.numberA == static_cast<std::int64_t>(actions::Type::BuyOrAuctionDecision) &&
@@ -321,6 +337,9 @@ namespace monopoly::userinterface
         {
             const auto player = static_cast<rules::PlayerNumber>(message.numberC);
             const auto property = uiRuleState.players[player].currentSquare;
+            if (message.numberD != 0)
+                playPennybagsReaction(penny::boughtPropertyPennybagsReaction(
+                    uiRuleState, player, property));
             const auto reaction = message.numberD != 0
                 ? penny::boughtPropertyReaction(uiRuleState, player, property)
                 : penny::choseAuctionReaction(uiRuleState, player);
@@ -392,9 +411,11 @@ namespace monopoly::userinterface
                 message.numberC < rules::MaxPlayers)
             {
                 const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                const bool localHuman = ui::localplayers::slotIsLocalHumanPlayer(player);
+                playPennybagsReaction(penny::goToJailPennybagsReaction(
+                    uiRuleState, player, localHuman));
                 playTokenReaction(player, penny::goToJailReaction(
-                    uiRuleState, player,
-                    ui::localplayers::slotIsLocalHumanPlayer(player)));
+                    uiRuleState, player, localHuman));
             }
         }
 
@@ -640,7 +661,7 @@ namespace monopoly::userinterface
         {
             const auto& displayState = display::stateReadOnly();
             optionsui::loadSupportedOptionValues(optionsProjection,
-                displayState.optionTokenVoicesOn,
+                displayState.optionTokenVoicesOn, displayState.optionHostCommentsOn,
                 displayState.optionMusicOn, displayState.optionMusicTuneIndex,
                 displayState.optionTokenAnimationsOn,
                 displayState.optionCameraMovementOn,
@@ -653,6 +674,7 @@ namespace monopoly::userinterface
                 return optionsProjection.optionOn[static_cast<std::size_t>(toggle)];
             };
             display::applyTokenVoicesOption(value(optionsui::OptionToggle::TokenVoices));
+            display::applyHostCommentsOption(value(optionsui::OptionToggle::HostComments));
             display::applyMusicOption(value(optionsui::OptionToggle::Music));
             display::applyMusicTune(optionsProjection.musicTuneIndex);
             display::applyRuntimeOptions(

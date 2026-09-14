@@ -102,6 +102,7 @@ namespace monopoly::display
         bool board3DOn = false;
         bool viewportBackgroundFillOn = false;
         bool optionTokenVoicesOn = true;
+        bool optionHostCommentsOn = true;
         bool optionTokenAnimationsOn = true;
         bool optionCameraMovementOn = true;
         bool optionMusicOn = true;
@@ -162,6 +163,7 @@ namespace monopoly::display
 
     void noteBoardActivity() noexcept;
     void applyTokenVoicesOption(bool enabled) noexcept;
+    void applyHostCommentsOption(bool enabled) noexcept;
     void applyMusicOption(bool musicOn) noexcept;
     void applyMusicTune(std::uint8_t tuneIndex) noexcept;
     void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
