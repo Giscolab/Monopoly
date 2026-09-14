@@ -58,6 +58,7 @@ namespace monopoly::udsound
         void watchPennybags(audio::Runtime& audio) noexcept;
         [[nodiscard]] bool tokenVoiceActive(
             const audio::Runtime& audio, std::uint8_t token) const noexcept;
+        [[nodiscard]] bool talkingQueueIdle(const audio::Runtime& audio) const noexcept;
 
         void reset(audio::Runtime* audio = nullptr) noexcept;
         [[nodiscard]] std::optional<data::DataId> currentMusic() const noexcept

@@ -208,6 +208,11 @@ namespace monopoly::udsound
         return watchedToken || watchedPennybags_;
     }
 
+    bool Runtime::talkingQueueIdle(const audio::Runtime& audio) const noexcept
+    {
+        return !anyTalking(audio) && !pendingTalkingVoice_;
+    }
+
     void Runtime::watchTokenVoice(audio::Runtime& audio, std::uint8_t token) noexcept
     {
         if (token < TokenVoiceTokenCount && tokenVoiceActive(audio, token))

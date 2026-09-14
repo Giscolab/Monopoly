@@ -832,6 +832,25 @@ namespace monopoly::engine
         (void)playPennybagsComment(line, policy, watchAfterStart);
     }
 
+    bool spokenQueueIdle() noexcept
+    {
+        auto* output = audioPlayback();
+        return output == nullptr || monopolySoundRuntime.talkingQueueIdle(*output);
+    }
+
+    void playJailChoiceHostComment() noexcept
+    {
+        auto* output = audioPlayback();
+        if (output == nullptr) return;
+        if (output->boardEdition() == data::BoardEdition::Europe)
+            (void)playPennybagsSpecific(
+                data::packDataId(data::LegacyGroupId::LanguageDialog, 0x0A26u),
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+        else
+            (void)playPennybagsComment(udsound::PennybagsVoice::JailPayMoneyOrTryForDoubles,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+    }
+
     std::expected<void, std::string> syncSequenceAudio(SequencePlayback& session)
     {
         auto* output = audioPlayback();

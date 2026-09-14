@@ -25,6 +25,8 @@ namespace
     monopoly::rules::PlayerNumber capturedTradeB = monopoly::rules::NobodyPlayer;
     std::uint32_t capturedTradePending = 0;
     std::uint64_t routingTick = 0;
+    bool spokenQueueIdleResult = true;
+    int jailChoiceHostCommentCount = 0;
     std::uint32_t localHumanMask = 0x3F;
     std::uint32_t localPlayerMask = 0x3F;
     std::size_t simulatedQueuedActions = 0;
@@ -38,6 +40,14 @@ namespace
         monopoly::display::Screen2D::Invalid;
     std::vector<std::string_view> route;
 
+    std::size_t routeCount(std::string_view value)
+    {
+        std::size_t count{};
+        for (const auto item : route)
+            if (item == value) ++count;
+        return count;
+    }
+
     void expect(bool condition, std::string_view description)
     {
         if (condition)
@@ -49,6 +59,14 @@ namespace
         ++failures;
         std::cerr << "[FAIL] " << description << '\r\n';
     }
+}
+
+namespace monopoly::ibar
+{
+    RuleMode resolveRuleMode(RuleMode projectedMode, rules::PlayerNumber) noexcept
+    { return projectedMode; }
+    rules::PlayerNumber resolveRulePlayer(rules::PlayerNumber projectedPlayer) noexcept
+    { return projectedPlayer; }
 }
 
 namespace monopoly::engine
@@ -64,6 +82,12 @@ namespace monopoly::engine
         udsound::TokenVoiceClipPolicy, bool) noexcept
     {
         route.push_back("pennybags");
+    }
+    bool spokenQueueIdle() noexcept { return spokenQueueIdleResult; }
+    void playJailChoiceHostComment() noexcept
+    {
+        ++jailChoiceHostCommentCount;
+        route.push_back("jailchoice");
     }
 }
 
@@ -908,6 +932,70 @@ namespace
         shortageResolvedPlayer = rules::NobodyPlayer;
     }
 
+    void testRaiseMoneyAndJailHostComments()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 1;
+        uiState.players[0].currentSquare = 1;
+        routingDisplayState.desired2DView = display::Screen2D::Main;
+        localHumanMask = localPlayerMask = 0x01u;
+        spokenQueueIdleResult = true;
+        route.clear();
+
+        actions::Message debt{};
+        debt.action = actions::Type::NotifyPleasePay;
+        debt.toPlayer = rules::AllPlayers;
+        debt.numberA = 0;
+        debt.numberC = 500;
+        debt.numberE = 1;
+        routingTick = 2400;
+        userinterface::processRuleMessage(debt);
+        expect(routeCount("pennybags") == 0, "RaiseMoney stays silent at exact 40-second threshold");
+        routingTick = 2401;
+        userinterface::processRuleMessage(debt);
+        expect(routeCount("pennybags") == 1,
+            "RaiseMoney plays suggestion strictly after 2400 ticks");
+        routingTick = 4801;
+        userinterface::update();
+        expect(routeCount("pennybags") == 1,
+            "RaiseMoney periodic reminder keeps strict greater-than threshold");
+        routingTick = 4802;
+        userinterface::update();
+        expect(routeCount("pennybags") == 2,
+            "RaiseMoney periodic UI maintenance repeats after another 2400 ticks");
+        spokenQueueIdleResult = false;
+        routingTick = 7203;
+        userinterface::update();
+        expect(routeCount("pennybags") == 2,
+            "RaiseMoney does not overwrite an occupied post-lock voice slot");
+        spokenQueueIdleResult = true;
+
+        route.clear();
+        jailChoiceHostCommentCount = 0;
+        actions::Message jail{};
+        jail.action = actions::Type::NotifyJailExitChoice;
+        jail.toPlayer = rules::AllPlayers;
+        jail.numberA = 0;
+        jail.numberB = 1;
+        userinterface::processRuleMessage(jail);
+        expect(jailChoiceHostCommentCount == 1 && routeCount("jailchoice") == 1,
+            "local human who may roll out of jail gets edition-aware host comment");
+        jail.numberB = 0;
+        userinterface::processRuleMessage(jail);
+        expect(jailChoiceHostCommentCount == 1,
+            "forced-pay jail choice does not play roll-or-pay host comment");
+        localHumanMask = 0;
+        jail.numberB = 1;
+        userinterface::processRuleMessage(jail);
+        expect(jailChoiceHostCommentCount == 1,
+            "non-local jail choice stays silent");
+        localHumanMask = localPlayerMask = 0x3Fu;
+        spokenQueueIdleResult = true;
+        routingTick = 0;
+    }
+
     void testTradeAcceptanceProjectionRouting()
     {
         using namespace monopoly;
@@ -1154,6 +1242,7 @@ int main()
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();
+    testRaiseMoneyAndJailHostComments();
     testTradeAcceptanceProjectionRouting();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
