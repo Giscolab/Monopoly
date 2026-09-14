@@ -1,4 +1,5 @@
 #include "Engine.hpp"
+#include "AudioRuntime.hpp"
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
 #include "Timers.hpp"
@@ -45,12 +46,14 @@
 #include <SDL3/SDL_gpu.h>
 
 #include <iostream>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace monopoly::engine
 {
@@ -59,6 +62,9 @@ namespace monopoly::engine
         SDL_GPUDevice* gpuDevice = nullptr;
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
+        std::unique_ptr<audio::Runtime> audioRuntime;
+        std::vector<sequence::SequenceNodeId> activeSequenceSounds;
+        bool audioDisabled{};
         std::optional<World3DRenderer> worldRenderer;
         std::unique_ptr<World2DRenderer> overlayRenderer;
         std::optional<data::DataId> activeBoardSequence;
@@ -554,6 +560,53 @@ namespace monopoly::engine
         return playback.get();
     }
 
+
+    audio::Runtime* audioPlayback()
+    {
+        if (audioDisabled)
+            return nullptr;
+        if (!audioRuntime)
+            if (auto resources = startup::resources())
+                audioRuntime = std::make_unique<audio::Runtime>(std::move(resources));
+        return audioRuntime.get();
+    }
+
+    std::expected<void, std::string> syncSequenceAudio(SequencePlayback& session)
+    {
+        auto* output = audioPlayback();
+        if (output == nullptr)
+            return {};
+
+        const auto instances = session.runtime().soundInstances();
+        std::vector<sequence::SequenceNodeId> next;
+        next.reserve(instances.size());
+        for (const auto& instance : instances)
+        {
+            const audio::PlaybackKey key{audio::PlaybackDomain::Sequence, instance.node};
+            const bool known = std::find(activeSequenceSounds.begin(),
+                activeSequenceSounds.end(), instance.node) != activeSequenceSounds.end();
+            if (!known)
+            {
+                const auto started = output->play(key, instance.contentsDataId,
+                    1.0F, instance.endingAction == 3);
+                if (!started)
+                    return std::unexpected(started.error());
+            }
+            else
+                output->setLooping(key, instance.endingAction == 3);
+            next.push_back(instance.node);
+        }
+
+        for (const auto node : activeSequenceSounds)
+        {
+            if (std::find(next.begin(), next.end(), node) == next.end())
+                output->stop({audio::PlaybackDomain::Sequence, node});
+        }
+        activeSequenceSounds = std::move(next);
+        output->update();
+        return {};
+    }
+
     bool initialize(SDL_Window* window)
     {
         if (window == nullptr)
@@ -917,6 +970,18 @@ namespace monopoly::engine
                     ownershipSync.error().c_str());
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
+            if (!audioDisabled)
+            {
+                const auto audioSync = syncSequenceAudio(*session);
+                if (!audioSync)
+                {
+                    std::cerr << "Audio playback disabled: "
+                              << audioSync.error() << '\n';
+                    if (audioRuntime) audioRuntime->stopAll();
+                    activeSequenceSounds.clear();
+                    audioDisabled = true;
+                }
+            }
             const auto viewport = display::worldViewport(displayState.viewportInUse);
             if (viewport.empty()) session->world().clearView();
             else
@@ -1002,6 +1067,9 @@ namespace monopoly::engine
         pendingPieceMoveSpecial.reset();
         pieceMoveQueueLockHeld = false;
         victoryQueueLockReleased = false;
+        activeSequenceSounds.clear();
+        audioRuntime.reset();
+        audioDisabled = false;
         playback.reset();
         activeBoardSequence.reset();
         activeWorldCamera.reset();
