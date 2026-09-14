@@ -800,8 +800,8 @@ namespace
 
         state.items.erase(state.items.begin() + 1);
         proposed = tradeui::processInput(state, game, display::Screen2D::Trade, click);
-        expect(proposed.outgoing.empty(),
-            "Propose with only one side offering emits no action");
+        expect(proposed.outgoing.empty() && proposed.proposeMissingOffer,
+            "Propose with only one side offering emits no action and requests retail host comment");
 
         click.numberA = 307; click.numberB = 421;
         const auto cancelled = tradeui::processInput(state, game, display::Screen2D::Trade, click);

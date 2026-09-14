@@ -151,6 +151,7 @@ namespace monopoly::tradeui
     struct InputUpdate
     {
         bool consumed{};
+        bool proposeMissingOffer{};
         std::optional<display::Screen2D> requestedBackdrop;
         std::vector<actions::Message> outgoing;
     };

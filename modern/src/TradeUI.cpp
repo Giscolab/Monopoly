@@ -1266,6 +1266,10 @@ namespace monopoly::tradeui
                 action.numberA = 1;
                 result.outgoing.push_back(std::move(action));
             }
+            else if (!give || !get)
+            {
+                result.proposeMissingOffer = true;
+            }
             return result;
         }
 
