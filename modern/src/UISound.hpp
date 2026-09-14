@@ -19,5 +19,6 @@ namespace monopoly::engine
         udsound::TokenVoiceClipPolicy policy,
         bool watchAfterStart = false) noexcept;
     [[nodiscard]] bool spokenPostLockSlotEmpty() noexcept;
+    [[nodiscard]] bool isUsaBoardEdition() noexcept;
     void playJailChoiceHostComment() noexcept;
 }
