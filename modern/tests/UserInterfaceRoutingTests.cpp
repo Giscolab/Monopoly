@@ -26,6 +26,7 @@ namespace
     std::uint32_t capturedTradePending = 0;
     std::uint64_t routingTick = 0;
     bool spokenPostLockSlotEmptyResult = true;
+    bool usaBoardEditionResult = true;
     int jailChoiceHostCommentCount = 0;
     std::optional<monopoly::udsound::PennybagsVoice> lastPennybagsVoice;
     std::optional<monopoly::udsound::TokenVoiceClipPolicy> lastPennybagsPolicy;
@@ -88,6 +89,7 @@ namespace monopoly::engine
         route.push_back("pennybags");
     }
     bool spokenPostLockSlotEmpty() noexcept { return spokenPostLockSlotEmptyResult; }
+    bool isUsaBoardEdition() noexcept { return usaBoardEditionResult; }
     void playJailChoiceHostComment() noexcept
     {
         ++jailChoiceHostCommentCount;
@@ -1114,6 +1116,89 @@ namespace
         tradeResolvedPlayer = rules::NobodyPlayer;
     }
 
+    void testTradeInitiatorHostComments()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 2;
+        uiState.players[0].aiPlayerLevel = 0;
+        uiState.players[1].aiPlayerLevel = 0;
+        localPlayerMask = localHumanMask = 1u << 1u;
+        tradeResolvedPlayer = 1;
+        usaBoardEditionResult = true;
+        route.clear();
+        lastPennybagsVoice.reset();
+        lastPennybagsPolicy.reset();
+
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 0;
+        userinterface::processRuleMessage(started);
+        actions::Message item{};
+        item.action = actions::Type::NotifyTradeItem;
+        item.toPlayer = rules::AllPlayers;
+        item.numberA = 0;
+        item.numberB = 1;
+        userinterface::processRuleMessage(item);
+
+        actions::Message acceptance{};
+        acceptance.action = actions::Type::NotifyTradeAcceptanceDecision;
+        acceptance.toPlayer = rules::AllPlayers;
+        acceptance.numberA = 1u << 1u;
+        routingTick = 300;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 0,
+            "trade initiator comment stays silent at exact five-second threshold");
+
+        routingTick = 301;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 1 &&
+                lastPennybagsVoice == udsound::PennybagsVoice::HumanInitiatesTrade &&
+                lastPennybagsPolicy == udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying,
+            "remote human proposing to local human gets retail HumanInitiatesTrade");
+        routingTick = 601;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 1,
+            "trade initiator comment keeps strict greater-than repeat threshold");
+        routingTick = 602;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 2,
+            "trade initiator comment may repeat after more than five seconds");
+
+        uiState.players[0].aiPlayerLevel = 1;
+        routingTick = 903;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 3 &&
+                lastPennybagsVoice == udsound::PennybagsVoice::AIInitiatesTrade,
+            "AI proposing to local player gets retail AIInitiatesTrade");
+
+        uiState.players[1].aiPlayerLevel = 1;
+        localPlayerMask = localHumanMask = 0;
+        tradeResolvedPlayer = rules::NobodyPlayer;
+        routingTick = 1204;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 4 &&
+                lastPennybagsVoice == udsound::PennybagsVoice::AIInitiatesTrade,
+            "non-local AI versus AI trade keeps spectator AIInitiatesTrade comment");
+
+        usaBoardEditionResult = false;
+        routingTick = 1505;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 4,
+            "Europe edition suppresses USA-only trade initiator comments");
+        usaBoardEditionResult = true;
+        userinterface::processRuleMessage(acceptance);
+        expect(routeCount("pennybags") == 5,
+            "Europe suppression does not consume the USA five-second sound gate");
+
+        localPlayerMask = localHumanMask = 0x3Fu;
+        tradeResolvedPlayer = rules::NobodyPlayer;
+        usaBoardEditionResult = true;
+        routingTick = 0;
+    }
+
     void testDicePromptProjection()
     {
         using namespace monopoly;
@@ -1316,6 +1401,7 @@ int main()
     testRaiseMoneyAndJailHostComments();
     testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
+    testTradeInitiatorHostComments();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
     testCardSeenLandingGuard();

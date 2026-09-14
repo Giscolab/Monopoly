@@ -837,6 +837,12 @@ namespace monopoly::engine
         return monopolySoundRuntime.postLockVoiceSlotEmpty();
     }
 
+    bool isUsaBoardEdition() noexcept
+    {
+        const auto resources = startup::resources();
+        return !resources || resources->context().board == data::BoardEdition::Usa;
+    }
+
     void playJailChoiceHostComment() noexcept
     {
         auto* output = audioPlayback();

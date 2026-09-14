@@ -70,8 +70,10 @@ namespace monopoly::userinterface
         std::int64_t lastHousingShortageCount = 2;
         std::array<std::uint64_t, rules::MaxPlayers> lastRaiseMoneySoundTick{};
         std::array<std::uint64_t, rules::MaxPlayers> lastBssmBuySoundTick{};
+        std::uint64_t lastTradeInitiatorSoundTick{};
         inline constexpr std::uint64_t RaiseMoneyRepeatTicks = 40u * 60u;
         inline constexpr std::uint64_t BssmRepeatTicks = 30u * 60u;
+        inline constexpr std::uint64_t TradeInitiatorRepeatTicks = 5u * 60u;
 
         void maybePlayRaiseMoneySuggestion(rules::PlayerNumber player, std::uint64_t tick) noexcept
         {
@@ -96,6 +98,38 @@ namespace monopoly::userinterface
                 engine::playPennybagsVoice(udsound::PennybagsVoice::PlayerBuiltFirstHouse,
                     udsound::TokenVoiceClipPolicy::SkipIfOldSoundPlaying, false);
             lastBssmBuySoundTick[player] = tick;
+        }
+
+        void maybePlayTradeInitiatorComment(std::uint64_t tick) noexcept
+        {
+            if (!engine::isUsaBoardEdition()) return;
+            const auto playerA = tradeProjection.playerA;
+            const auto playerB = tradeProjection.playerB;
+            if (playerA >= uiRuleState.numberOfPlayers || playerA >= rules::MaxPlayers ||
+                playerB >= uiRuleState.numberOfPlayers || playerB >= rules::MaxPlayers ||
+                tick <= lastTradeInitiatorSoundTick + TradeInitiatorRepeatTicks)
+                return;
+
+            lastTradeInitiatorSoundTick = tick;
+            std::optional<udsound::PennybagsVoice> voice;
+            if (ui::localplayers::slotIsLocalPlayer(playerB))
+            {
+                if (uiRuleState.players[playerA].aiPlayerLevel == 0)
+                {
+                    if (!ui::localplayers::slotIsLocalHumanPlayer(playerA) &&
+                        ui::localplayers::slotIsLocalHumanPlayer(playerB))
+                        voice = udsound::PennybagsVoice::HumanInitiatesTrade;
+                }
+                else
+                    voice = udsound::PennybagsVoice::AIInitiatesTrade;
+            }
+            else if (uiRuleState.players[playerA].aiPlayerLevel != 0 &&
+                     uiRuleState.players[playerB].aiPlayerLevel != 0)
+                voice = udsound::PennybagsVoice::AIInitiatesTrade;
+
+            if (voice)
+                engine::playPennybagsVoice(*voice,
+                    udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
         }
 
         void playTokenReaction(rules::PlayerNumber player,
@@ -460,6 +494,8 @@ namespace monopoly::userinterface
             display::state().desired2DView, localHumanPlayerMask());
         if (tradeUpdate.requestedBackdrop)
             display::setBackdrop(*tradeUpdate.requestedBackdrop);
+        if (message.action == actions::Type::NotifyTradeAcceptanceDecision)
+            maybePlayTradeInitiatorComment(timers::tickCount());
         if (message.action == actions::Type::NotifyTradeFinished &&
             message.numberA == 1)
             engine::playPennybagsVoice(
