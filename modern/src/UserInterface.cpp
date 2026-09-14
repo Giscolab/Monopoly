@@ -15,6 +15,7 @@
 #include "RuntimeState.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <utility>
@@ -67,6 +68,20 @@ namespace monopoly::userinterface
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
         std::int64_t lastHousingShortageCount = 2;
+        std::array<std::uint64_t, rules::MaxPlayers> lastRaiseMoneySoundTick{};
+        inline constexpr std::uint64_t RaiseMoneyRepeatTicks = 40u * 60u;
+
+        void maybePlayRaiseMoneySuggestion(rules::PlayerNumber player, std::uint64_t tick) noexcept
+        {
+            if (player >= uiRuleState.numberOfPlayers || player >= rules::MaxPlayers ||
+                !display::isIBarVisible(display::stateReadOnly().desired2DView) ||
+                tick <= lastRaiseMoneySoundTick[player] + RaiseMoneyRepeatTicks ||
+                !engine::spokenQueueIdle())
+                return;
+            engine::playPennybagsVoice(udsound::PennybagsVoice::RaisingMoneySuggestion,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+            lastRaiseMoneySoundTick[player] = tick;
+        }
 
         void playTokenReaction(rules::PlayerNumber player,
             const std::optional<penny::TokenReaction>& reaction) noexcept
@@ -287,6 +302,8 @@ namespace monopoly::userinterface
         chat::reset();
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
+        lastHousingShortageCount = 2;
+        lastRaiseMoneySoundTick.fill(0);
         display::state().justReadACardHack = false;
     }
 
@@ -322,6 +339,17 @@ namespace monopoly::userinterface
 
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
+
+        if (message.action == actions::Type::NotifyPleasePay &&
+            message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+            maybePlayRaiseMoneySuggestion(
+                static_cast<rules::PlayerNumber>(message.numberA), timers::tickCount());
+        if (message.action == actions::Type::NotifyJailExitChoice &&
+            message.numberA >= 0 && message.numberA < rules::MaxPlayers &&
+            message.numberB != 0 &&
+            ui::localplayers::slotIsLocalHumanPlayer(
+                static_cast<rules::PlayerNumber>(message.numberA)))
+            engine::playJailChoiceHostComment();
 
         if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberB != 0 &&
@@ -651,6 +679,10 @@ namespace monopoly::userinterface
         // ProcessPlayersUI(NULL) original entretient les effets UI
         // periodiques, mais ne valide pas une phase UDPSEL. Le commit
         // desired/current appartient exclusivement a DISPLAY_UDPSEL_Show().
+        const auto player = ibar::resolveRulePlayer(iBarRuleProjection.player);
+        if (ibar::resolveRuleMode(iBarRuleProjection.mode, iBarRuleProjection.player) ==
+                ibar::RuleMode::RaiseMoney && player < rules::MaxPlayers)
+            maybePlayRaiseMoneySuggestion(player, timers::tickCount());
     }
 
     bool processUIMessage(const uimsg::Message& message)

@@ -18,4 +18,6 @@ namespace monopoly::engine
         udsound::PennybagsVoice voice,
         udsound::TokenVoiceClipPolicy policy,
         bool watchAfterStart = false) noexcept;
+    [[nodiscard]] bool spokenQueueIdle() noexcept;
+    void playJailChoiceHostComment() noexcept;
 }
