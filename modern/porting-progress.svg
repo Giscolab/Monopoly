@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="620" height="140" viewBox="0 0 620 140" role="img" aria-label="Functional 75%, families engaged 82.9%, mechanical 58%">
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="140" viewBox="0 0 620 140" role="img" aria-label="Functional 75%, families engaged 85.4%, mechanical 58%">
   <title>Monopoly modern porting progress</title>
   <text x="10" y="24" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">Estimation fonctionnelle</text>
   <text x="610" y="24" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">75%</text>
   <rect x="10" y="30" width="600" height="14" rx="7" fill="#d0d7de"/>
   <rect x="10" y="30" width="450" height="14" rx="7" fill="#2da44e"/>
   <text x="10" y="66" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">Familles engagees</text>
-  <text x="610" y="66" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">82.9%</text>
+  <text x="610" y="66" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">85.4%</text>
   <rect x="10" y="72" width="600" height="14" rx="7" fill="#d0d7de"/>
-  <rect x="10" y="72" width="498" height="14" rx="7" fill="#0969da"/>
+  <rect x="10" y="72" width="512" height="14" rx="7" fill="#0969da"/>
   <text x="10" y="108" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">Indice mecanique</text>
   <text x="610" y="108" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">58%</text>
   <rect x="10" y="114" width="600" height="14" rx="7" fill="#d0d7de"/>
