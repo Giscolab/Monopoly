@@ -8,6 +8,7 @@
 #include "PieceCamera.hpp"
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
+#include "ChatRuntime.hpp"
 
 #include "RuntimeState.hpp"
 
@@ -227,6 +228,7 @@ namespace monopoly::userinterface
         auctionui::reset(auctionProjection);
         tradeui::reset(tradeProjection);
         optionsui::reset(optionsProjection);
+        chat::reset();
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
     }
@@ -246,6 +248,8 @@ namespace monopoly::userinterface
 
         // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
         display::noteBoardActivity();
+
+        (void)chat::processRuleMessage(message);
 
         if (message.action == actions::Type::NotifyProposedConfiguration)
         {

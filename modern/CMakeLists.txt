@@ -697,6 +697,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/UIMessages.cpp
+    src/ChatRuntime.cpp
     src/UserInterface.cpp
     src/AuctionUI.cpp
     src/AuctionPlayback.cpp
