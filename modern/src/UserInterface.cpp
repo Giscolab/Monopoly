@@ -66,6 +66,7 @@ namespace monopoly::userinterface
         dice::Ingress diceIngress;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
+        std::int64_t lastHousingShortageCount = 2;
 
         void playTokenReaction(rules::PlayerNumber player,
             const std::optional<penny::TokenReaction>& reaction) noexcept
@@ -361,6 +362,15 @@ namespace monopoly::userinterface
             const auto shortagePlayer = ui::localplayers::housingShortageIBarPlayer(
                 uiRuleState, originalBuyer, allowedPlayers);
             iBarRuleProjection.processHousingShortage(message, shortagePlayer);
+            if (shortagePlayer < rules::MaxPlayers &&
+                ui::localplayers::slotIsLocalHumanPlayer(shortagePlayer))
+            {
+                if (message.numberD == 0 && lastHousingShortageCount != message.numberD)
+                    engine::playPennybagsVoice(
+                        udsound::PennybagsVoice::HousingShortage_NotFirstTime,
+                        udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+                lastHousingShortageCount = message.numberD;
+            }
         }
         else
         {
