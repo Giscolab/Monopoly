@@ -77,9 +77,19 @@ namespace monopoly::auctionui
         bool nextReachedEnd = animationReachedEnd_;
         bool nextHeardIntro = heardIntro_;
         PennyBagsUpdate update{};
+        auto nextSound = currentSound_;
         bool sendReady = false;
         std::uint32_t readyMask{};
         std::int64_t readySerial{};
+
+        const auto generalSound = [&](udsound::PennybagsVoice voice)
+        {
+            nextSound = PennyBagsSoundRequest{voice, std::nullopt};
+        };
+        const auto specificSound = [&](udsound::PennybagsVoice voice, std::uint8_t offset)
+        {
+            nextSound = PennyBagsSoundRequest{voice, offset};
+        };
 
         const auto chooseSequence = [&](PennyBagsState next)
             -> std::expected<void, std::string>
@@ -109,6 +119,7 @@ namespace monopoly::auctionui
                         nextHeardIntro = true;
                         if (auto selected = chooseSequence(PennyBagsState::Intro); !selected)
                             return std::unexpected(selected.error());
+                        generalSound(udsound::PennybagsVoice::Auction);
                         planned.nextPennyBags = PennyBagsState::Instructions;
                         // Mirrors AuctionPennyBagsAnimReachedEnd=TRUE before the
                         // new intro ID is committed below.
@@ -119,12 +130,14 @@ namespace monopoly::auctionui
                 case PennyBagsState::Instructions:
                     if (auto selected = chooseSequence(PennyBagsState::Instructions); !selected)
                         return std::unexpected(selected.error());
+                    generalSound(udsound::PennybagsVoice::Auction_ExplanationOnButtonsToIncreaseBid);
                     planned.nextPennyBags = PennyBagsState::StartBidding;
                     break;
 
                 case PennyBagsState::StartBidding:
                     if (auto selected = chooseSequence(PennyBagsState::StartBidding); !selected)
                         return std::unexpected(selected.error());
+                    generalSound(udsound::PennybagsVoice::Auction_OpeningBid);
                     planned.nextPennyBags = PennyBagsState::Begin;
                     break;
 
@@ -146,6 +159,10 @@ namespace monopoly::auctionui
                     {
                         if (auto selected = chooseSequence(PennyBagsState::NameHighestBidder); !selected)
                             return std::unexpected(selected.error());
+                        const auto token = gameState.players[*planned.highestBidder].token;
+                        if (token >= rules::MaxTokens)
+                            return std::unexpected("auction highest bidder token is out of range");
+                        specificSound(udsound::PennybagsVoice::Auction_CallOutTokenWithHighestBid, token);
                     }
                     planned.nextPennyBags = PennyBagsState::Idle;
                     break;
@@ -153,18 +170,24 @@ namespace monopoly::auctionui
                 case PennyBagsState::GoingOnce:
                     if (auto selected = chooseSequence(PennyBagsState::GoingOnce); !selected)
                         return std::unexpected(selected.error());
+                    generalSound(udsound::PennybagsVoice::Auction_GoingOnce);
                     planned.nextPennyBags = PennyBagsState::Idle;
                     break;
 
                 case PennyBagsState::GoingTwice:
                     if (auto selected = chooseSequence(PennyBagsState::GoingTwice); !selected)
                         return std::unexpected(selected.error());
+                    generalSound(udsound::PennybagsVoice::Auction_GoingTwice);
                     planned.nextPennyBags = PennyBagsState::Idle;
                     break;
 
                 case PennyBagsState::Sold:
                     if (auto selected = chooseSequence(PennyBagsState::Sold); !selected)
                         return std::unexpected(selected.error());
+                    if (planned.highestBid > 0)
+                        generalSound(udsound::PennybagsVoice::Auction_GoingSold);
+                    else
+                        specificSound(udsound::PennybagsVoice::Auction_GoingSold, 1);
                     planned.nextPennyBags = planned.highestBid > 0
                         ? PennyBagsState::Congrats
                         : PennyBagsState::EndAuction;
@@ -173,6 +196,10 @@ namespace monopoly::auctionui
                 case PennyBagsState::Congrats:
                     if (auto selected = chooseSequence(PennyBagsState::Congrats); !selected)
                         return std::unexpected(selected.error());
+                    if (planned.propertyForSale >= 28)
+                        specificSound(udsound::PennybagsVoice::Auction_CongratulateWinner, 1);
+                    else
+                        generalSound(udsound::PennybagsVoice::Auction_CongratulateWinner);
                     planned.nextPennyBags = PennyBagsState::EndAuction;
                     break;
 
@@ -268,11 +295,14 @@ namespace monopoly::auctionui
             nextReachedEnd = nextCurrent == data::EmptyDataId;
         }
 
+        if (nextSound != currentSound_)
+            update.sound = nextSound;
         state = std::move(planned);
         currentSequence_ = nextCurrent;
         desiredSequence_ = nextDesired;
         animationReachedEnd_ = nextReachedEnd;
         heardIntro_ = nextHeardIntro;
+        currentSound_ = nextSound;
         return update;
     }
 
@@ -281,6 +311,7 @@ namespace monopoly::auctionui
         currentSequence_ = data::EmptyDataId;
         desiredSequence_ = data::EmptyDataId;
         animationReachedEnd_ = true;
+        currentSound_.reset();
         // heardIntro_ intentionally survives: source udauct_DoneAnAuctionBefore
         // is static and is not reset by DISPLAY_UDAUCT_Initialize/Destroy.
     }

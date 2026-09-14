@@ -991,6 +991,32 @@ namespace monopoly::engine
             if (!pennyBagsSync)
                 return SDL_SetError("Auction Pennybags playback: %s",
                     pennyBagsSync.error().c_str());
+            if (pennyBagsSync->sound)
+            {
+                const auto& sound = *pennyBagsSync->sound;
+                std::expected<void, std::string> played{};
+                if (sound.specificOffset)
+                {
+                    auto* output = audioPlayback();
+                    if (output != nullptr)
+                    {
+                        const auto* choice = udsound::pennybagsChoice(
+                            output->boardEdition(), sound.voice);
+                        if (choice == nullptr || *sound.specificOffset >= choice->alternateCount)
+                            return SDL_SetError("Auction Pennybags specific offset is invalid");
+                        const auto wave = data::packDataId(data::LegacyGroupId::LanguageDialog,
+                            static_cast<data::DataTag>(choice->firstTag + *sound.specificOffset));
+                        played = playPennybagsSpecific(wave,
+                            udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
+                    }
+                }
+                else
+                {
+                    played = playPennybagsComment(sound.voice,
+                        udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying, false);
+                }
+                if (!played) return SDL_SetError("Auction Pennybags audio: %s", played.error().c_str());
+            }
             if (pennyBagsSync->requestedBackdrop)
                 display::setBackdrop(*pennyBagsSync->requestedBackdrop);
             const auto tradeBackdropSync = tradeBackdropPlayback.sync(

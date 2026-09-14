@@ -291,6 +291,80 @@ namespace
             "zero-bid EndAuction returns to former Trade view without Congrats");
     }
 
+    void testSoundRequests()
+    {
+        const auto capture = [](auctionui::PennyBagsState next,
+            std::int64_t highestBid = 0,
+            std::optional<rules::PlayerNumber> bidder = std::nullopt,
+            int propertyForSale = -1,
+            std::uint8_t bidderToken = 0)
+        {
+            SyntheticSequenceResources resources;
+            engine::SequencePlayback playback(resources.service.snapshot());
+            auctionui::PennyBagsPlayback penny;
+            auctionui::State state{};
+            rules::GameState game{};
+            game.numberOfPlayers = 3;
+            if (bidder && *bidder < rules::MaxPlayers)
+                game.players[*bidder].token = bidderToken;
+            state.nextPennyBags = next;
+            state.pennyBagsSwitch = true;
+            state.highestBid = highestBid;
+            state.highestBidder = bidder;
+            state.propertyForSale = propertyForSale;
+            ReadyCapture ready;
+            auctionui::AuctionReadySender sender = std::ref(ready);
+            return penny.sync(state, game, display::Screen2D::Auction,
+                playback, sender);
+        };
+
+        const auto general = [](const auto& update, udsound::PennybagsVoice voice)
+        {
+            return update && update->sound && update->sound->voice == voice &&
+                !update->sound->specificOffset;
+        };
+        const auto specific = [](const auto& update, udsound::PennybagsVoice voice,
+            std::uint8_t offset)
+        {
+            return update && update->sound && update->sound->voice == voice &&
+                update->sound->specificOffset == offset;
+        };
+
+        require(general(capture(auctionui::PennyBagsState::Intro),
+                udsound::PennybagsVoice::Auction),
+            "auction Intro requests PB_Auction in sync with its animation");
+        require(general(capture(auctionui::PennyBagsState::Instructions),
+                udsound::PennybagsVoice::Auction_ExplanationOnButtonsToIncreaseBid),
+            "auction Instructions requests retail button explanation");
+        require(general(capture(auctionui::PennyBagsState::StartBidding),
+                udsound::PennybagsVoice::Auction_OpeningBid),
+            "auction StartBidding requests opening-bid line");
+        require(specific(capture(auctionui::PennyBagsState::NameHighestBidder,
+                    100, rules::PlayerNumber{1}, -1, 7),
+                udsound::PennybagsVoice::Auction_CallOutTokenWithHighestBid, 7),
+            "highest-bidder animation requests exact token-specific offset");
+        require(general(capture(auctionui::PennyBagsState::GoingOnce),
+                udsound::PennybagsVoice::Auction_GoingOnce),
+            "GoingOnce requests PB_Auction_GoingOnce");
+        require(general(capture(auctionui::PennyBagsState::GoingTwice),
+                udsound::PennybagsVoice::Auction_GoingTwice),
+            "GoingTwice requests PB_Auction_GoingTwice");
+        require(general(capture(auctionui::PennyBagsState::Sold, 250),
+                udsound::PennybagsVoice::Auction_GoingSold),
+            "Sold with a bid requests general going-sold line");
+        require(specific(capture(auctionui::PennyBagsState::Sold, 0),
+                udsound::PennybagsVoice::Auction_GoingSold, 1),
+            "Sold with no bid requests exact WAV_pb277 alternate");
+        require(general(capture(auctionui::PennyBagsState::Congrats, 250,
+                    rules::PlayerNumber{1}, 12),
+                udsound::PennybagsVoice::Auction_CongratulateWinner),
+            "property Congrats uses general winner catalogue line");
+        require(specific(capture(auctionui::PennyBagsState::Congrats, 250,
+                    rules::PlayerNumber{1}, 28),
+                udsound::PennybagsVoice::Auction_CongratulateWinner, 1),
+            "building Congrats requests exact WAV_pb279 alternate");
+    }
+
     void testFailureAndHiddenStateAreTransactional()
     {
         rules::GameState game{};
@@ -378,6 +452,7 @@ int main()
         testFirstAuctionLifecycle();
         testLaterAuctionSkipsExplanation();
         testNoBidAndInvalidHighestBidder();
+        testSoundRequests();
         testFailureAndHiddenStateAreTransactional();
         return 0;
     }
