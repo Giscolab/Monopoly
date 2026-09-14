@@ -177,6 +177,28 @@ namespace
         expect(playback.update(200).has_value(), "victory abort stop drains cleanly");
     }
 
+    void testPassedGoSignal()
+    {
+        SyntheticSequenceResources fixture;
+        engine::SequencePlayback playback(fixture.service.snapshot());
+        PieceMovePlayback controller;
+        PieceMovePlan plan{};
+        plan.sourceSquare = 35;
+        plan.destinationSquare = 5;
+        plan.instructions.push_back(moveItem(BoardCameraView::FifteenTiles01, 35, 0));
+        plan.instructions.push_back(moveItem(BoardCameraView::FifteenTiles02, 0, 5));
+        plan.instructions.push_back(cameraItem(BoardCameraView::ThreeTiles01, 5));
+        expect(controller.begin(std::move(plan)).has_value(),
+            "PassedGo fixture begins forward wrap stack");
+        auto step = controller.tick(true, playback);
+        expect(step && !step->passedGo && playback.update(0).has_value(),
+            "segment approaching GO does not announce before reaching the corner");
+        expect(playback.update(100).has_value(), "GO segment reaches its held end frame");
+        step = controller.tick(true, playback);
+        expect(step && step->passedGo && step->startedSequence,
+            "completed wrap segment signals PassedGo before continuing beyond GO");
+    }
+
     void testPlanValidation()
     {
         PieceMovePlayback controller;
@@ -200,6 +222,7 @@ int main()
     testNormalStackEscalation();
     testBoardVisibilityAbort();
     testVictoryLoop();
+    testPassedGoSignal();
     testPlanValidation();
     std::cout << (failures ? "Piece move-playback tests FAILED\n" :
         "Piece move-playback tests passed\n");

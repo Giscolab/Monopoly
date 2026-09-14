@@ -629,6 +629,14 @@ namespace monopoly::engine
             if (step->camera)
                 display::state().desiredBoardCamera = *step->camera;
 
+            if (step->passedGo)
+            {
+                const auto voice = playPennybagsComment(
+                    udsound::PennybagsVoice::CollectMoney_Go,
+                    udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+                if (!voice) return voice;
+            }
+
             if (step->looped &&
                 activePieceMoveSpecial == pieces::PieceMoveSpecial::OffBoardVictory &&
                 pieceMoveQueueLockHeld && !victoryQueueLockReleased)

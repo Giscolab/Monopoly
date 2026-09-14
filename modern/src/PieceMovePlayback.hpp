@@ -14,6 +14,7 @@ namespace monopoly::pieces
         bool completed{};
         bool looped{};
         bool stoppedSequence{};
+        bool passedGo{};
         std::optional<BoardCameraView> camera;
         std::optional<data::DataId> startedSequence;
     };

@@ -83,6 +83,15 @@ namespace monopoly::pieces
             }
         }
 
+        if (escalate && index_ > 0 &&
+            plan.special == PieceMoveSpecial::None &&
+            plan.destinationSquare != 0)
+        {
+            const auto& previous = plan.instructions[index_ - 1u];
+            if (!previous.cameraOnly && previous.landingSquare == 0)
+                update.passedGo = true;
+        }
+
         while (escalate && index_ < top &&
             plan.instructions[index_].cameraOnly)
             ++index_;
