@@ -54,6 +54,29 @@ namespace
         require(europe && europe->firstTag == 0x026D && europe->alternateCount == 1,
             "Europe own-property voice preserves retail kya pos24 row");
     }
+    void testSquareAnnouncements()
+    {
+        const auto usa = monopoly::penny::squareAnnouncementWave(
+            monopoly::data::BoardEdition::Usa, 0, 1);
+        require(usa && monopoly::data::dataGroup(*usa) ==
+                monopoly::data::legacyGroupValue(monopoly::data::LegacyGroupId::LanguageDialog) &&
+                monopoly::data::dataTag(*usa) == 0x0969,
+            "USA property announcement uses city-specific DAT_LANGDIALOG square tag");
+
+        const auto europe = monopoly::penny::squareAnnouncementWave(
+            monopoly::data::BoardEdition::Europe, 1, 39);
+        require(europe && monopoly::data::dataGroup(*europe) ==
+                monopoly::data::legacyGroupValue(monopoly::data::LegacyGroupId::Board) &&
+                monopoly::data::dataTag(*europe) == 0x216E,
+            "Europe property announcement uses propconv index in DAT_BOARD");
+        require(!monopoly::penny::squareAnnouncementWave(
+                monopoly::data::BoardEdition::Usa, 0, 2),
+            "non-property square has no property-name announcement");
+        require(!monopoly::penny::squareAnnouncementWave(
+                monopoly::data::BoardEdition::Europe, -1, 1),
+            "Europe custom board waits for a real install-language owner");
+    }
+
     void testPurchaseAndAuction()
     {
         auto state = baseState();
@@ -142,6 +165,7 @@ namespace
 int main()
 {
     testCatalog();
+    testSquareAnnouncements();
     testPurchaseAndAuction();
     testJailAndLanding();
     testPropertyAndRentReactions();

@@ -64,6 +64,12 @@ namespace monopoly::penny
             return square == 12 || square == 28;
         }
 
+        inline constexpr std::array<std::int8_t, 42> PropertyAnnouncementIndex{
+            -1, 0,-1, 1,-1, 2, 3,-1, 4, 5,
+            -1, 6, 7, 8, 9,10,11,-1,12,13,
+            -1,14,-1,15,16,17,18,19,20,21,
+            -1,22,23,-1,24,25,-1,26,-1,27,-1,-1};
+
         [[nodiscard]] std::optional<TokenReaction> rentImpactReaction(
             const LandingEconomics& economics) noexcept
         {
@@ -254,6 +260,29 @@ namespace monopoly::penny
                 return waitPb(udsound::PennybagsVoice::LandOn_JustVisiting);
         }
         return std::nullopt;
+    }
+
+    std::optional<data::DataId> squareAnnouncementWave(
+        data::BoardEdition edition, int city, std::uint8_t square) noexcept
+    {
+        if (square >= PropertyAnnouncementIndex.size() ||
+            PropertyAnnouncementIndex[square] < 0)
+            return std::nullopt;
+
+        if (edition == data::BoardEdition::Usa)
+        {
+            const auto normalizedCity = city < 0 ? 0 : city;
+            const auto tag = static_cast<data::DataTag>(
+                0x0968u + square + static_cast<std::uint32_t>(normalizedCity) * 41u);
+            return data::packDataId(data::LegacyGroupId::LanguageDialog, tag);
+        }
+
+        if (city < 0)
+            return std::nullopt;
+        const auto tag = static_cast<data::DataTag>(0x2137u +
+            static_cast<std::uint32_t>(PropertyAnnouncementIndex[square]) +
+            static_cast<std::uint32_t>(city) * 28u);
+        return data::packDataId(data::LegacyGroupId::Board, tag);
     }
 
     std::optional<TokenReaction> landedOnSquareReaction(
