@@ -598,6 +598,7 @@ namespace monopoly::userinterface
         {
             const auto& displayState = display::stateReadOnly();
             optionsui::loadSupportedOptionValues(optionsProjection,
+                displayState.optionTokenVoicesOn,
                 displayState.optionMusicOn, displayState.optionMusicTuneIndex,
                 displayState.optionTokenAnimationsOn,
                 displayState.optionCameraMovementOn,
@@ -609,6 +610,7 @@ namespace monopoly::userinterface
             {
                 return optionsProjection.optionOn[static_cast<std::size_t>(toggle)];
             };
+            display::applyTokenVoicesOption(value(optionsui::OptionToggle::TokenVoices));
             display::applyMusicOption(value(optionsui::OptionToggle::Music));
             display::applyMusicTune(optionsProjection.musicTuneIndex);
             display::applyRuntimeOptions(

@@ -46,6 +46,10 @@ namespace monopoly::audio
         void setLooping(PlaybackKey key, bool loop) noexcept;
         void update() noexcept;
         [[nodiscard]] bool active(PlaybackKey key) const noexcept;
+        [[nodiscard]] data::BoardEdition boardEdition() const noexcept
+        {
+            return resources_ ? resources_->context().board : data::BoardEdition::Usa;
+        }
 
     private:
         struct Voice;

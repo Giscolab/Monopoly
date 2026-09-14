@@ -63,8 +63,8 @@ namespace monopoly::optionsui
 
     inline constexpr std::uint8_t MusicTuneCount = 5;
 
-    inline constexpr std::array<OptionToggle, 5> SupportedOptionToggles{
-        OptionToggle::Music, OptionToggle::TokenAnimations,
+    inline constexpr std::array<OptionToggle, 6> SupportedOptionToggles{
+        OptionToggle::TokenVoices, OptionToggle::Music, OptionToggle::TokenAnimations,
         OptionToggle::Camera, OptionToggle::Lighting,
         OptionToggle::Board3D};
 
@@ -117,7 +117,7 @@ namespace monopoly::optionsui
         display::Screen2D previousView) noexcept;
 
     void loadSupportedOptionValues(State& state,
-        bool musicOn, std::uint8_t musicTuneIndex,
+        bool tokenVoicesOn, bool musicOn, std::uint8_t musicTuneIndex,
         bool tokenAnimationsOn, bool cameraMovementOn,
         bool lightingOn, bool board3DOn) noexcept;
 

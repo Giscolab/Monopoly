@@ -58,6 +58,7 @@ namespace monopoly::pieces
     struct PieceMovePlan
     {
         PieceMoveSpecial special{PieceMoveSpecial::None};
+        std::uint8_t token{};
         std::int32_t sourceSquare{};
         std::int32_t destinationSquare{};
         std::vector<PieceMoveInstruction> instructions;

@@ -59,6 +59,9 @@
 
 namespace monopoly::engine
 {
+    void disableAudioPlayback(std::string_view context,
+        const std::string& error) noexcept;
+
     namespace
     {
         SDL_GPUDevice* gpuDevice = nullptr;
@@ -68,6 +71,8 @@ namespace monopoly::engine
         udsound::Runtime monopolySoundRuntime;
         std::vector<sequence::SequenceNodeId> activeSequenceSounds;
         bool audioDisabled{};
+        bool tokenVoiceQueueLockHeld{};
+        std::optional<std::uint8_t> activePieceMoveToken;
         std::optional<World3DRenderer> worldRenderer;
         std::unique_ptr<World2DRenderer> overlayRenderer;
         std::optional<data::DataId> activeBoardSequence;
@@ -446,6 +451,46 @@ namespace monopoly::engine
             if (!synced) return std::unexpected(synced.error());
             return {};
         }
+        void reconcileTokenVoiceQueueLock(bool shouldHold)
+        {
+            if (shouldHold && !tokenVoiceQueueLockHeld)
+            {
+                userinterface::lockGameQueue();
+                tokenVoiceQueueLockHeld = true;
+            }
+            else if (!shouldHold && tokenVoiceQueueLockHeld)
+            {
+                userinterface::unlockGameQueue();
+                tokenVoiceQueueLockHeld = false;
+            }
+        }
+
+        [[nodiscard]] std::expected<void, std::string> playPieceTokenVoice(
+            std::uint8_t token, udsound::TokenVoiceLine line,
+            udsound::TokenVoiceClipPolicy policy, bool watchAfterStart)
+        {
+            auto* output = audioPlayback();
+            if (output == nullptr) return {};
+            auto played = monopolySoundRuntime.tokenVoice(*output,
+                display::stateReadOnly().optionTokenVoicesOn, token, line, policy,
+                static_cast<std::uint32_t>(std::rand()));
+            if (!played)
+            {
+                disableAudioPlayback("Token voice disabled audio", played.error());
+                return {};
+            }
+            if (watchAfterStart && played->started)
+                monopolySoundRuntime.watchTokenVoice(*output, token);
+            auto watched = monopolySoundRuntime.syncTokenVoices(*output);
+            if (!watched)
+            {
+                disableAudioPlayback("Token voice watch disabled audio", watched.error());
+                return {};
+            }
+            reconcileTokenVoiceQueueLock(*watched);
+            return {};
+        }
+
         [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
             SequencePlayback& session, bool boardVisible, std::uint64_t tick)
         {
@@ -508,14 +553,36 @@ namespace monopoly::engine
                 if (auto plan = userinterface::takePendingPieceMovePlan())
                 {
                     activePieceMoveSpecial = plan->special;
+                    activePieceMoveToken = plan->token;
                     victoryQueueLockReleased = false;
                     pieceMoveQueueLockHeld = userinterface::gameQueueLocked();
+                    if (plan->special == pieces::PieceMoveSpecial::OffBoardBankrupt)
+                    {
+                        bool localHuman = false;
+                        const auto& projected = userinterface::ruleStateReadOnly();
+                        for (rules::PlayerNumber player = 0;
+                             player < projected.numberOfPlayers && player < rules::MaxPlayers; ++player)
+                            if (projected.players[player].token == plan->token)
+                            {
+                                localHuman = ui::localplayers::slotIsLocalHumanPlayer(player);
+                                break;
+                            }
+                        if (!localHuman)
+                        {
+                            const auto line = (std::rand() & 1) == 0 ?
+                                udsound::TokenVoiceLine::GiveUp : udsound::TokenVoiceLine::Bankrupt;
+                            const auto voice = playPieceTokenVoice(plan->token, line,
+                                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+                            if (!voice) return voice;
+                        }
+                    }
                     const auto begun = pieceMovePlayback.begin(std::move(*plan));
                     if (!begun)
                     {
                         if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
                         pieceMoveQueueLockHeld = false;
                         activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+                        activePieceMoveToken.reset();
                         return std::unexpected(begun.error());
                     }
                 }
@@ -541,6 +608,13 @@ namespace monopoly::engine
                 userinterface::unlockGameQueue();
                 pieceMoveQueueLockHeld = false;
                 victoryQueueLockReleased = true;
+                if (activePieceMoveToken)
+                {
+                    const auto voice = playPieceTokenVoice(*activePieceMoveToken,
+                        udsound::TokenVoiceLine::WonGame,
+                        udsound::TokenVoiceClipPolicy::SkipIfOldSoundPlaying, true);
+                    if (!voice) return voice;
+                }
             }
 
             if (step->completed)
@@ -549,6 +623,7 @@ namespace monopoly::engine
                 pieceMoveQueueLockHeld = false;
                 victoryQueueLockReleased = false;
                 activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+                activePieceMoveToken.reset();
             }
             return {};
         }
@@ -585,6 +660,8 @@ namespace monopoly::engine
         monopolySoundRuntime.reset(audioRuntime.get());
         if (audioRuntime) audioRuntime->stopAll();
         activeSequenceSounds.clear();
+        if (tokenVoiceQueueLockHeld) userinterface::unlockGameQueue();
+        tokenVoiceQueueLockHeld = false;
         audioDisabled = true;
     }
 
@@ -656,9 +733,14 @@ namespace monopoly::engine
                 *output, iBarBackdropPlayback.scoreTextState(player).lastCashChange);
             if (!cash) return cash;
         }
-        return monopolySoundRuntime.syncMusic(
+        const auto music = monopolySoundRuntime.syncMusic(
             *output, runtime::state().gameInProgress,
             displayState.optionMusicOn, displayState.optionMusicTuneIndex);
+        if (!music) return music;
+        const auto watched = monopolySoundRuntime.syncTokenVoices(*output);
+        if (!watched) return std::unexpected(watched.error());
+        reconcileTokenVoiceQueueLock(*watched);
+        return {};
     }
 
     bool initialize(SDL_Window* window)
@@ -1123,6 +1205,9 @@ namespace monopoly::engine
         pendingPieceMoveSpecial.reset();
         pieceMoveQueueLockHeld = false;
         victoryQueueLockReleased = false;
+        activePieceMoveToken.reset();
+        if (tokenVoiceQueueLockHeld) userinterface::unlockGameQueue();
+        tokenVoiceQueueLockHeld = false;
         activeSequenceSounds.clear();
         monopolySoundRuntime.reset(audioRuntime.get());
         audioRuntime.reset();

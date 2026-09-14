@@ -480,6 +480,7 @@ target_sources(
     PRIVATE
     src/AudioRuntime.cpp
     src/UDSoundRuntime.cpp
+    src/TokenVoiceCatalog.cpp
     src/Engine.cpp
 )
 
