@@ -481,6 +481,7 @@ target_sources(
     src/AudioRuntime.cpp
     src/UDSoundRuntime.cpp
     src/TokenVoiceCatalog.cpp
+    src/UDPennyVoice.cpp
     src/Engine.cpp
 )
 
@@ -731,6 +732,7 @@ if(BUILD_TESTING)
         src/RuntimeState.cpp
         src/PieceMoveIngress.cpp
         src/PieceMovePlan.cpp
+        src/UDPennyVoice.cpp
         src/PieceCamera.cpp
         src/PieceIdleTransition.cpp
         src/DiceIngress.cpp
@@ -763,6 +765,23 @@ if(BUILD_TESTING)
         COMMAND MonopolyUserInterfaceRoutingTests
     )
 
+endif()
+
+# UDPenny.cpp pure token-voice reaction selectors and catalog fidelity
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyUDPennyVoiceTests
+        tests/UDPennyVoiceTests.cpp
+        src/UDPennyVoice.cpp
+        src/TokenVoiceCatalog.cpp
+    )
+    target_include_directories(MonopolyUDPennyVoiceTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(MonopolyUDPennyVoiceTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.UDPennyVoice COMMAND MonopolyUDPennyVoiceTests)
 endif()
 
 # UDTrade.cpp / trade.cpp pure editor projection and partner selection

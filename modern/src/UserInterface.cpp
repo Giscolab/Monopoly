@@ -10,6 +10,7 @@
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
 #include "ChatRuntime.hpp"
+#include "UDPennyVoice.hpp"
 
 #include "RuntimeState.hpp"
 
@@ -64,6 +65,16 @@ namespace monopoly::userinterface
         dice::Ingress diceIngress;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
+
+        void playTokenReaction(rules::PlayerNumber player,
+            const std::optional<penny::TokenReaction>& reaction) noexcept
+        {
+            if (!reaction || player >= uiRuleState.numberOfPlayers ||
+                player >= rules::MaxPlayers)
+                return;
+            engine::playTokenVoice(uiRuleState.players[player].token,
+                reaction->line, reaction->policy, reaction->watchAfterStart);
+        }
 
         [[nodiscard]] rules::PlayerNumber chatSender() noexcept
         {
@@ -293,6 +304,20 @@ namespace monopoly::userinterface
 
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
+
+        if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberB != 0 &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::BuyOrAuctionDecision) &&
+            message.numberC >= 0 && message.numberC < uiRuleState.numberOfPlayers &&
+            message.numberC < rules::MaxPlayers)
+        {
+            const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+            const auto property = uiRuleState.players[player].currentSquare;
+            const auto reaction = message.numberD != 0
+                ? penny::boughtPropertyReaction(uiRuleState, player, property)
+                : penny::choseAuctionReaction(uiRuleState, player);
+            playTokenReaction(player, reaction);
+        }
         const auto auctionUpdate = auctionui::processRuleMessage(
             auctionProjection, uiRuleState, message, display::state().desired2DView);
         if (auctionUpdate.requestedBackdrop)
@@ -354,6 +379,15 @@ namespace monopoly::userinterface
                 uiRuleState, message, display::stateReadOnly().optionTokenAnimationsOn);
             if (movement && movement->sourceQueueLockRequired)
                 lockGameQueue();
+            if (movement && message.numberA == 40 &&
+                message.numberC >= 0 && message.numberC < uiRuleState.numberOfPlayers &&
+                message.numberC < rules::MaxPlayers)
+            {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberC);
+                playTokenReaction(player, penny::goToJailReaction(
+                    uiRuleState, player,
+                    ui::localplayers::slotIsLocalHumanPlayer(player)));
+            }
         }
 
         if (message.action == actions::Type::NotifyStartTurn &&
