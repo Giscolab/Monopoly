@@ -53,6 +53,17 @@ namespace
             "USA own-property voice preserves retail kya pos24 row");
         require(europe && europe->firstTag == 0x026D && europe->alternateCount == 1,
             "Europe own-property voice preserves retail kya pos24 row");
+        const auto pb235 = monopoly::udsound::pennybagsVoiceAt(
+            monopoly::data::BoardEdition::Europe,
+            monopoly::udsound::PennybagsVoice::JailPayMoneyOrTryForDoubles, 2);
+        require(pb235 && monopoly::data::dataGroup(*pb235) ==
+                monopoly::data::legacyGroupValue(monopoly::data::LegacyGroupId::LanguageDialog) &&
+                monopoly::data::dataTag(*pb235) == 0x0A26,
+            "Europe jail choice maps the retail WAV_pb235 alternate");
+        require(!monopoly::udsound::pennybagsVoiceAt(
+                monopoly::data::BoardEdition::Europe,
+                monopoly::udsound::PennybagsVoice::JailPayMoneyOrTryForDoubles, 3),
+            "specific Pennybags alternate rejects indexes outside the retail row");
     }
     void testSquareAnnouncements()
     {

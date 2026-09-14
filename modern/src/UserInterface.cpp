@@ -73,10 +73,12 @@ namespace monopoly::userinterface
 
         void maybePlayRaiseMoneySuggestion(rules::PlayerNumber player, std::uint64_t tick) noexcept
         {
-            if (player >= uiRuleState.numberOfPlayers || player >= rules::MaxPlayers ||
-                !display::isIBarVisible(display::stateReadOnly().desired2DView) ||
-                tick <= lastRaiseMoneySoundTick[player] + RaiseMoneyRepeatTicks ||
-                !engine::spokenQueueIdle())
+            if (player >= rules::MaxPlayers)
+                return;
+            if (tick <= lastRaiseMoneySoundTick[player] + RaiseMoneyRepeatTicks ||
+                !display::isIBarVisible(display::stateReadOnly().desired2DView))
+                return;
+            if (!engine::spokenPostLockSlotEmpty())
                 return;
             engine::playPennybagsVoice(udsound::PennybagsVoice::RaisingMoneySuggestion,
                 udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
