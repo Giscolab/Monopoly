@@ -25,7 +25,7 @@ namespace
     monopoly::rules::PlayerNumber capturedTradeB = monopoly::rules::NobodyPlayer;
     std::uint32_t capturedTradePending = 0;
     std::uint64_t routingTick = 0;
-    bool spokenQueueIdleResult = true;
+    bool spokenPostLockSlotEmptyResult = true;
     int jailChoiceHostCommentCount = 0;
     std::uint32_t localHumanMask = 0x3F;
     std::uint32_t localPlayerMask = 0x3F;
@@ -83,7 +83,7 @@ namespace monopoly::engine
     {
         route.push_back("pennybags");
     }
-    bool spokenQueueIdle() noexcept { return spokenQueueIdleResult; }
+    bool spokenPostLockSlotEmpty() noexcept { return spokenPostLockSlotEmptyResult; }
     void playJailChoiceHostComment() noexcept
     {
         ++jailChoiceHostCommentCount;
@@ -941,7 +941,7 @@ namespace
         uiState.players[0].currentSquare = 1;
         routingDisplayState.desired2DView = display::Screen2D::Main;
         localHumanMask = localPlayerMask = 0x01u;
-        spokenQueueIdleResult = true;
+        spokenPostLockSlotEmptyResult = true;
         route.clear();
 
         actions::Message debt{};
@@ -965,12 +965,20 @@ namespace
         userinterface::update();
         expect(routeCount("pennybags") == 2,
             "RaiseMoney periodic UI maintenance repeats after another 2400 ticks");
-        spokenQueueIdleResult = false;
+        spokenPostLockSlotEmptyResult = false;
         routingTick = 7203;
         userinterface::update();
         expect(routeCount("pennybags") == 2,
             "RaiseMoney does not overwrite an occupied post-lock voice slot");
-        spokenQueueIdleResult = true;
+        spokenPostLockSlotEmptyResult = true;
+        routingDisplayState.desired2DView = display::Screen2D::Options;
+        userinterface::update();
+        expect(routeCount("pennybags") == 2,
+            "RaiseMoney reminder stays silent while the retail IBar is hidden");
+        routingDisplayState.desired2DView = display::Screen2D::Main;
+        userinterface::update();
+        expect(routeCount("pennybags") == 3,
+            "RaiseMoney reminder fires immediately when the IBar becomes visible");
 
         route.clear();
         jailChoiceHostCommentCount = 0;
@@ -992,7 +1000,7 @@ namespace
         expect(jailChoiceHostCommentCount == 1,
             "non-local jail choice stays silent");
         localHumanMask = localPlayerMask = 0x3Fu;
-        spokenQueueIdleResult = true;
+        spokenPostLockSlotEmptyResult = true;
         routingTick = 0;
     }
 

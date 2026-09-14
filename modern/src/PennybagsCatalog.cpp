@@ -293,6 +293,18 @@ namespace monopoly::udsound
         return &table[index];
     }
 
+    std::optional<data::DataId> pennybagsVoiceAt(
+        data::BoardEdition edition, PennybagsVoice voice,
+        std::uint8_t alternateIndex) noexcept
+    {
+        const auto* choice = pennybagsChoice(edition, voice);
+        if (choice == nullptr || choice->firstTag == 0 ||
+            choice->alternateCount == 0 || alternateIndex >= choice->alternateCount)
+            return std::nullopt;
+        const auto tag = static_cast<data::DataTag>(choice->firstTag + alternateIndex);
+        return data::packDataId(data::LegacyGroupId::LanguageDialog, tag);
+    }
+
     std::optional<data::DataId> choosePennybagsVoice(
         data::BoardEdition edition, PennybagsVoice voice,
         std::uint32_t randomValue) noexcept
@@ -300,11 +312,10 @@ namespace monopoly::udsound
         const auto* choice = pennybagsChoice(edition, voice);
         if (choice == nullptr || choice->firstTag == 0 ||
             choice->alternateCount == 0) return std::nullopt;
-        auto offset = static_cast<data::DataTag>(
+        auto offset = static_cast<std::uint8_t>(
             randomValue % choice->alternateCount);
         if (voice == PennybagsVoice::ChooseAIDifficultyLevel && offset == 2)
             offset = 0;
-        const auto tag = static_cast<data::DataTag>(choice->firstTag + offset);
-        return data::packDataId(data::LegacyGroupId::LanguageDialog, tag);
+        return pennybagsVoiceAt(edition, voice, offset);
     }
 }

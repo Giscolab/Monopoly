@@ -59,6 +59,8 @@ namespace monopoly::udsound
         [[nodiscard]] bool tokenVoiceActive(
             const audio::Runtime& audio, std::uint8_t token) const noexcept;
         [[nodiscard]] bool talkingQueueIdle(const audio::Runtime& audio) const noexcept;
+        [[nodiscard]] bool postLockVoiceSlotEmpty() const noexcept
+        { return !pendingTalkingVoice_; }
 
         void reset(audio::Runtime* audio = nullptr) noexcept;
         [[nodiscard]] std::optional<data::DataId> currentMusic() const noexcept

@@ -832,10 +832,9 @@ namespace monopoly::engine
         (void)playPennybagsComment(line, policy, watchAfterStart);
     }
 
-    bool spokenQueueIdle() noexcept
+    bool spokenPostLockSlotEmpty() noexcept
     {
-        auto* output = audioPlayback();
-        return output == nullptr || monopolySoundRuntime.talkingQueueIdle(*output);
+        return monopolySoundRuntime.postLockVoiceSlotEmpty();
     }
 
     void playJailChoiceHostComment() noexcept
@@ -843,9 +842,15 @@ namespace monopoly::engine
         auto* output = audioPlayback();
         if (output == nullptr) return;
         if (output->boardEdition() == data::BoardEdition::Europe)
-            (void)playPennybagsSpecific(
-                data::packDataId(data::LegacyGroupId::LanguageDialog, 0x0A26u),
-                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+        {
+            // !USA_VERSION calls WAV_pb235 specifically: alternate 2 of
+            // PB_JailPayMoneyOrTryForDoubles (WAV_pb233..WAV_pb235).
+            const auto pb235 = udsound::pennybagsVoiceAt(output->boardEdition(),
+                udsound::PennybagsVoice::JailPayMoneyOrTryForDoubles, 2);
+            if (pb235)
+                (void)playPennybagsSpecific(*pb235,
+                    udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+        }
         else
             (void)playPennybagsComment(udsound::PennybagsVoice::JailPayMoneyOrTryForDoubles,
                 udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);

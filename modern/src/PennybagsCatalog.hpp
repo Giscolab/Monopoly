@@ -155,6 +155,9 @@ namespace monopoly::udsound
 
     [[nodiscard]] const PennybagsChoice* pennybagsChoice(
         data::BoardEdition edition, PennybagsVoice voice) noexcept;
+    [[nodiscard]] std::optional<data::DataId> pennybagsVoiceAt(
+        data::BoardEdition edition, PennybagsVoice voice,
+        std::uint8_t alternateIndex) noexcept;
     [[nodiscard]] std::optional<data::DataId> choosePennybagsVoice(
         data::BoardEdition edition, PennybagsVoice voice,
         std::uint32_t randomValue) noexcept;
