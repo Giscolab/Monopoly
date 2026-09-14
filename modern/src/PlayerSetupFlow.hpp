@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DataBanks.hpp"
 #include "RuleOptions.hpp"
 #include "RuleTypes.hpp"
 
@@ -79,6 +80,10 @@ namespace monopoly::ui::playersetup
         CityClassic,
         CityLeft,
         CityRight,
+        CountryLeft,
+        CountryRight,
+        CurrencyLeft,
+        CurrencyRight,
         CityNext,
 
         RulesStandard,
@@ -145,6 +150,7 @@ namespace monopoly::ui::playersetup
         std::uint8_t aiLevel = 0;
 
         int city = 0;
+        int system = 13; // NOTW_MONA_US
 
         rules::options::SetupRule setupRule =
             rules::options::SetupRule::HousesPerHotel;
@@ -181,6 +187,11 @@ namespace monopoly::ui::playersetup
 
         int citySelected = 0;
 
+        data::BoardEdition boardEdition = data::BoardEdition::Usa;
+        data::LanguageId language = data::LanguageId::EnglishUs;
+        std::array<int, 3> currencySelection{{13, 13, 12}};
+        int currencySelectionIndex = 0;
+
 
         bool customRulesDesired =
             false;
@@ -213,6 +224,9 @@ namespace monopoly::ui::playersetup
 
     inline constexpr std::size_t
         MaximumEnteredNameLength = 10;
+
+    inline constexpr int MonetarySystemEuro = 12;
+    inline constexpr int MonetarySystemUs = 13;
 
 
     // Exact ordre RULE_TokenKindEnum.
@@ -301,7 +315,8 @@ namespace monopoly::ui::playersetup
     Button buttonAt(
         Phase phase,
         int x,
-        int y
+        int y,
+        data::BoardEdition edition = data::BoardEdition::Usa
     );
 
 

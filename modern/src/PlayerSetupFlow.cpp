@@ -174,6 +174,7 @@ namespace monopoly::ui::playersetup
 
 
         inline constexpr int UsaCityCount = 11;
+        inline constexpr int EuropeCountryCount = 12;
 
         constexpr std::array<
             ButtonRect,
@@ -183,6 +184,15 @@ namespace monopoly::ui::playersetup
             { Button::CityLeft,    { 320, 408, 343, 421 } },
             { Button::CityRight,   { 458, 408, 481, 421 } },
             { Button::CityNext,    { 341, 434, 468, 470 } }
+        }};
+
+        constexpr std::array<ButtonRect, 6> EuropeCityButtons{{
+            { Button::CityClassic,   { 73, 214, 293, 276 } },
+            { Button::CountryLeft,   { 145, 442, 168, 455 } },
+            { Button::CountryRight,  { 281, 442, 305, 455 } },
+            { Button::CurrencyLeft,  { 485, 442, 508, 455 } },
+            { Button::CurrencyRight, { 663, 442, 687, 455 } },
+            { Button::CityNext,      { 341, 434, 468, 470 } }
         }};
 
         constexpr std::array<
@@ -198,6 +208,30 @@ namespace monopoly::ui::playersetup
         // backend exists.
         constexpr Rect RulesOkayRect{ 337, 450, 464, 486 };
 
+
+        int languageCountry(data::LanguageId language) noexcept
+        {
+            const int raw = static_cast<int>(language);
+            return raw >= 2 && raw <= 10 ? raw - 2 : 0;
+        }
+
+        void validateEuropeCurrencies(State& state) noexcept
+        {
+            state.currencySelection[0] = state.citySelected;
+            state.currencySelection[1] = languageCountry(state.language);
+            state.currencySelection[2] = MonetarySystemEuro;
+        }
+
+        void cycleEuropeCurrency(State& state, int direction) noexcept
+        {
+            const int previous = state.currencySelection[state.currencySelectionIndex];
+            do
+            {
+                state.currencySelectionIndex =
+                    (state.currencySelectionIndex + direction + 3) % 3;
+            }
+            while (previous == state.currencySelection[state.currencySelectionIndex]);
+        }
 
         std::uint8_t tokenForButton(
             Button button)
@@ -294,6 +328,17 @@ namespace monopoly::ui::playersetup
                     break;
                 }
 
+
+                case Phase::SelectCity:
+                {
+                    if (state.boardEdition == data::BoardEdition::Europe)
+                    {
+                        state.citySelected = languageCountry(state.language);
+                        validateEuropeCurrencies(state);
+                        state.currencySelectionIndex = 0;
+                    }
+                    break;
+                }
 
                 case Phase::SelectToken:
                 {
@@ -730,7 +775,8 @@ namespace monopoly::ui::playersetup
     Button buttonAt(
         Phase phase,
         int x,
-        int y)
+        int y,
+        data::BoardEdition edition)
     {
         switch (phase)
         {
@@ -839,10 +885,15 @@ namespace monopoly::ui::playersetup
 
             case Phase::SelectCity:
             {
-                for (const auto& entry : CityButtons)
+                if (edition == data::BoardEdition::Europe)
                 {
-                    if (entry.rect.contains(x, y))
-                        return entry.button;
+                    for (const auto& entry : EuropeCityButtons)
+                        if (entry.rect.contains(x, y)) return entry.button;
+                }
+                else
+                {
+                    for (const auto& entry : CityButtons)
+                        if (entry.rect.contains(x, y)) return entry.button;
                 }
                 break;
             }
@@ -1202,6 +1253,51 @@ namespace monopoly::ui::playersetup
             state.phase ==
             Phase::SelectCity)
         {
+            if (state.boardEdition == data::BoardEdition::Europe)
+            {
+                switch (button)
+                {
+                    case Button::CountryLeft:
+                        state.citySelected = state.citySelected > 0
+                            ? state.citySelected - 1 : EuropeCountryCount - 1;
+                        validateEuropeCurrencies(state);
+                        return command;
+
+                    case Button::CountryRight:
+                        state.citySelected = state.citySelected < EuropeCountryCount - 1
+                            ? state.citySelected + 1 : 0;
+                        validateEuropeCurrencies(state);
+                        return command;
+
+                    case Button::CurrencyLeft:
+                        cycleEuropeCurrency(state, -1);
+                        return command;
+
+                    case Button::CurrencyRight:
+                        cycleEuropeCurrency(state, 1);
+                        return command;
+
+                    case Button::CityClassic:
+                        state.citySelected = languageCountry(state.language);
+                        validateEuropeCurrencies(state);
+                        command.type = CommandType::CommitCity;
+                        command.city = state.citySelected;
+                        command.system = state.currencySelection[state.currencySelectionIndex];
+                        requestPhase(state, uiState, Phase::StandardOrCustomRules);
+                        return command;
+
+                    case Button::CityNext:
+                        command.type = CommandType::CommitCity;
+                        command.city = state.citySelected;
+                        command.system = state.currencySelection[state.currencySelectionIndex];
+                        requestPhase(state, uiState, Phase::StandardOrCustomRules);
+                        return command;
+
+                    default:
+                        return command;
+                }
+            }
+
             switch (button)
             {
                 case Button::CityLeft:
@@ -1218,12 +1314,14 @@ namespace monopoly::ui::playersetup
                     state.citySelected = 0;
                     command.type = CommandType::CommitCity;
                     command.city = 0;
+                    command.system = MonetarySystemUs;
                     requestPhase(state, uiState, Phase::StandardOrCustomRules);
                     return command;
 
                 case Button::CityNext:
                     command.type = CommandType::CommitCity;
                     command.city = state.citySelected;
+                    command.system = MonetarySystemUs;
                     requestPhase(state, uiState, Phase::StandardOrCustomRules);
                     return command;
 
@@ -1293,7 +1391,8 @@ namespace monopoly::ui::playersetup
                 buttonAt(
                     state.phase,
                     x,
-                    y
+                    y,
+                    state.boardEdition
                 )
             );
     }

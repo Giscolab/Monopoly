@@ -639,6 +639,67 @@ namespace
     }
 
 
+    void testEuropeCitySelection()
+    {
+        using namespace monopoly;
+        using namespace monopoly::ui::playersetup;
+
+        const auto europe = data::BoardEdition::Europe;
+        expect(buttonAt(Phase::SelectCity, 145, 442, europe) == Button::CountryLeft &&
+            buttonAt(Phase::SelectCity, 167, 454, europe) == Button::CountryLeft &&
+            buttonAt(Phase::SelectCity, 281, 442, europe) == Button::CountryRight &&
+            buttonAt(Phase::SelectCity, 304, 454, europe) == Button::CountryRight,
+            "Europe SelectCity country arrow rectangles are exact");
+        expect(buttonAt(Phase::SelectCity, 485, 442, europe) == Button::CurrencyLeft &&
+            buttonAt(Phase::SelectCity, 507, 454, europe) == Button::CurrencyLeft &&
+            buttonAt(Phase::SelectCity, 663, 442, europe) == Button::CurrencyRight &&
+            buttonAt(Phase::SelectCity, 686, 454, europe) == Button::CurrencyRight,
+            "Europe SelectCity currency arrow rectangles are exact");
+
+        rules::GameState uiState{};
+        State state{};
+        initialize(state, true);
+        state.boardEdition = europe;
+        state.language = data::LanguageId::French;
+        requestPhase(state, uiState, Phase::SelectCity);
+        expect(state.citySelected == 1 && state.currencySelectionIndex == 0 &&
+            state.currencySelection == std::array<int, 3>{1, 1, MonetarySystemEuro},
+            "Europe SelectCity defaults country and currency from installed French language");
+
+        (void)clickButton(state, uiState, Button::CountryLeft);
+        expect(state.citySelected == 0 &&
+            state.currencySelection == std::array<int, 3>{0, 1, MonetarySystemEuro},
+            "Europe country change refreshes country/language/euro currency choices");
+        (void)clickButton(state, uiState, Button::CountryLeft);
+        expect(state.citySelected == 11,
+            "Europe country Left wraps 0 to Australian board index 11");
+        (void)clickButton(state, uiState, Button::CountryRight);
+        expect(state.citySelected == 0,
+            "Europe country Right wraps index 11 to 0");
+
+        state.citySelected = 1;
+        state.currencySelection = {1, 1, MonetarySystemEuro};
+        state.currencySelectionIndex = 0;
+        (void)clickButton(state, uiState, Button::CurrencyRight);
+        expect(state.currencySelectionIndex == 2,
+            "Europe currency arrow skips duplicate country/language currency");
+
+        state.citySelected = 11;
+        state.currencySelection = {11, 1, MonetarySystemEuro};
+        const auto next = clickButton(state, uiState, Button::CityNext);
+        expect(next.type == CommandType::CommitCity && next.city == 11 &&
+            next.system == MonetarySystemEuro &&
+            state.phase == Phase::StandardOrCustomRules,
+            "Europe Next commits selected country and current monetary system together");
+
+        requestPhase(state, uiState, Phase::SelectCity);
+        const auto classic = clickButton(state, uiState, Button::CityClassic);
+        expect(classic.type == CommandType::CommitCity && classic.city == 1 &&
+            classic.system == 1,
+            "Europe Classic commits installed-language board and matching currency");
+    }
+
+
     void testRulesChoice()
     {
         using namespace monopoly;
@@ -962,6 +1023,7 @@ int main()
     testSelectPlayerHistory();
     testHotspots();
     testCitySelection();
+    testEuropeCitySelection();
     testRulesChoice();
     testCustomizeRulesCommands();
     testStartGame();

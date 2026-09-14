@@ -1,6 +1,7 @@
 #include "PlayerSelection.hpp"
 
 #include "Display.hpp"
+#include "ExtendedInitialization.hpp"
 #include "Messaging.hpp"
 #include "LocalPlayers.hpp"
 #include "PlayerSetupFlow.hpp"
@@ -43,6 +44,15 @@ namespace monopoly::playerselection
                 const auto& request = update.requests[index];
                 engine::playPennybagsVoice(request.voice, request.policy, false);
             }
+        }
+
+        void syncSetupResourceContext() noexcept
+        {
+            const auto resources = startup::resources();
+            const data::ResourceContext context = resources
+                ? resources->context() : data::ResourceContext{};
+            setupFlowState.boardEdition = context.board;
+            setupFlowState.language = context.language;
         }
 
         bool hasPreviousPlayerLog()
@@ -352,6 +362,8 @@ namespace monopoly::playerselection
 
             setupFlowState.hasPlayerLogEntries =
                 hasPreviousPlayerLog();
+
+            syncSetupResourceContext();
         }
 
 
@@ -697,6 +709,7 @@ namespace monopoly::playerselection
                 {
                     globalState.playerInfo.citySelected = command.city;
                     display::state().city = command.city;
+                    display::state().system = command.system;
                     break;
                 }
 
@@ -805,7 +818,8 @@ namespace monopoly::playerselection
                 ui::playersetup::buttonAt(
                     setupFlowState.phase,
                     static_cast<int>(x),
-                    static_cast<int>(y)
+                    static_cast<int>(y),
+                    setupFlowState.boardEdition
                 );
 
 
@@ -1011,6 +1025,8 @@ namespace monopoly::playerselection
 
         setupFlowState.serverMode =
             messaging::serverMode();
+
+        syncSetupResourceContext();
 
 
         setupFlowState.hasPlayerLogEntries =

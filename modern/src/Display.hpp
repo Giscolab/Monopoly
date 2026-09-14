@@ -98,6 +98,7 @@ namespace monopoly::display
             pieces::BoardCameraView::TopDownSoccer;
         std::optional<pieces::BoardCameraView> currentBoardCamera;
         int city = 0;
+        int system = 13; // NOTW_MONA_US
         bool game3DOn = true;
         bool board3DOn = false;
         bool viewportBackgroundFillOn = false;
