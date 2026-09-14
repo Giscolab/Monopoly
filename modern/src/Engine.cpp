@@ -519,6 +519,31 @@ namespace monopoly::engine
             return {};
         }
 
+        [[nodiscard]] std::expected<void, std::string> playPennybagsSpecific(
+            data::DataId wave, udsound::TokenVoiceClipPolicy policy,
+            bool watchAfterStart)
+        {
+            auto* output = audioPlayback();
+            if (output == nullptr) return {};
+            auto played = monopolySoundRuntime.pennybagsSpecific(*output,
+                display::stateReadOnly().optionHostCommentsOn, wave, policy);
+            if (!played)
+            {
+                disableAudioPlayback("Pennybags specific disabled audio", played.error());
+                return {};
+            }
+            if (watchAfterStart && played->started)
+                monopolySoundRuntime.watchPennybags(*output);
+            auto watched = monopolySoundRuntime.syncTokenVoices(*output);
+            if (!watched)
+            {
+                disableAudioPlayback("Pennybags specific watch disabled audio", watched.error());
+                return {};
+            }
+            reconcileTokenVoiceQueueLock(*watched);
+            return {};
+        }
+
         [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
             SequencePlayback& session, bool boardVisible, std::uint64_t tick)
         {
@@ -679,6 +704,17 @@ namespace monopoly::engine
                                 static_cast<rules::board::SquareType>(square),
                                 ai::propertiesOwnedByPlayer(projected, player));
                             economics.valid = true;
+                        }
+                        if (auto* output = audioPlayback())
+                        {
+                            const auto announcement = penny::squareAnnouncementWave(
+                                output->boardEdition(), display::stateReadOnly().city, square);
+                            if (announcement)
+                            {
+                                const auto spoken = playPennybagsSpecific(*announcement,
+                                    udsound::TokenVoiceClipPolicy::SkipIfOldSoundPlaying, true);
+                                if (!spoken) return spoken;
+                            }
                         }
                         const auto reactionRandom = static_cast<std::uint32_t>(std::rand() % 100);
                         const auto pennybagsReaction = penny::landedOnSquarePennybagsReaction(

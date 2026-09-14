@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DataBanks.hpp"
 #include "RuleTypes.hpp"
 #include "TokenVoiceCatalog.hpp"
 #include "PennybagsCatalog.hpp"
@@ -62,6 +63,9 @@ namespace monopoly::penny
     [[nodiscard]] std::optional<PennybagsReaction> landedOnSquarePennybagsReaction(
         const rules::GameState& state, rules::PlayerNumber player,
         std::uint8_t square, std::uint32_t random100) noexcept;
+
+    [[nodiscard]] std::optional<data::DataId> squareAnnouncementWave(
+        data::BoardEdition edition, int city, std::uint8_t square) noexcept;
 
     [[nodiscard]] std::optional<TokenReaction> landedOnSquareReaction(
         const rules::GameState& state,
