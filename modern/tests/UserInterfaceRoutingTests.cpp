@@ -27,6 +27,8 @@ namespace
     std::uint64_t routingTick = 0;
     bool spokenPostLockSlotEmptyResult = true;
     int jailChoiceHostCommentCount = 0;
+    std::optional<monopoly::udsound::PennybagsVoice> lastPennybagsVoice;
+    std::optional<monopoly::udsound::TokenVoiceClipPolicy> lastPennybagsPolicy;
     std::uint32_t localHumanMask = 0x3F;
     std::uint32_t localPlayerMask = 0x3F;
     std::size_t simulatedQueuedActions = 0;
@@ -78,9 +80,11 @@ namespace monopoly::engine
     {
         route.push_back("tokenvoice");
     }
-    void playPennybagsVoice(udsound::PennybagsVoice,
-        udsound::TokenVoiceClipPolicy, bool) noexcept
+    void playPennybagsVoice(udsound::PennybagsVoice voice,
+        udsound::TokenVoiceClipPolicy policy, bool) noexcept
     {
+        lastPennybagsVoice = voice;
+        lastPennybagsPolicy = policy;
         route.push_back("pennybags");
     }
     bool spokenPostLockSlotEmpty() noexcept { return spokenPostLockSlotEmptyResult; }
@@ -1004,6 +1008,65 @@ namespace
         routingTick = 0;
     }
 
+    void testFirstHouseCommentRouting()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 1;
+        route.clear();
+        lastPennybagsVoice.reset();
+        lastPennybagsPolicy.reset();
+
+        actions::Message ownership{};
+        ownership.action = actions::Type::NotifySquareOwnership;
+        ownership.toPlayer = rules::AllPlayers;
+        ownership.numberA = 1;
+        ownership.numberB = 0;
+        userinterface::processRuleMessage(ownership);
+        expect(uiState.squares[1].owner == 0,
+            "square ownership projection supplies the retail BSSM owner");
+
+        actions::Message houses{};
+        houses.action = actions::Type::NotifySquareHouses;
+        houses.toPlayer = rules::AllPlayers;
+        houses.numberA = 1;
+        houses.numberB = 1;
+        houses.numberC = 5;
+        routingTick = 1800;
+        userinterface::processRuleMessage(houses);
+        expect(routeCount("pennybags") == 0,
+            "first-house comment stays silent at exact 30-second threshold");
+        expect(uiState.squares[1].houses == 1 && uiState.options.housesPerHotel == 5,
+            "house notification updates the retail square projection before playback");
+
+        houses.numberB = 2;
+        routingTick = 1801;
+        userinterface::processRuleMessage(houses);
+        expect(routeCount("pennybags") == 1 &&
+                lastPennybagsVoice == udsound::PennybagsVoice::PlayerBuiltFirstHouse &&
+                lastPennybagsPolicy == udsound::TokenVoiceClipPolicy::SkipIfOldSoundPlaying,
+            "first eligible build plays retail PlayerBuiltFirstHouse with skip policy");
+
+        houses.numberB = 3;
+        routingTick = 3601;
+        userinterface::processRuleMessage(houses);
+        expect(routeCount("pennybags") == 1,
+            "later house at exact 30-second threshold stays silent");
+        houses.numberB = 4;
+        routingTick = 3602;
+        userinterface::processRuleMessage(houses);
+        expect(routeCount("pennybags") == 1,
+            "later eligible house only rearms the BSSM timer without another comment");
+
+        houses.numberB = 3;
+        routingTick = 6005;
+        userinterface::processRuleMessage(houses);
+        expect(routeCount("pennybags") == 1,
+            "selling a house never emits the first-house comment");
+        routingTick = 0;
+    }
+
     void testTradeAcceptanceProjectionRouting()
     {
         using namespace monopoly;
@@ -1251,6 +1314,7 @@ int main()
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();
     testRaiseMoneyAndJailHostComments();
+    testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();

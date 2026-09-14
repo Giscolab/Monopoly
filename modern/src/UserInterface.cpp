@@ -69,7 +69,9 @@ namespace monopoly::userinterface
         bool firstNumberOfPlayersNotification = true;
         std::int64_t lastHousingShortageCount = 2;
         std::array<std::uint64_t, rules::MaxPlayers> lastRaiseMoneySoundTick{};
+        std::array<std::uint64_t, rules::MaxPlayers> lastBssmBuySoundTick{};
         inline constexpr std::uint64_t RaiseMoneyRepeatTicks = 40u * 60u;
+        inline constexpr std::uint64_t BssmRepeatTicks = 30u * 60u;
 
         void maybePlayRaiseMoneySuggestion(rules::PlayerNumber player, std::uint64_t tick) noexcept
         {
@@ -83,6 +85,17 @@ namespace monopoly::userinterface
             engine::playPennybagsVoice(udsound::PennybagsVoice::RaisingMoneySuggestion,
                 udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
             lastRaiseMoneySoundTick[player] = tick;
+        }
+
+        void maybePlayFirstHouseComment(rules::PlayerNumber player, std::uint64_t tick) noexcept
+        {
+            if (player >= rules::MaxPlayers ||
+                tick <= lastBssmBuySoundTick[player] + BssmRepeatTicks)
+                return;
+            if (lastBssmBuySoundTick[player] == 0)
+                engine::playPennybagsVoice(udsound::PennybagsVoice::PlayerBuiltFirstHouse,
+                    udsound::TokenVoiceClipPolicy::SkipIfOldSoundPlaying, false);
+            lastBssmBuySoundTick[player] = tick;
         }
 
         void playTokenReaction(rules::PlayerNumber player,
@@ -352,6 +365,25 @@ namespace monopoly::userinterface
             ui::localplayers::slotIsLocalHumanPlayer(
                 static_cast<rules::PlayerNumber>(message.numberA)))
             engine::playJailChoiceHostComment();
+
+        if (message.action == actions::Type::NotifySquareOwnership &&
+            message.numberA >= 0 && message.numberA < rules::SquareCount &&
+            message.numberB >= 0 && message.numberB <= rules::EscrowPlayer)
+            uiRuleState.squares[static_cast<std::size_t>(message.numberA)].owner =
+                static_cast<rules::PlayerNumber>(message.numberB);
+
+        if (message.action == actions::Type::NotifySquareHouses &&
+            message.numberA >= 0 && message.numberA < rules::SquareCount &&
+            message.numberB >= 0 && message.numberB <= 255 &&
+            message.numberC >= 0 && message.numberC <= 255)
+        {
+            auto& square = uiRuleState.squares[static_cast<std::size_t>(message.numberA)];
+            const auto previousHouses = square.houses;
+            square.houses = static_cast<std::uint8_t>(message.numberB);
+            uiRuleState.options.housesPerHotel = static_cast<std::uint8_t>(message.numberC);
+            if (previousHouses < square.houses)
+                maybePlayFirstHouseComment(square.owner, timers::tickCount());
+        }
 
         if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberB != 0 &&
