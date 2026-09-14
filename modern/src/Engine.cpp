@@ -1,6 +1,7 @@
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
 #include "UDSoundRuntime.hpp"
+#include "UDPennyVoice.hpp"
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
 #include "Timers.hpp"
@@ -681,6 +682,12 @@ namespace monopoly::engine
             const auto result = monopolySoundRuntime.click(*output);
             if (!result) disableAudioPlayback("Click sound disabled audio", result.error());
         }
+    }
+
+    void playTokenVoice(std::uint8_t token, udsound::TokenVoiceLine line,
+        udsound::TokenVoiceClipPolicy policy, bool watchAfterStart) noexcept
+    {
+        (void)playPieceTokenVoice(token, line, policy, watchAfterStart);
     }
 
     std::expected<void, std::string> syncSequenceAudio(SequencePlayback& session)

@@ -6,7 +6,8 @@ namespace monopoly::udsound
 {
     namespace
     {
-        inline constexpr std::size_t LineCount = 72;
+        inline constexpr std::size_t LineCount =
+            static_cast<std::size_t>(TokenVoiceLine::Count);
         using TokenRow = std::array<TokenVoiceChoice, TokenVoiceTokenCount>;
         using VoiceTable = std::array<TokenRow, LineCount>;
 
@@ -47,6 +48,7 @@ namespace monopoly::udsound
             TokenRow{{TokenVoiceChoice{0x007C, 1}, TokenVoiceChoice{0x012A, 1}, TokenVoiceChoice{0x01D4, 1}, TokenVoiceChoice{0x0280, 1}, TokenVoiceChoice{0x0328, 1}, TokenVoiceChoice{0x03CD, 1}, TokenVoiceChoice{0x047B, 1}, TokenVoiceChoice{0x0527, 1}, TokenVoiceChoice{0x05D5, 1}, TokenVoiceChoice{0x0681, 1}, TokenVoiceChoice{0x072D, 1}}},
             TokenRow{{TokenVoiceChoice{0x0052, 1}, TokenVoiceChoice{0x00FF, 1}, TokenVoiceChoice{0x01AD, 1}, TokenVoiceChoice{0x0256, 1}, TokenVoiceChoice{0x02FE, 1}, TokenVoiceChoice{0x03A4, 1}, TokenVoiceChoice{0x0450, 1}, TokenVoiceChoice{0x04FC, 1}, TokenVoiceChoice{0x05AC, 1}, TokenVoiceChoice{0x0657, 1}, TokenVoiceChoice{0x0702, 1}}},
             TokenRow{{TokenVoiceChoice{0x0053, 1}, TokenVoiceChoice{0x0100, 1}, TokenVoiceChoice{0x01AE, 1}, TokenVoiceChoice{0x0257, 1}, TokenVoiceChoice{0x02FF, 1}, TokenVoiceChoice{0x03A5, 1}, TokenVoiceChoice{0x0451, 1}, TokenVoiceChoice{0x04FD, 1}, TokenVoiceChoice{0x05AD, 1}, TokenVoiceChoice{0x0658, 1}, TokenVoiceChoice{0x0703, 1}}},
+            TokenRow{{TokenVoiceChoice{0x0090, 1}, TokenVoiceChoice{0x012B, 1}, TokenVoiceChoice{0x01D5, 1}, TokenVoiceChoice{0x0281, 1}, TokenVoiceChoice{0x0329, 1}, TokenVoiceChoice{0x03CE, 1}, TokenVoiceChoice{0x047C, 1}, TokenVoiceChoice{0x0528, 1}, TokenVoiceChoice{0x05D6, 1}, TokenVoiceChoice{0x0682, 1}, TokenVoiceChoice{0x072E, 1}}},
             TokenRow{{TokenVoiceChoice{0x007D, 1}, TokenVoiceChoice{0x012C, 1}, TokenVoiceChoice{0x01D6, 1}, TokenVoiceChoice{0x0282, 1}, TokenVoiceChoice{0x032A, 1}, TokenVoiceChoice{0x03CF, 1}, TokenVoiceChoice{0x047D, 1}, TokenVoiceChoice{0x0529, 1}, TokenVoiceChoice{0x05D7, 1}, TokenVoiceChoice{0x0683, 1}, TokenVoiceChoice{0x072F, 1}}},
             TokenRow{{TokenVoiceChoice{0x0054, 1}, TokenVoiceChoice{0x0101, 1}, TokenVoiceChoice{0x01AF, 1}, TokenVoiceChoice{0x0258, 1}, TokenVoiceChoice{0x0300, 1}, TokenVoiceChoice{0x03A6, 1}, TokenVoiceChoice{0x0452, 1}, TokenVoiceChoice{0x04FE, 1}, TokenVoiceChoice{0x05AE, 1}, TokenVoiceChoice{0x0659, 1}, TokenVoiceChoice{0x0704, 1}}},
             TokenRow{{TokenVoiceChoice{0x007E, 1}, TokenVoiceChoice{0x012D, 1}, TokenVoiceChoice{0x01D7, 1}, TokenVoiceChoice{0x0283, 1}, TokenVoiceChoice{0x032B, 1}, TokenVoiceChoice{0x03D0, 1}, TokenVoiceChoice{0x047E, 1}, TokenVoiceChoice{0x052A, 1}, TokenVoiceChoice{0x05D8, 1}, TokenVoiceChoice{0x0684, 1}, TokenVoiceChoice{0x0730, 1}}},
@@ -122,6 +124,7 @@ namespace monopoly::udsound
             TokenRow{{TokenVoiceChoice{0x0259, 1}, TokenVoiceChoice{0x0308, 1}, TokenVoiceChoice{0x03B2, 1}, TokenVoiceChoice{0x0461, 1}, TokenVoiceChoice{0x0509, 1}, TokenVoiceChoice{0x05B0, 1}, TokenVoiceChoice{0x065E, 1}, TokenVoiceChoice{0x070A, 1}, TokenVoiceChoice{0x07B8, 1}, TokenVoiceChoice{0x0864, 1}, TokenVoiceChoice{0x0910, 1}}},
             TokenRow{{TokenVoiceChoice{0x022F, 1}, TokenVoiceChoice{0x02DD, 1}, TokenVoiceChoice{0x038B, 1}, TokenVoiceChoice{0x0437, 1}, TokenVoiceChoice{0x04DF, 1}, TokenVoiceChoice{0x0587, 1}, TokenVoiceChoice{0x0633, 1}, TokenVoiceChoice{0x06DF, 1}, TokenVoiceChoice{0x078F, 1}, TokenVoiceChoice{0x083A, 1}, TokenVoiceChoice{0x08E5, 1}}},
             TokenRow{{TokenVoiceChoice{0x0230, 1}, TokenVoiceChoice{0x02DE, 1}, TokenVoiceChoice{0x038C, 1}, TokenVoiceChoice{0x0438, 1}, TokenVoiceChoice{0x04E0, 1}, TokenVoiceChoice{0x0588, 1}, TokenVoiceChoice{0x0634, 1}, TokenVoiceChoice{0x06E0, 1}, TokenVoiceChoice{0x0790, 1}, TokenVoiceChoice{0x083B, 1}, TokenVoiceChoice{0x08E6, 1}}},
+            TokenRow{{TokenVoiceChoice{0x026D, 1}, TokenVoiceChoice{0x0309, 1}, TokenVoiceChoice{0x03B3, 1}, TokenVoiceChoice{0x0462, 1}, TokenVoiceChoice{0x050A, 1}, TokenVoiceChoice{0x05B1, 1}, TokenVoiceChoice{0x065F, 1}, TokenVoiceChoice{0x070B, 1}, TokenVoiceChoice{0x07B9, 1}, TokenVoiceChoice{0x0865, 1}, TokenVoiceChoice{0x0911, 1}}},
             TokenRow{{TokenVoiceChoice{0x025A, 1}, TokenVoiceChoice{0x030A, 1}, TokenVoiceChoice{0x03B4, 1}, TokenVoiceChoice{0x0463, 1}, TokenVoiceChoice{0x050B, 1}, TokenVoiceChoice{0x05B2, 1}, TokenVoiceChoice{0x0660, 1}, TokenVoiceChoice{0x070C, 1}, TokenVoiceChoice{0x07BA, 1}, TokenVoiceChoice{0x0866, 1}, TokenVoiceChoice{0x0912, 1}}},
             TokenRow{{TokenVoiceChoice{0x0231, 1}, TokenVoiceChoice{0x02DF, 1}, TokenVoiceChoice{0x038D, 1}, TokenVoiceChoice{0x0439, 1}, TokenVoiceChoice{0x04E1, 1}, TokenVoiceChoice{0x0589, 1}, TokenVoiceChoice{0x0635, 1}, TokenVoiceChoice{0x06E1, 1}, TokenVoiceChoice{0x0791, 1}, TokenVoiceChoice{0x083C, 1}, TokenVoiceChoice{0x08E7, 1}}},
             TokenRow{{TokenVoiceChoice{0x025B, 1}, TokenVoiceChoice{0x030B, 1}, TokenVoiceChoice{0x03B5, 1}, TokenVoiceChoice{0x0464, 1}, TokenVoiceChoice{0x050C, 1}, TokenVoiceChoice{0x05B3, 1}, TokenVoiceChoice{0x0661, 1}, TokenVoiceChoice{0x070D, 1}, TokenVoiceChoice{0x07BB, 1}, TokenVoiceChoice{0x0867, 1}, TokenVoiceChoice{0x0913, 1}}},
@@ -159,7 +162,6 @@ namespace monopoly::udsound
             TokenRow{{TokenVoiceChoice{0x0266, 7}, TokenVoiceChoice{0x0316, 6}, TokenVoiceChoice{0x03C2, 6}, TokenVoiceChoice{0x046F, 7}, TokenVoiceChoice{0x0517, 7}, TokenVoiceChoice{0x05BE, 6}, TokenVoiceChoice{0x066C, 7}, TokenVoiceChoice{0x071A, 9}, TokenVoiceChoice{0x07C6, 8}, TokenVoiceChoice{0x0872, 7}, TokenVoiceChoice{0x091E, 7}}},
             TokenRow{{TokenVoiceChoice{0x0239, 7}, TokenVoiceChoice{0x02E7, 8}, TokenVoiceChoice{0x0393, 5}, TokenVoiceChoice{0x0441, 7}, TokenVoiceChoice{0x04E9, 7}, TokenVoiceChoice{0x0591, 6}, TokenVoiceChoice{0x063D, 7}, TokenVoiceChoice{0x06E9, 8}, TokenVoiceChoice{0x0799, 6}, TokenVoiceChoice{0x0844, 7}, TokenVoiceChoice{0x08EF, 8}}},
         }};
-
     }
 
     const TokenVoiceChoice* tokenVoiceChoice(

@@ -6,6 +6,7 @@
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
 #include "ChatRuntime.hpp"
+#include "TokenVoiceCatalog.hpp"
 
 #include <iostream>
 #include <optional>
@@ -53,6 +54,11 @@ namespace monopoly::engine
 {
     void playWarningSound() noexcept { route.push_back("warning"); }
     void playClickSound() noexcept { route.push_back("click"); }
+    void playTokenVoice(std::uint8_t, udsound::TokenVoiceLine,
+        udsound::TokenVoiceClipPolicy, bool) noexcept
+    {
+        route.push_back("tokenvoice");
+    }
 }
 
 namespace monopoly::display
@@ -628,6 +634,51 @@ namespace
         localPlayerMask = 0x3Fu;
     }
 
+    void testUDPennyVoiceRouting()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        acceptRecipient = true;
+        auto& state = userinterface::ruleState();
+        state.numberOfPlayers = 2;
+        state.currentPlayer = 0;
+        state.players[0].token = 2;
+        state.players[0].aiPlayerLevel = 1;
+        state.players[0].currentSquare = 1;
+        route.clear();
+
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(
+            actions::Type::BuyOrAuctionDecision);
+        completed.numberB = 1;
+        completed.numberC = 0;
+        completed.numberD = 1;
+        userinterface::processRuleMessage(completed);
+        expect(std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
+            "accepted AI property purchase routes UDPenny token voice");
+
+        route.clear();
+        completed.numberD = 0;
+        userinterface::processRuleMessage(completed);
+        expect(std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
+            "accepted AI auction choice routes UDPenny token voice");
+
+        route.clear();
+        localHumanMask = 0;
+        state.players[0].currentSquare = 30;
+        actions::Message jail{};
+        jail.action = actions::Type::NotifyJumpToSquare;
+        jail.toPlayer = rules::AllPlayers;
+        jail.numberA = 40;
+        jail.numberC = 0;
+        userinterface::processRuleMessage(jail);
+        expect(std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
+            "GoToJail movement routes UDPenny token voice");
+        localHumanMask = 0x3Fu;
+    }
+
     void testLocalBoundary()
     {
         using namespace monopoly;
@@ -999,6 +1050,7 @@ int main()
     testAuctionReadyResponses();
     testTradeEntryAndPartnerRouting();
     testTradeEditorSubmissionPreflightsQueue();
+    testUDPennyVoiceRouting();
     testLocalBoundary();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();
