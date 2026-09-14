@@ -2,6 +2,7 @@
 
 #include "Display.hpp"
 #include "ExtendedInitialization.hpp"
+#include "IBar.hpp"
 #include "Messaging.hpp"
 #include "LocalPlayers.hpp"
 #include "PlayerSetupFlow.hpp"
@@ -1156,6 +1157,7 @@ namespace monopoly::playerselection
                     static_cast<std::uint8_t>(message.numberD);
 
                 globalState.forcedRefresh = true;
+                ibar::restoreRuleTracking();
 
                 break;
             }
@@ -1244,6 +1246,7 @@ namespace monopoly::playerselection
             case actions::Type::NotifyAddLocalPlayer:
             {
                 globalState.forcedRefresh = true;
+                ibar::restoreRuleTracking();
                 break;
             }
 
@@ -1268,6 +1271,7 @@ namespace monopoly::playerselection
 
 
                 globalState.forcedRefresh = true;
+                ibar::restoreRuleTracking();
 
                 break;
             }

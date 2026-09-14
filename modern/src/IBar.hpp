@@ -92,6 +92,8 @@ namespace monopoly::ibar
 
     void clearPendingPressedButton(std::uint8_t buttonIndex) noexcept;
 
+    void restoreRuleTracking() noexcept;
+
 
     [[nodiscard]] RuleMode resolveRuleMode(
         RuleMode projectedMode,
