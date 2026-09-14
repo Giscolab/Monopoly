@@ -875,7 +875,14 @@ namespace
         houses.numberA = 1;
         houses.numberC = -2;
         houses.numberE = (1u << 1) | (1u << 4);
+        route.clear();
         userinterface::processRuleMessage(houses);
+        expect(std::find(route.begin(), route.end(), "pennybags") != route.end(),
+            "first local housing-shortage countdown-zero message plays Pennybags instruction");
+        route.clear();
+        userinterface::processRuleMessage(houses);
+        expect(std::find(route.begin(), route.end(), "pennybags") == route.end(),
+            "duplicate countdown-zero housing-shortage message is silent like retail lastCount guard");
         const auto& projected = userinterface::iBarRuleStateReadOnly();
         expect(projected.mode == ibar::RuleMode::HousingShort && projected.player == 4,
             "housing-shortage routing uses LocalPlayers-resolved bidder and house mode");
