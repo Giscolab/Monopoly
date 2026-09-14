@@ -64,6 +64,33 @@ namespace monopoly::userinterface
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool firstNumberOfPlayersNotification = true;
 
+        [[nodiscard]] rules::PlayerNumber chatSender() noexcept
+        {
+            const auto count = std::min<rules::PlayerNumber>(
+                uiRuleState.numberOfPlayers, rules::MaxPlayers);
+            if (count == 0) return rules::SpectatorPlayer;
+            auto player = uiRuleState.currentPlayer < count
+                ? uiRuleState.currentPlayer : static_cast<rules::PlayerNumber>(count - 1u);
+            for (rules::PlayerNumber checked = 0; checked < count; ++checked)
+            {
+                if (ui::localplayers::slotIsLocalHumanPlayer(player)) return player;
+                player = player == 0 ? static_cast<rules::PlayerNumber>(count - 1u)
+                    : static_cast<rules::PlayerNumber>(player - 1u);
+            }
+            return rules::SpectatorPlayer;
+        }
+
+        [[nodiscard]] std::uint32_t chatEligibleRecipients() noexcept
+        {
+            std::uint32_t mask{};
+            for (rules::PlayerNumber player = 0; player < uiRuleState.numberOfPlayers &&
+                 player < rules::MaxPlayers; ++player)
+                if (!ui::localplayers::slotIsLocalPlayer(player) &&
+                    uiRuleState.players[player].aiPlayerLevel == 0)
+                    mask |= 1u << player;
+            return mask;
+        }
+
         [[nodiscard]] std::uint32_t localHumanPlayerMask() noexcept
         {
             std::uint32_t mask{};
@@ -523,6 +550,14 @@ namespace monopoly::userinterface
         // ProcessLibraryMessage() original appelle
         // AdvanceTimeStep() à chaque message ArtLib.
         advanceTimeStep();
+
+        if (chat::processInput(
+                message, chatSender(), chatEligibleRecipients(),
+                messaging::networkMode()))
+        {
+            update();
+            return !runtime::state().gameQuitRequested;
+        }
 
         // ProcessLibraryMessage() original distribue ensuite
         // le message aux modules UD actifs.
