@@ -38,6 +38,8 @@ namespace monopoly::penny
         std::optional<std::uint32_t> random8 = std::nullopt) noexcept;
     [[nodiscard]] std::optional<PennybagsReaction> diceRollPennybagsReaction(
         std::uint8_t total, bool tokenAnimationsOn) noexcept;
+    [[nodiscard]] std::optional<PennybagsReaction> offBoardPennybagsReaction(
+        bool victory, bool localHuman) noexcept;
 
     struct LandingEconomics
     {

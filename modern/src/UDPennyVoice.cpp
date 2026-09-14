@@ -134,6 +134,18 @@ namespace monopoly::penny
             udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
     }
 
+    std::optional<PennybagsReaction> offBoardPennybagsReaction(
+        bool victory, bool localHuman) noexcept
+    {
+        if (victory)
+            return PennybagsReaction{udsound::PennybagsVoice::GameOver,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+        if (localHuman)
+            return PennybagsReaction{udsound::PennybagsVoice::Bankrupt,
+                udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false};
+        return std::nullopt;
+    }
+
     bool propertyFormsMonopoly(
         const rules::GameState& state,
         rules::PlayerNumber player,

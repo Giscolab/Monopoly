@@ -620,7 +620,8 @@ namespace monopoly::engine
                     activePieceMoveToken = plan->token;
                     victoryQueueLockReleased = false;
                     pieceMoveQueueLockHeld = userinterface::gameQueueLocked();
-                    if (plan->special == pieces::PieceMoveSpecial::OffBoardBankrupt)
+                    if (plan->special == pieces::PieceMoveSpecial::OffBoardBankrupt ||
+                        plan->special == pieces::PieceMoveSpecial::OffBoardVictory)
                     {
                         bool localHuman = false;
                         const auto& projected = userinterface::ruleStateReadOnly();
@@ -631,7 +632,14 @@ namespace monopoly::engine
                                 localHuman = ui::localplayers::slotIsLocalHumanPlayer(player);
                                 break;
                             }
-                        if (!localHuman)
+                        const bool victory = plan->special == pieces::PieceMoveSpecial::OffBoardVictory;
+                        if (const auto host = penny::offBoardPennybagsReaction(victory, localHuman))
+                        {
+                            const auto voice = playPennybagsComment(
+                                host->voice, host->policy, host->watchAfterStart);
+                            if (!voice) return voice;
+                        }
+                        if (!victory && !localHuman)
                         {
                             const auto line = (std::rand() & 1) == 0 ?
                                 udsound::TokenVoiceLine::GiveUp : udsound::TokenVoiceLine::Bankrupt;
