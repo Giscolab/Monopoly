@@ -180,6 +180,20 @@ namespace
                 TokenVoiceLine::HitGOWithDoubleCashRule),
             "AI landing on GO with double salary uses dedicated token line");
     }
+    void testOffBoardHostReactions()
+    {
+        const auto bankrupt = monopoly::penny::offBoardPennybagsReaction(false, true);
+        const auto remote = monopoly::penny::offBoardPennybagsReaction(false, false);
+        const auto victory = monopoly::penny::offBoardPennybagsReaction(true, false);
+        require(bankrupt && bankrupt->voice == monopoly::udsound::PennybagsVoice::Bankrupt &&
+                bankrupt->policy == monopoly::udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay,
+            "local-human bankruptcy uses retail Pennybags Bankrupt wait policy");
+        require(!remote,
+            "non-local bankruptcy leaves host silent for token GiveUp/Bankrupt reaction");
+        require(victory && victory->voice == monopoly::udsound::PennybagsVoice::GameOver,
+            "victory always emits retail Pennybags GameOver host comment");
+    }
+
     void testTurnAndDiceReactions()
     {
         auto state = baseState();
@@ -223,6 +237,7 @@ int main()
     testJailAndLanding();
     testPropertyAndRentReactions();
     testFreeParkingAndSpecials();
+    testOffBoardHostReactions();
     testTurnAndDiceReactions();
     std::cout << "UDPenny voice tests passed\r\n";
     return 0;
