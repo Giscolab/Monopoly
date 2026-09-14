@@ -1,4 +1,5 @@
 #include "PlayerSetupFlow.hpp"
+#include "PlayerSetupSound.hpp"
 #include "RuleTypes.hpp"
 
 #include <array>
@@ -852,6 +853,98 @@ namespace
             "remove player -> StartAddRemove"
         );
     }
+
+    void testSetupPhaseSounds()
+    {
+        using namespace monopoly;
+        using namespace ui::playersetupsound;
+
+        State sound{};
+        auto update = startPhase(sound,
+            display::PlayerSetupPhase::LocalOrNetwork, false, 0);
+        expect(update.count == 2 &&
+               update.requests[0].voice == udsound::PennybagsVoice::WelcomeGame &&
+               update.requests[0].policy ==
+                   udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlayingWithLock &&
+               update.requests[1].voice ==
+                   udsound::PennybagsVoice::ChooseNetworkOrLocalGame &&
+               update.requests[1].policy ==
+                   udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay,
+            "first setup phase queues locked Welcome then waits for screen comment");
+
+        update = startPhase(sound,
+            display::PlayerSetupPhase::LocalOrNetwork, false, 0);
+        expect(update.count == 0,
+            "unchanged setup phase does not replay its host comment");
+
+        update = startPhase(sound,
+            display::PlayerSetupPhase::HiScore, false, 0);
+        expect(update.count == 1 &&
+               update.requests[0].voice ==
+                   udsound::PennybagsVoice::AnnouncePreviousHighScoresIfAny &&
+               update.requests[0].policy ==
+                   udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay,
+            "HiScore uses wait policy after Welcome has already played");
+
+        resetPlayback(sound);
+        update = startPhase(sound,
+            display::PlayerSetupPhase::LocalOrNetwork, false, 0);
+        expect(sound.welcomeMessagePlayed && update.count == 1 &&
+               update.requests[0].voice ==
+                   udsound::PennybagsVoice::ChooseNetworkOrLocalGame,
+            "display reinitialization preserves process-lifetime Welcome guard");
+
+        State mapping{};
+        mapping.welcomeMessagePlayed = true;
+        const auto expectVoice = [&](display::PlayerSetupPhase phase, bool ai,
+            std::uint8_t count, udsound::PennybagsVoice voice,
+            std::string_view description)
+        {
+
+            const auto result = startPhase(mapping, phase, ai, count);
+            expect(result.count == 1 && result.requests[0].voice == voice &&
+                   result.requests[0].policy ==
+                       udsound::TokenVoiceClipPolicy::ClipOldSoundIfPlaying,
+                description);
+        };
+
+        expectVoice(display::PlayerSetupPhase::SelectPlayer, false, 0,
+            udsound::PennybagsVoice::NewPlayerClickNameOrPressButton,
+            "SelectPlayer maps to click-name host comment");
+        expectVoice(display::PlayerSetupPhase::EnterName, false, 0,
+            udsound::PennybagsVoice::NewPlayerEnterName,
+            "EnterName maps to enter-name host comment");
+        expectVoice(display::PlayerSetupPhase::SelectToken, false, 0,
+            udsound::PennybagsVoice::HumanPlayerPickToken,
+            "human SelectToken maps to human token host comment");
+        expectVoice(display::PlayerSetupPhase::SelectToken, true, 0,
+            udsound::PennybagsVoice::ChooseTokenForComputerPlayer,
+            "AI SelectToken maps to computer token host comment");
+        expectVoice(display::PlayerSetupPhase::StartAddRemove, false, 1,
+            udsound::PennybagsVoice::SummaryScreenWithLessThanTwoPlayers,
+            "summary with fewer than two players uses retail warning");
+
+        expectVoice(display::PlayerSetupPhase::StartAddRemove, false, 2,
+            udsound::PennybagsVoice::SummaryScreenWithTwoToFivePlayers,
+            "summary with two to five players uses middle retail comment");
+        expectVoice(display::PlayerSetupPhase::StartAddRemove, false, 6,
+            udsound::PennybagsVoice::SummaryScreenWithSixPlayers,
+            "summary with six players uses six-player retail comment");
+        expectVoice(display::PlayerSetupPhase::SelectAIStrength, true, 2,
+            udsound::PennybagsVoice::ChooseAIDifficultyLevel,
+            "AI strength phase maps to difficulty host comment");
+        expectVoice(display::PlayerSetupPhase::SelectCity, false, 2,
+            udsound::PennybagsVoice::ChooseClassicOrCityBoard_AnyVersion,
+            "city phase maps to classic-or-city host comment");
+        expectVoice(display::PlayerSetupPhase::StandardOrCustomRules, false, 2,
+            udsound::PennybagsVoice::ChooseStandardOrCustomRules,
+            "rules phase maps to standard-or-custom host comment");
+
+        update = startPhase(mapping,
+            display::PlayerSetupPhase::CustomizeRules, false, 2);
+        expect(update.count == 0 && !mapping.playing,
+            "CustomizeRules clears desired setup sound without stopping audio");
+    }
 }
 
 
@@ -873,6 +966,7 @@ int main()
     testCustomizeRulesCommands();
     testStartGame();
     testRemovePlayer();
+    testSetupPhaseSounds();
 
 
     std::cout << '\n';

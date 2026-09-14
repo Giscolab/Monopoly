@@ -4,6 +4,8 @@
 #include "Messaging.hpp"
 #include "LocalPlayers.hpp"
 #include "PlayerSetupFlow.hpp"
+#include "PlayerSetupSound.hpp"
+#include "UISound.hpp"
 #include "UserInterface.hpp"
 #include "RuleConfiguration.hpp"
 #include "RuleOptions.hpp"
@@ -20,6 +22,8 @@ namespace monopoly::playerselection
 
         ui::playersetup::State setupFlowState;
 
+        ui::playersetupsound::State setupSoundState;
+
         bool hasHiScoreInformation()
         {
             // L'original appelle udpsel_PrintHiScoreInfo().
@@ -27,6 +31,18 @@ namespace monopoly::playerselection
             // Le fichier historique des scores n'est pas encore porté.
             // En son absence, UDPSEL saute lui-même cet écran.
             return false;
+        }
+
+        void playSetupPhaseSound(display::PlayerSetupPhase phase) noexcept
+        {
+            const auto update = ui::playersetupsound::startPhase(
+                setupSoundState, phase, globalState.playerInfo.aiLevel != 0,
+                globalState.numberOfPlayers);
+            for (std::size_t index = 0; index < update.count; ++index)
+            {
+                const auto& request = update.requests[index];
+                engine::playPennybagsVoice(request.voice, request.policy, false);
+            }
         }
 
         bool hasPreviousPlayerLog()
@@ -843,6 +859,7 @@ namespace monopoly::playerselection
     bool initialize()
     {
         globalState = {};
+        ui::playersetupsound::resetPlayback(setupSoundState);
 
 
         ui::playersetup::initialize(
@@ -874,6 +891,7 @@ namespace monopoly::playerselection
         globalState = {};
 
         setupFlowState = {};
+        ui::playersetupsound::resetPlayback(setupSoundState);
 
         ui::localplayers::reset();
     }
@@ -1043,6 +1061,7 @@ namespace monopoly::playerselection
 
 
         syncLegacyStateFromFlow();
+        playSetupPhaseSound(displayState.currentPlayerSetupPhase);
 
 
         // Sans animations, le port condense anim-out, startPhase et anim-in
