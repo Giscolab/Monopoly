@@ -302,7 +302,7 @@ namespace
                 optionsui::optionToggleSupported(optionsui::OptionToggle::Camera) &&
                 optionsui::optionToggleSupported(optionsui::OptionToggle::Lighting) &&
                 optionsui::optionToggleSupported(optionsui::OptionToggle::Board3D) &&
-                !optionsui::optionToggleSupported(optionsui::OptionToggle::Music),
+                optionsui::optionToggleSupported(optionsui::OptionToggle::Music),
             "only toggles with real modern owners are interactive");
 
         optionsui::State state{};
@@ -311,19 +311,26 @@ namespace
         const auto optionTab = optionsui::menuButtonRect(optionsui::MenuButton::Option);
         (void)optionsui::processInput(state, display::Screen2D::Options,
             click((optionTab.left + optionTab.right) / 2, optionTab.top + 1));
-        optionsui::loadSupportedOptionValues(state, true, false, true, false);
+        optionsui::loadSupportedOptionValues(state, true, 2, true, false, true, false);
         require(state.optionSnapshotLoaded &&
+                state.musicTuneIndex == 2 && state.originalMusicTuneIndex == 2 &&
+                state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Music)] &&
                 state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::TokenAnimations)] &&
                 !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Camera)] &&
                 state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Lighting)] &&
                 !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Board3D)],
-            "Option tab snapshots four supported runtime owners");
+            "Option tab snapshots five supported runtime owners");
+
+        require(optionsui::selectMusicTune(state, 4) && state.musicTuneIndex == 4 &&
+                !optionsui::selectMusicTune(state, 5) && state.musicTuneIndex == 4,
+            "music tune selection accepts retail indices 0..4 and rejects out-of-range values");
 
         const auto music = optionsui::optionToggleRect(optionsui::OptionToggle::Music, true);
-        const auto ignored = optionsui::processInput(state, display::Screen2D::Options,
+        const auto musicClick = optionsui::processInput(state, display::Screen2D::Options,
             click(music.left + 1, music.top + 1));
-        require(!ignored.pressedOptionToggle,
-            "unported Music control cannot pretend to change runtime state");
+        require(musicClick.pressedOptionToggle == optionsui::OptionToggle::Music &&
+                !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Music)],
+            "Music toggle is interactive once the runtime owns background music");
 
         const auto lighting = optionsui::optionToggleRect(optionsui::OptionToggle::Lighting, true);
         const auto lightClick = optionsui::processInput(state, display::Screen2D::Options,
@@ -336,10 +343,10 @@ namespace
         engine::SequencePlayback playback(resources.service.snapshot());
         optionsui::TogglePlayback toggles;
         require(toggles.sync(state, display::Screen2D::Options, playback) &&
-                playback.commands().pendingCount() == 24,
-            "four supported toggles open as two Start+Move+Stay roots each");
-        require(playback.update(0).has_value() && playback.world2D().size() == 8,
-            "supported Option toggles publish eight Overlay2D roots");
+                playback.commands().pendingCount() == 30,
+            "five supported toggles open as two Start+Move+Stay roots each");
+        require(playback.update(0).has_value() && playback.world2D().size() == 10,
+            "supported Option toggles publish ten Overlay2D roots");
 
         const auto cameraOnId = optionsui::toggleSequence(true, false);
         const auto cameraOffId = optionsui::toggleSequence(false, false);
@@ -373,9 +380,9 @@ namespace
             click(creditsTab.left + 1, creditsTab.top + 1));
         require(!state.optionSnapshotLoaded &&
                 toggles.sync(state, display::Screen2D::Options, playback) &&
-                playback.commands().pendingCount() == 8 && playback.update(2).has_value() &&
+                playback.commands().pendingCount() == 10 && playback.update(2).has_value() &&
                 playback.world2D().size() == 0,
-            "leaving Option tab discards snapshot and stops eight supported toggle roots");
+            "leaving Option tab discards snapshot and stops ten supported toggle roots");
     }
 
     void testHelpScreen()
@@ -556,7 +563,7 @@ namespace
             "toggle failure fixture enters Options");
         (void)optionsui::processInput(toggleState, display::Screen2D::Options,
             click((optionTabRect.left + optionTabRect.right) / 2, optionTabRect.top + 1));
-        optionsui::loadSupportedOptionValues(toggleState, true, true, true, true);
+        optionsui::loadSupportedOptionValues(toggleState, true, 4, true, true, true, true);
         engine::SequencePlayback missingTogglePlayback(nullptr);
         optionsui::TogglePlayback missingToggle;
         const auto missingToggleResult = missingToggle.sync(
@@ -570,14 +577,14 @@ namespace
         optionsui::TogglePlayback toggleVisual;
         bool toggleFilled = true;
         for (std::size_t index = 0;
-             index < sequence::SequenceCommandQueue::Capacity - 23; ++index)
+             index < sequence::SequenceCommandQueue::Capacity - 29; ++index)
         {
             const auto queued = togglePlayback.commands().enqueue(
                 sequence::StopSequenceCommand{data::EmptyDataId, 0, false});
             toggleFilled = toggleFilled && queued.has_value();
         }
         require(toggleFilled,
-            "toggle FIFO fixture leaves twenty-three slots for twenty-four-command open");
+            "toggle FIFO fixture leaves twenty-nine slots for thirty-command open");
         const auto toggleBefore = togglePlayback.commands().pendingCount();
         const auto toggleNoRoom = toggleVisual.sync(
             toggleState, display::Screen2D::Options, togglePlayback);

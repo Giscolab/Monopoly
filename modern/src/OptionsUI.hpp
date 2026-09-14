@@ -61,9 +61,12 @@ namespace monopoly::optionsui
         Count
     };
 
-    inline constexpr std::array<OptionToggle, 4> SupportedOptionToggles{
-        OptionToggle::TokenAnimations, OptionToggle::Camera,
-        OptionToggle::Lighting, OptionToggle::Board3D};
+    inline constexpr std::uint8_t MusicTuneCount = 5;
+
+    inline constexpr std::array<OptionToggle, 5> SupportedOptionToggles{
+        OptionToggle::Music, OptionToggle::TokenAnimations,
+        OptionToggle::Camera, OptionToggle::Lighting,
+        OptionToggle::Board3D};
 
     struct Rect
     {
@@ -83,6 +86,8 @@ namespace monopoly::optionsui
         Screen currentScreen{Screen::File};
         display::Screen2D previousView{display::Screen2D::Main};
         std::array<bool, static_cast<std::size_t>(OptionToggle::Count)> optionOn{};
+        std::uint8_t musicTuneIndex{};
+        std::uint8_t originalMusicTuneIndex{};
         bool optionSnapshotLoaded{};
         bool active{};
     };
@@ -112,8 +117,11 @@ namespace monopoly::optionsui
         display::Screen2D previousView) noexcept;
 
     void loadSupportedOptionValues(State& state,
+        bool musicOn, std::uint8_t musicTuneIndex,
         bool tokenAnimationsOn, bool cameraMovementOn,
         bool lightingOn, bool board3DOn) noexcept;
+
+    [[nodiscard]] bool selectMusicTune(State& state, std::uint8_t tuneIndex) noexcept;
 
     [[nodiscard]] InputResult processInput(
         State& state,

@@ -103,6 +103,8 @@ namespace monopoly::display
         bool viewportBackgroundFillOn = false;
         bool optionTokenAnimationsOn = true;
         bool optionCameraMovementOn = true;
+        bool optionMusicOn = true;
+        std::uint8_t optionMusicTuneIndex = 0;
         bool optionLightingOn = true;
         std::uint64_t boardTick = 0;
         bool mouseLeftPressed = false;
@@ -157,6 +159,8 @@ namespace monopoly::display
     void cancelDiceCameraOverride();
 
     void noteBoardActivity() noexcept;
+    void applyMusicOption(bool musicOn) noexcept;
+    void applyMusicTune(std::uint8_t tuneIndex) noexcept;
     void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
         bool lightingOn, bool board3DOn) noexcept;
     void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept;

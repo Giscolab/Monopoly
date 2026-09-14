@@ -1,4 +1,5 @@
 #include "UserInterface.hpp"
+#include "UISound.hpp"
 #include "Display.hpp"
 #include "TimeStep.hpp"
 #include "PlayerSelection.hpp"
@@ -277,6 +278,11 @@ namespace monopoly::userinterface
         display::noteBoardActivity();
 
         (void)chat::processRuleMessage(message);
+
+        // Userifce.cpp retail: only the host-left 71/6 notification emits the generic warning WAV.
+        if (message.action == actions::Type::NotifyErrorMessage &&
+            message.numberA == 71 && message.numberC == 6)
+            engine::playWarningSound();
 
         if (message.action == actions::Type::NotifyProposedConfiguration)
         {
@@ -582,10 +588,17 @@ namespace monopoly::userinterface
         );
         const auto optionsInput = optionsui::processInput(
             optionsProjection, display::state().desired2DView, message);
+        const bool optionClicked = optionsInput.pressedMenuButton.has_value() ||
+            optionsInput.pressedFileButton.has_value() ||
+            optionsInput.pressedHelpButton.has_value() ||
+            optionsInput.pressedOptionToggle.has_value() ||
+            optionsInput.pressedOptionOkay;
+        if (optionClicked) engine::playClickSound();
         if (optionsInput.pressedMenuButton == optionsui::MenuButton::Option)
         {
             const auto& displayState = display::stateReadOnly();
             optionsui::loadSupportedOptionValues(optionsProjection,
+                displayState.optionMusicOn, displayState.optionMusicTuneIndex,
                 displayState.optionTokenAnimationsOn,
                 displayState.optionCameraMovementOn,
                 displayState.optionLightingOn, displayState.game3DOn);
@@ -596,6 +609,8 @@ namespace monopoly::userinterface
             {
                 return optionsProjection.optionOn[static_cast<std::size_t>(toggle)];
             };
+            display::applyMusicOption(value(optionsui::OptionToggle::Music));
+            display::applyMusicTune(optionsProjection.musicTuneIndex);
             display::applyRuntimeOptions(
                 value(optionsui::OptionToggle::TokenAnimations),
                 value(optionsui::OptionToggle::Camera),

@@ -50,6 +50,11 @@ namespace monopoly::optionsui
         void reset() noexcept { shown_.fill(-1); }
 
     private:
-        std::array<std::int8_t, SupportedOptionToggles.size()> shown_{{-1, -1, -1, -1}};
+        std::array<std::int8_t, SupportedOptionToggles.size()> shown_ = []
+        {
+            std::array<std::int8_t, SupportedOptionToggles.size()> values{};
+            values.fill(-1);
+            return values;
+        }();
     };
 }

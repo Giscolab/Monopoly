@@ -414,6 +414,16 @@ namespace monopoly::display
         globalState.lastBoardActivityTick = boardCameraTick;
     }
 
+    void applyMusicOption(bool musicOn) noexcept
+    {
+        globalState.optionMusicOn = musicOn;
+    }
+
+    void applyMusicTune(std::uint8_t tuneIndex) noexcept
+    {
+        globalState.optionMusicTuneIndex = std::min<std::uint8_t>(tuneIndex, 4);
+    }
+
     void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
         bool lightingOn, bool board3DOn) noexcept
     {
