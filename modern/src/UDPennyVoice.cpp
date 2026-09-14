@@ -285,6 +285,15 @@ namespace monopoly::penny
         return data::packDataId(data::LegacyGroupId::Board, tag);
     }
 
+    std::optional<data::DataId> cardReadWave(
+        data::BoardEdition edition, std::uint8_t cardIndex) noexcept
+    {
+        if (cardIndex >= 32 || edition != data::BoardEdition::Usa)
+            return std::nullopt;
+        return data::packDataId(data::LegacyGroupId::LanguageDialog,
+            static_cast<data::DataTag>(0x0811u + cardIndex));
+    }
+
     std::optional<TokenReaction> landedOnSquareReaction(
         const rules::GameState& state,
         rules::PlayerNumber player,

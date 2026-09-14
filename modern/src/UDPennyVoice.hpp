@@ -66,6 +66,8 @@ namespace monopoly::penny
 
     [[nodiscard]] std::optional<data::DataId> squareAnnouncementWave(
         data::BoardEdition edition, int city, std::uint8_t square) noexcept;
+    [[nodiscard]] std::optional<data::DataId> cardReadWave(
+        data::BoardEdition edition, std::uint8_t cardIndex) noexcept;
 
     [[nodiscard]] std::optional<TokenReaction> landedOnSquareReaction(
         const rules::GameState& state,

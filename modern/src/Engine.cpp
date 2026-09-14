@@ -1169,12 +1169,33 @@ namespace monopoly::engine
                 iBarInputs.ruleMode,
                 iBarActivePlayer,
                 iBarInputs.aiButtonRemoteState);
+            const auto previousCardVisualState =
+                iBarBackdropPlayback.cardVisualState();
             const auto backdropSync = iBarBackdropPlayback.sync(
                 ruleState, iBarVisible, iBarActivePlayer, *session,
                 iBarInputs);
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",
                     backdropSync.error().c_str());
+            if (previousCardVisualState == ibar::CardVisualState::Off &&
+                iBarBackdropPlayback.cardVisualState() == ibar::CardVisualState::DeckOut &&
+                iBarInputs.desiredCardIndex)
+            {
+                if (auto* output = audioPlayback())
+                {
+                    const auto wave = penny::cardReadWave(
+                        output->boardEdition(), *iBarInputs.desiredCardIndex);
+                    if (wave)
+                    {
+                        const auto spoken = playPennybagsSpecific(*wave,
+                            udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay,
+                            false);
+                        if (!spoken)
+                            return SDL_SetError("Card voice playback: %s",
+                                spoken.error().c_str());
+                    }
+                }
+            }
             if (!audioDisabled)
             {
                 const auto soundSync = syncMonopolyAudio(ruleState, displayState);

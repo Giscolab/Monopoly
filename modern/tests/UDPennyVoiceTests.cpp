@@ -77,6 +77,26 @@ namespace
             "Europe custom board waits for a real install-language owner");
     }
 
+    void testCardReadWave()
+    {
+        const auto first = monopoly::penny::cardReadWave(
+            monopoly::data::BoardEdition::Usa, 0);
+        const auto last = monopoly::penny::cardReadWave(
+            monopoly::data::BoardEdition::Usa, 31);
+        require(first && monopoly::data::dataGroup(*first) ==
+                monopoly::data::legacyGroupValue(monopoly::data::LegacyGroupId::LanguageDialog) &&
+                monopoly::data::dataTag(*first) == 0x0811,
+            "USA first card reads WAV_pb186 from DAT_LANGDIALOG");
+        require(last && monopoly::data::dataTag(*last) == 0x0830,
+            "USA final community card keeps contiguous pb186+31 mapping");
+        require(!monopoly::penny::cardReadWave(
+                monopoly::data::BoardEdition::Europe, 0),
+            "Europe card voice waits for the missing monetary-system owner");
+        require(!monopoly::penny::cardReadWave(
+                monopoly::data::BoardEdition::Usa, 32),
+            "card voice rejects indexes outside retail 0..31 range");
+    }
+
     void testPurchaseAndAuction()
     {
         auto state = baseState();
@@ -166,6 +186,7 @@ int main()
 {
     testCatalog();
     testSquareAnnouncements();
+    testCardReadWave();
     testPurchaseAndAuction();
     testJailAndLanding();
     testPropertyAndRentReactions();
