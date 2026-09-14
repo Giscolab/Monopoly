@@ -493,6 +493,32 @@ namespace monopoly::engine
             return {};
         }
 
+        [[nodiscard]] std::expected<void, std::string> playPennybagsComment(
+            udsound::PennybagsVoice line,
+            udsound::TokenVoiceClipPolicy policy, bool watchAfterStart)
+        {
+            auto* output = audioPlayback();
+            if (output == nullptr) return {};
+            auto played = monopolySoundRuntime.pennybagsVoice(*output,
+                display::stateReadOnly().optionHostCommentsOn, line, policy,
+                static_cast<std::uint32_t>(std::rand()));
+            if (!played)
+            {
+                disableAudioPlayback("Pennybags voice disabled audio", played.error());
+                return {};
+            }
+            if (watchAfterStart && played->started)
+                monopolySoundRuntime.watchPennybags(*output);
+            auto watched = monopolySoundRuntime.syncTokenVoices(*output);
+            if (!watched)
+            {
+                disableAudioPlayback("Pennybags voice watch disabled audio", watched.error());
+                return {};
+            }
+            reconcileTokenVoiceQueueLock(*watched);
+            return {};
+        }
+
         [[nodiscard]] std::expected<void, std::string> syncPieceMovePlayback(
             SequencePlayback& session, bool boardVisible, std::uint64_t tick)
         {
@@ -646,8 +672,17 @@ namespace monopoly::engine
                                 ai::propertiesOwnedByPlayer(projected, player));
                             economics.valid = true;
                         }
+                        const auto reactionRandom = static_cast<std::uint32_t>(std::rand() % 100);
+                        const auto pennybagsReaction = penny::landedOnSquarePennybagsReaction(
+                            projected, player, square, reactionRandom);
+                        if (pennybagsReaction)
+                        {
+                            const auto voice = playPennybagsComment(pennybagsReaction->voice,
+                                pennybagsReaction->policy, pennybagsReaction->watchAfterStart);
+                            if (!voice) return voice;
+                        }
                         const auto reaction = penny::landedOnSquareReaction(projected, player, square,
-                            static_cast<std::uint32_t>(std::rand() % 100), economics, cardMove);
+                            reactionRandom, economics, cardMove);
                         if (reaction)
                         {
                             const auto voice = playPieceTokenVoice(*activePieceMoveToken, reaction->line,
@@ -695,7 +730,7 @@ namespace monopoly::engine
 
     void disableAudioPlayback(std::string_view context, const std::string& error) noexcept
     {
-        std::cerr << context << ": " << error << '\n';
+        std::cerr << context << ": " << error << '\r\n';
         monopolySoundRuntime.reset(audioRuntime.get());
         if (audioRuntime) audioRuntime->stopAll();
         activeSequenceSounds.clear();
@@ -726,6 +761,12 @@ namespace monopoly::engine
         udsound::TokenVoiceClipPolicy policy, bool watchAfterStart) noexcept
     {
         (void)playPieceTokenVoice(token, line, policy, watchAfterStart);
+    }
+
+    void playPennybagsVoice(udsound::PennybagsVoice line,
+        udsound::TokenVoiceClipPolicy policy, bool watchAfterStart) noexcept
+    {
+        (void)playPennybagsComment(line, policy, watchAfterStart);
     }
 
     std::expected<void, std::string> syncSequenceAudio(SequencePlayback& session)
@@ -824,7 +865,7 @@ namespace monopoly::engine
             std::cerr
                 << "SDL_CreateGPUDevice failed: "
                 << SDL_GetError()
-                << '\n';
+                << '\r\n';
 
             timers::shutdown();
             uimsg::shutdown();
@@ -837,7 +878,7 @@ namespace monopoly::engine
             std::cerr
                 << "SDL_ClaimWindowForGPUDevice failed: "
                 << SDL_GetError()
-                << '\n';
+                << '\r\n';
 
             SDL_DestroyGPUDevice(gpuDevice);
             gpuDevice = nullptr;
@@ -858,7 +899,7 @@ namespace monopoly::engine
             std::cerr
                 << "Legacy 3D background unavailable: "
                 << SDL_GetError()
-                << '\n';
+                << '\r\n';
         }
 
         return true;

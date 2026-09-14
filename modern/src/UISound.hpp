@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
 
 #include <cstdint>
@@ -11,6 +12,10 @@ namespace monopoly::engine
     void playTokenVoice(
         std::uint8_t token,
         udsound::TokenVoiceLine line,
+        udsound::TokenVoiceClipPolicy policy,
+        bool watchAfterStart = false) noexcept;
+    void playPennybagsVoice(
+        udsound::PennybagsVoice voice,
         udsound::TokenVoiceClipPolicy policy,
         bool watchAfterStart = false) noexcept;
 }

@@ -419,6 +419,11 @@ namespace monopoly::display
         globalState.optionTokenVoicesOn = enabled;
     }
 
+    void applyHostCommentsOption(bool enabled) noexcept
+    {
+        globalState.optionHostCommentsOn = enabled;
+    }
+
     void applyMusicOption(bool musicOn) noexcept
     {
         globalState.optionMusicOn = musicOn;

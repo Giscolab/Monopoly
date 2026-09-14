@@ -128,11 +128,13 @@ namespace monopoly::optionsui
     }
 
     void loadSupportedOptionValues(State& state,
-        bool tokenVoicesOn, bool musicOn, std::uint8_t musicTuneIndex,
+        bool tokenVoicesOn, bool hostCommentsOn,
+        bool musicOn, std::uint8_t musicTuneIndex,
         bool tokenAnimationsOn, bool cameraMovementOn,
         bool lightingOn, bool board3DOn) noexcept
     {
         state.optionOn[static_cast<std::size_t>(OptionToggle::TokenVoices)] = tokenVoicesOn;
+        state.optionOn[static_cast<std::size_t>(OptionToggle::HostComments)] = hostCommentsOn;
         state.optionOn[static_cast<std::size_t>(OptionToggle::Music)] = musicOn;
         state.musicTuneIndex = std::min<std::uint8_t>(musicTuneIndex, MusicTuneCount - 1);
         state.originalMusicTuneIndex = state.musicTuneIndex;
