@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
+#include "UDSoundRuntime.hpp"
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
 #include "Timers.hpp"
@@ -53,6 +54,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace monopoly::engine
@@ -63,6 +65,7 @@ namespace monopoly::engine
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
         std::unique_ptr<audio::Runtime> audioRuntime;
+        udsound::Runtime monopolySoundRuntime;
         std::vector<sequence::SequenceNodeId> activeSequenceSounds;
         bool audioDisabled{};
         std::optional<World3DRenderer> worldRenderer;
@@ -571,6 +574,38 @@ namespace monopoly::engine
         return audioRuntime.get();
     }
 
+    udsound::Runtime* monopolySoundPlayback()
+    {
+        return &monopolySoundRuntime;
+    }
+
+    void disableAudioPlayback(std::string_view context, const std::string& error) noexcept
+    {
+        std::cerr << context << ": " << error << '\n';
+        monopolySoundRuntime.reset(audioRuntime.get());
+        if (audioRuntime) audioRuntime->stopAll();
+        activeSequenceSounds.clear();
+        audioDisabled = true;
+    }
+
+    void playWarningSound() noexcept
+    {
+        if (auto* output = audioPlayback())
+        {
+            const auto result = monopolySoundRuntime.warning(*output);
+            if (!result) disableAudioPlayback("Warning sound disabled audio", result.error());
+        }
+    }
+
+    void playClickSound() noexcept
+    {
+        if (auto* output = audioPlayback())
+        {
+            const auto result = monopolySoundRuntime.click(*output);
+            if (!result) disableAudioPlayback("Click sound disabled audio", result.error());
+        }
+    }
+
     std::expected<void, std::string> syncSequenceAudio(SequencePlayback& session)
     {
         auto* output = audioPlayback();
@@ -605,6 +640,25 @@ namespace monopoly::engine
         activeSequenceSounds = std::move(next);
         output->update();
         return {};
+    }
+
+    std::expected<void, std::string> syncMonopolyAudio(
+        const rules::GameState& ruleState,
+        const display::State& displayState)
+    {
+        auto* output = audioPlayback();
+        if (output == nullptr) return {};
+        const auto count = std::min<rules::PlayerNumber>(
+            ruleState.numberOfPlayers, rules::MaxPlayers);
+        for (rules::PlayerNumber player = 0; player < count; ++player)
+        {
+            const auto cash = monopolySoundRuntime.syncCash(
+                *output, iBarBackdropPlayback.scoreTextState(player).lastCashChange);
+            if (!cash) return cash;
+        }
+        return monopolySoundRuntime.syncMusic(
+            *output, runtime::state().gameInProgress,
+            displayState.optionMusicOn, displayState.optionMusicTuneIndex);
     }
 
     bool initialize(SDL_Window* window)
@@ -909,6 +963,12 @@ namespace monopoly::engine
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",
                     backdropSync.error().c_str());
+            if (!audioDisabled)
+            {
+                const auto soundSync = syncMonopolyAudio(ruleState, displayState);
+                if (!soundSync)
+                    disableAudioPlayback("Monopoly audio playback disabled", soundSync.error());
+            }
             if (const auto consumed = iBarBackdropPlayback.consumedPressedButton())
                 ibar::clearPendingPressedButton(*consumed);
             const auto dice2DSync = dice2DPlayback.sync(ruleState.dice,
@@ -975,11 +1035,7 @@ namespace monopoly::engine
                 const auto audioSync = syncSequenceAudio(*session);
                 if (!audioSync)
                 {
-                    std::cerr << "Audio playback disabled: "
-                              << audioSync.error() << '\n';
-                    if (audioRuntime) audioRuntime->stopAll();
-                    activeSequenceSounds.clear();
-                    audioDisabled = true;
+                    disableAudioPlayback("Sequence audio playback disabled", audioSync.error());
                 }
             }
             const auto viewport = display::worldViewport(displayState.viewportInUse);
@@ -1068,6 +1124,7 @@ namespace monopoly::engine
         pieceMoveQueueLockHeld = false;
         victoryQueueLockReleased = false;
         activeSequenceSounds.clear();
+        monopolySoundRuntime.reset(audioRuntime.get());
         audioRuntime.reset();
         audioDisabled = false;
         playback.reset();

@@ -479,6 +479,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/AudioRuntime.cpp
+    src/UDSoundRuntime.cpp
     src/Engine.cpp
 )
 

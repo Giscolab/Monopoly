@@ -5,6 +5,7 @@
 #include "PieceCamera.hpp"
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
+#include "ChatRuntime.hpp"
 
 #include <iostream>
 #include <optional>
@@ -48,6 +49,12 @@ namespace
     }
 }
 
+namespace monopoly::engine
+{
+    void playWarningSound() noexcept { route.push_back("warning"); }
+    void playClickSound() noexcept { route.push_back("click"); }
+}
+
 namespace monopoly::display
 {
     State& state()
@@ -58,6 +65,16 @@ namespace monopoly::display
     const State& stateReadOnly()
     {
         return routingDisplayState;
+    }
+
+    void applyMusicTune(std::uint8_t tuneIndex) noexcept
+    {
+        routingDisplayState.optionMusicTuneIndex = tuneIndex;
+    }
+
+    void applyMusicOption(bool musicOn) noexcept
+    {
+        routingDisplayState.optionMusicOn = musicOn;
     }
 
     void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
@@ -183,6 +200,11 @@ namespace monopoly::auctionui
 
 namespace monopoly::messaging
 {
+    bool networkMode()
+    {
+        return false;
+    }
+
     bool sendAction(const actions::Message& message)
     {
         if (!acceptMessaging) return false;
@@ -218,6 +240,22 @@ namespace monopoly::messaging
     std::size_t queuedActionCount()
     {
         return simulatedQueuedActions;
+    }
+}
+
+
+namespace monopoly::chat
+{
+    void reset() noexcept {}
+
+    bool processInput(const uimsg::Message&, rules::PlayerNumber, std::uint32_t, bool)
+    {
+        return false;
+    }
+
+    bool processRuleMessage(const actions::Message&)
+    {
+        return false;
     }
 }
 
