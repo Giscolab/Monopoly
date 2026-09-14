@@ -293,6 +293,29 @@ namespace
         test_support::localHuman[1] = true;
     }
 
+    void testForcedRuleTrackingRestore()
+    {
+        using namespace monopoly;
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::ruleState.numberOfPlayers = 2;
+        test_support::localHuman[0] = true;
+        test_support::localHuman[1] = true;
+        ibar::show();
+
+        const auto player1Rect = ibar::stateReadOnly().players[1].rect;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            player1Rect.left + 1, player1Rect.top + 1});
+        require(ibar::stateReadOnly().localRuleModeActive &&
+                ibar::resolveRulePlayer(0) == 1,
+            "fixture enters wandering player selection before forced tracking reset");
+
+        ibar::restoreRuleTracking();
+        require(!ibar::stateReadOnly().localRuleModeActive &&
+                ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::StartTurn &&
+                ibar::resolveRulePlayer(0) == 0,
+            "forced tracking reset returns IBar to latest RULE mode/player");
+    }
+
     void testBankMouseOverTracking()
     {
         test_support::displayState.desired2DView = display::Screen2D::Main;
@@ -854,6 +877,7 @@ int main()
         testMaskedHitFiltering();
         testPlayerScoreMouseOverTracking();
         testPlayerBankSelectionTracking();
+        testForcedRuleTrackingRestore();
         testBankMouseOverTracking();
         testPropertyMouseOverTracking();
         testBuyAuctionAndTax();

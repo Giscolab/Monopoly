@@ -944,6 +944,11 @@ namespace monopoly::ibar
             globalState.pendingPressedButton.reset();
     }
 
+    void restoreRuleTracking() noexcept
+    {
+        leaveLocalRuleMode();
+    }
+
     RuleMode resolveRuleMode(
         RuleMode projectedMode,
         rules::PlayerNumber projectedPlayer) noexcept
