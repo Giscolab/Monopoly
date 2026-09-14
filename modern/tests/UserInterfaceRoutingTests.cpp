@@ -786,6 +786,32 @@ namespace
                "non-local notification cannot change backdrop");
     }
 
+    void testError71HostComments()
+    {
+        using namespace monopoly;
+        acceptRecipient = true;
+        route.clear();
+        lastPennybagsVoice.reset();
+        lastPennybagsPolicy.reset();
+
+        actions::Message error{};
+        error.action = actions::Type::NotifyErrorMessage;
+        error.toPlayer = rules::AllPlayers;
+        error.numberA = 71;
+        error.numberC = 6;
+        userinterface::processRuleMessage(error);
+        expect(routeCount("warning") == 1 && routeCount("pennybags") == 0,
+            "error 71/6 keeps the retail host-left warning sound");
+
+        route.clear();
+        error.numberC = 1;
+        userinterface::processRuleMessage(error);
+        expect(routeCount("warning") == 0 && routeCount("pennybags") == 1 &&
+                lastPennybagsVoice == udsound::PennybagsVoice::HumanReplacedByComputerPlayer &&
+                lastPennybagsPolicy == udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay,
+            "other error 71 variants play HumanReplacedByComputerPlayer");
+    }
+
     void testGameStartingRoute()
     {
         using namespace monopoly;
@@ -823,12 +849,25 @@ namespace
                "NotifyGamePaused updates portable runtime state");
 
         runtime::state().gameInProgress = true;
+        route.clear();
+        lastPennybagsVoice.reset();
+        lastPennybagsPolicy.reset();
+        requestedBackdrop = display::Screen2D::Invalid;
         actions::Message gameOver{};
         gameOver.action = actions::Type::NotifyGameOver;
         gameOver.toPlayer = rules::AllPlayers;
         userinterface::processRuleMessage(gameOver);
         expect(!runtime::state().gameInProgress,
                "NotifyGameOver clears legacy GameInProgress projection");
+        expect(routeCount("pennybags") == 1 &&
+                lastPennybagsVoice == udsound::PennybagsVoice::PlayAgain &&
+                lastPennybagsPolicy == udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay,
+               "first active-game NotifyGameOver plays retail PlayAgain comment");
+        expect(requestedBackdrop == display::Screen2D::Main,
+               "first active-game NotifyGameOver forces the retail Main backdrop");
+        userinterface::processRuleMessage(gameOver);
+        expect(routeCount("pennybags") == 1,
+               "duplicate NotifyGameOver stays silent after GameInProgress clears");
 
         auto& uiState = userinterface::ruleState();
         uiState.options.housesPerHotel = 9;
@@ -1395,6 +1434,7 @@ int main()
     testTradeEditorSubmissionPreflightsQueue();
     testUDPennyVoiceRouting();
     testLocalBoundary();
+    testError71HostComments();
     testGameStartingRoute();
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();

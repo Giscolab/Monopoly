@@ -374,10 +374,17 @@ namespace monopoly::userinterface
 
         (void)chat::processRuleMessage(message);
 
-        // Userifce.cpp retail: only the host-left 71/6 notification emits the generic warning WAV.
-        if (message.action == actions::Type::NotifyErrorMessage &&
-            message.numberA == 71 && message.numberC == 6)
-            engine::playWarningSound();
+        // Userifce.cpp retail splits error 71 between host-left warning and
+        // the "human replaced by computer" Pennybags comment.
+        if (message.action == actions::Type::NotifyErrorMessage && message.numberA == 71)
+        {
+            if (message.numberC == 6)
+                engine::playWarningSound();
+            else
+                engine::playPennybagsVoice(
+                    udsound::PennybagsVoice::HumanReplacedByComputerPlayer,
+                    udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+        }
 
         if (message.action == actions::Type::NotifyProposedConfiguration)
         {
@@ -684,7 +691,13 @@ namespace monopoly::userinterface
 
             case actions::Type::NotifyGameOver:
             {
-                runtime::state().gameInProgress = false;
+                if (runtime::state().gameInProgress)
+                {
+                    runtime::state().gameInProgress = false;
+                    engine::playPennybagsVoice(udsound::PennybagsVoice::PlayAgain,
+                        udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
+                    display::setBackdrop(display::Screen2D::Main);
+                }
                 break;
             }
 
