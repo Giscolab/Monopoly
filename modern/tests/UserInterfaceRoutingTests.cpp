@@ -956,6 +956,24 @@ namespace
         queueLockDepth = 0;
     }
 
+    void testCardSeenLandingGuard()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        routingDisplayState.justReadACardHack = false;
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberA = static_cast<std::int64_t>(actions::Type::CardSeen);
+        completed.numberB = 1;
+        userinterface::processRuleMessage(completed);
+        expect(routingDisplayState.justReadACardHack,
+            "accepted CardSeen arms retail JustReadACard landing guard");
+        userinterface::resetRuleProjection();
+        expect(!routingDisplayState.justReadACardHack,
+            "rule projection reset clears JustReadACard landing guard");
+    }
+
     void testProposedConfigurationProjection()
     {
         using namespace monopoly;
@@ -1058,6 +1076,7 @@ int main()
     testTradeAcceptanceProjectionRouting();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
+    testCardSeenLandingGuard();
     testProposedConfigurationProjection();
     testFirstNonZeroPlayerProjection();
     testPausedAndNewGameProjection();

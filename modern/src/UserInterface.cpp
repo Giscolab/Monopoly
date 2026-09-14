@@ -270,6 +270,7 @@ namespace monopoly::userinterface
         chat::reset();
         pendingPieceIdleTransition.reset();
         firstNumberOfPlayersNotification = true;
+        display::state().justReadACardHack = false;
     }
 
 
@@ -304,6 +305,13 @@ namespace monopoly::userinterface
 
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
+
+        if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberB != 0 &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::CardSeen))
+        {
+            display::state().justReadACardHack = true;
+        }
 
         if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberB != 0 &&
