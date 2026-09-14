@@ -6,6 +6,7 @@
 #include "Messaging.hpp"
 #include "PlayerSelection.hpp"
 #include "UserInterface.hpp"
+#include "UISound.hpp"
 
 #include <array>
 #include <iostream>
@@ -28,6 +29,16 @@ namespace test_support
     bool tradeBeginAccepted = true;
     int optionsBeginCount = 0;
     bool optionsBeginAccepted = true;
+    std::vector<monopoly::udsound::PennybagsVoice> pennybags;
+}
+
+namespace monopoly::engine
+{
+    void playPennybagsVoice(udsound::PennybagsVoice voice,
+        udsound::TokenVoiceClipPolicy, bool) noexcept
+    {
+        test_support::pennybags.push_back(voice);
+    }
 }
 
 namespace monopoly::display
@@ -153,6 +164,7 @@ namespace
                 bool remote = false)
     {
         test_support::sent.clear();
+        test_support::pennybags.clear();
         ibar::setRuleActionHitState(layout, active, mode, 0, remote);
     }
 
@@ -567,8 +579,10 @@ namespace
         click(Slot::General1, Layout::General);
         require(test_support::sent.empty() &&
                 ibar::resolveRuleMode(ibar::RuleMode::DoneTurn, 0) ==
-                    ibar::RuleMode::Build,
-            "Build button enters local Build substate without mutating RULE");
+                    ibar::RuleMode::Build &&
+                test_support::pennybags == std::vector<udsound::PennybagsVoice>{
+                    udsound::PennybagsVoice::PlayerClicks_BuyHouseHotel},
+            "Build button enters local Build substate and plays retail host comment");
 
         setHit(ibar::RuleMode::Build, Layout::General, mask({Slot::Main}));
         ibar::setPropertyHitState(ibar::layout::propertyBit(1));
@@ -586,8 +600,10 @@ namespace
             mask({Slot::General2, Slot::Main}));
         click(Slot::General2, Layout::General);
         require(ibar::resolveRuleMode(ibar::RuleMode::DoneTurn, 0) ==
-                    ibar::RuleMode::Sell,
-            "Sell button enters local Sell substate");
+                    ibar::RuleMode::Sell &&
+                test_support::pennybags == std::vector<udsound::PennybagsVoice>{
+                    udsound::PennybagsVoice::PlayerClicks_SellHouseHotel},
+            "Sell button enters local Sell substate and plays retail host comment");
         require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) ==
                     ibar::RuleMode::Sell,
             "local BSSM override survives RULE mode change while IBar tracking is off");
@@ -597,6 +613,24 @@ namespace
                     ibar::RuleMode::StartTurn &&
                 ibar::resolveRulePlayer(0) == 0,
             "Done returns tracked player to latest projected RULE state");
+
+        setHit(ibar::RuleMode::StartTurn, Layout::General, mask({Slot::General3, Slot::Main}));
+        click(Slot::General3, Layout::General);
+        require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::Mortgage &&
+                test_support::pennybags == std::vector<udsound::PennybagsVoice>{
+                    udsound::PennybagsVoice::PlayerClicks_Mortgage},
+            "Mortgage button enters local Mortgage substate and plays retail host comment");
+        setHit(ibar::RuleMode::Mortgage, Layout::General, mask({Slot::Main}));
+        click(Slot::Main, Layout::General);
+
+        setHit(ibar::RuleMode::StartTurn, Layout::General, mask({Slot::General4, Slot::Main}));
+        click(Slot::General4, Layout::General);
+        require(ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::UnMortgage &&
+                test_support::pennybags == std::vector<udsound::PennybagsVoice>{
+                    udsound::PennybagsVoice::PlayerClicks_UnMortgage},
+            "Unmortgage button enters local UnMortgage substate and plays retail host comment");
+        setHit(ibar::RuleMode::UnMortgage, Layout::General, mask({Slot::Main}));
+        click(Slot::Main, Layout::General);
 
         setHit(ibar::RuleMode::StartTurn, Layout::General, mask({Slot::Main}));
         ibar::setPropertyHitState(

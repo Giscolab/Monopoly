@@ -8,6 +8,7 @@
 #include "Messaging.hpp"
 #include "PlayerSelection.hpp"
 #include "UserInterface.hpp"
+#include "UISound.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -393,6 +394,16 @@ namespace monopoly::ibar
             {
                 globalState.pendingPressedButton = buttonIndex;
                 enterLocalRuleMode(mode);
+                udsound::PennybagsVoice voice = udsound::PennybagsVoice::PlayerClicks_BuyHouseHotel;
+                switch (mode)
+                {
+                case RuleMode::Sell: voice = udsound::PennybagsVoice::PlayerClicks_SellHouseHotel; break;
+                case RuleMode::Mortgage: voice = udsound::PennybagsVoice::PlayerClicks_Mortgage; break;
+                case RuleMode::UnMortgage: voice = udsound::PennybagsVoice::PlayerClicks_UnMortgage; break;
+                default: break;
+                }
+                engine::playPennybagsVoice(voice,
+                    udsound::TokenVoiceClipPolicy::SkipIfOldSoundPlaying, false);
                 return true;
             };
 
