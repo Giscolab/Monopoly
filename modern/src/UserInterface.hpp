@@ -28,7 +28,7 @@ namespace monopoly::userinterface
     const optionsui::State& optionsStateReadOnly() noexcept;
     [[nodiscard]] bool beginTradeFromIBar(rules::PlayerNumber iBarPlayer) noexcept;
     [[nodiscard]] bool beginOptionsFromIBar() noexcept;
-    [[nodiscard]] std::expected<void, std::string> sendAuctionReadyResponses(
+    [[nodiscard]] std::expected<void, std::string> sendReadyResponses(
         std::uint32_t playerMask,
         std::int64_t serial);
     // Repart d'une projection UI neuve et réarme l'initialisation spéciale

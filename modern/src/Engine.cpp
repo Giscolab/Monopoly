@@ -1074,7 +1074,7 @@ namespace monopoly::engine
                 [](std::uint32_t playerMask, std::int64_t serial)
                     -> std::expected<void, std::string>
                 {
-                    return userinterface::sendAuctionReadyResponses(
+                    return userinterface::sendReadyResponses(
                         playerMask, serial);
                 });
             if (!pennyBagsSync)
