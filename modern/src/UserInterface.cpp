@@ -41,7 +41,8 @@ namespace monopoly::userinterface
 
         bool applyClientResyncBlob(
             rules::GameState& state,
-            const std::vector<std::uint8_t>& data)
+            const std::vector<std::uint8_t>& data,
+            std::uint8_t* resyncCause = nullptr)
         {
             constexpr std::size_t deckCount =
                 static_cast<std::size_t>(rules::DeckType::Count);
@@ -110,7 +111,8 @@ namespace monopoly::userinterface
             for (std::size_t square = 0; square < rules::SquareCount; ++square)
                 next.squares[square].houses = readU8();
 
-            (void)readU8(); // resync cause
+            const auto cause = readU8();
+            if (cause > 4) return false;
             (void)readU8(); // authoritative RULE phase
             const std::uint32_t firstMoves = readU32();
             for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
@@ -119,6 +121,7 @@ namespace monopoly::userinterface
             if (current >= rules::MaxPlayers) return false;
             next.currentPlayer = current;
             state = std::move(next);
+            if (resyncCause) *resyncCause = cause;
             return true;
         }
     }
@@ -486,7 +489,25 @@ namespace monopoly::userinterface
         }
 
         if (message.action == actions::Type::NotifyClientResyncInfo)
-            (void)applyClientResyncBlob(uiRuleState, message.binaryDataA);
+        {
+            std::uint8_t cause{};
+            if (applyClientResyncBlob(uiRuleState, message.binaryDataA, &cause) && cause == 2)
+            {
+                runtime::state().gameInProgress = true;
+                display::setBackdrop(display::Screen2D::Main);
+                ibar::restoreRuleTracking();
+                for (auto& hit : uiRuleState.countHits)
+                {
+                    hit.tradedItem = false;
+                    hit.toPlayer = rules::NobodyPlayer;
+                }
+                pendingPieceIdleTransition.reset();
+                if (!pieceIdleState.initialize(uiRuleState))
+                    pieceIdleState.reset();
+                iBarRuleProjection.reset();
+                iBarRuleProjection.player = 0;
+            }
+        }
 
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);

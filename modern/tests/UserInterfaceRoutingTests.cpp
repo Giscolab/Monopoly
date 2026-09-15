@@ -78,7 +78,7 @@ namespace
             data.push_back(static_cast<std::uint8_t>(raw >> shift));
     }
 
-    std::vector<std::uint8_t> makeResyncBlob()
+    std::vector<std::uint8_t> makeResyncBlob(std::uint8_t cause = 0)
     {
         using namespace monopoly;
         std::vector<std::uint8_t> data{1};
@@ -94,7 +94,7 @@ namespace
         data.push_back(rules::NobodyPlayer);
         for (std::size_t square = 0; square < rules::SquareCount; ++square)
             data.push_back(square == 1 ? 3 : 0);
-        data.push_back(0);
+        data.push_back(cause);
         data.push_back(0);
         appendU32(data, (1u << 1) | (1u << 3));
         data.push_back(2);
@@ -1285,6 +1285,41 @@ namespace
             "truncated NotifyClientResyncInfo is rejected atomically");
     }
 
+    void testLoadedGameResyncLifecycle()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        runtime::reset();
+        requestedBackdrop = display::Screen2D::Invalid;
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 4;
+        uiState.countHits[0].toPlayer = 2;
+        uiState.countHits[0].tradedItem = true;
+        const int restoreBefore = iBarRestoreCount;
+
+        actions::Message resync{};
+        resync.action = actions::Type::NotifyClientResyncInfo;
+        resync.toPlayer = rules::AllPlayers;
+        resync.binaryDataA = makeResyncBlob(2);
+        userinterface::processRuleMessage(resync);
+
+        expect(runtime::state().gameInProgress,
+            "load-game resync restores retail GameInProgress");
+        expect(requestedBackdrop == display::Screen2D::Main,
+            "load-game resync restores retail Main backdrop");
+        expect(iBarRestoreCount == restoreBefore + 1,
+            "load-game resync restores retail IBar tracking");
+        expect(uiState.countHits[0].toPlayer == rules::NobodyPlayer &&
+               !uiState.countHits[0].tradedItem,
+            "load-game resync clears stale traded CountHits");
+        expect(userinterface::pieceIdleStateReadOnly().initialized() &&
+               !userinterface::pieceIdleStateReadOnly().center(),
+            "load-game resync rebuilds loaded token resting occupancy without a center");
+        const auto& rulesState = userinterface::iBarRuleStateReadOnly();
+        expect(rulesState.mode == ibar::RuleMode::Nothing && rulesState.player == 0,
+            "load-game resync clears IBar rule mode to retail player zero baseline");
+    }
+
     void testFirstHouseCommentRouting()
     {
         using namespace monopoly;
@@ -1678,6 +1713,7 @@ int main()
     testRaiseMoneyAndJailHostComments();
     testBasicGameStateProjection();
     testClientResyncProjection();
+    testLoadedGameResyncLifecycle();
     testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
     testTradeInitiatorHostComments();
