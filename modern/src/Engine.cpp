@@ -820,6 +820,24 @@ namespace monopoly::engine
         }
     }
 
+    void playBuildSound() noexcept
+    {
+        if (auto* output = audioPlayback())
+        {
+            const auto result = monopolySoundRuntime.build(*output);
+            if (!result) disableAudioPlayback("Build sound disabled audio", result.error());
+        }
+    }
+
+    void playUnbuildSound() noexcept
+    {
+        if (auto* output = audioPlayback())
+        {
+            const auto result = monopolySoundRuntime.unbuild(*output);
+            if (!result) disableAudioPlayback("Unbuild sound disabled audio", result.error());
+        }
+    }
+
     void playTokenVoice(std::uint8_t token, udsound::TokenVoiceLine line,
         udsound::TokenVoiceClipPolicy policy, bool watchAfterStart) noexcept
     {

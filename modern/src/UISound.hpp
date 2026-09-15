@@ -9,6 +9,8 @@ namespace monopoly::engine
 {
     void playWarningSound() noexcept;
     void playClickSound() noexcept;
+    void playBuildSound() noexcept;
+    void playUnbuildSound() noexcept;
     void playTokenVoice(
         std::uint8_t token,
         udsound::TokenVoiceLine line,
