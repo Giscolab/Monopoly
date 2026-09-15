@@ -227,6 +227,12 @@ namespace monopoly::ui::localplayers
         return selectedLocalUIPlayer;
     }
 
+    void setCurrentUIPlayerFromPlayerNumber(rules::PlayerNumber player)
+    {
+        selectedLocalUIPlayer = slotIsLocalHumanPlayer(player)
+            ? player : rules::NobodyPlayer;
+    }
+
     void setCurrentUIPlayerFromPlayerSet(
         const rules::GameState& state, std::uint32_t playerSet)
     {
@@ -974,6 +980,31 @@ namespace
     }
 
 
+    void testEndTurnProjection()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 3;
+        localHumanMask = (1u << 1);
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+        routingDisplayState.flashCurrentToken = false;
+
+        actions::Message end{};
+        end.action = actions::Type::NotifyEndTurn;
+        end.toPlayer = rules::AllPlayers;
+        end.numberA = 1;
+        userinterface::processRuleMessage(end);
+
+        expect(uiState.currentPlayer == 1,
+            "NotifyEndTurn updates the retail current player projection");
+        expect(selectedLocalUIPlayer == 1,
+            "NotifyEndTurn selects the matching local human player");
+        expect(routingDisplayState.flashCurrentToken,
+            "NotifyEndTurn enables the retail current-token flash");
+        localHumanMask = 0x3Fu;
+    }
+
     void testStartTurnQueuesHistoricalIdleTransition()
     {
         using namespace monopoly;
@@ -999,10 +1030,16 @@ namespace
         turn.toPlayer = rules::AllPlayers;
         turn.numberA = 0;
         route.clear();
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+        routingDisplayState.flashCurrentToken = false;
         runtime::state().gamePaused = true;
         userinterface::processRuleMessage(turn);
         expect(!runtime::state().gamePaused,
             "NotifyStartTurn clears the retail paused state");
+        expect(selectedLocalUIPlayer == 0,
+            "NotifyStartTurn selects the retail local human player");
+        expect(routingDisplayState.flashCurrentToken,
+            "NotifyStartTurn enables the retail current-token flash");
         expect(std::find(route.begin(), route.end(), "pennybags") != route.end() &&
                std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
             "first NotifyStartTurn routes Pennybags roll prompt then token intro");
@@ -1635,6 +1672,7 @@ int main()
     testLocalBoundary();
     testError71HostComments();
     testGameStartingRoute();
+    testEndTurnProjection();
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();
     testRaiseMoneyAndJailHostComments();
