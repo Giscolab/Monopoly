@@ -109,6 +109,7 @@ namespace monopoly::ibar
     rules::PlayerNumber resolveRulePlayer(rules::PlayerNumber projectedPlayer) noexcept
     { return projectedPlayer; }
     void restoreRuleTracking() noexcept { ++iBarRestoreCount; }
+    void processRuleMessage(const actions::Message&, RuleMode, std::uint64_t) noexcept {}
 }
 
 namespace monopoly::engine
@@ -1163,6 +1164,31 @@ namespace
         routingTick = 0;
     }
 
+    void testFreeUnmortgageRestoresIBarTracking()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        const int before = iBarRestoreCount;
+
+        actions::Message message{};
+        message.action = actions::Type::NotifyFreeUnmortgaging;
+        message.toPlayer = rules::AllPlayers;
+        message.numberA = 1;
+        message.numberB = 0;
+        userinterface::processRuleMessage(message);
+        expect(iBarRestoreCount == before,
+            "empty free-unmortgage notification does not force IBar tracking");
+
+        message.numberB = 0x12;
+        userinterface::processRuleMessage(message);
+        expect(iBarRestoreCount == before + 1,
+            "free-unmortgage set restores retail IBar tracking");
+        const auto& projected = userinterface::iBarRuleStateReadOnly();
+        expect(projected.mode == ibar::RuleMode::FreeUnmortgage &&
+               projected.player == 1 && projected.freeUnmortgageSet == 0x12,
+            "free-unmortgage tracking reset preserves projected RULE mode and property set");
+    }
+
     void testBasicGameStateProjection()
     {
         using namespace monopoly;
@@ -1711,6 +1737,7 @@ int main()
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();
     testRaiseMoneyAndJailHostComments();
+    testFreeUnmortgageRestoresIBarTracking();
     testBasicGameStateProjection();
     testClientResyncProjection();
     testLoadedGameResyncLifecycle();
