@@ -800,6 +800,32 @@ namespace monopoly::tradeui
         return projection;
     }
 
+    bool abortIfParticipantOffBoard(
+        State& state,
+        rules::GameState& gameState,
+        display::Screen2D desiredView) noexcept
+    {
+        // UDTrade_ProcessEverything() performs this guard continuously while
+        // the Trade screen is up: if either active trader becomes bankrupt,
+        // abandon the local editor/view and return to the main board.
+        if (desiredView != display::Screen2D::Trade ||
+            state.playerA >= rules::MaxPlayers ||
+            state.playerB >= rules::MaxPlayers)
+        {
+            return false;
+        }
+
+        if (gameState.players[state.playerA].currentSquare < OffBoardSquare &&
+            gameState.players[state.playerB].currentSquare < OffBoardSquare)
+        {
+            return false;
+        }
+
+        gameState.tradeInProgress = false;
+        reset(state);
+        return true;
+    }
+
     void refreshContractProjection(
         State& state,
         const rules::GameState& gameState) noexcept
