@@ -7,6 +7,7 @@
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
 #include "PlayerSelection.hpp"
+#include "RuntimeState.hpp"
 #include "UserInterface.hpp"
 #include "UISound.hpp"
 
@@ -443,6 +444,31 @@ namespace monopoly::ibar
             case RuleMode::RaiseMoney:
                 if (slot == Slot::General2) return enterBssm(RuleMode::Sell, SellButtonIndex);
                 if (slot == Slot::General3) return enterBssm(RuleMode::Mortgage, MortgageButtonIndex);
+                break;
+
+            case RuleMode::GameOver:
+                if (slot == Slot::General2)
+                {
+                    const auto localPlayer = ui::localplayers::anyLocalPlayer(
+                        userinterface::ruleStateReadOnly());
+                    if (localPlayer >= rules::MaxPlayers ||
+                        !messaging::sendAction(actions::Type::NewGame, localPlayer,
+                            rules::BankPlayer, 0))
+                    {
+                        return false;
+                    }
+                    globalState.pendingPressedButton = NewGameButtonIndex;
+                    return true;
+                }
+                if (slot == Slot::Main)
+                {
+                    // Retail fakes an Escape press here after setting its exit flag.
+                    // The modern runtime has no legacy confirmation/credits dialog, so
+                    // publish the same terminal quit request consumed by ProcessUIMessage.
+                    globalState.pendingPressedButton = ExitButtonIndex;
+                    runtime::state().gameQuitRequested = true;
+                    return true;
+                }
                 break;
 
             case RuleMode::Build:
