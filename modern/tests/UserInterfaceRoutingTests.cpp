@@ -116,6 +116,8 @@ namespace monopoly::engine
 {
     void playWarningSound() noexcept { route.push_back("warning"); }
     void playClickSound() noexcept { route.push_back("click"); }
+    void playBuildSound() noexcept { route.push_back("build"); }
+    void playUnbuildSound() noexcept { route.push_back("unbuild"); }
     void playTokenVoice(std::uint8_t, udsound::TokenVoiceLine,
         udsound::TokenVoiceClipPolicy, bool) noexcept
     {
@@ -1278,6 +1280,8 @@ namespace
         expect(uiState.players[1].cash == 1234,
             "NotifyCashAmount updates the retail player cash projection");
 
+        uiState.squares[3].owner = 0;
+        route.clear();
         actions::Message mortgage{};
         mortgage.action = actions::Type::NotifySquareMortgage;
         mortgage.toPlayer = rules::AllPlayers;
@@ -1290,6 +1294,28 @@ namespace
         userinterface::processRuleMessage(mortgage);
         expect(!uiState.squares[3].mortgaged,
             "NotifySquareMortgage clears the retail square mortgage projection");
+        expect(routeCount("click") == 2,
+            "mortgage and unmortgage play the retail click SFX for owned property");
+
+        actions::Message housesSfx{};
+        housesSfx.action = actions::Type::NotifySquareHouses;
+        housesSfx.toPlayer = rules::AllPlayers;
+        housesSfx.numberA = 3;
+        housesSfx.numberB = 1;
+        housesSfx.numberC = 5;
+        route.clear();
+        userinterface::processRuleMessage(housesSfx);
+        expect(routeCount("build") == 1,
+            "house increase plays retail WAV_build");
+        housesSfx.numberB = 0;
+        userinterface::processRuleMessage(housesSfx);
+        expect(routeCount("unbuild") == 1,
+            "house decrease plays retail WAV_unbuild");
+        uiState.squares[3].owner = rules::NobodyPlayer;
+        housesSfx.numberB = 1;
+        userinterface::processRuleMessage(housesSfx);
+        expect(routeCount("build") == 1,
+            "unowned property suppresses BSSM SFX like retail owner validation");
 
         actions::Message pot{};
         pot.action = actions::Type::NotifyFreeParkingPot;

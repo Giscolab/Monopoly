@@ -17,6 +17,8 @@ namespace monopoly::udsound
         inline constexpr audio::PlaybackKey ClickKey{audio::PlaybackDomain::Interface, 2};
         inline constexpr audio::PlaybackKey CashUpKey{audio::PlaybackDomain::Interface, 3};
         inline constexpr audio::PlaybackKey CashDownKey{audio::PlaybackDomain::Interface, 4};
+        inline constexpr audio::PlaybackKey BuildKey{audio::PlaybackDomain::Interface, 5};
+        inline constexpr audio::PlaybackKey UnbuildKey{audio::PlaybackDomain::Interface, 6};
         inline constexpr audio::PlaybackKey MusicKey{audio::PlaybackDomain::Music, 1};
         inline constexpr float PennybagsGain = 0.70F;
     }
@@ -24,6 +26,10 @@ namespace monopoly::udsound
     { return audio.play(WarningKey, mainData(WarningTag)); }
     std::expected<void, std::string> Runtime::click(audio::Runtime& audio)
     { return audio.play(ClickKey, mainData(ClickTag), 0.25F); }
+    std::expected<void, std::string> Runtime::build(audio::Runtime& audio)
+    { return audio.play(BuildKey, mainData(BuildTag)); }
+    std::expected<void, std::string> Runtime::unbuild(audio::Runtime& audio)
+    { return audio.play(UnbuildKey, mainData(UnbuildTag)); }
     std::expected<void, std::string> Runtime::cashUp(audio::Runtime& audio)
     { return audio.play(CashUpKey, mainData(CashUpTag)); }
     std::expected<void, std::string> Runtime::cashDown(audio::Runtime& audio)

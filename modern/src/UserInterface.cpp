@@ -568,8 +568,12 @@ namespace monopoly::userinterface
 
         if (message.action == actions::Type::NotifySquareMortgage &&
             message.numberA >= 0 && message.numberA < rules::SquareCount)
-            uiRuleState.squares[static_cast<std::size_t>(message.numberA)].mortgaged =
-                message.numberB != 0;
+        {
+            auto& square = uiRuleState.squares[static_cast<std::size_t>(message.numberA)];
+            square.mortgaged = message.numberB != 0;
+            if (square.owner < rules::MaxPlayers)
+                engine::playClickSound();
+        }
 
         if (message.action == actions::Type::NotifySquareHouses &&
             message.numberA >= 0 && message.numberA < rules::SquareCount &&
@@ -580,6 +584,13 @@ namespace monopoly::userinterface
             const auto previousHouses = square.houses;
             square.houses = static_cast<std::uint8_t>(message.numberB);
             uiRuleState.options.housesPerHotel = static_cast<std::uint8_t>(message.numberC);
+            if (square.owner < rules::MaxPlayers)
+            {
+                if (previousHouses < square.houses)
+                    engine::playBuildSound();
+                else
+                    engine::playUnbuildSound();
+            }
             if (previousHouses < square.houses)
                 maybePlayFirstHouseComment(square.owner, timers::tickCount());
         }
