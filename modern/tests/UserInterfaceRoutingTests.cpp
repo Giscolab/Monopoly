@@ -981,6 +981,79 @@ namespace
     }
 
 
+    void testRetailCurrentUIPlayerNotificationFocus()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        runtime::reset();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 3;
+        uiState.currentPlayer = 0;
+        uiState.players[0].currentSquare = 1;
+        uiState.players[2].currentSquare = 30;
+        localHumanMask = (1u << 2);
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+
+        const std::array focusActions{
+            actions::Type::NotifyPleaseRollDice,
+            actions::Type::NotifyBuyOrAuctionDecision,
+            actions::Type::NotifyPleasePay,
+            actions::Type::NotifyJailExitChoice,
+            actions::Type::NotifyPickedUpCard,
+            actions::Type::NotifyFreeUnmortgaging,
+            actions::Type::NotifyFlatOrFractionTaxDecision,
+            actions::Type::NotifyPlaceBuilding,
+            actions::Type::NotifyDecomposeSale};
+        actions::Message focus{};
+        focus.action = focusActions.front();
+        focus.toPlayer = rules::AllPlayers;
+        focus.numberA = 2;
+        routingDisplayState.desiredBoardCamera = pieces::BoardCameraView::TopDownSquare;
+        userinterface::processRuleMessage(focus);
+        expect(selectedLocalUIPlayer == 2,
+            "retail UDIBar focus notification selects matching local human");
+        const auto expectedCamera = pieces::selectAppropriateView(
+            pieces::BoardViewSelectionType::RollDice,
+            pieces::BoardCameraView::TopDownSquare,
+            uiState.players[2].currentSquare, 0);
+        expect(routingDisplayState.desiredBoardCamera == expectedCamera,
+            "NotifyPleaseRollDice camera follows notification player, not stale CurrentPlayer");
+
+        for (std::size_t index = 1; index < focusActions.size(); ++index)
+        {
+            focus = {};
+            focus.action = focusActions[index];
+            focus.toPlayer = rules::AllPlayers;
+            focus.numberA = 2;
+            userinterface::processRuleMessage(focus);
+            expect(selectedLocalUIPlayer == 2,
+                "retail UDIBar focus notification selects matching local human");
+        }
+
+        actions::Message remote{};
+        remote.action = actions::Type::NotifyPleasePay;
+        remote.toPlayer = rules::AllPlayers;
+        remote.numberA = 1;
+        userinterface::processRuleMessage(remote);
+        expect(selectedLocalUIPlayer == rules::NobodyPlayer,
+            "retail focus notification clears CurrentUIPlayer for non-local player");
+
+        actions::Message bssm{};
+        bssm.action = actions::Type::NotifyPlayerBuySellMort;
+        bssm.toPlayer = rules::AllPlayers;
+        bssm.numberA = 2;
+        userinterface::processRuleMessage(bssm);
+        expect(selectedLocalUIPlayer == 2,
+            "NotifyPlayerBuySellMort acquisition selects local BSSM player");
+        bssm.numberA = rules::NobodyPlayer;
+        userinterface::processRuleMessage(bssm);
+        expect(selectedLocalUIPlayer == rules::NobodyPlayer,
+            "NotifyPlayerBuySellMort release clears retail CurrentUIPlayer");
+
+        localHumanMask = 0x3Fu;
+        runtime::reset();
+    }
+
     void testEndTurnProjection()
     {
         using namespace monopoly;
@@ -1733,6 +1806,7 @@ int main()
     testLocalBoundary();
     testError71HostComments();
     testGameStartingRoute();
+    testRetailCurrentUIPlayerNotificationFocus();
     testEndTurnProjection();
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();
