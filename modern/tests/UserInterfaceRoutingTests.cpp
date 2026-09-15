@@ -20,6 +20,7 @@ namespace
     bool acceptRecipient = true;
     int localResetCount = 0;
     int queueLockDepth = 0;
+    int iBarRestoreCount = 0;
     monopoly::rules::PlayerNumber shortageResolvedPlayer = monopoly::rules::NobodyPlayer;
     monopoly::rules::PlayerNumber tradeResolvedPlayer = monopoly::rules::NobodyPlayer;
     monopoly::rules::PlayerNumber capturedTradeB = monopoly::rules::NobodyPlayer;
@@ -32,6 +33,7 @@ namespace
     std::optional<monopoly::udsound::TokenVoiceClipPolicy> lastPennybagsPolicy;
     std::uint32_t localHumanMask = 0x3F;
     std::uint32_t localPlayerMask = 0x3F;
+    monopoly::rules::PlayerNumber selectedLocalUIPlayer = monopoly::rules::NobodyPlayer;
     std::size_t simulatedQueuedActions = 0;
     bool acceptMessaging = true;
     std::vector<monopoly::actions::Message> capturedMessages;
@@ -62,6 +64,42 @@ namespace
         ++failures;
         std::cerr << "[FAIL] " << description << '\r\n';
     }
+
+    void appendU32(std::vector<std::uint8_t>& data, std::uint32_t value)
+    {
+        for (int shift = 0; shift < 32; shift += 8)
+            data.push_back(static_cast<std::uint8_t>(value >> shift));
+    }
+
+    void appendI64(std::vector<std::uint8_t>& data, std::int64_t value)
+    {
+        const auto raw = static_cast<std::uint64_t>(value);
+        for (int shift = 0; shift < 64; shift += 8)
+            data.push_back(static_cast<std::uint8_t>(raw >> shift));
+    }
+
+    std::vector<std::uint8_t> makeResyncBlob()
+    {
+        using namespace monopoly;
+        std::vector<std::uint8_t> data{1};
+        for (rules::PlayerNumber p = 0; p < rules::MaxPlayers; ++p)
+            appendI64(data, 1000 + p);
+        const std::uint32_t bit = 1u;
+        for (rules::PlayerNumber p = 0; p < rules::MaxPlayers; ++p)
+            appendU32(data, p == 2 ? bit : 0);
+        appendU32(data, bit);
+        for (rules::PlayerNumber p = 0; p < rules::MaxPlayers; ++p)
+            data.push_back(static_cast<std::uint8_t>(p + 1));
+        data.push_back(2);
+        data.push_back(rules::NobodyPlayer);
+        for (std::size_t square = 0; square < rules::SquareCount; ++square)
+            data.push_back(square == 1 ? 3 : 0);
+        data.push_back(0);
+        data.push_back(0);
+        appendU32(data, (1u << 1) | (1u << 3));
+        data.push_back(2);
+        return data;
+    }
 }
 
 namespace monopoly::ibar
@@ -70,6 +108,7 @@ namespace monopoly::ibar
     { return projectedMode; }
     rules::PlayerNumber resolveRulePlayer(rules::PlayerNumber projectedPlayer) noexcept
     { return projectedPlayer; }
+    void restoreRuleTracking() noexcept { ++iBarRestoreCount; }
 }
 
 namespace monopoly::engine
@@ -181,6 +220,25 @@ namespace monopoly::ui::localplayers
     {
         return player < rules::MaxPlayers &&
             (localHumanMask & (1u << player)) != 0;
+    }
+
+    rules::PlayerNumber currentUIPlayer()
+    {
+        return selectedLocalUIPlayer;
+    }
+
+    void setCurrentUIPlayerFromPlayerSet(
+        const rules::GameState& state, std::uint32_t playerSet)
+    {
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+        for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+        {
+            if ((playerSet & (1u << player)) != 0 && slotIsLocalHumanPlayer(player))
+            {
+                selectedLocalUIPlayer = player;
+                break;
+            }
+        }
     }
 
     rules::PlayerNumber housingShortageIBarPlayer(
@@ -819,6 +877,11 @@ namespace
         route.clear();
         acceptRecipient = true;
 
+        auto& uiState = userinterface::ruleState();
+        uiState.countHits[0].toPlayer = 1;
+        uiState.countHits[0].tradedItem = true;
+        const int restoreBefore = iBarRestoreCount;
+
         actions::Message message{};
         message.action = actions::Type::NotifyGameStarting;
         message.toPlayer = rules::AllPlayers;
@@ -827,6 +890,11 @@ namespace
 
         expect(requestedBackdrop == display::Screen2D::Main,
                "NotifyGameStarting requests Main");
+        expect(uiState.countHits[0].toPlayer == rules::NobodyPlayer &&
+               !uiState.countHits[0].tradedItem,
+               "NotifyGameStarting clears stale retail CountHits");
+        expect(iBarRestoreCount == restoreBefore + 1,
+               "NotifyGameStarting restores retail IBar tracking");
         expect(
             route == std::vector<std::string_view>{
                 "localplayers", "display", "playerselection" },
@@ -849,6 +917,9 @@ namespace
                "NotifyGamePaused updates portable runtime state");
 
         runtime::state().gameInProgress = true;
+        localHumanMask = (1u << 2);
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+        userinterface::ruleState().numberOfPlayers = 3;
         route.clear();
         lastPennybagsVoice.reset();
         lastPennybagsPolicy.reset();
@@ -865,7 +936,10 @@ namespace
                "first active-game NotifyGameOver plays retail PlayAgain comment");
         expect(requestedBackdrop == display::Screen2D::Main,
                "first active-game NotifyGameOver forces the retail Main backdrop");
+        expect(selectedLocalUIPlayer == 2,
+               "first active-game NotifyGameOver selects the first local human");
         userinterface::processRuleMessage(gameOver);
+        localHumanMask = localPlayerMask = 0x3Fu;
         expect(routeCount("pennybags") == 1,
                "duplicate NotifyGameOver stays silent after GameInProgress clears");
 
@@ -925,7 +999,10 @@ namespace
         turn.toPlayer = rules::AllPlayers;
         turn.numberA = 0;
         route.clear();
+        runtime::state().gamePaused = true;
         userinterface::processRuleMessage(turn);
+        expect(!runtime::state().gamePaused,
+            "NotifyStartTurn clears the retail paused state");
         expect(std::find(route.begin(), route.end(), "pennybags") != route.end() &&
                std::find(route.begin(), route.end(), "tokenvoice") != route.end(),
             "first NotifyStartTurn routes Pennybags roll prompt then token intro");
@@ -1132,6 +1209,43 @@ namespace
                 uiState.countHits[0].hitType == rules::CountHitType::FutureRent &&
                 uiState.countHits[0].hitCount == 3 && uiState.countHits[0].properties == 0x18,
             "NotifyFutureRentCount projects the retail future-rent record");
+    }
+
+
+    void testClientResyncProjection()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 4;
+        uiState.players[0].cash = 77;
+
+        actions::Message resync{};
+        resync.action = actions::Type::NotifyClientResyncInfo;
+        resync.toPlayer = rules::AllPlayers;
+        resync.binaryDataA = makeResyncBlob();
+        userinterface::processRuleMessage(resync);
+
+        expect(uiState.players[0].cash == 1000 && uiState.players[5].cash == 1005,
+            "NotifyClientResyncInfo restores all retail cash values");
+        expect(uiState.squares[1].owner == 2 && uiState.squares[1].mortgaged &&
+               uiState.squares[1].houses == 3,
+            "NotifyClientResyncInfo restores ownership mortgage and buildings");
+        expect(uiState.players[3].currentSquare == 4 &&
+               uiState.cards[0].jailOwner == 2 &&
+               uiState.cards[1].jailOwner == rules::NobodyPlayer,
+            "NotifyClientResyncInfo restores positions and jail-card owners");
+        expect(uiState.players[1].firstMoveMade && uiState.players[3].firstMoveMade &&
+               !uiState.players[0].firstMoveMade && uiState.currentPlayer == 2,
+            "NotifyClientResyncInfo restores first-move flags and current player");
+
+        const auto cashBefore = uiState.players[0].cash;
+        const auto ownerBefore = uiState.squares[1].owner;
+        resync.binaryDataA.pop_back();
+        userinterface::processRuleMessage(resync);
+        expect(uiState.players[0].cash == cashBefore &&
+               uiState.squares[1].owner == ownerBefore,
+            "truncated NotifyClientResyncInfo is rejected atomically");
     }
 
     void testFirstHouseCommentRouting()
@@ -1525,6 +1639,7 @@ int main()
     testHousingShortageProjectionRouting();
     testRaiseMoneyAndJailHostComments();
     testBasicGameStateProjection();
+    testClientResyncProjection();
     testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
     testTradeInitiatorHostComments();
