@@ -157,6 +157,21 @@ namespace
             "NOTIFY_GAME_OVER selects GameOver");
     }
 
+    void testBuySellMortgageLockProjection()
+    {
+        ibar::RuleProjection projection;
+        projection.mode = ibar::RuleMode::Build;
+        projection.player = 3;
+
+        projection.process(notification(actions::Type::NotifyPlayerBuySellMort, 2));
+        require(projection.mode == ibar::RuleMode::OtherPlayer && projection.player == 2,
+            "NOTIFY_PLAYER_BUYSELLMORT acquisition selects retail OtherPlayer owner");
+
+        projection.process(notification(actions::Type::NotifyPlayerBuySellMort, rules::NobodyPlayer));
+        require(projection.mode == ibar::RuleMode::Nothing && projection.player == 2,
+            "NOTIFY_PLAYER_BUYSELLMORT release clears mode but preserves displayed player");
+    }
+
     void testHousingShortageModes()
     {
         ibar::RuleProjection projection;
@@ -319,6 +334,7 @@ int main()
         testJailModes();
         testCardsMortgageAndTax();
         testBuildingAndGameOverModes();
+        testBuySellMortgageLockProjection();
         testHousingShortageModes();
         testTradeProjection();
         testAcceptedActionsClearMode();

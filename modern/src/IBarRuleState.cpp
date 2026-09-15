@@ -155,6 +155,20 @@ namespace monopoly::ibar
         case actions::Type::NotifyDecomposeSale:
             setMode(*this, RuleMode::HotelDecomposition, message.numberA);
             return;
+        case actions::Type::NotifyPlayerBuySellMort:
+        {
+            const auto bssmPlayer = messagePlayer(message.numberA);
+            if (!bssmPlayer)
+                return;
+            if (*bssmPlayer == rules::NobodyPlayer)
+            {
+                mode = RuleMode::Nothing;
+                return;
+            }
+            mode = RuleMode::OtherPlayer;
+            player = *bssmPlayer;
+            return;
+        }
         case actions::Type::NotifyTradeStarted:
         {
             const auto proposer = messagePlayer(message.numberA);
