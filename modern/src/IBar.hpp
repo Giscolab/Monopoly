@@ -59,6 +59,9 @@ namespace monopoly::ibar
         std::optional<std::uint8_t> pendingPressedButton;
         std::optional<std::uint8_t> desiredCardIndex;
         std::optional<std::uint8_t> desiredBuyAuctionSquare;
+        std::optional<std::int64_t> cashAnimationAmount;
+        std::uint64_t cashAnimationTick{};
+        bool cashAnimationForceUpdate{};
 
 
         bool initialized = false;
@@ -86,7 +89,8 @@ namespace monopoly::ibar
 
     void processRuleMessage(
         const actions::Message& message,
-        RuleMode projectedMode
+        RuleMode projectedMode,
+        std::uint64_t tick = 0
     ) noexcept;
 
 
