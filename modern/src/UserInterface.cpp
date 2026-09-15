@@ -861,6 +861,13 @@ namespace monopoly::userinterface
                 uiRuleState, message, display::stateReadOnly().optionTokenAnimationsOn);
             if (movement && movement->sourceQueueLockRequired)
                 lockGameQueue();
+            if (movement && movement->projectionUpdated &&
+                tradeui::abortIfParticipantOffBoard(
+                    tradeProjection, uiRuleState, display::state().desired2DView))
+            {
+                display::setBackdrop(display::Screen2D::Main);
+            }
+
             if (movement && message.numberA == 40 &&
                 message.numberC >= 0 && message.numberC < uiRuleState.numberOfPlayers &&
                 message.numberC < rules::MaxPlayers)

@@ -184,6 +184,11 @@ namespace monopoly::tradeui
         const rules::GameState& gameState,
         rules::PlayerNumber player) noexcept;
 
+    [[nodiscard]] bool abortIfParticipantOffBoard(
+        State& state,
+        rules::GameState& gameState,
+        display::Screen2D desiredView) noexcept;
+
     void refreshContractProjection(
         State& state,
         const rules::GameState& gameState) noexcept;
