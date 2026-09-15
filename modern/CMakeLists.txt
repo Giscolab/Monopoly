@@ -722,6 +722,7 @@ target_sources(
     src/OptionsTogglePlayback.cpp
     src/OptionsHelpPlayback.cpp
     src/StatsUI.cpp
+    src/StatsPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -789,6 +790,27 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsUITests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsUI COMMAND MonopolyStatsUITests)
+endif()
+
+# UDStats.cpp autonomous status-screen sequence playback
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsPlaybackTests
+        tests/StatsPlaybackTests.cpp
+        src/StatsPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyStatsPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyStatsPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(MonopolyStatsPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.StatsPlayback COMMAND MonopolyStatsPlaybackTests)
 endif()
 
 # UDPenny.cpp pure token-voice reaction selectors and catalog fidelity

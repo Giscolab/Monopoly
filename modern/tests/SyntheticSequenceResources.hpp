@@ -127,6 +127,9 @@ struct SyntheticSequenceResources
                 // Active UDIBar backdrop sequences: TAB_indsbg0..TAB_indsbg7.
                 // They deliberately reuse the synthetic bitmap payload above.
                 items.resize(0x01D7);
+                // UDStats autonomous DAT_MAIN backgrounds.
+                for (const auto tag : {0x000BU, 0x000CU, 0x000DU, 0x000EU, 0x00CDU})
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDTrade Future/Immunity dialog arrows: CNK_byahadni / CNK_byahaupi.
                 items[0x0007] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0009] = {LegacyDataType::Chunky, bitmapSequence};
@@ -270,6 +273,17 @@ struct SyntheticSequenceResources
                 // UDTrade future/immunity static icons: TAB_syfut / TAB_syimm.
                 const auto staticTradeIcon = words({
                     0x03000014, 0, 0x04000000, 2, 0x000002F6});
+                // UDStats Portfolio background, category/sort bars and buttons.
+                for (const auto tag : {0x0006U,0x0007U,0x0089U,0x022CU,0x022DU,
+                     0x0286U,0x0287U,0x029BU,0x029CU})
+                    items[tag] = {LegacyDataType::Chunky, staticTradeIcon};
+                for (const auto tag : {0x00FAU,0x00FBU,0x00FCU,0x00FDU,0x00FEU,0x00FFU,0x0100U,0x0101U,0x0102U,
+                     0x0103U,0x0104U,0x0105U,0x0176U,0x0177U,0x0178U,0x0179U,0x017AU,
+                     0x017BU,0x017CU,0x017DU,0x017EU,0x017FU,0x0180U,0x0181U,0x0182U,
+                     0x0183U,0x0184U,0x0195U,0x0196U,0x0197U,0x0198U,0x0199U,0x019AU,
+                     0x019BU,0x019CU,0x019DU,0x019EU,0x019FU,0x01A0U,0x01A1U,0x01A2U,
+                     0x01A3U,0x01A4U,0x01A5U,0x01A6U})
+                    items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // UDOpts File screen: title plus New/Load/Save/Exit/Cancel incoming CNKs.
                 items[0x023A] = {LegacyDataType::Chunky, staticTradeIcon};
                 for (const auto tag : {0x0241U, 0x023EU, 0x0244U, 0x0238U, 0x0235U})

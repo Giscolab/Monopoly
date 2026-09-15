@@ -32,6 +32,7 @@
 #include "TradeActionButtonPlayback.hpp"
 #include "OptionsFilePlayback.hpp"
 #include "OptionsNavigationPlayback.hpp"
+#include "StatsPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
 #include "OptionsHelpPlayback.hpp"
@@ -93,6 +94,7 @@ namespace monopoly::engine
         tradeui::ActionButtonPlayback tradeActionButtonPlayback;
         optionsui::FilePlayback optionsFilePlayback;
         optionsui::NavigationPlayback optionsNavigationPlayback;
+        statsui::Playback statsPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
         optionsui::HelpPlayback optionsHelpPlayback;
@@ -1132,7 +1134,12 @@ namespace monopoly::engine
             if (!optionsFileSync)
                 return SDL_SetError("Options File-screen playback: %s",
                     optionsFileSync.error().c_str());
-            const auto optionsNavigationSync = optionsNavigationPlayback.sync(
+            const auto statsSync = statsPlayback.sync(
+                userinterface::statsStateReadOnly(),
+                displayState.desired2DView, *session);
+            if (!statsSync)
+                return SDL_SetError("UDStats playback: %s",
+                    statsSync.error().c_str());            const auto optionsNavigationSync = optionsNavigationPlayback.sync(
                 userinterface::optionsStateReadOnly(),
                 displayState.desired2DView, *session);
             if (!optionsNavigationSync)
@@ -1447,6 +1454,7 @@ namespace monopoly::engine
         tradeActionButtonPlayback.reset();
         optionsFilePlayback.reset();
         optionsNavigationPlayback.reset();
+        statsPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();
         optionsHelpPlayback.reset();
