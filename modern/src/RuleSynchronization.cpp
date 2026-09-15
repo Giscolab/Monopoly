@@ -282,57 +282,12 @@ namespace monopoly::rules::sync
             return true;
         }
 
-
-        // ----------------------------------------------------
-        // Adaptation transport local.
-        //
-        // Dans le jeu 1999, les clients/UI recevaient
-        // NOTIFY_ARE_YOU_THERE puis répondaient ACTION_I_AM_HERE.
-        //
-        // Notre transport réseau n'est pas encore porté.
-        // On émule donc uniquement cette réponse du client
-        // local, sans supprimer la phase RULE.
-        // ----------------------------------------------------
-
-        const std::uint32_t waitingSet =
-            phase.fromPlayer;
-
-
-        for (PlayerNumber player = 0;
-             player < state.numberOfPlayers;
-             ++player)
-        {
-            if (
-                (
-                    waitingSet &
-                    (1u << player)
-                ) == 0)
-            {
-                continue;
-            }
-
-
-            actions::Message response{};
-
-            response.action =
-                actions::Type::IAmHere;
-
-            response.fromPlayer =
-                player;
-
-            response.toPlayer =
-                BankPlayer;
-
-            response.numberA =
-                phase.amount;
-
-
-            messaging::sendAction(
-                response
-            );
-        }
-
-
+        // Retail leaves this phase waiting after broadcasting ARE_YOU_THERE.
+        // Each UI/client answers only for the slots it actually owns.  The
+        // portable UserInterface now implements that boundary (with auction
+        // roll-call still deferred until Pennybags reaches Begin), so RULE must
+        // not synthesize I_AM_HERE for every player.  Doing so would acknowledge
+        // remote slots and also duplicate local replies in the same process.
         return true;
     }
 

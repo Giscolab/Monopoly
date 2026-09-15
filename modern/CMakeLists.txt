@@ -1693,6 +1693,28 @@ if(BUILD_TESTING)
 
 endif()
 
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyRuleSynchronizationTests
+        tests/RuleSynchronizationTests.cpp
+        src/RuleSynchronization.cpp
+        src/PhaseStack.cpp
+    )
+    target_include_directories(
+        MonopolyRuleSynchronizationTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyRuleSynchronizationTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.RuleSynchronization
+        COMMAND MonopolyRuleSynchronizationTests
+    )
+endif()
+
 # ============================================================
 # Original Userifce local-player ownership model
 # ============================================================
