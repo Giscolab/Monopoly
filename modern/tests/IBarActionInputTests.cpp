@@ -26,6 +26,8 @@ namespace test_support
     int cameraCycleCount = 0;
     std::int32_t lastCameraSquare = -1;
     bool lastCameraSequential = false;
+    int backdropSetCount = 0;
+    monopoly::display::Screen2D lastBackdrop = monopoly::display::Screen2D::Invalid;
     int tradeBeginCount = 0;
     monopoly::rules::PlayerNumber tradeBeginPlayer = monopoly::rules::NobodyPlayer;
     bool tradeBeginAccepted = true;
@@ -51,6 +53,12 @@ namespace monopoly::display
         ++test_support::cameraCycleCount;
         test_support::lastCameraSquare = currentSquare;
         test_support::lastCameraSequential = sequential;
+    }
+    void setBackdrop(Screen2D screen)
+    {
+        ++test_support::backdropSetCount;
+        test_support::lastBackdrop = screen;
+        test_support::displayState.desired2DView = screen;
     }
 }
 
@@ -866,6 +874,51 @@ namespace
         test_support::displayState.desired2DView = display::Screen2D::Main;
     }
 
+    void testGlobalStatusMainButton()
+    {
+        using namespace monopoly;
+        test_support::runtimeState.gameInProgress = true;
+        test_support::backdropSetCount = 0;
+        test_support::lastBackdrop = display::Screen2D::Invalid;
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        ibar::setRuleActionHitState(Layout::General, 0,
+            ibar::RuleMode::Nothing, 0, false);
+
+        const auto rect = ibar::layout::actionButtonRect(Slot::Status, Layout::General);
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2});
+        require(test_support::backdropSetCount == 1 &&
+                test_support::lastBackdrop == display::Screen2D::Portfolio &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::StatusButtonIndex,
+            "Status global button enters Portfolio and requests Status pressed feedback");
+        ibar::clearPendingPressedButton(ibar::StatusButtonIndex);
+
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2});
+        require(test_support::backdropSetCount == 2 &&
+                test_support::lastBackdrop == display::Screen2D::Main &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::MainButtonIndex,
+            "same retail hotspot returns Portfolio to Main with Main pressed feedback");
+        ibar::clearPendingPressedButton(ibar::MainButtonIndex);
+
+        test_support::displayState.desired2DView = display::Screen2D::Trade;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2});
+        require(test_support::lastBackdrop == display::Screen2D::Main &&
+                ibar::stateReadOnly().pendingPressedButton == ibar::MainButtonIndex,
+            "Trade uses the same Main view button path as retail");
+        ibar::clearPendingPressedButton(ibar::MainButtonIndex);
+
+        test_support::runtimeState.gameInProgress = false;
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        const int before = test_support::backdropSetCount;
+        ibar::processLibraryMessage({uimsg::Type::MouseLeftDown,
+            (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2});
+        require(test_support::backdropSetCount == before,
+            "Status/Main global hotspot is disabled outside an active game");
+        test_support::runtimeState.gameInProgress = true;
+    }
+
     void testGlobalOptionsButton()
     {
         test_support::displayState.desired2DView = display::Screen2D::Main;
@@ -973,6 +1026,7 @@ int main()
         testCardNotificationState();
         testBSSMSubstatesAndDeeds();
         testGlobalCameraButton();
+        testGlobalStatusMainButton();
         testGlobalOptionsButton();
         testGlobalTradeButton();
         testRemoteAndPlayerSelectGuards();

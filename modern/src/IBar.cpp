@@ -164,12 +164,31 @@ namespace monopoly::ibar
             if (ruleButton)
                 return ruleButton;
 
-            if (display::isIBarVisible(display::stateReadOnly().desired2DView) &&
-                layout::actionButtonRect(
-                    layout::ActionButtonSlot::Camera,
-                    globalState.actionButtonLayout).contains(x, y))
+            if (display::isIBarVisible(display::stateReadOnly().desired2DView))
             {
-                return layout::ActionButtonSlot::Camera;
+                if (layout::actionButtonRect(
+                        layout::ActionButtonSlot::Camera,
+                        globalState.actionButtonLayout).contains(x, y))
+                {
+                    return layout::ActionButtonSlot::Camera;
+                }
+
+                // IBAR_Status is a global view button, independent of the
+                // projected RULE action mask.  Its art changes between Status
+                // and Main, but the physical hit rectangle is shared.
+                if (runtime::state().gameInProgress &&
+                    layout::actionButtonRect(
+                        layout::ActionButtonSlot::Status,
+                        globalState.actionButtonLayout).contains(x, y))
+                {
+                    const auto view = display::stateReadOnly().desired2DView;
+                    if (view == display::Screen2D::Main ||
+                        view == display::Screen2D::Portfolio ||
+                        view == display::Screen2D::Trade)
+                    {
+                        return layout::ActionButtonSlot::Status;
+                    }
+                }
             }
             return std::nullopt;
         }
@@ -203,6 +222,25 @@ namespace monopoly::ibar
             const uimsg::Message& message) noexcept
         {
             const auto& uiState = userinterface::ruleStateReadOnly();
+            if (slot == layout::ActionButtonSlot::Status)
+            {
+                const auto view = display::stateReadOnly().desired2DView;
+                if (view == display::Screen2D::Main)
+                {
+                    display::setBackdrop(display::Screen2D::Portfolio);
+                    globalState.pendingPressedButton = StatusButtonIndex;
+                    return true;
+                }
+                if (view == display::Screen2D::Portfolio ||
+                    view == display::Screen2D::Trade)
+                {
+                    display::setBackdrop(display::Screen2D::Main);
+                    globalState.pendingPressedButton = MainButtonIndex;
+                    return true;
+                }
+                return false;
+            }
+
             if (slot == layout::ActionButtonSlot::Options)
             {
                 if (!userinterface::beginOptionsFromIBar())
