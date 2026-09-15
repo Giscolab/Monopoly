@@ -18,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdlib>
+#include <limits>
 #include <utility>
 
 namespace monopoly::userinterface
@@ -446,6 +447,26 @@ namespace monopoly::userinterface
         {
             uiRuleState.cards[static_cast<std::size_t>(message.numberB)].jailOwner =
                 static_cast<rules::PlayerNumber>(message.numberA);
+        }
+
+        if ((message.action == actions::Type::NotifyImmunityCount ||
+             message.action == actions::Type::NotifyFutureRentCount) &&
+            message.numberA >= 0 && message.numberA < rules::MaxPlayers &&
+            message.numberD >= 0 && message.numberD < rules::MaxPlayers &&
+            message.numberB >= std::numeric_limits<std::int32_t>::min() &&
+            message.numberB <= std::numeric_limits<std::int32_t>::max() &&
+            message.numberE >= 0 &&
+            message.numberE <= std::numeric_limits<std::uint32_t>::max())
+        {
+            (void)tradeui::addUiImmunity(
+                uiRuleState,
+                static_cast<rules::PlayerNumber>(message.numberD),
+                static_cast<rules::PlayerNumber>(message.numberA),
+                message.action == actions::Type::NotifyFutureRentCount
+                    ? rules::CountHitType::FutureRent
+                    : rules::CountHitType::RentImmunity,
+                static_cast<std::int32_t>(message.numberB),
+                static_cast<std::uint32_t>(message.numberE), false);
         }
 
         if (message.action == actions::Type::NotifyActionCompleted &&
