@@ -514,7 +514,18 @@ namespace monopoly::userinterface
         // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
         display::noteBoardActivity();
 
-        (void)chat::processRuleMessage(message);
+        if (message.action != actions::Type::NotifyTextChat ||
+            message.numberA >= rules::MaxPlayers ||
+            (message.numberA >= 0 && message.numberA < rules::MaxPlayers &&
+             ui::localplayers::slotIsLocalPlayer(
+                 static_cast<rules::PlayerNumber>(message.numberA))))
+        {
+            // Userifce.cpp only delivers private text chat to the machine that
+            // owns the target slot. Broadcast/spectator targets (>= MaxPlayers)
+            // are visible everywhere. message.toPlayer is only the transport
+            // recipient and cannot replace this application-level filter.
+            (void)chat::processRuleMessage(message);
+        }
 
         // Userifce.cpp retail splits error 71 between host-left warning and
         // the "human replaced by computer" Pennybags comment.
