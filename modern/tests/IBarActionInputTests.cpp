@@ -549,6 +549,33 @@ namespace
     }
 
 
+    void testCashAnimationNotificationState()
+    {
+        auto& state = ibar::state();
+        state.cashAnimationAmount.reset();
+        state.cashAnimationTick = 0;
+        state.cashAnimationForceUpdate = false;
+
+        actions::Message message{};
+        message.action = actions::Type::NotifyCashAnimation;
+        message.numberC = 275;
+        ibar::processRuleMessage(message, ibar::RuleMode::Nothing, 42);
+        require(state.cashAnimationAmount == 275 && state.cashAnimationTick == 42 && state.cashAnimationForceUpdate,
+            "NotifyCashAnimation publishes retail IBar cash message state");
+
+        const auto amount = state.cashAnimationAmount;
+        const auto tick = state.cashAnimationTick;
+        message.numberC = 500;
+        ibar::processRuleMessage(message, ibar::RuleMode::RaiseMoney);
+        require(state.cashAnimationAmount == amount && state.cashAnimationTick == tick,
+            "RaiseMoney suppresses cash animation message like retail IBar");
+        state.cashAnimationForceUpdate = false;
+        message.numberC = 125;
+        ibar::processRuleMessage(message, ibar::RuleMode::HotelDecomposition);
+        require(state.cashAnimationAmount == amount && !state.cashAnimationForceUpdate,
+            "HotelDecomposition suppresses cash animation message like retail IBar");
+    }
+
     void testCardNotificationState()
     {
         ibar::state().desiredCardIndex.reset();
@@ -885,6 +912,7 @@ int main()
         testTradeAndSpecialDirectActions();
         testPressedAcknowledgements();
         testBuyAuctionPopupNotificationState();
+        testCashAnimationNotificationState();
         testCardNotificationState();
         testBSSMSubstatesAndDeeds();
         testGlobalCameraButton();

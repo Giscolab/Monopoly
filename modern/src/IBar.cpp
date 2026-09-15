@@ -842,10 +842,23 @@ namespace monopoly::ibar
 
     void processRuleMessage(
         const actions::Message& message,
-        RuleMode projectedMode) noexcept
+        RuleMode projectedMode,
+        std::uint64_t tick) noexcept
     {
         if (clearsBuyAuctionPopup(message.action))
             globalState.desiredBuyAuctionSquare.reset();
+
+        if (message.action == actions::Type::NotifyCashAnimation)
+        {
+            if (projectedMode != RuleMode::HotelDecomposition &&
+                projectedMode != RuleMode::RaiseMoney)
+            {
+                globalState.cashAnimationAmount = message.numberC;
+                globalState.cashAnimationTick = tick;
+                globalState.cashAnimationForceUpdate = true;
+            }
+            return;
+        }
 
         if (message.action == actions::Type::NotifyBuyOrAuctionDecision)
         {

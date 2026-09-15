@@ -510,7 +510,8 @@ namespace monopoly::userinterface
         }
 
         dicePrompt.process(message);
-        ibar::processRuleMessage(message, iBarRuleProjection.mode);
+        ibar::processRuleMessage(
+            message, iBarRuleProjection.mode, timers::tickCount());
 
         if (message.action == actions::Type::NotifyPleasePay &&
             message.numberA >= 0 && message.numberA < rules::MaxPlayers)
