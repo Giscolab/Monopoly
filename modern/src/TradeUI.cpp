@@ -511,6 +511,27 @@ namespace monopoly::tradeui
             clampContractListOffset(state);
         }
 
+        void clearProjectedTradeContracts(rules::GameState& gameState) noexcept
+        {
+            for (auto& hit : gameState.countHits)
+            {
+                if (!hit.tradedItem) continue;
+                hit.toPlayer = rules::NobodyPlayer;
+                hit.tradedItem = false;
+            }
+        }
+
+        void initializeProjectedTradeSequence(rules::GameState& gameState) noexcept
+        {
+            for (auto& square : gameState.squares)
+                square.offeredInTradeTo = rules::NobodyPlayer;
+            for (auto& player : gameState.players)
+                player.cashGivenInTrade.fill(0);
+            for (auto& card : gameState.cards)
+                card.jailOfferedInTradeTo = rules::NobodyPlayer;
+            clearProjectedTradeContracts(gameState);
+        }
+
         [[nodiscard]] bool validTradeItemForProjection(
             const rules::GameState& gameState,
             const actions::Message& message) noexcept
@@ -1503,8 +1524,13 @@ namespace monopoly::tradeui
                 return result;
             const auto proposer = static_cast<rules::PlayerNumber>(message.numberA);
             const bool wasInProgress = gameState.tradeInProgress;
-            if (wasInProgress && (localHumanMask & (1u << proposer)) == 0)
+            if (!wasInProgress)
             {
+                initializeProjectedTradeSequence(gameState);
+            }
+            else if ((localHumanMask & (1u << proposer)) == 0)
+            {
+                initializeProjectedTradeSequence(gameState);
                 const auto formerView = state.formerView;
                 reset(state);
                 state.formerView = formerView;
@@ -1554,6 +1580,7 @@ namespace monopoly::tradeui
                 }
             }
             state.proposed = false;
+            clearProjectedTradeContracts(gameState);
             refreshContractProjection(state, gameState);
             return result;
 

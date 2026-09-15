@@ -219,6 +219,14 @@ namespace
         auto game = gameWithPlayers(4);
         tradeui::State state{};
 
+        game.squares[6].offeredInTradeTo = 3;
+        game.players[0].cashGivenInTrade[3] = 111;
+        game.cards[0].jailOfferedInTradeTo = 3;
+        game.countHits[0].toPlayer = 3;
+        game.countHits[0].tradedItem = true;
+        game.countHits[1].toPlayer = 2;
+        game.countHits[1].tradedItem = false;
+
         actions::Message started{};
         started.action = actions::Type::NotifyTradeStarted;
         started.numberA = 1;
@@ -230,6 +238,14 @@ namespace
                 state.playerB == rules::MaxPlayers && !state.editMode &&
                 game.tradeInProgress,
             "NotifyTradeStarted enters Trade, remembers former view, and disables editing");
+        expect(game.squares[6].offeredInTradeTo == rules::NobodyPlayer &&
+                game.players[0].cashGivenInTrade[3] == 0 &&
+                game.cards[0].jailOfferedInTradeTo == rules::NobodyPlayer &&
+                game.countHits[0].toPlayer == rules::NobodyPlayer &&
+                !game.countHits[0].tradedItem,
+            "fresh NotifyTradeStarted clears stale projected trade items");
+        expect(game.countHits[1].toPlayer == 2 && !game.countHits[1].tradedItem,
+            "fresh trade reset preserves active non-traded contracts");
 
         auto cash = tradeItem(1, 2, rules::TradeItemKind::Cash, 250);
         update = tradeui::processRuleMessage(
@@ -259,6 +275,10 @@ namespace
                     [](const actions::Message& item) { return item.fromPlayer == 2; }),
             "local-human B counteroffer swaps A/B and rewrites item sender exactly");
 
+        game.countHits[0].toPlayer = 2;
+        game.countHits[0].tradedItem = true;
+        game.countHits[1].toPlayer = 3;
+        game.countHits[1].tradedItem = false;
         actions::Message finished{};
         finished.action = actions::Type::NotifyTradeFinished;
         finished.numberA = 1;
@@ -268,6 +288,11 @@ namespace
                 state.playerA == rules::MaxPlayers && state.items.empty() &&
                 !game.tradeInProgress,
             "accepted/rejected terminal trade clears editor and returns Main");
+        expect(game.countHits[0].toPlayer == rules::NobodyPlayer &&
+                !game.countHits[0].tradedItem,
+            "NotifyTradeFinished removes temporary traded contracts");
+        expect(game.countHits[1].toPlayer == 3 && !game.countHits[1].tradedItem,
+            "NotifyTradeFinished preserves active non-traded contracts");
     }
 
     void testRestartedRemoteTradeClearsStaleEditorItems()
@@ -286,11 +311,18 @@ namespace
             state, game, cash, display::Screen2D::Trade, 0b0010);
         expect(state.items.size() == 1 && state.formerView == display::Screen2D::Main,
             "active trade fixture contains one editor item before restart");
+        game.squares[6].offeredInTradeTo = 2;
+        game.cards[0].jailOfferedInTradeTo = 2;
+        game.countHits[0].toPlayer = 2;
+        game.countHits[0].tradedItem = true;
 
         (void)tradeui::processRuleMessage(
             state, game, started, display::Screen2D::Trade, 0b0010);
-        expect(state.items.size() == 1,
-            "resent trade from a local human preserves the existing editor list");
+        expect(state.items.size() == 1 &&
+                game.squares[6].offeredInTradeTo == 2 &&
+                game.cards[0].jailOfferedInTradeTo == 2 &&
+                game.countHits[0].tradedItem,
+            "resent trade from a local human preserves the existing projected proposal");
 
         started.numberA = 3;
         const auto update = tradeui::processRuleMessage(
@@ -300,6 +332,11 @@ namespace
                 state.tradeFrom == 3 && state.formerView == display::Screen2D::Main &&
                 game.tradeInProgress,
             "resent trade from a non-local proposer clears stale editor items without losing former view");
+        expect(game.squares[6].offeredInTradeTo == rules::NobodyPlayer &&
+                game.cards[0].jailOfferedInTradeTo == rules::NobodyPlayer &&
+                game.countHits[0].toPlayer == rules::NobodyPlayer &&
+                !game.countHits[0].tradedItem,
+            "remote trade restart clears stale projected proposal fields");
     }
 
     void testInvalidRuleItemIsTransactional()
