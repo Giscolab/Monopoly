@@ -97,6 +97,10 @@ namespace monopoly::display
         pieces::BoardCameraView desiredBoardCamera =
             pieces::BoardCameraView::TopDownSoccer;
         std::optional<pieces::BoardCameraView> currentBoardCamera;
+        pieces::BoardCameraView bssmPriorCamera = pieces::BoardCameraView::TopDownSquare;
+        pieces::BoardCameraView bssmLastRequestedCamera = pieces::BoardCameraView::TopDownSquare;
+        std::uint8_t bssmCameraState = 0;
+        std::uint64_t bssmCameraRequestTick = 0;
         int city = 0;
         int system = 13; // NOTW_MONA_US
         bool game3DOn = true;
@@ -170,6 +174,7 @@ namespace monopoly::display
     void applyRuntimeOptions(bool tokenAnimationsOn, bool cameraMovementOn,
         bool lightingOn, bool board3DOn) noexcept;
     void cycleIBarCamera(std::int32_t currentSquare, bool sequential) noexcept;
+    void requestBssmCamera(std::int32_t square, std::uint8_t action) noexcept;
     void setTokenAnimationStackActive(bool active) noexcept;
     void processBoardInput(const uimsg::Message& message);
     void tickActions(std::uint64_t numberOfTicks);

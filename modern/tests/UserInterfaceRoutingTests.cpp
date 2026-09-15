@@ -29,6 +29,9 @@ namespace
     bool spokenPostLockSlotEmptyResult = true;
     bool usaBoardEditionResult = true;
     int jailChoiceHostCommentCount = 0;
+    int bssmCameraRequestCount = 0;
+    std::int32_t bssmCameraSquare = -1;
+    std::uint8_t bssmCameraAction = 0xFF;
     std::optional<monopoly::udsound::PennybagsVoice> lastPennybagsVoice;
     std::optional<monopoly::udsound::TokenVoiceClipPolicy> lastPennybagsPolicy;
     std::uint32_t localHumanMask = 0x3F;
@@ -193,6 +196,13 @@ namespace monopoly::display
 
     void setTokenAnimationStackActive(bool) noexcept
     {
+    }
+
+    void requestBssmCamera(std::int32_t square, std::uint8_t action) noexcept
+    {
+        ++bssmCameraRequestCount;
+        bssmCameraSquare = square;
+        bssmCameraAction = action;
     }
 
     void processBoardInput(const uimsg::Message&)
@@ -1282,6 +1292,9 @@ namespace
 
         uiState.squares[3].owner = 0;
         route.clear();
+        bssmCameraRequestCount = 0;
+        bssmCameraSquare = -1;
+        bssmCameraAction = 0xFF;
         actions::Message mortgage{};
         mortgage.action = actions::Type::NotifySquareMortgage;
         mortgage.toPlayer = rules::AllPlayers;
@@ -1290,10 +1303,15 @@ namespace
         userinterface::processRuleMessage(mortgage);
         expect(uiState.squares[3].mortgaged,
             "NotifySquareMortgage sets the retail square mortgage projection");
+        expect(bssmCameraRequestCount == 1 && bssmCameraSquare == 3 &&
+                bssmCameraAction == 2,
+            "mortgage routes retail BSSM camera action 2");
         mortgage.numberB = 0;
         userinterface::processRuleMessage(mortgage);
         expect(!uiState.squares[3].mortgaged,
             "NotifySquareMortgage clears the retail square mortgage projection");
+        expect(bssmCameraRequestCount == 2 && bssmCameraAction == 3,
+            "unmortgage routes retail BSSM camera action 3");
         expect(routeCount("click") == 2,
             "mortgage and unmortgage play the retail click SFX for owned property");
 
@@ -1307,15 +1325,21 @@ namespace
         userinterface::processRuleMessage(housesSfx);
         expect(routeCount("build") == 1,
             "house increase plays retail WAV_build");
+        expect(bssmCameraRequestCount == 3 && bssmCameraAction == 0,
+            "house increase routes retail BSSM camera action 0");
         housesSfx.numberB = 0;
         userinterface::processRuleMessage(housesSfx);
         expect(routeCount("unbuild") == 1,
             "house decrease plays retail WAV_unbuild");
+        expect(bssmCameraRequestCount == 4 && bssmCameraAction == 1,
+            "house decrease routes retail BSSM camera action 1");
         uiState.squares[3].owner = rules::NobodyPlayer;
         housesSfx.numberB = 1;
         userinterface::processRuleMessage(housesSfx);
         expect(routeCount("build") == 1,
             "unowned property suppresses BSSM SFX like retail owner validation");
+        expect(bssmCameraRequestCount == 4,
+            "unowned property suppresses BSSM camera like retail owner validation");
 
         actions::Message pot{};
         pot.action = actions::Type::NotifyFreeParkingPot;
