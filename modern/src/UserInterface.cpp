@@ -581,6 +581,18 @@ namespace monopoly::userinterface
         }
 
         if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::StartTradeEditing) &&
+            message.numberB == 0 &&
+            message.numberC >= 0 && message.numberC < rules::MaxPlayers &&
+            ui::localplayers::slotIsLocalHumanPlayer(
+                static_cast<rules::PlayerNumber>(message.numberC)))
+        {
+            // UDTrade.cpp warns only on the machine that owns the human
+            // whose proposal/edit request was rejected.
+            engine::playWarningSound();
+        }
+
+        if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberA == static_cast<std::int64_t>(actions::Type::GoBankrupt) &&
             message.numberB == 0)
         {
