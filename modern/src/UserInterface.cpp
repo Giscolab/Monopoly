@@ -15,6 +15,7 @@
 #include "RuntimeState.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <array>
 #include <cstddef>
 #include <cstdlib>
@@ -30,6 +31,96 @@ namespace monopoly::userinterface
         auctionui::State auctionProjection;
         tradeui::State tradeProjection;
         optionsui::State optionsProjection;
+
+        constexpr std::array<std::uint32_t, rules::SquareCount> ResyncPropertyBits{{
+            0, 1u<<0, 0, 1u<<1, 0, 1u<<2, 1u<<3, 0, 1u<<4, 1u<<5,
+            0, 1u<<6, 1u<<7, 1u<<8, 1u<<9, 1u<<10, 1u<<11, 0, 1u<<12, 1u<<13,
+            0, 1u<<14, 0, 1u<<15, 1u<<16, 1u<<17, 1u<<18, 1u<<19, 1u<<20, 1u<<21,
+            0, 1u<<22, 1u<<23, 0, 1u<<24, 1u<<25, 0, 1u<<26, 0, 1u<<27, 0, 0
+        }};
+
+        bool applyClientResyncBlob(
+            rules::GameState& state,
+            const std::vector<std::uint8_t>& data)
+        {
+            constexpr std::size_t deckCount =
+                static_cast<std::size_t>(rules::DeckType::Count);
+            constexpr std::size_t expected = 1 + rules::MaxPlayers * 8 +
+                rules::MaxPlayers * 4 + 4 + rules::MaxPlayers + deckCount +
+                rules::SquareCount + 1 + 1 + 4 + 1;
+            if (data.size() != expected || data[0] != 1) return false;
+
+            std::size_t offset = 1;
+            auto readU8 = [&]() { return data[offset++]; };
+            auto readU32 = [&]() {
+                std::uint32_t value{};
+                for (int shift = 0; shift < 32; shift += 8)
+                    value |= static_cast<std::uint32_t>(data[offset++]) << shift;
+                return value;
+            };
+            auto readI64 = [&]() {
+                std::uint64_t raw{};
+                for (int shift = 0; shift < 64; shift += 8)
+                    raw |= static_cast<std::uint64_t>(data[offset++]) << shift;
+                return std::bit_cast<std::int64_t>(raw);
+            };
+
+            rules::GameState next = state;
+            for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                next.players[player].cash = readI64();
+
+            std::array<std::uint32_t, rules::MaxPlayers> owned{};
+            for (auto& properties : owned) properties = readU32();
+            const std::uint32_t mortgaged = readU32();
+
+            for (auto& square : next.squares)
+            {
+                square.owner = rules::NobodyPlayer;
+                square.mortgaged = false;
+                square.houses = 0;
+            }
+
+            for (std::size_t squareNo = 0; squareNo <= 39; ++squareNo)
+            {
+                const auto bit = ResyncPropertyBits[squareNo];
+                if (bit == 0) continue;
+                rules::PlayerNumber owner = rules::NobodyPlayer;
+                for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                {
+                    if ((owned[player] & bit) == 0) continue;
+                    if (owner != rules::NobodyPlayer) return false;
+                    owner = player;
+                }
+                next.squares[squareNo].owner = owner;
+                next.squares[squareNo].mortgaged = (mortgaged & bit) != 0;
+            }
+
+            for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+            {
+                const auto square = readU8();
+                if (square >= rules::SquareCount) return false;
+                next.players[player].currentSquare = square;
+            }
+            for (std::size_t deck = 0; deck < deckCount; ++deck)
+            {
+                const auto owner = readU8();
+                if (owner > rules::NobodyPlayer) return false;
+                next.cards[deck].jailOwner = owner;
+            }
+            for (std::size_t square = 0; square < rules::SquareCount; ++square)
+                next.squares[square].houses = readU8();
+
+            (void)readU8(); // resync cause
+            (void)readU8(); // authoritative RULE phase
+            const std::uint32_t firstMoves = readU32();
+            for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                next.players[player].firstMoveMade = (firstMoves & (1u << player)) != 0;
+            const auto current = readU8();
+            if (current >= rules::MaxPlayers) return false;
+            next.currentPlayer = current;
+            state = std::move(next);
+            return true;
+        }
     }
     dice::PromptState& dicePromptState() noexcept { return dicePrompt; }
     const ibar::RuleProjection& iBarRuleStateReadOnly() noexcept
@@ -394,6 +485,9 @@ namespace monopoly::userinterface
                 uiRuleState.options = std::move(received);
         }
 
+        if (message.action == actions::Type::NotifyClientResyncInfo)
+            (void)applyClientResyncBlob(uiRuleState, message.binaryDataA);
+
         dicePrompt.process(message);
         ibar::processRuleMessage(message, iBarRuleProjection.mode);
 
@@ -623,6 +717,7 @@ namespace monopoly::userinterface
             }
             // UDIBar.cpp assigns CurrentPlayer only after the idle plan and lock.
             runtime::state().gameInProgress = true;
+            runtime::state().gamePaused = false;
             uiRuleState.currentPlayer = newCurrent;
         }
 
@@ -719,6 +814,12 @@ namespace monopoly::userinterface
                 pendingPieceIdleTransition.reset();
                 if (!pieceIdleState.initializeNewGame(uiRuleState))
                     pieceIdleState.reset();
+                for (auto& hit : uiRuleState.countHits)
+                {
+                    hit.tradedItem = false;
+                    hit.toPlayer = rules::NobodyPlayer;
+                }
+                ibar::restoreRuleTracking();
                 // Userifce.cpp original :
                 // UDPSEL_GameHasJustStarted();
                 // UDBOARD_SetBackdrop(DISPLAY_SCREEN_MainA);
@@ -737,6 +838,8 @@ namespace monopoly::userinterface
                 if (runtime::state().gameInProgress)
                 {
                     runtime::state().gameInProgress = false;
+                    ui::localplayers::setCurrentUIPlayerFromPlayerSet(
+                        uiRuleState, 0xFFFFFFFFu);
                     engine::playPennybagsVoice(udsound::PennybagsVoice::PlayAgain,
                         udsound::TokenVoiceClipPolicy::WaitForAnyOldSoundThenPlay, false);
                     display::setBackdrop(display::Screen2D::Main);
