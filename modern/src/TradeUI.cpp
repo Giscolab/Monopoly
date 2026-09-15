@@ -1573,6 +1573,14 @@ namespace monopoly::tradeui
                 state.formerView = formerView;
             }
             state.proposed = true;
+            // Once a proposal is being viewed, UDTrade_ProcessEverything()
+            // tears down editor modals. Read-only mode-6 contract viewers are
+            // the sole exception and remain available during proposal review.
+            state.playerSelectVisible = false;
+            closeCashDialog(state);
+            if (!state.contractDialogVisible || state.contractDialogMode != 6)
+                closeContractDialog(state);
+            state.showPropose = false;
             if (!wasInProgress)
             {
                 state.formerView = currentView;
@@ -1582,7 +1590,6 @@ namespace monopoly::tradeui
             state.playerA = proposer;
             state.tradeFrom = proposer;
             state.playerB = rules::MaxPlayers;
-            state.playerSelectVisible = false;
             state.editMode = false;
             gameState.tradeInProgress = true;
             return result;
