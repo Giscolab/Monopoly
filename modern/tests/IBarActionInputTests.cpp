@@ -5,6 +5,7 @@
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
 #include "PlayerSelection.hpp"
+#include "RuntimeState.hpp"
 #include "UserInterface.hpp"
 #include "UISound.hpp"
 
@@ -18,6 +19,7 @@ namespace test_support
 {
     monopoly::display::State displayState{};
     monopoly::rules::GameState ruleState{};
+    monopoly::runtime::State runtimeState{};
     std::vector<monopoly::actions::Message> sent;
     std::optional<monopoly::rules::PlayerNumber> clickedPlayer;
     std::array<bool, monopoly::rules::MaxPlayers> localHuman{{true, true, true, true, true, true}};
@@ -60,6 +62,15 @@ namespace monopoly::ui::localplayers
         return player < rules::MaxPlayers && test_support::localHuman[player];
     }
     bool slotIsLocalAIPlayer(rules::PlayerNumber) { return false; }
+    rules::PlayerNumber anyLocalPlayer(const rules::GameState& state)
+    {
+        return state.numberOfPlayers > 0 ? 0 : rules::NobodyPlayer;
+    }
+}
+
+namespace monopoly::runtime
+{
+    State& state() { return test_support::runtimeState; }
 }
 
 namespace monopoly::playerselection
@@ -314,6 +325,35 @@ namespace
                 ibar::resolveRuleMode(ibar::RuleMode::StartTurn, 0) == ibar::RuleMode::StartTurn &&
                 ibar::resolveRulePlayer(0) == 0,
             "forced tracking reset returns IBar to latest RULE mode/player");
+    }
+
+    void testForcedPlayerInspection()
+    {
+        using namespace monopoly;
+        test_support::displayState.desired2DView = display::Screen2D::Main;
+        test_support::ruleState.numberOfPlayers = 2;
+        test_support::localHuman[1] = true;
+
+        ibar::inspectPlayer(1);
+        require(ibar::stateReadOnly().localRuleModeActive &&
+                ibar::stateReadOnly().localRuleMode == ibar::RuleMode::OtherPlayer &&
+                ibar::resolveRulePlayer(0) == 1,
+            "forced inspection uses OtherPlayer for a local human");
+
+        test_support::localHuman[1] = false;
+        ibar::inspectPlayer(1);
+        require(ibar::stateReadOnly().localRuleModeActive &&
+                ibar::stateReadOnly().localRuleMode == ibar::RuleMode::OtherPlayerRemote &&
+                ibar::resolveRulePlayer(0) == 1,
+            "forced inspection uses OtherPlayerRemote for a non-local player");
+
+        ibar::inspectPlayer(rules::BankPlayer);
+        require(ibar::stateReadOnly().localRuleMode == ibar::RuleMode::OtherPlayer &&
+                ibar::resolveRulePlayer(0) == rules::BankPlayer,
+            "forced inspection keeps the retail BankPlayer OtherPlayer mode");
+
+        ibar::restoreRuleTracking();
+        test_support::localHuman[1] = true;
     }
 
     void testBankMouseOverTracking()
@@ -921,6 +961,7 @@ int main()
         testPlayerScoreMouseOverTracking();
         testPlayerBankSelectionTracking();
         testForcedRuleTrackingRestore();
+        testForcedPlayerInspection();
         testBankMouseOverTracking();
         testPropertyMouseOverTracking();
         testBuyAuctionAndTax();

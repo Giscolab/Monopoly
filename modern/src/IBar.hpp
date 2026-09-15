@@ -99,6 +99,8 @@ namespace monopoly::ibar
 
     void restoreRuleTracking() noexcept;
 
+    void inspectPlayer(rules::PlayerNumber player) noexcept;
+
 
     [[nodiscard]] RuleMode resolveRuleMode(
         RuleMode projectedMode,

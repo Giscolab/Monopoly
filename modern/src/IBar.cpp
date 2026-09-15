@@ -996,6 +996,16 @@ namespace monopoly::ibar
         leaveLocalRuleMode();
     }
 
+    void inspectPlayer(rules::PlayerNumber player) noexcept
+    {
+        if (player > rules::BankPlayer)
+        {
+            leaveLocalRuleMode();
+            return;
+        }
+        enterLocalRuleMode(otherPlayerMode(player), player);
+    }
+
     RuleMode resolveRuleMode(
         RuleMode projectedMode,
         rules::PlayerNumber projectedPlayer) noexcept
