@@ -513,6 +513,10 @@ namespace monopoly::userinterface
         ibar::processRuleMessage(
             message, iBarRuleProjection.mode, timers::tickCount());
 
+        if (message.action == actions::Type::NotifyFreeUnmortgaging &&
+            message.numberB != 0)
+            ibar::restoreRuleTracking();
+
         if (message.action == actions::Type::NotifyPleasePay &&
             message.numberA >= 0 && message.numberA < rules::MaxPlayers)
             maybePlayRaiseMoneySuggestion(
