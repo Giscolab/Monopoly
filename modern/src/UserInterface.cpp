@@ -689,6 +689,15 @@ namespace monopoly::userinterface
             }
         }
 
+        if (message.action == actions::Type::NotifyEndTurn &&
+            message.numberA >= 0 && message.numberA < uiRuleState.numberOfPlayers)
+        {
+            const auto player = static_cast<rules::PlayerNumber>(message.numberA);
+            uiRuleState.currentPlayer = player;
+            ui::localplayers::setCurrentUIPlayerFromPlayerNumber(player);
+            display::state().flashCurrentToken = true;
+        }
+
         if (message.action == actions::Type::NotifyStartTurn &&
             message.numberA >= 0 &&
             message.numberA < uiRuleState.numberOfPlayers)
@@ -719,6 +728,8 @@ namespace monopoly::userinterface
             runtime::state().gameInProgress = true;
             runtime::state().gamePaused = false;
             uiRuleState.currentPlayer = newCurrent;
+            ui::localplayers::setCurrentUIPlayerFromPlayerNumber(newCurrent);
+            display::state().flashCurrentToken = true;
         }
 
         if (message.action == actions::Type::NotifyPleaseRollDice)
