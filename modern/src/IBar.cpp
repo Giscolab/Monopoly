@@ -848,14 +848,22 @@ namespace monopoly::ibar
         if (clearsBuyAuctionPopup(message.action))
             globalState.desiredBuyAuctionSquare.reset();
 
+        if (message.action == actions::Type::NotifyDecomposeSale)
+        {
+            globalState.cashAnimationAmount.reset();
+            globalState.decompositionHousesToSell = -message.numberB;
+            globalState.buttonBarForceUpdate = true;
+        }
+
         if (message.action == actions::Type::NotifyCashAnimation)
         {
             if (projectedMode != RuleMode::HotelDecomposition &&
                 projectedMode != RuleMode::RaiseMoney)
             {
+                globalState.decompositionHousesToSell.reset();
                 globalState.cashAnimationAmount = message.numberC;
                 globalState.cashAnimationTick = tick;
-                globalState.cashAnimationForceUpdate = true;
+                globalState.buttonBarForceUpdate = true;
             }
             return;
         }

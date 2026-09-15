@@ -554,13 +554,13 @@ namespace
         auto& state = ibar::state();
         state.cashAnimationAmount.reset();
         state.cashAnimationTick = 0;
-        state.cashAnimationForceUpdate = false;
+        state.buttonBarForceUpdate = false;
 
         actions::Message message{};
         message.action = actions::Type::NotifyCashAnimation;
         message.numberC = 275;
         ibar::processRuleMessage(message, ibar::RuleMode::Nothing, 42);
-        require(state.cashAnimationAmount == 275 && state.cashAnimationTick == 42 && state.cashAnimationForceUpdate,
+        require(state.cashAnimationAmount == 275 && state.cashAnimationTick == 42 && state.buttonBarForceUpdate,
             "NotifyCashAnimation publishes retail IBar cash message state");
 
         const auto amount = state.cashAnimationAmount;
@@ -569,11 +569,27 @@ namespace
         ibar::processRuleMessage(message, ibar::RuleMode::RaiseMoney);
         require(state.cashAnimationAmount == amount && state.cashAnimationTick == tick,
             "RaiseMoney suppresses cash animation message like retail IBar");
-        state.cashAnimationForceUpdate = false;
+        state.buttonBarForceUpdate = false;
         message.numberC = 125;
         ibar::processRuleMessage(message, ibar::RuleMode::HotelDecomposition);
-        require(state.cashAnimationAmount == amount && !state.cashAnimationForceUpdate,
+        require(state.cashAnimationAmount == amount && !state.buttonBarForceUpdate,
             "HotelDecomposition suppresses cash animation message like retail IBar");
+
+        actions::Message decompose{};
+        decompose.action = actions::Type::NotifyDecomposeSale;
+        decompose.numberB = -4;
+        ibar::processRuleMessage(decompose, ibar::RuleMode::Nothing, 99);
+        require(!state.cashAnimationAmount &&
+                state.decompositionHousesToSell == 4 &&
+                state.buttonBarForceUpdate,
+            "NotifyDecomposeSale publishes retail houses-to-sell button-bar state");
+
+        state.buttonBarForceUpdate = false;
+        message.numberC = 900;
+        ibar::processRuleMessage(message, ibar::RuleMode::HotelDecomposition, 100);
+        require(state.decompositionHousesToSell == 4 &&
+                !state.buttonBarForceUpdate,
+            "suppressed cash animation preserves decomposition message state");
     }
 
     void testCardNotificationState()
