@@ -21,6 +21,8 @@ namespace
     int localResetCount = 0;
     int queueLockDepth = 0;
     int iBarRestoreCount = 0;
+    int iBarInspectCount = 0;
+    monopoly::rules::PlayerNumber inspectedIBarPlayer = monopoly::rules::NobodyPlayer;
     monopoly::rules::PlayerNumber shortageResolvedPlayer = monopoly::rules::NobodyPlayer;
     monopoly::rules::PlayerNumber tradeResolvedPlayer = monopoly::rules::NobodyPlayer;
     monopoly::rules::PlayerNumber capturedTradeB = monopoly::rules::NobodyPlayer;
@@ -112,6 +114,11 @@ namespace monopoly::ibar
     rules::PlayerNumber resolveRulePlayer(rules::PlayerNumber projectedPlayer) noexcept
     { return projectedPlayer; }
     void restoreRuleTracking() noexcept { ++iBarRestoreCount; }
+    void inspectPlayer(rules::PlayerNumber player) noexcept
+    {
+        inspectedIBarPlayer = player;
+        ++iBarInspectCount;
+    }
     void processRuleMessage(const actions::Message&, RuleMode, std::uint64_t) noexcept {}
 }
 
@@ -1633,6 +1640,47 @@ namespace
         capturedMessages.clear();
     }
 
+    void testTradeFinishedIBarTracking()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 3;
+        uiState.currentPlayer = 1;
+        localPlayerMask = localHumanMask = 1u << 1u;
+        iBarRestoreCount = 0;
+        iBarInspectCount = 0;
+        inspectedIBarPlayer = rules::NobodyPlayer;
+
+        actions::Message finished{};
+        finished.action = actions::Type::NotifyTradeFinished;
+        finished.toPlayer = rules::AllPlayers;
+        finished.numberA = -1;
+        finished.numberB = 1;
+        userinterface::processRuleMessage(finished);
+        expect(iBarRestoreCount == 1 && iBarInspectCount == 0 &&
+                userinterface::iBarRuleStateReadOnly().mode == ibar::RuleMode::Nothing &&
+                userinterface::iBarRuleStateReadOnly().player == 1,
+            "TradeFinished resumes RULE tracking only when retail numberB matches CurrentPlayer");
+
+        finished.numberB = 0;
+        userinterface::processRuleMessage(finished);
+        expect(iBarRestoreCount == 1 && iBarInspectCount == 1 &&
+                inspectedIBarPlayer == 1,
+            "TradeFinished otherwise forces retail OtherPlayer inspection of CurrentPlayer");
+
+        uiState.currentPlayer = 2;
+        userinterface::processRuleMessage(finished);
+        expect(iBarInspectCount == 2 && inspectedIBarPlayer == 2 &&
+                userinterface::iBarRuleStateReadOnly().player == 2,
+            "TradeFinished forwards a remote current player to the IBar inspection override");
+
+        localPlayerMask = localHumanMask = 0x3Fu;
+        iBarRestoreCount = 0;
+        iBarInspectCount = 0;
+        inspectedIBarPlayer = rules::NobodyPlayer;
+    }
+
     void testTradeInitiatorHostComments()
     {
         using namespace monopoly;
@@ -1926,6 +1974,7 @@ int main()
     testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
     testTradeCurrentUIPlayerSelection();
+    testTradeFinishedIBarTracking();
     testTradeInitiatorHostComments();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
