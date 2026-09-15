@@ -365,7 +365,7 @@ namespace monopoly::userinterface
         }
     }
 
-    std::expected<void, std::string> sendAuctionReadyResponses(
+    std::expected<void, std::string> sendReadyResponses(
         std::uint32_t playerMask,
         std::int64_t serial)
     {
@@ -386,7 +386,7 @@ namespace monopoly::userinterface
             required > messaging::MessageQueueCapacity - queued)
         {
             return std::unexpected(
-                "message queue cannot fit auction I_AM_HERE responses");
+                "message queue cannot fit I_AM_HERE responses");
         }
 
         for (rules::PlayerNumber player = 0; player < count; ++player)
@@ -400,7 +400,7 @@ namespace monopoly::userinterface
                     actions::Type::IAmHere, player, rules::BankPlayer, serial))
             {
                 return std::unexpected(
-                    "validated auction I_AM_HERE response was rejected");
+                    "validated I_AM_HERE response was rejected");
             }
         }
         return {};
@@ -723,6 +723,16 @@ namespace monopoly::userinterface
                 : penny::choseAuctionReaction(uiRuleState, player);
             playTokenReaction(player, reaction);
         }
+        if (message.action == actions::Type::NotifyAreYouThere &&
+            message.numberC != static_cast<std::int64_t>(actions::Type::NotifyNewHighBid))
+        {
+            // Userifce.cpp::Process_NOTIFY_ARE_YOU_THERE responds immediately
+            // for ordinary roll-calls. Auction readiness remains deliberately
+            // deferred until its Pennybags/graphics intro reaches Begin.
+            (void)sendReadyResponses(static_cast<std::uint32_t>(message.numberA),
+                message.numberB);
+        }
+
         const auto auctionUpdate = auctionui::processRuleMessage(
             auctionProjection, uiRuleState, message, display::state().desired2DView);
         if (auctionUpdate.requestedBackdrop)
