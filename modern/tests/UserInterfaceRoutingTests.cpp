@@ -1099,6 +1099,39 @@ namespace
         expect(uiState.cards[static_cast<std::size_t>(rules::DeckType::Chance)].jailOwner ==
                 rules::NobodyPlayer,
             "NotifyJailCardOwnership clears the retail deck owner when the card returns");
+
+        actions::Message immunity{};
+        immunity.action = actions::Type::NotifyImmunityCount;
+        immunity.toPlayer = rules::AllPlayers;
+        immunity.numberA = 1;
+        immunity.numberB = 4;
+        immunity.numberD = 0;
+        immunity.numberE = 0x24;
+        userinterface::processRuleMessage(immunity);
+        const auto& storedImmunity = uiState.countHits[0];
+        expect(storedImmunity.fromPlayer == 0 && storedImmunity.toPlayer == 1 &&
+                storedImmunity.hitType == rules::CountHitType::RentImmunity &&
+                storedImmunity.hitCount == 4 && storedImmunity.properties == 0x24 &&
+                !storedImmunity.tradedItem,
+            "NotifyImmunityCount projects the retail AddUiImmunity record");
+
+        immunity.numberB = 0;
+        userinterface::processRuleMessage(immunity);
+        expect(uiState.countHits[0].toPlayer == rules::NobodyPlayer &&
+                !uiState.countHits[0].tradedItem,
+            "zero NotifyImmunityCount clears the matching retail record");
+
+        actions::Message future = immunity;
+        future.action = actions::Type::NotifyFutureRentCount;
+        future.numberA = 0;
+        future.numberB = 3;
+        future.numberD = 1;
+        future.numberE = 0x18;
+        userinterface::processRuleMessage(future);
+        expect(uiState.countHits[0].fromPlayer == 1 && uiState.countHits[0].toPlayer == 0 &&
+                uiState.countHits[0].hitType == rules::CountHitType::FutureRent &&
+                uiState.countHits[0].hitCount == 3 && uiState.countHits[0].properties == 0x18,
+            "NotifyFutureRentCount projects the retail future-rent record");
     }
 
     void testFirstHouseCommentRouting()
