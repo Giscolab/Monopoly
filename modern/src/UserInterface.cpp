@@ -407,11 +407,21 @@ namespace monopoly::userinterface
                 static_cast<rules::PlayerNumber>(message.numberA)))
             engine::playJailChoiceHostComment();
 
+        if (message.action == actions::Type::NotifyCashAmount &&
+            message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+            uiRuleState.players[static_cast<std::size_t>(message.numberA)].cash =
+                message.numberC;
+
         if (message.action == actions::Type::NotifySquareOwnership &&
             message.numberA >= 0 && message.numberA < rules::SquareCount &&
             message.numberB >= 0 && message.numberB <= rules::EscrowPlayer)
             uiRuleState.squares[static_cast<std::size_t>(message.numberA)].owner =
                 static_cast<rules::PlayerNumber>(message.numberB);
+
+        if (message.action == actions::Type::NotifySquareMortgage &&
+            message.numberA >= 0 && message.numberA < rules::SquareCount)
+            uiRuleState.squares[static_cast<std::size_t>(message.numberA)].mortgaged =
+                message.numberB != 0;
 
         if (message.action == actions::Type::NotifySquareHouses &&
             message.numberA >= 0 && message.numberA < rules::SquareCount &&
@@ -425,6 +435,9 @@ namespace monopoly::userinterface
             if (previousHouses < square.houses)
                 maybePlayFirstHouseComment(square.owner, timers::tickCount());
         }
+
+        if (message.action == actions::Type::NotifyFreeParkingPot)
+            uiRuleState.freeParkingJackpotAmount = message.numberA;
 
         if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberB != 0 &&

@@ -1049,6 +1049,44 @@ namespace
         routingTick = 0;
     }
 
+    void testBasicGameStateProjection()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 2;
+
+        actions::Message cash{};
+        cash.action = actions::Type::NotifyCashAmount;
+        cash.toPlayer = rules::AllPlayers;
+        cash.numberA = 1;
+        cash.numberC = 1234;
+        userinterface::processRuleMessage(cash);
+        expect(uiState.players[1].cash == 1234,
+            "NotifyCashAmount updates the retail player cash projection");
+
+        actions::Message mortgage{};
+        mortgage.action = actions::Type::NotifySquareMortgage;
+        mortgage.toPlayer = rules::AllPlayers;
+        mortgage.numberA = 3;
+        mortgage.numberB = 1;
+        userinterface::processRuleMessage(mortgage);
+        expect(uiState.squares[3].mortgaged,
+            "NotifySquareMortgage sets the retail square mortgage projection");
+        mortgage.numberB = 0;
+        userinterface::processRuleMessage(mortgage);
+        expect(!uiState.squares[3].mortgaged,
+            "NotifySquareMortgage clears the retail square mortgage projection");
+
+        actions::Message pot{};
+        pot.action = actions::Type::NotifyFreeParkingPot;
+        pot.toPlayer = rules::AllPlayers;
+        pot.numberA = 987;
+        userinterface::processRuleMessage(pot);
+        expect(uiState.freeParkingJackpotAmount == 987,
+            "NotifyFreeParkingPot updates the retail jackpot projection");
+    }
+
     void testFirstHouseCommentRouting()
     {
         using namespace monopoly;
@@ -1439,6 +1477,7 @@ int main()
     testStartTurnQueuesHistoricalIdleTransition();
     testHousingShortageProjectionRouting();
     testRaiseMoneyAndJailHostComments();
+    testBasicGameStateProjection();
     testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
     testTradeInitiatorHostComments();
