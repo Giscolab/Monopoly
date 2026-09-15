@@ -39,6 +39,26 @@ namespace monopoly::userinterface
             0, 1u<<22, 1u<<23, 0, 1u<<24, 1u<<25, 0, 1u<<26, 0, 1u<<27, 0, 0
         }};
 
+        [[nodiscard]] bool notificationSelectsCurrentUIPlayer(actions::Type action) noexcept
+        {
+            switch (action)
+            {
+            case actions::Type::NotifyPleaseRollDice:
+            case actions::Type::NotifyBuyOrAuctionDecision:
+            case actions::Type::NotifyPleasePay:
+            case actions::Type::NotifyJailExitChoice:
+            case actions::Type::NotifyPickedUpCard:
+            case actions::Type::NotifyFreeUnmortgaging:
+            case actions::Type::NotifyFlatOrFractionTaxDecision:
+            case actions::Type::NotifyPlaceBuilding:
+            case actions::Type::NotifyDecomposeSale:
+            case actions::Type::NotifyPlayerBuySellMort:
+                return true;
+            default:
+                return false;
+            }
+        }
+
         bool applyClientResyncBlob(
             rules::GameState& state,
             const std::vector<std::uint8_t>& data,
@@ -513,6 +533,13 @@ namespace monopoly::userinterface
         ibar::processRuleMessage(
             message, iBarRuleProjection.mode, timers::tickCount());
 
+        if (notificationSelectsCurrentUIPlayer(message.action) &&
+            message.numberA >= 0 && message.numberA <= rules::NobodyPlayer)
+        {
+            ui::localplayers::setCurrentUIPlayerFromPlayerNumber(
+                static_cast<rules::PlayerNumber>(message.numberA));
+        }
+
         if (message.action == actions::Type::NotifyFreeUnmortgaging &&
             message.numberB != 0)
             ibar::restoreRuleTracking();
@@ -760,16 +787,16 @@ namespace monopoly::userinterface
 
         if (message.action == actions::Type::NotifyPleaseRollDice)
         {
-            // UDIBar.cpp:3397-3403 selects the 15-tile roll view from the
-            // authoritative current player's square before exposing StartTurn.
-            if (uiRuleState.currentPlayer < uiRuleState.numberOfPlayers &&
-                uiRuleState.currentPlayer < rules::MaxPlayers)
+            // UDIBar.cpp:3397-3403 uses the notification player directly.
+            if (message.numberA >= 0 && message.numberA < uiRuleState.numberOfPlayers &&
+                message.numberA < rules::MaxPlayers)
             {
+                const auto player = static_cast<rules::PlayerNumber>(message.numberA);
                 auto& displayState = display::state();
                 displayState.desiredBoardCamera = pieces::selectAppropriateView(
                     pieces::BoardViewSelectionType::RollDice,
                     displayState.desiredBoardCamera,
-                    uiRuleState.players[uiRuleState.currentPlayer].currentSquare,
+                    uiRuleState.players[player].currentSquare,
                     0);
             }
             // UDIBar.cpp sets GameInProgress before leaving the roll prompt.
