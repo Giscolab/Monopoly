@@ -181,6 +181,7 @@ namespace monopoly::userinterface
         pieces::PieceIdleState pieceIdleState;
         dice::Ingress diceIngress;
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
+        bool iBarGameJustLoaded = false;
         bool firstNumberOfPlayersNotification = true;
         std::int64_t lastHousingShortageCount = 2;
         std::array<std::uint64_t, rules::MaxPlayers> lastRaiseMoneySoundTick{};
@@ -189,6 +190,31 @@ namespace monopoly::userinterface
         inline constexpr std::uint64_t RaiseMoneyRepeatTicks = 40u * 60u;
         inline constexpr std::uint64_t BssmRepeatTicks = 30u * 60u;
         inline constexpr std::uint64_t TradeInitiatorRepeatTicks = 5u * 60u;
+
+        void completeLoadedGameIBarSetup() noexcept
+        {
+            if (!iBarGameJustLoaded || iBarRuleProjection.mode == ibar::RuleMode::Nothing)
+                return;
+
+            const auto player = iBarRuleProjection.player;
+            if (player >= uiRuleState.numberOfPlayers || player >= rules::MaxPlayers)
+                return;
+
+            // UDIBar.cpp::UDIBAR_setIBarRulesState: the first non-Nothing
+            // RULE state after SetUpLoadedGame owns the center idle and camera.
+            iBarGameJustLoaded = false;
+            runtime::state().gameInProgress = true;
+            display::state().desiredBoardCamera = pieces::pickCameraFor3Squares(
+                uiRuleState.players[player].currentSquare);
+
+            // SetUpLoadedGame has already rebuilt every resting slot.  The
+            // retail handoff does not animate RestToCenter here: it simply
+            // excludes the selected player from resting occupancy and makes it
+            // CurrentPlayerInCenterIdle.
+            pendingPieceIdleTransition.reset();
+            if (!pieceIdleState.initialize(uiRuleState, player))
+                pieceIdleState.reset();
+        }
 
         void maybePlayRaiseMoneySuggestion(rules::PlayerNumber player, std::uint64_t tick) noexcept
         {
@@ -465,6 +491,7 @@ namespace monopoly::userinterface
         optionsui::reset(optionsProjection);
         chat::reset();
         pendingPieceIdleTransition.reset();
+        iBarGameJustLoaded = false;
         firstNumberOfPlayersNotification = true;
         lastHousingShortageCount = 2;
         lastRaiseMoneySoundTick.fill(0);
@@ -526,12 +553,40 @@ namespace monopoly::userinterface
                     pieceIdleState.reset();
                 iBarRuleProjection.reset();
                 iBarRuleProjection.player = 0;
+                iBarGameJustLoaded = true;
             }
         }
 
         dicePrompt.process(message);
         ibar::processRuleMessage(
             message, iBarRuleProjection.mode, timers::tickCount());
+
+        if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::TradeAccept))
+        {
+            // UDIBar::ActionCompleted restores IBarStateTrackOn for TradeAccept
+            // regardless of the accepted/failed result.
+            ibar::restoreRuleTracking();
+        }
+
+        if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::GoBankrupt) &&
+            message.numberB == 0)
+        {
+            // A rejected bankruptcy request keeps the mode and emits Warning.
+            engine::playWarningSound();
+        }
+
+        if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::GetGameStateForSave) &&
+            message.numberB == 0 &&
+            message.numberC >= 0 && message.numberC < rules::MaxPlayers &&
+            ui::localplayers::slotIsLocalPlayer(
+                static_cast<rules::PlayerNumber>(message.numberC)))
+        {
+            // UDIBar uses WAV_tmpnext here, deliberately not the generic warning.
+            engine::playSaveFailureSound();
+        }
 
         if (notificationSelectsCurrentUIPlayer(message.action) &&
             message.numberA >= 0 && message.numberA <= rules::NobodyPlayer)
@@ -672,6 +727,14 @@ namespace monopoly::userinterface
             auctionProjection, uiRuleState, message, display::state().desired2DView);
         if (auctionUpdate.requestedBackdrop)
             display::setBackdrop(*auctionUpdate.requestedBackdrop);
+        if (message.action == actions::Type::NotifyNewHighBid &&
+            message.numberA == rules::BankPlayer)
+        {
+            // UDAuct.cpp clears the RULE button bar for every bank high-bid
+            // notification, including a zero-bid gong while Auction is visible.
+            iBarRuleProjection.mode = ibar::RuleMode::Nothing;
+            iBarRuleProjection.player = uiRuleState.currentPlayer;
+        }
         if (message.action == actions::Type::NotifyHousingShortage)
         {
             rules::PlayerNumber originalBuyer = rules::NobodyPlayer;
@@ -683,6 +746,8 @@ namespace monopoly::userinterface
             const auto shortagePlayer = ui::localplayers::housingShortageIBarPlayer(
                 uiRuleState, originalBuyer, allowedPlayers);
             iBarRuleProjection.processHousingShortage(message, shortagePlayer);
+            if (shortagePlayer < rules::MaxPlayers)
+                ibar::restoreRuleTracking();
             if (shortagePlayer < rules::MaxPlayers &&
                 ui::localplayers::slotIsLocalHumanPlayer(shortagePlayer))
             {
@@ -706,6 +771,19 @@ namespace monopoly::userinterface
                 iBarRuleProjection.processTradeAcceptance(message, tradePlayer);
             }
         }
+
+        if (message.action == actions::Type::NotifyTradeFinished)
+        {
+            // UDTrade.cpp finishes every trade by calling
+            // UDIBAR_setIBarRulesState(Nothing, CurrentPlayer).  The preceding
+            // assignment from numberB is immediately overwritten by that call,
+            // so effective retail behavior always resumes RULE tracking here.
+            iBarRuleProjection.mode = ibar::RuleMode::Nothing;
+            iBarRuleProjection.player = uiRuleState.currentPlayer;
+            ibar::restoreRuleTracking();
+        }
+
+        completeLoadedGameIBarSetup();
 
         const auto tradeUpdate = tradeui::processRuleMessage(
             tradeProjection, uiRuleState, message,

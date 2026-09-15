@@ -604,6 +604,19 @@ namespace monopoly::engine
                 }
                 if (step->camera)
                     display::state().desiredBoardCamera = *step->camera;
+                if (step->playSiren && display::stateReadOnly().optionTokenVoicesOn)
+                {
+                    if (auto* output = audioPlayback())
+                    {
+                        const auto siren = monopolySoundRuntime.siren(
+                            *output, static_cast<std::uint8_t>(std::rand() % udsound::SirenCount));
+                        if (!siren)
+                        {
+                            disableAudioPlayback("Paddywagon siren disabled audio", siren.error());
+                            return {};
+                        }
+                    }
+                }
                 if (step->completed)
                 {
                     if (pieceMoveQueueLockHeld) userinterface::unlockGameQueue();
@@ -835,6 +848,15 @@ namespace monopoly::engine
         {
             const auto result = monopolySoundRuntime.unbuild(*output);
             if (!result) disableAudioPlayback("Unbuild sound disabled audio", result.error());
+        }
+    }
+
+    void playSaveFailureSound() noexcept
+    {
+        if (auto* output = audioPlayback())
+        {
+            const auto result = monopolySoundRuntime.saveFailure(*output);
+            if (!result) disableAudioPlayback("Save failure sound disabled audio", result.error());
         }
     }
 

@@ -202,6 +202,14 @@ namespace monopoly::ibar
                 tradeBPlayer = *to;
             else if (*to == tradeAPlayer)
                 tradeBPlayer = *from;
+
+            // UDTrade.cpp rebuilds TradeB from every item, then clears the
+            // RULE bar to Nothing while keeping that reconstructed B player.
+            if (tradeBPlayer < rules::MaxPlayers)
+            {
+                mode = RuleMode::Nothing;
+                player = tradeBPlayer;
+            }
             return;
         }
         case actions::Type::NotifyTradeFinished:
