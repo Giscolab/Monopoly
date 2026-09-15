@@ -11,6 +11,7 @@ namespace monopoly::engine
     void playClickSound() noexcept;
     void playBuildSound() noexcept;
     void playUnbuildSound() noexcept;
+    void playSaveFailureSound() noexcept;
     void playTokenVoice(
         std::uint8_t token,
         udsound::TokenVoiceLine line,

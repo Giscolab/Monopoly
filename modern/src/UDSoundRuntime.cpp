@@ -8,6 +8,8 @@ namespace monopoly::udsound
     {
         [[nodiscard]] constexpr data::DataId mainData(data::DataTag tag) noexcept
         { return data::packDataId(data::LegacyGroupId::Main, tag); }
+        [[nodiscard]] constexpr data::DataId threeDData(data::DataTag tag) noexcept
+        { return data::packDataId(data::LegacyGroupId::ThreeD, tag); }
         [[nodiscard]] constexpr audio::PlaybackKey tokenVoiceKey(std::uint8_t token) noexcept
         { return {audio::PlaybackDomain::Voice, static_cast<std::uint64_t>(token) + 1u}; }
 
@@ -19,6 +21,8 @@ namespace monopoly::udsound
         inline constexpr audio::PlaybackKey CashDownKey{audio::PlaybackDomain::Interface, 4};
         inline constexpr audio::PlaybackKey BuildKey{audio::PlaybackDomain::Interface, 5};
         inline constexpr audio::PlaybackKey UnbuildKey{audio::PlaybackDomain::Interface, 6};
+        inline constexpr audio::PlaybackKey SirenKey{audio::PlaybackDomain::Interface, 7};
+        inline constexpr audio::PlaybackKey SaveFailureKey{audio::PlaybackDomain::Interface, 8};
         inline constexpr audio::PlaybackKey MusicKey{audio::PlaybackDomain::Music, 1};
         inline constexpr float PennybagsGain = 0.70F;
     }
@@ -30,6 +34,16 @@ namespace monopoly::udsound
     { return audio.play(BuildKey, mainData(BuildTag)); }
     std::expected<void, std::string> Runtime::unbuild(audio::Runtime& audio)
     { return audio.play(UnbuildKey, mainData(UnbuildTag)); }
+    std::expected<void, std::string> Runtime::saveFailure(audio::Runtime& audio)
+    { return audio.play(SaveFailureKey, mainData(SaveFailureTag)); }
+    std::expected<void, std::string> Runtime::siren(
+        audio::Runtime& audio, std::uint8_t variant)
+    {
+        if (variant >= SirenCount)
+            return std::unexpected("Paddywagon siren variant is outside retail 0..1 range");
+        return audio.play(SirenKey, threeDData(static_cast<data::DataTag>(
+            SirenBaseTag + variant)), 0.74F);
+    }
     std::expected<void, std::string> Runtime::cashUp(audio::Runtime& audio)
     { return audio.play(CashUpKey, mainData(CashUpTag)); }
     std::expected<void, std::string> Runtime::cashDown(audio::Runtime& audio)

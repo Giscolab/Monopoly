@@ -22,7 +22,10 @@ namespace monopoly::udsound
     inline constexpr data::DataTag CashDownTag = 0x084D;
     inline constexpr data::DataTag CreditsTag = 0x084E;
     inline constexpr data::DataTag MusicBaseTag = 0x084F;
+    inline constexpr data::DataTag SaveFailureTag = 0x0856;
     inline constexpr data::DataTag UnbuildTag = 0x085B;
+    inline constexpr data::DataTag SirenBaseTag = 0x066B;
+    inline constexpr std::uint8_t SirenCount = 2;
     inline constexpr std::uint8_t MusicTuneCount = 5;
 
     struct TokenVoicePlayResult
@@ -38,6 +41,9 @@ namespace monopoly::udsound
         [[nodiscard]] std::expected<void, std::string> click(audio::Runtime& audio);
         [[nodiscard]] std::expected<void, std::string> build(audio::Runtime& audio);
         [[nodiscard]] std::expected<void, std::string> unbuild(audio::Runtime& audio);
+        [[nodiscard]] std::expected<void, std::string> saveFailure(audio::Runtime& audio);
+        [[nodiscard]] std::expected<void, std::string> siren(
+            audio::Runtime& audio, std::uint8_t variant);
         [[nodiscard]] std::expected<void, std::string> cashUp(audio::Runtime& audio);
         [[nodiscard]] std::expected<void, std::string> cashDown(audio::Runtime& audio);
         [[nodiscard]] std::expected<void, std::string> syncMusic(

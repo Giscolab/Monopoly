@@ -17,6 +17,7 @@ namespace monopoly::pieces
     struct PieceJailPlaybackUpdate
     {
         bool completed{};
+        bool playSiren{};
         std::optional<BoardCameraView> camera;
     };
 

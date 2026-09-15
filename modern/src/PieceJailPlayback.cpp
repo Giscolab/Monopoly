@@ -135,6 +135,7 @@ namespace monopoly::pieces
             case 1:
             {
                 if (!animationsEnabled_) { state_ = 14; continue; }
+                result.playSiren = true;
                 auto route = planPaddyToToken(
                     static_cast<std::uint8_t>(request_.before), tickValue, randomBit_);
                 if (!route) return std::unexpected("failed to build paddy outbound route");
@@ -263,6 +264,7 @@ namespace monopoly::pieces
 
             case 7:
             {
+                result.playSiren = true;
                 auto route = planPaddyToJail(
                     static_cast<std::uint8_t>(request_.before),
                     routeEnd(*outbound_), tickValue);
