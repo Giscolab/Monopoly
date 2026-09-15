@@ -31,6 +31,7 @@ namespace monopoly::userinterface
         auctionui::State auctionProjection;
         tradeui::State tradeProjection;
         optionsui::State optionsProjection;
+        statsui::State statsProjection;
 
         constexpr std::array<std::uint32_t, rules::SquareCount> ResyncPropertyBits{{
             0, 1u<<0, 0, 1u<<1, 0, 1u<<2, 1u<<3, 0, 1u<<4, 1u<<5,
@@ -173,6 +174,14 @@ namespace monopoly::userinterface
     const optionsui::State& optionsStateReadOnly() noexcept
     {
         return optionsProjection;
+    }
+    statsui::State& statsState() noexcept
+    {
+        return statsProjection;
+    }
+    const statsui::State& statsStateReadOnly() noexcept
+    {
+        return statsProjection;
     }
     namespace
     {
@@ -489,6 +498,7 @@ namespace monopoly::userinterface
         auctionui::reset(auctionProjection);
         tradeui::reset(tradeProjection);
         optionsui::reset(optionsProjection);
+        statsui::reset(statsProjection);
         chat::reset();
         pendingPieceIdleTransition.reset();
         iBarGameJustLoaded = false;
@@ -1091,6 +1101,14 @@ namespace monopoly::userinterface
         }
 
 
+        if (statsProjection.initialized &&
+            display::stateReadOnly().desired2DView == display::Screen2D::Portfolio)
+        {
+            // UDStats content is live: cash/ownership/building notifications
+            // invalidate the active sort while the Portfolio is visible.
+            statsui::refresh(statsProjection, uiRuleState);
+        }
+
         playerselection::processMessage(
             message
         );
@@ -1136,6 +1154,10 @@ namespace monopoly::userinterface
 
     void update()
     {
+        statsui::syncView(
+            statsProjection, uiRuleState,
+            display::stateReadOnly().desired2DView);
+
         // ProcessPlayersUI(NULL) original entretient les effets UI
         // periodiques, mais ne valide pas une phase UDPSEL. Le commit
         // desired/current appartient exclusivement a DISPLAY_UDPSEL_Show().
@@ -1219,6 +1241,12 @@ namespace monopoly::userinterface
 
 
         playerselection::processLibraryMessage(message);
+        // Retail input order places UDSTATS after UDPSEL and before UDTRADE.
+        // Entering Portfolio through IBar in this same message also initializes
+        // the default Player/Turn projection immediately.
+        (void)statsui::processInput(
+            statsProjection, uiRuleState, display::state().desired2DView, message);
+
         const bool tradePartnerDialogWasVisible = tradeProjection.playerSelectVisible;
         if (const auto partner = tradeui::planPartnerSelection(
                 tradeProjection, uiRuleState, display::state().desired2DView,
