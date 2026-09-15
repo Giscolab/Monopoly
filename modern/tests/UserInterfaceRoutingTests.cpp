@@ -118,6 +118,7 @@ namespace monopoly::ibar
 namespace monopoly::engine
 {
     void playWarningSound() noexcept { route.push_back("warning"); }
+    void playSaveFailureSound() noexcept { route.push_back("save-failure"); }
     void playClickSound() noexcept { route.push_back("click"); }
     void playBuildSound() noexcept { route.push_back("build"); }
     void playUnbuildSound() noexcept { route.push_back("unbuild"); }
@@ -606,7 +607,7 @@ namespace
         localHumanMask = 0b0001;
         userinterface::ruleState().numberOfPlayers = 4;
 
-        const auto sent = userinterface::sendAuctionReadyResponses(0b1111, 77);
+        const auto sent = userinterface::sendReadyResponses(0b1111, 77);
         expect(sent && capturedMessages.size() == 2 &&
                 capturedMessages[0].action == actions::Type::IAmHere &&
                 capturedMessages[0].fromPlayer == 0 &&
@@ -620,7 +621,7 @@ namespace
 
         capturedMessages.clear();
         simulatedQueuedActions = messaging::MessageQueueCapacity - 1;
-        const auto full = userinterface::sendAuctionReadyResponses(0b0101, 91);
+        const auto full = userinterface::sendReadyResponses(0b0101, 91);
         expect(!full && capturedMessages.empty() &&
                 simulatedQueuedActions == messaging::MessageQueueCapacity - 1,
             "auction roll-call preflights FIFO capacity before sending any I_AM_HERE");
@@ -1575,6 +1576,63 @@ namespace
         tradeResolvedPlayer = rules::NobodyPlayer;
     }
 
+    void testTradeCurrentUIPlayerSelection()
+    {
+        using namespace monopoly;
+        userinterface::resetRuleProjection();
+        auto& uiState = userinterface::ruleState();
+        uiState.numberOfPlayers = 4;
+        localPlayerMask = localHumanMask = (1u << 1u) | (1u << 3u);
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+        tradeResolvedPlayer = 3;
+        simulatedQueuedActions = 0;
+        capturedMessages.clear();
+
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.toPlayer = rules::AllPlayers;
+        started.numberA = 1;
+        userinterface::processRuleMessage(started);
+
+        actions::Message item{};
+        item.action = actions::Type::NotifyTradeItem;
+        item.toPlayer = rules::AllPlayers;
+        item.numberA = 1;
+        item.numberB = 3;
+        item.numberC = static_cast<std::int64_t>(rules::TradeItemKind::Cash);
+        item.numberD = 10;
+        userinterface::processRuleMessage(item);
+
+        actions::Message editor{};
+        editor.action = actions::Type::NotifyTradeEditor;
+        editor.toPlayer = rules::AllPlayers;
+        editor.numberA = 1;
+        userinterface::processRuleMessage(editor);
+        expect(selectedLocalUIPlayer == 1,
+            "NotifyTradeEditor selects its local human editor like retail UDTrade");
+
+        actions::Message acceptance{};
+        acceptance.action = actions::Type::NotifyTradeAcceptanceDecision;
+        acceptance.toPlayer = rules::AllPlayers;
+        acceptance.numberA = (1u << 2u) | (1u << 3u);
+        userinterface::processRuleMessage(acceptance);
+        expect(selectedLocalUIPlayer == 3,
+            "trade acceptance selects exactly reconstructed local TradeB for CurrentUIPlayer");
+
+        localPlayerMask = localHumanMask = 0;
+        tradeResolvedPlayer = 2;
+        userinterface::processRuleMessage(acceptance);
+        expect(selectedLocalUIPlayer == rules::NobodyPlayer &&
+                userinterface::iBarRuleStateReadOnly().player == 2,
+            "spectator keeps no CurrentUIPlayer while IBar may watch a remote pending trader");
+
+        localPlayerMask = localHumanMask = 0x3Fu;
+        selectedLocalUIPlayer = rules::NobodyPlayer;
+        tradeResolvedPlayer = rules::NobodyPlayer;
+        simulatedQueuedActions = 0;
+        capturedMessages.clear();
+    }
+
     void testTradeInitiatorHostComments()
     {
         using namespace monopoly;
@@ -1867,6 +1925,7 @@ int main()
     testLoadedGameResyncLifecycle();
     testFirstHouseCommentRouting();
     testTradeAcceptanceProjectionRouting();
+    testTradeCurrentUIPlayerSelection();
     testTradeInitiatorHostComments();
     testDiceNotificationQueuesHistoricalRoll();
     testDicePromptProjection();
