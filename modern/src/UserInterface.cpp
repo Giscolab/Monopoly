@@ -793,14 +793,34 @@ namespace monopoly::userinterface
         }
         else
         {
+            if (message.action == actions::Type::NotifyTradeEditor &&
+                message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+            {
+                // UDTrade.cpp selects the editor before deciding whether this
+                // machine owns that slot, leaving Nobody for remote editors.
+                ui::localplayers::setCurrentUIPlayerFromPlayerNumber(
+                    static_cast<rules::PlayerNumber>(message.numberA));
+            }
+
             iBarRuleProjection.process(message);
             if (message.action == actions::Type::NotifyTradeAcceptanceDecision)
             {
+                // Retail ignores numberA for CurrentUIPlayer here and selects
+                // exactly the reconstructed TradeB slot.  Spectators therefore
+                // keep Nobody even though the IBar may watch a remote pending
+                // player from numberA.
+                const auto tradeBPlayer = iBarRuleProjection.tradeBPlayer;
+                const std::uint32_t tradeBSet = tradeBPlayer < rules::MaxPlayers
+                    ? (1u << tradeBPlayer)
+                    : 0u;
+                ui::localplayers::setCurrentUIPlayerFromPlayerSet(
+                    uiRuleState, tradeBSet);
+
                 const std::uint32_t pendingPlayers = message.numberA > 0
                     ? static_cast<std::uint32_t>(message.numberA)
                     : 0u;
                 const auto tradePlayer = ui::localplayers::tradeAcceptanceIBarPlayer(
-                    uiRuleState, iBarRuleProjection.tradeBPlayer, pendingPlayers);
+                    uiRuleState, tradeBPlayer, pendingPlayers);
                 iBarRuleProjection.processTradeAcceptance(message, tradePlayer);
             }
         }
