@@ -1085,6 +1085,20 @@ namespace
         userinterface::processRuleMessage(pot);
         expect(uiState.freeParkingJackpotAmount == 987,
             "NotifyFreeParkingPot updates the retail jackpot projection");
+
+        actions::Message jailCard{};
+        jailCard.action = actions::Type::NotifyJailCardOwnership;
+        jailCard.toPlayer = rules::AllPlayers;
+        jailCard.numberA = 1;
+        jailCard.numberB = static_cast<std::int64_t>(rules::DeckType::Chance);
+        userinterface::processRuleMessage(jailCard);
+        expect(uiState.cards[static_cast<std::size_t>(rules::DeckType::Chance)].jailOwner == 1,
+            "NotifyJailCardOwnership updates the exact retail deck owner");
+        jailCard.numberA = rules::NobodyPlayer;
+        userinterface::processRuleMessage(jailCard);
+        expect(uiState.cards[static_cast<std::size_t>(rules::DeckType::Chance)].jailOwner ==
+                rules::NobodyPlayer,
+            "NotifyJailCardOwnership clears the retail deck owner when the card returns");
     }
 
     void testFirstHouseCommentRouting()

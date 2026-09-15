@@ -439,6 +439,15 @@ namespace monopoly::userinterface
         if (message.action == actions::Type::NotifyFreeParkingPot)
             uiRuleState.freeParkingJackpotAmount = message.numberA;
 
+        if (message.action == actions::Type::NotifyJailCardOwnership &&
+            message.numberA >= 0 && message.numberA <= rules::NobodyPlayer &&
+            message.numberB >= 0 &&
+            message.numberB < static_cast<std::int64_t>(rules::DeckType::Count))
+        {
+            uiRuleState.cards[static_cast<std::size_t>(message.numberB)].jailOwner =
+                static_cast<rules::PlayerNumber>(message.numberA);
+        }
+
         if (message.action == actions::Type::NotifyActionCompleted &&
             message.numberB != 0 &&
             message.numberA == static_cast<std::int64_t>(actions::Type::CardSeen))
