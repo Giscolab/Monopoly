@@ -274,6 +274,13 @@ namespace monopoly::tradeui
             state.contractList.clear();
         }
 
+        void closeCashDialog(State& state) noexcept
+        {
+            state.cashDialogVisible = false;
+            state.cashDialogClosing = false;
+            state.cashDialogFeedback = CashDialogFeedback::None;
+        }
+
         [[nodiscard]] bool openContractDialog(
             State& state,
             const rules::GameState& gameState,
@@ -1509,7 +1516,11 @@ namespace monopoly::tradeui
             else if (message.numberA == static_cast<std::int64_t>(actions::Type::StartTradeEditing) &&
                      message.numberB != 0)
             {
+                // UDTrade.cpp removes every editor-side modal immediately once
+                // ACTION_START_TRADE_EDITING is accepted.
                 state.playerSelectVisible = false;
+                closeCashDialog(state);
+                closeContractDialog(state);
                 state.showPropose = false;
             }
             return result;
@@ -1602,9 +1613,14 @@ namespace monopoly::tradeui
 
         case actions::Type::NotifyTradeAcceptanceDecision:
             state.playerSelectVisible = false;
+            closeCashDialog(state);
             state.editMode = false;
             state.showPropose = false;
-            closeContractDialog(state);
+            // The retail viewer deliberately leaves mode-6 Future/Immunity
+            // inspection dialogs open while acceptance is pending. Editing
+            // modes 0..5 are dismissed.
+            if (!state.contractDialogVisible || state.contractDialogMode != 6)
+                closeContractDialog(state);
             refreshContractProjection(state, gameState);
             return result;
 
