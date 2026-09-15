@@ -295,6 +295,59 @@ namespace
         shutdown();
     }
 
+    void testBssmCameraLifecycle()
+    {
+        using namespace monopoly;
+        using namespace monopoly::display;
+
+        expect(initialize(), "DISPLAY initializes for BSSM camera lifecycle");
+        setBackdrop(Screen2D::Main);
+        state().game3DOn = true;
+        showAll2();
+        const auto prior = stateReadOnly().desiredBoardCamera;
+
+        requestBssmCamera(6, 2);
+        expect(stateReadOnly().bssmCameraState == 0 &&
+                stateReadOnly().desiredBoardCamera == prior,
+            "standalone mortgage does not start a retail BSSM camera chain");
+
+        requestBssmCamera(6, 0);
+        const auto first = pieces::pickCameraFor3Squares(6);
+        expect(stateReadOnly().bssmCameraState == 1 &&
+                stateReadOnly().bssmPriorCamera == prior &&
+                stateReadOnly().desiredBoardCamera == first,
+            "build starts BSSM camera and remembers prior desired view");
+        showAll2();
+        tickActions(1);
+        expect(stateReadOnly().bssmCameraState == 2,
+            "queued BSSM camera entering interpolation advances state 1 to 2");
+
+        requestBssmCamera(9, 2);
+        expect(stateReadOnly().bssmCameraState == 1 &&
+                stateReadOnly().desiredBoardCamera == pieces::pickCameraFor3Squares(9) &&
+                stateReadOnly().bssmPriorCamera == prior,
+            "active BSSM chain accepts mortgage while first interpolation is active");
+        showAll2();
+        tickActions(1);
+        expect(stateReadOnly().bssmCameraState == 1,
+            "chained BSSM camera waits while previous interpolation is active");
+        tickActions(boardcamera::BaseMoveTicks - 1U);
+        expect(stateReadOnly().bssmCameraState == 2,
+            "chained BSSM request enters processed state when queued move starts");
+
+        const auto requestTick = stateReadOnly().bssmCameraRequestTick;
+        const auto now = stateReadOnly().boardTick;
+        tickActions(requestTick + 60U * 5U - now);
+        expect(stateReadOnly().bssmCameraState == 2 &&
+                stateReadOnly().desiredBoardCamera == pieces::pickCameraFor3Squares(9),
+            "BSSM return remains armed at exactly five seconds");
+        tickActions(1);
+        expect(stateReadOnly().bssmCameraState == 0 &&
+                stateReadOnly().desiredBoardCamera == prior,
+            "BSSM camera returns strictly after five seconds when still owner of desired view");
+        shutdown();
+    }
+
     void testDisplayStateMachine()
     {
         using namespace monopoly::display;
@@ -613,6 +666,7 @@ int main()
 
     testEnumContract();
     testBoardCameraStateMachine();
+    testBssmCameraLifecycle();
     testBoardDemoMode();
     testBoardFloatingCamera();
     testManualMouseBoardCamera();

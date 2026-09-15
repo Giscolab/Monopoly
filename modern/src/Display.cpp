@@ -516,6 +516,25 @@ namespace monopoly::display
         globalState.tokenAnimationStackActive = active;
     }
 
+    void requestBssmCamera(std::int32_t square, std::uint8_t action) noexcept
+    {
+        if (square < 0 || square >= 40 || action >= 4) return;
+        if (action >= 2 && globalState.bssmCameraState == 0) return;
+
+        const bool cameraIdle = !boardCameraController.moving() ||
+            boardCameraController.floating();
+        const bool canStart = cameraIdle && globalState.optionCameraMovementOn &&
+            !globalState.demoModeDesired && !globalState.manualMouseCamLock;
+        if (!canStart && globalState.bssmCameraState == 0) return;
+
+        if (globalState.bssmCameraState == 0)
+            globalState.bssmPriorCamera = globalState.desiredBoardCamera;
+        globalState.desiredBoardCamera = pieces::pickCameraFor3Squares(square);
+        globalState.bssmLastRequestedCamera = globalState.desiredBoardCamera;
+        globalState.bssmCameraState = 1;
+        globalState.bssmCameraRequestTick = boardCameraTick;
+    }
+
     void processBoardInput(const uimsg::Message& message)
     {
         if (message.type == uimsg::Type::MouseLeftDown ||
@@ -628,6 +647,10 @@ namespace monopoly::display
             globalState.manualMouseCamLock = false;
         if (cameraUpdate.startedWaitingMove)
         {
+            if (globalState.bssmCameraState == 2)
+                globalState.bssmCameraState = 0;
+            else if (globalState.bssmCameraState == 1)
+                globalState.bssmCameraState = 2;
             globalState.cameraCanFloat = true;
             globalState.floatingCameraActive = false;
         }
@@ -640,6 +663,14 @@ namespace monopoly::display
         {
             startFloatingIdle();
         }
+        if (globalState.bssmCameraState > 0 &&
+            boardCameraTick > globalState.bssmCameraRequestTick + 60U * 5U)
+        {
+            if (globalState.bssmLastRequestedCamera == globalState.desiredBoardCamera)
+                globalState.desiredBoardCamera = globalState.bssmPriorCamera;
+            globalState.bssmCameraState = 0;
+        }
+
         if (globalState.manualMouseCamLock &&
             boardCameraTick > globalState.manualMouseCamTime +
                 60U * 20U)

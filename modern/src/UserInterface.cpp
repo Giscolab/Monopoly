@@ -572,7 +572,11 @@ namespace monopoly::userinterface
             auto& square = uiRuleState.squares[static_cast<std::size_t>(message.numberA)];
             square.mortgaged = message.numberB != 0;
             if (square.owner < rules::MaxPlayers)
+            {
                 engine::playClickSound();
+                display::requestBssmCamera(static_cast<std::int32_t>(message.numberA),
+                    message.numberB != 0 ? 2U : 3U);
+            }
         }
 
         if (message.action == actions::Type::NotifySquareHouses &&
@@ -587,9 +591,15 @@ namespace monopoly::userinterface
             if (square.owner < rules::MaxPlayers)
             {
                 if (previousHouses < square.houses)
+                {
                     engine::playBuildSound();
+                    display::requestBssmCamera(static_cast<std::int32_t>(message.numberA), 0U);
+                }
                 else
+                {
                     engine::playUnbuildSound();
+                    display::requestBssmCamera(static_cast<std::int32_t>(message.numberA), 1U);
+                }
             }
             if (previousHouses < square.houses)
                 maybePlayFirstHouseComment(square.owner, timers::tickCount());
