@@ -13,6 +13,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace monopoly::fonts
 {
@@ -82,6 +83,13 @@ namespace monopoly::fonts
 
         [[nodiscard]] std::expected<Metrics, Error> measure(
             std::string_view utf8) const;
+        // Source/monopoly/UDChat.cpp::CHAT_WordWrap core semantics using the
+        // currently selected font: prefer spaces, hard-break only when a
+        // word cannot fit, and treat '_' as a non-breaking space marker.
+        // The legacy caller owns its fixed wrapped-line storage; this returns
+        // an owning vector instead of reproducing that unsafe global buffer.
+        [[nodiscard]] std::expected<std::vector<std::string>, Error> wrap(
+            std::string_view utf8, int width) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> render(
             std::string_view utf8, std::uint32_t colorRef) const;
 
