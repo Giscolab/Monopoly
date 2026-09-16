@@ -23,7 +23,7 @@ namespace monopoly::chat
                     ChatFluffButtonPriority,
                     state.windowX + state.windowWidth - 40, state.windowY + 2});
             }
-            if (!state.fluffOpen) return result;
+            if (!state.boxActive || !state.fluffOpen) return result;
 
             result.push_back({mainId(ChatFluffCloseTag), ChatFluffWindowPriority,
                 state.fluffWindowX, state.fluffWindowY});
