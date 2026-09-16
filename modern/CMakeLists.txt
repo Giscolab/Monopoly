@@ -725,6 +725,7 @@ target_sources(
     src/StatsPlayback.cpp
     src/StatsBankPlayback.cpp
     src/StatsCalculatorPlayback.cpp
+    src/StatsCalculatorLogic.cpp
     src/StatsPlayerPlayback.cpp
     src/StatsPlayerAuxPlayback.cpp
     src/StatsDeedPlayback.cpp
