@@ -8,8 +8,11 @@
 #include "Messaging.hpp"
 #include "PlayerSelection.hpp"
 #include "RuntimeState.hpp"
+#include "Timers.hpp"
 #include "UserInterface.hpp"
 #include "UISound.hpp"
+
+#include <SDL3/SDL_scancode.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -19,6 +22,127 @@ namespace monopoly::ibar
     namespace
     {
         State globalState;
+        inline constexpr std::uint64_t EscapeMenuTimeoutTicks =
+            static_cast<std::uint64_t>(timers::BasicClockRateHz) * 10u;
+
+        void openEscapeMenu(bool newGame, bool exit) noexcept
+        {
+            globalState.userRequestedNewGame = newGame;
+            globalState.userRequestedExit = exit;
+            globalState.escapeMenuUp = true;
+            globalState.escapeMenuOpenedTick = timers::tickCount();
+        }
+
+        void closeEscapeMenu(bool restoreOptions, bool playClick) noexcept
+        {
+            if (playClick) engine::playClickSound();
+            globalState.escapeMenuUp = false;
+            globalState.userRequestedExit = false;
+            globalState.userRequestedNewGame = false;
+            if (restoreOptions && !globalState.userChoseToExit &&
+                display::stateReadOnly().desired2DView == display::Screen2D::Options)
+            {
+                display::setBackdrop(userinterface::optionsStateReadOnly().previousView);
+            }
+        }
+
+        void sendRetailNewGame() noexcept
+        {
+            const auto localPlayer = ui::localplayers::anyLocalPlayer(
+                userinterface::ruleStateReadOnly());
+            if (localPlayer < rules::MaxPlayers)
+                (void)messaging::sendAction(actions::Type::NewGame,
+                    localPlayer, rules::BankPlayer, 0);
+        }
+
+        void enterExitCredits() noexcept
+        {
+            globalState.userChoseToExit = true;
+            auto& options = userinterface::optionsState();
+            options.currentScreen = optionsui::Screen::Credits;
+            options.active = true;
+            display::setBackdrop(display::Screen2D::Options);
+        }
+
+        void acceptEscapeMenu() noexcept
+        {
+            engine::playClickSound();
+            if (globalState.userRequestedNewGame)
+            {
+                sendRetailNewGame();
+            }
+            else if ((display::isIBarVisible(display::stateReadOnly().desired2DView) ||
+                      runtime::state().gameInProgress) &&
+                     !globalState.userRequestedExit)
+            {
+                sendRetailNewGame();
+            }
+            else
+            {
+                enterExitCredits();
+            }
+            // Retail routes Yes through the same hitN teardown, including its
+            // second Click SFX and request-flag reset.
+            closeEscapeMenu(true, true);
+        }
+
+        void finishExitCredits() noexcept
+        {
+            globalState.userChoseToExit = false;
+            optionsui::reset(userinterface::optionsState());
+            display::setBackdrop(display::Screen2D::Black);
+            runtime::state().gameQuitRequested = true;
+        }
+
+        [[nodiscard]] bool processEscapeInput(const uimsg::Message& message) noexcept
+        {
+            if (globalState.userChoseToExit &&
+                (message.type == uimsg::Type::MouseLeftDown ||
+                 message.type == uimsg::Type::KeyboardPressed))
+            {
+                finishExitCredits();
+                return true;
+            }
+
+            if (message.type == uimsg::Type::KeyboardPressed)
+            {
+                const auto key = static_cast<SDL_Scancode>(message.numberA);
+                if (key == SDL_SCANCODE_ESCAPE)
+                {
+                    globalState.escapeMenuUp = !globalState.escapeMenuUp;
+                    if (globalState.escapeMenuUp)
+                        globalState.escapeMenuOpenedTick = timers::tickCount();
+                    return true;
+                }
+                if (globalState.escapeMenuUp && key == SDL_SCANCODE_Y)
+                {
+                    acceptEscapeMenu();
+                    return true;
+                }
+                if (globalState.escapeMenuUp && key == SDL_SCANCODE_N)
+                {
+                    closeEscapeMenu(true, true);
+                    return true;
+                }
+            }
+
+            if (globalState.escapeMenuUp && message.type == uimsg::Type::MouseLeftDown)
+            {
+                const int x = static_cast<int>(message.numberA);
+                const int y = static_cast<int>(message.numberB);
+                if (x >= 299 && x <= 381 && y >= 183 && y <= 219)
+                {
+                    acceptEscapeMenu();
+                    return true;
+                }
+                if (x >= 419 && x <= 501 && y >= 183 && y <= 219)
+                {
+                    closeEscapeMenu(true, true);
+                    return true;
+                }
+            }
+            return false;
+        }
 
 
         [[nodiscard]] bool clearsBuyAuctionPopup(actions::Type action) noexcept
@@ -500,11 +624,10 @@ namespace monopoly::ibar
                 }
                 if (slot == Slot::Main)
                 {
-                    // Retail fakes an Escape press here after setting its exit flag.
-                    // The modern runtime has no legacy confirmation/credits dialog, so
-                    // publish the same terminal quit request consumed by ProcessUIMessage.
+                    // Retail sets g_UserRequestedExit then feeds an Escape key
+                    // back through UDIBAR_ProcessMessage.
                     globalState.pendingPressedButton = ExitButtonIndex;
-                    runtime::state().gameQuitRequested = true;
+                    openEscapeMenu(false, true);
                     return true;
                 }
                 break;
@@ -630,9 +753,27 @@ namespace monopoly::ibar
     void tickActions(
         std::uint64_t numberOfTicks)
     {
-        // DISPLAY_UDIBAR_TickActions() original est vide.
-
         (void)numberOfTicks;
+        if (globalState.escapeMenuUp &&
+            globalState.escapeMenuOpenedTick + EscapeMenuTimeoutTicks < timers::tickCount())
+        {
+            closeEscapeMenu(true, true);
+        }
+    }
+
+
+    bool requestNewGameConfirmation() noexcept
+    {
+        if (!globalState.initialized || globalState.userChoseToExit) return false;
+        openEscapeMenu(true, false);
+        return true;
+    }
+
+    bool requestExitConfirmation() noexcept
+    {
+        if (!globalState.initialized || globalState.userChoseToExit) return false;
+        openEscapeMenu(false, true);
+        return true;
     }
 
 
@@ -803,6 +944,10 @@ namespace monopoly::ibar
         {
             return;
         }
+
+        // Escape confirmation is global in the retail IBar and must run even
+        // while Options or player setup hides the ordinary bar.
+        if (processEscapeInput(message)) return;
 
         if (playerSelectVisible())
         {

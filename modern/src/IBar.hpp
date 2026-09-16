@@ -64,6 +64,13 @@ namespace monopoly::ibar
         std::optional<std::int64_t> decompositionHousesToSell;
         bool buttonBarForceUpdate{};
 
+        // UDIBar.cpp Escape confirmation state. These flags deliberately mirror
+        // the retail globals instead of collapsing New Game and Exit together.
+        bool escapeMenuUp{};
+        bool userRequestedNewGame{};
+        bool userRequestedExit{};
+        bool userChoseToExit{};
+        std::uint64_t escapeMenuOpenedTick{};
 
         bool initialized = false;
     };
@@ -82,6 +89,8 @@ namespace monopoly::ibar
 
     void show();
 
+    [[nodiscard]] bool requestNewGameConfirmation() noexcept;
+    [[nodiscard]] bool requestExitConfirmation() noexcept;
 
     void processLibraryMessage(
         const uimsg::Message& message

@@ -1253,6 +1253,18 @@ namespace monopoly::userinterface
             optionsInput.pressedOptionToggle.has_value() ||
             optionsInput.pressedOptionOkay;
         if (optionClicked) engine::playClickSound();
+        if (optionsInput.pressedFileButton == optionsui::FileButton::NewGame)
+        {
+            // UDOPTIONS_ProcessFileOptionButtonPress sets the request flag,
+            // removes the File screen and fakes Escape into UDIBAR.
+            optionsProjection.active = false;
+            (void)ibar::requestNewGameConfirmation();
+        }
+        else if (optionsInput.pressedFileButton == optionsui::FileButton::Exit)
+        {
+            optionsProjection.active = false;
+            (void)ibar::requestExitConfirmation();
+        }
         if (optionsInput.pressedMenuButton == optionsui::MenuButton::Option)
         {
             const auto& displayState = display::stateReadOnly();

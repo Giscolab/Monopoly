@@ -57,6 +57,7 @@
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
+#include "EscapeConfirmationPlayback.hpp"
 #include "LocalPlayers.hpp"
 #include "UserInterface.hpp"
 #include "TimeStep.hpp"
@@ -109,6 +110,7 @@ namespace monopoly::engine
         tradeui::TokenPlayback tradeTokenPlayback;
         tradeui::ActionButtonPlayback tradeActionButtonPlayback;
         optionsui::FilePlayback optionsFilePlayback;
+        ibar::EscapeConfirmationPlayback escapeConfirmationPlayback;
         optionsui::NavigationPlayback optionsNavigationPlayback;
         statsui::Playback statsPlayback;
         chat::RecipientPlayback chatRecipientPlayback;
@@ -1199,6 +1201,11 @@ namespace monopoly::engine
             if (!optionsFileSync)
                 return SDL_SetError("Options File-screen playback: %s",
                     optionsFileSync.error().c_str());
+            const auto escapeSync = escapeConfirmationPlayback.sync(
+                ibar::stateReadOnly(), isUsaBoardEdition(), *session);
+            if (!escapeSync)
+                return SDL_SetError("Escape confirmation playback: %s",
+                    escapeSync.error().c_str());
             const auto chatRecipientSync = chatRecipientPlayback.sync(
                 chat::stateReadOnly(), ruleState, *session);
             if (!chatRecipientSync)
@@ -1615,6 +1622,7 @@ namespace monopoly::engine
         tradeTokenPlayback.reset();
         tradeActionButtonPlayback.reset();
         optionsFilePlayback.reset();
+        escapeConfirmationPlayback.reset();
         optionsNavigationPlayback.reset();
         statsPlayback.reset();
         chatRecipientPlayback.reset();
