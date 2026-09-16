@@ -10,6 +10,7 @@
 #include "AuctionUI.hpp"
 #include "TradeUI.hpp"
 #include "OptionsUI.hpp"
+#include "OptionsSaveRuntime.hpp"
 #include "StatsUI.hpp"
 #include "StatsCalculatorUI.hpp"
 #include "StatsFutureImmunityUI.hpp"
@@ -29,6 +30,8 @@ namespace monopoly::userinterface
     const tradeui::State& tradeStateReadOnly() noexcept;
     optionsui::State& optionsState() noexcept;
     const optionsui::State& optionsStateReadOnly() noexcept;
+    optionsui::SaveRuntimeState& optionsSaveState() noexcept;
+    const optionsui::SaveRuntimeState& optionsSaveStateReadOnly() noexcept;
     statsui::State& statsState() noexcept;
     const statsui::State& statsStateReadOnly() noexcept;
     statsui::CalculatorUIState& statsCalculatorState() noexcept;
@@ -40,8 +43,8 @@ namespace monopoly::userinterface
     [[nodiscard]] std::expected<void, std::string> sendReadyResponses(
         std::uint32_t playerMask,
         std::int64_t serial);
-    // Repart d'une projection UI neuve et réarme l'initialisation spéciale
-    // déclenchée par la première notification du nombre de joueurs.
+    // Repart d'une projection UI neuve et rÃ©arme l'initialisation spÃ©ciale
+    // dÃ©clenchÃ©e par la premiÃ¨re notification du nombre de joueurs.
     void resetRuleProjection();
 
 

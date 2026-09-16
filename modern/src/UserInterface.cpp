@@ -12,6 +12,8 @@
 #include "ChatRuntime.hpp"
 #include "VoiceChatRuntime.hpp"
 #include "UDPennyVoice.hpp"
+#include "OptionsSaveRuntime.hpp"
+#include "ExtendedInitialization.hpp"
 
 #include "RuntimeState.hpp"
 
@@ -32,6 +34,7 @@ namespace monopoly::userinterface
         auctionui::State auctionProjection;
         tradeui::State tradeProjection;
         optionsui::State optionsProjection;
+        optionsui::SaveRuntimeState optionsSaveProjection;
         statsui::State statsProjection;
         statsui::CalculatorUIState statsCalculatorProjection;
         statsui::FutureImmunityState statsFutureImmunityProjection;
@@ -177,6 +180,14 @@ namespace monopoly::userinterface
     const optionsui::State& optionsStateReadOnly() noexcept
     {
         return optionsProjection;
+    }
+    optionsui::SaveRuntimeState& optionsSaveState() noexcept
+    {
+        return optionsSaveProjection;
+    }
+    const optionsui::SaveRuntimeState& optionsSaveStateReadOnly() noexcept
+    {
+        return optionsSaveProjection;
     }
     statsui::State& statsState() noexcept
     {
@@ -362,8 +373,8 @@ namespace monopoly::userinterface
             bool startingNewGame)
         {
             // UDPsel.cpp original, NOTIFY_NUMBER_OF_PLAYERS :
-            // l'état complet n'est effacé que pour un compteur nul. La
-            // première notification non nulle initialise néanmoins les
+            // l'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©tat complet n'est effacÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© que pour un compteur nul. La
+            // premiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨re notification non nulle initialise nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©anmoins les
             // invariants d'affichage et les joueurs locaux.
             if (startingNewGame)
             {
@@ -517,6 +528,7 @@ namespace monopoly::userinterface
         auctionui::reset(auctionProjection);
         tradeui::reset(tradeProjection);
         optionsui::reset(optionsProjection);
+        optionsSaveProjection = {};
         statsui::reset(statsProjection);
         statsui::resetCalculatorUI(statsCalculatorProjection);
         statsui::resetFutureImmunity(statsFutureImmunityProjection);
@@ -641,6 +653,14 @@ namespace monopoly::userinterface
         {
             // A rejected bankruptcy request keeps the mode and emits Warning.
             engine::playWarningSound();
+        }
+
+        if (message.action == actions::Type::NotifyGameStateForSave &&
+            optionsSaveProjection.pendingSaveSlot)
+        {
+            const auto saved = optionsui::persistPendingSave(
+                optionsSaveProjection, message.binaryDataA);
+            if (!saved) engine::playWarningSound();
         }
 
         if (message.action == actions::Type::NotifyActionCompleted &&
@@ -1071,7 +1091,7 @@ namespace monopoly::userinterface
         }
 
 
-        // CheckForAcceptingOurNewPlayer() doit précéder
+        // CheckForAcceptingOurNewPlayer() doit prÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©der
         // UDPSEL_ProcessMessageToPlayer().
         ui::localplayers::processRuleMessage(
             uiRuleState,
@@ -1213,7 +1233,7 @@ namespace monopoly::userinterface
     bool processUIMessage(const uimsg::Message& message)
     {
         // ProcessLibraryMessage() original appelle
-        // AdvanceTimeStep() à chaque message ArtLib.
+        // AdvanceTimeStep() ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  chaque message ArtLib.
         advanceTimeStep();
 
         if (chat::processInput(
@@ -1245,14 +1265,93 @@ namespace monopoly::userinterface
         ibar::processLibraryMessage(
             message
         );
-        const auto optionsInput = optionsui::processInput(
-            optionsProjection, display::state().desired2DView, message);
+        const auto saveInput = optionsui::processSaveDialogInput(
+            optionsSaveProjection, message, engine::fontPlayback(),
+            startup::resources());
+        optionsui::InputResult optionsInput{};
+        if (!saveInput.consumed)
+            optionsInput = optionsui::processInput(
+                optionsProjection, display::state().desired2DView, message);
+        if (saveInput.playClick) engine::playClickSound();
         const bool optionClicked = optionsInput.pressedMenuButton.has_value() ||
             optionsInput.pressedFileButton.has_value() ||
             optionsInput.pressedHelpButton.has_value() ||
             optionsInput.pressedOptionToggle.has_value() ||
             optionsInput.pressedOptionOkay;
         if (optionClicked) engine::playClickSound();
+
+        if (saveInput.requestLoad)
+        {
+            const auto blob = optionsui::readSelectedGameBlob(optionsSaveProjection);
+            const auto localPlayer = ui::localplayers::anyLocalPlayer(uiRuleState);
+            bool sent = false;
+            if (blob && localPlayer < rules::MaxPlayers)
+            {
+                actions::Message action{};
+                action.action = actions::Type::SetGameState;
+                action.fromPlayer = localPlayer;
+                action.toPlayer = rules::BankPlayer;
+                action.numberB = 1; // retail load-game marker
+                action.numberC = 1; // immunity/future save version
+                action.binaryDataA = *blob;
+                sent = messaging::sendAction(action);
+            }
+            if (sent)
+            {
+                auto& displayState = display::state();
+                const auto metadata = optionsui::applySelectedMetadata(
+                    optionsSaveProjection, uiRuleState,
+                    displayState.city, displayState.system);
+                if (!metadata)
+                {
+                    engine::playWarningSound();
+                }
+                else if (const auto resources = startup::resources();
+                         resources && displayState.city < 0)
+                {
+                    // No external custom-board owner exists yet. Retail falls
+                    // back to the language's stock board when that board path
+                    // cannot be resolved.
+                    if (resources->context().board == data::BoardEdition::Usa)
+                    {
+                        displayState.city = 0;
+                        displayState.system = 13;
+                    }
+                    else
+                    {
+                        const int language = static_cast<int>(resources->context().language);
+                        displayState.city = language >= 2 && language <= 10
+                            ? language - 2 : 0;
+                    }
+                }
+            }
+            else
+            {
+                engine::playWarningSound();
+            }
+        }
+
+        if (saveInput.requestSave)
+        {
+            const auto localPlayer = ui::localplayers::anyLocalPlayer(uiRuleState);
+            const auto& displayState = display::stateReadOnly();
+            const auto prepared = optionsui::beginPendingSave(
+                optionsSaveProjection, uiRuleState,
+                displayState.city, displayState.system, {});
+            const bool sent = prepared && localPlayer < rules::MaxPlayers &&
+                messaging::sendAction(actions::Type::GetGameStateForSave,
+                    localPlayer, rules::BankPlayer);
+            if (!sent)
+            {
+                optionsSaveProjection.pendingSaveSlot.reset();
+                optionsSaveProjection.pendingMetadata = {};
+                engine::playWarningSound();
+            }
+        }
+
+        if (saveInput.closeDialog)
+            optionsui::closeSaveDialog(optionsSaveProjection);
+
         if (optionsInput.pressedFileButton == optionsui::FileButton::NewGame)
         {
             // UDOPTIONS_ProcessFileOptionButtonPress sets the request flag,
@@ -1338,10 +1437,10 @@ namespace monopoly::userinterface
         }
         update();
 
-        // Correspond à ProcessUIMessage() de Main.cpp.
+        // Correspond ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  ProcessUIMessage() de Main.cpp.
         //
-        // ProcessLibraryMessage() sera porté ici progressivement,
-        // notamment AdvanceTimeStep(), clavier, souris et séquenceur.
+        // ProcessLibraryMessage() sera portÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© ici progressivement,
+        // notamment AdvanceTimeStep(), clavier, souris et sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©quenceur.
 
         if (message.type == uimsg::Type::Quit)
         {
