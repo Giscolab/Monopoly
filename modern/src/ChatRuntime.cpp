@@ -110,6 +110,25 @@ namespace monopoly::chat
                 state.windowX + state.windowWidth - 1,
                 state.windowY + state.windowHeight - 1};
         }
+        [[nodiscard]] constexpr ChatRect chatUpButtonRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 18, state.windowY + 18,
+                state.windowX + state.windowWidth - 1, state.windowY + 35};
+        }
+        [[nodiscard]] constexpr ChatRect chatDownButtonRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 18,
+                state.windowY + state.windowHeight - 35,
+                state.windowX + state.windowWidth - 1,
+                state.windowY + state.windowHeight - 18};
+        }
+        [[nodiscard]] constexpr ChatRect chatScrollbarRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 17, state.windowY + 35,
+                state.windowX + state.windowWidth - 2,
+                state.windowY + state.windowHeight - 35};
+        }
+
         [[nodiscard]] constexpr ChatRect fluffChatBarRect(const State& state) noexcept
         {
             return {state.fluffWindowX, state.fluffWindowY,
@@ -465,6 +484,19 @@ namespace monopoly::chat
             return true;
         }
 
+        void pushInputHistory(std::u16string_view text)
+        {
+            if (text.empty()) return;
+            if (runtime.inputHistoryCount < InputHistoryCapacity)
+            {
+                runtime.inputHistory[runtime.inputHistoryCount++] = text;
+                return;
+            }
+            std::move(runtime.inputHistory.begin() + 1,
+                runtime.inputHistory.end(), runtime.inputHistory.begin());
+            runtime.inputHistory.back().assign(text);
+        }
+
         void pushEntry(Entry entry)
         {
             std::size_t slot{};
@@ -480,6 +512,7 @@ namespace monopoly::chat
             }
             runtime.history[slot] = std::move(entry);
             runtime.outputOffset = runtime.count == 0 ? 0 : runtime.count - 1u;
+            runtime.inputHistoryOffset = 0;
         }
     }
     void reset() noexcept
@@ -621,6 +654,18 @@ namespace monopoly::chat
             return true;
         }
         if (message.type == uimsg::Type::MouseMoved &&
+            runtime.scrolling && !runtime.shaded)
+        {
+            const auto scrollbar = chatScrollbarRect(runtime);
+            const int pos = std::clamp(pointerY, scrollbar.top, scrollbar.bottom);
+            const int height = scrollbar.bottom - scrollbar.top;
+            runtime.outputOffset = runtime.count > 1u && height > 0
+                ? static_cast<std::size_t>(
+                    ((pos - scrollbar.top) * static_cast<int>(runtime.count - 1u)) / height)
+                : 0u;
+            return true;
+        }
+        if (message.type == uimsg::Type::MouseMoved &&
             runtime.sizing && !runtime.shaded)
         {
             int width = pointerX + runtime.resizeOffsetX - runtime.windowX;
@@ -643,6 +688,11 @@ namespace monopoly::chat
             runtime.sizing = false;
             return true;
         }
+        if (message.type == uimsg::Type::MouseLeftUp && runtime.scrolling)
+        {
+            runtime.scrolling = false;
+            return true;
+        }
 
         if (message.type == uimsg::Type::MouseLeftDown)
         {
@@ -652,6 +702,29 @@ namespace monopoly::chat
                 return true;
             if (processRecipientClick(x, y, eligibleRecipients))
                 return true;
+            if (!runtime.shaded && chatScrollbarRect(runtime).contains(x, y))
+            {
+                runtime.scrolling = true;
+                const auto scrollbar = chatScrollbarRect(runtime);
+                const int pos = std::clamp(y, scrollbar.top, scrollbar.bottom);
+                const int height = scrollbar.bottom - scrollbar.top;
+                runtime.outputOffset = runtime.count > 1u && height > 0
+                    ? static_cast<std::size_t>(
+                        ((pos - scrollbar.top) * static_cast<int>(runtime.count - 1u)) / height)
+                    : 0u;
+                return true;
+            }
+            if (!runtime.shaded && chatUpButtonRect(runtime).contains(x, y))
+            {
+                if (runtime.outputOffset > 0u) --runtime.outputOffset;
+                return true;
+            }
+            if (!runtime.shaded && chatDownButtonRect(runtime).contains(x, y))
+            {
+                if (runtime.count > 0u && runtime.outputOffset + 1u < runtime.count)
+                    ++runtime.outputOffset;
+                return true;
+            }
             if (!runtime.shaded && sizeButtonRect(runtime).contains(x, y))
             {
                 runtime.sizing = true;
@@ -721,6 +794,37 @@ namespace monopoly::chat
                 sender, eligibleRecipients, networkMode);
 
         const auto key = static_cast<SDL_Scancode>(message.numberA);
+        if (key == SDL_SCANCODE_PAGEUP)
+        {
+            if (runtime.outputOffset > 0u) --runtime.outputOffset;
+            return true;
+        }
+        if (key == SDL_SCANCODE_PAGEDOWN)
+        {
+            if (runtime.count > 0u && runtime.outputOffset + 1u < runtime.count)
+                ++runtime.outputOffset;
+            return true;
+        }
+        if (key == SDL_SCANCODE_UP)
+        {
+            if (runtime.inputHistoryOffset < runtime.inputHistoryCount)
+            {
+                ++runtime.inputHistoryOffset;
+                runtime.draft = runtime.inputHistory[
+                    runtime.inputHistoryCount - runtime.inputHistoryOffset];
+            }
+            return true;
+        }
+        if (key == SDL_SCANCODE_DOWN)
+        {
+            if (runtime.inputHistoryOffset > 1)
+            {
+                --runtime.inputHistoryOffset;
+                runtime.draft = runtime.inputHistory[
+                    runtime.inputHistoryCount - runtime.inputHistoryOffset];
+            }
+            return true;
+        }
         if (key == SDL_SCANCODE_BACKSPACE)
         {
             if (!runtime.draft.empty())
@@ -738,6 +842,7 @@ namespace monopoly::chat
         if (runtime.draft.empty() || !validSender(sender))
             return true;
 
+        pushInputHistory(runtime.draft);
         eligibleRecipients &= (1u << rules::MaxPlayers) - 1u;
         const auto selected = runtime.recipientMask & eligibleRecipients;
         if (eligibleRecipients == 0u || selected == eligibleRecipients)
