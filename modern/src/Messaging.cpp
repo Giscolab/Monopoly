@@ -121,6 +121,26 @@ namespace monopoly::messaging
         return true;
     }
 
+    bool receiveVoiceChatOnly(actions::Message& message)
+    {
+        if (!initialized || messageQueue.empty())
+            return false;
+
+        const auto found = std::find_if(
+            messageQueue.begin(), messageQueue.end(),
+            [](const actions::Message& queued)
+            {
+                return queued.action == actions::Type::VoiceChat ||
+                    queued.action == actions::Type::NotifyVoiceChat;
+            });
+        if (found == messageQueue.end())
+            return false;
+
+        message = std::move(*found);
+        messageQueue.erase(found);
+        return true;
+    }
+
     bool serverMode()
     {
         return currentServerMode;
