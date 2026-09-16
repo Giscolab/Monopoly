@@ -10,6 +10,7 @@
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
 #include "ChatRuntime.hpp"
+#include "VoiceChatRuntime.hpp"
 #include "UDPennyVoice.hpp"
 
 #include "RuntimeState.hpp"
@@ -520,6 +521,7 @@ namespace monopoly::userinterface
         statsui::resetCalculatorUI(statsCalculatorProjection);
         statsui::resetFutureImmunity(statsFutureImmunityProjection);
         chat::reset();
+        voicechat::resetSession();
         pendingPieceIdleTransition.reset();
         iBarGameJustLoaded = false;
         firstNumberOfPlayersNotification = true;
@@ -544,17 +546,28 @@ namespace monopoly::userinterface
         // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
         display::noteBoardActivity();
 
+        const bool chatBroadcastTarget = message.numberA >= rules::MaxPlayers;
+        const bool chatLocalTarget = message.numberA >= 0 &&
+            message.numberA < rules::MaxPlayers &&
+            ui::localplayers::slotIsLocalPlayer(
+                static_cast<rules::PlayerNumber>(message.numberA));
+
         if (message.action != actions::Type::NotifyTextChat ||
-            message.numberA >= rules::MaxPlayers ||
-            (message.numberA >= 0 && message.numberA < rules::MaxPlayers &&
-             ui::localplayers::slotIsLocalPlayer(
-                 static_cast<rules::PlayerNumber>(message.numberA))))
+            chatBroadcastTarget || chatLocalTarget)
         {
             // Userifce.cpp only delivers private text chat to the machine that
             // owns the target slot. Broadcast/spectator targets (>= MaxPlayers)
             // are visible everywhere. message.toPlayer is only the transport
             // recipient and cannot replace this application-level filter.
             (void)chat::processRuleMessage(message);
+        }
+
+        if (message.action == actions::Type::NotifyVoiceChat &&
+            (chatBroadcastTarget || chatLocalTarget))
+        {
+            // The legacy UI applies the same application-level target filter
+            // before handing the RIFF-like voice packet to LE_SOUND_ChatReceive.
+            (void)voicechat::processRuleMessage(message);
         }
 
         // Userifce.cpp retail splits error 71 between host-left warning and
