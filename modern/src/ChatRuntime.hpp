@@ -31,6 +31,7 @@ namespace monopoly::chat
         std::size_t outputOffset{};
         std::u16string draft{};
         std::uint32_t recipientMask = (1u << rules::MaxPlayers) - 1u;
+        std::uint32_t eligibleRecipients{};
         bool boxActive{};
         bool shaded{};
     };
@@ -39,6 +40,7 @@ namespace monopoly::chat
     void toggle() noexcept;
     void setRecipientMask(std::uint32_t mask) noexcept;
     [[nodiscard]] std::uint32_t recipientMask() noexcept;
+    [[nodiscard]] std::uint32_t eligibleRecipients() noexcept;
     [[nodiscard]] bool processInput(
         const uimsg::Message& message,
         rules::PlayerNumber sender,

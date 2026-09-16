@@ -24,6 +24,43 @@ namespace monopoly::chat
             return player < rules::MaxPlayers ||
                 player == rules::AllPlayers;
         }
+
+        struct ChatRect
+        {
+            int left{}, top{}, right{}, bottom{};
+            [[nodiscard]] constexpr bool contains(int x, int y) const noexcept
+            { return x >= left && x < right && y >= top && y < bottom; }
+        };
+
+        inline constexpr ChatRect AllButtonRect{180, 12, 196, 26};
+        [[nodiscard]] constexpr ChatRect recipientButtonRect(std::size_t ordinal) noexcept
+        {
+            const int left = 164 - 19 * static_cast<int>(ordinal);
+            return {left, 13, left + 17, 25};
+        }
+        [[nodiscard]] bool processRecipientClick(
+            int x, int y, std::uint32_t eligible) noexcept
+        {
+            std::size_t ordinal{};
+            for (int player = static_cast<int>(rules::MaxPlayers) - 1;
+                 player >= 0; --player)
+            {
+                const auto bit = 1u << static_cast<unsigned>(player);
+                if ((eligible & bit) == 0u) continue;
+                if (recipientButtonRect(ordinal).contains(x, y))
+                {
+                    runtime.recipientMask ^= bit;
+                    return true;
+                }
+                ++ordinal;
+            }
+            if (!AllButtonRect.contains(x, y)) return false;
+            const bool enableAll = (runtime.recipientMask & eligible) != eligible;
+            runtime.recipientMask = enableAll
+                ? (1u << rules::MaxPlayers) - 1u : 0u;
+            return true;
+        }
+
         [[nodiscard]] std::u16string decodeBlob(
             const std::vector<std::uint8_t>& bytes)
         {
@@ -156,12 +193,21 @@ namespace monopoly::chat
         return runtime.recipientMask;
     }
 
+    std::uint32_t eligibleRecipients() noexcept
+    {
+        return runtime.eligibleRecipients;
+    }
+
     bool processInput(
         const uimsg::Message& message,
         rules::PlayerNumber sender,
         std::uint32_t eligibleRecipients,
         bool networkMode)
     {
+        const auto playerMask = (1u << rules::MaxPlayers) - 1u;
+        eligibleRecipients &= playerMask;
+        runtime.eligibleRecipients = networkMode ? eligibleRecipients : 0u;
+
         if (message.type == uimsg::Type::KeyboardReleased &&
             message.numberA == SDL_SCANCODE_TAB)
         {
@@ -174,7 +220,18 @@ namespace monopoly::chat
             runtime.shaded = false;
             return false;
         }
-        if (!runtime.boxActive || runtime.shaded)
+        if (!runtime.boxActive)
+            return false;
+
+        if (message.type == uimsg::Type::MouseLeftDown)
+        {
+            if (processRecipientClick(
+                    static_cast<int>(message.numberA),
+                    static_cast<int>(message.numberB), eligibleRecipients))
+                return true;
+            if (runtime.shaded) return false;
+        }
+        if (runtime.shaded)
             return false;
 
         if (message.type == uimsg::Type::TextInput)
