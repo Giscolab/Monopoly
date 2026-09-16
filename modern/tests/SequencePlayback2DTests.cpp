@@ -50,6 +50,32 @@ namespace
             "raw UAP synthetic sequence remains infinite across later parent ticks");
     }
 
+    void testDuplicateStartXYPositions()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto face = data::packDataId(data::LegacyGroupId::Main, 0x0096);
+
+        expect(playback.startXY(face, 300, 10, 20).has_value() &&
+               playback.startXY(face, 300, 30, 40).has_value(),
+            "duplicate StartXY roots queue at one retail priority");
+        expect(playback.commands().pendingCount() == 2 && playback.update(0).has_value(),
+            "duplicate atomic starts execute without global MoveXY fan-out");
+        const auto roots = playback.runtime().matching(face, 300, false);
+        bool first = false, second = false;
+        for (const auto root : roots)
+        {
+            const auto view = playback.runtime().inspect(root);
+            if (!view || !std::holds_alternative<sequence::Matrix2D>(view->localTransform)) continue;
+            const auto& matrix = std::get<sequence::Matrix2D>(view->localTransform);
+            first = first || (matrix.values[6] == 10.0F && matrix.values[7] == 20.0F);
+            second = second || (matrix.values[6] == 30.0F && matrix.values[7] == 40.0F);
+        }
+        expect(roots.size() == 2 && first && second,
+            "same DataId/priority roots retain independent StartXY transforms");
+    }
+
     void testFixedAndBobbingDice2D()
     {
         using namespace monopoly;
@@ -60,8 +86,8 @@ namespace
 
         expect(playback.startXY(face, 256, -35, 0).has_value(),
             "StartXY queues fixed die at historical priority/offset");
-        expect(playback.commands().pendingCount() == 2,
-            "StartXY is one start plus one MoveXY command");
+        expect(playback.commands().pendingCount() == 1,
+            "StartXY carries its initial transform atomically");
         expect(playback.update(0).has_value(),
             "fixed 2D die executes through SequencePlayback");
         auto items = playback.runtime().bitmapInstances();
@@ -97,7 +123,7 @@ int main()
 {
     std::cout << "Monopoly SequencePlayback 2D tests\n"
               << "==================================\n";
-    try { testRawUapStartAndOrigin(); testFixedAndBobbingDice2D(); }
+    try { testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testFixedAndBobbingDice2D(); }
     catch (const std::exception& e)
     {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << '\n';

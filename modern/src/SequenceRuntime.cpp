@@ -395,13 +395,15 @@ namespace monopoly::sequence
         return node;
     }
     std::expected<SequenceNodeId, RuntimeError> SequenceRuntime::start(
-        std::shared_ptr<const SequenceProgram> program, std::uint16_t priority, ClockStartOptions options)
+        std::shared_ptr<const SequenceProgram> program, std::uint16_t priority,
+        ClockStartOptions options, std::optional<SequenceTransform> initialTransform)
     {
         events_.clear(); births_ = 0;
         if (!program || program->descriptions().empty())
             return std::unexpected(error(RuntimeErrorCode::DataFailure, 0, 0, "no sequence program"));
         auto node = create(std::move(program), 0, nullptr, priority, options);
         if (!node) return std::unexpected(node.error());
+        if (initialTransform) move(**node, *initialTransform);
         const auto id = (*node)->id;
         insert(roots_, std::move(*node));
         return id;

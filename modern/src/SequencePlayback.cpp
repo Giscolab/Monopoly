@@ -34,13 +34,10 @@ namespace monopoly::engine
     {
         auto program = loadProgram(id);
         if (!program) return std::unexpected(program.error());
-        if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - 2)
-            return std::unexpected("sequence command queue capacity exceeded");
         sequence::ClockStartOptions options{};
         options.dropFrames = dropFrames;
-        auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority, options});
-        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
-        queued = commands_.enqueue(sequence::makeMoveXY(id, priority, x, y));
+        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, options, sequence::moveXYTransform(x, y)});
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
         return {};
     }
@@ -52,7 +49,7 @@ namespace monopoly::engine
     {
         auto program = loadProgram(id);
         if (!program) return std::unexpected(program.error());
-        const std::size_t required = previousId ? 3U : 2U;
+        const std::size_t required = previousId ? 2U : 1U;
         if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - required)
             return std::unexpected("sequence command queue capacity exceeded");
         if (previousId)
@@ -63,10 +60,8 @@ namespace monopoly::engine
         }
         sequence::ClockStartOptions options{};
         options.dropFrames = dropFrames;
-        auto queued = commands_.enqueue(
-            sequence::StartSequenceCommand{*program, priority, options});
-        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
-        queued = commands_.enqueue(sequence::makeMoveXY(id, priority, x, y));
+        auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, options, sequence::moveXYTransform(x, y)});
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
         return {};
     }
@@ -87,12 +82,8 @@ namespace monopoly::engine
     {
         auto program = loadProgram(id);
         if (!program) return std::unexpected(program.error());
-        if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - 2)
-            return std::unexpected("sequence command queue capacity exceeded");
-        auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority});
-        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
-        queued = commands_.enqueue(sequence::makeMoveTheWorks(
-            id, priority, std::move(transform)));
+        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, {}, std::move(transform)});
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
         return {};
     }
@@ -126,7 +117,7 @@ namespace monopoly::engine
         if (endingAction == 0 || endingAction > 3)
             return std::unexpected("invalid sequence ending action");
 
-        const std::size_t required = previousId ? 4U : 3U;
+        const std::size_t required = previousId ? 3U : 2U;
         if (commands_.pendingCount() > sequence::SequenceCommandQueue::Capacity - required)
             return std::unexpected("sequence command queue capacity exceeded");
 
@@ -139,11 +130,8 @@ namespace monopoly::engine
 
         sequence::ClockStartOptions options{};
         options.dropFrames = true;
-        auto queued = commands_.enqueue(
-            sequence::StartSequenceCommand{*program, priority, options});
-        if (!queued) return std::unexpected("sequence command queue capacity exceeded");
-        queued = commands_.enqueue(sequence::makeMoveTheWorks(
-            id, priority, std::move(transform)));
+        auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, options, std::move(transform)});
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
         queued = commands_.enqueue(sequence::SetSequenceEndingActionCommand{
             id, priority, endingAction, false});

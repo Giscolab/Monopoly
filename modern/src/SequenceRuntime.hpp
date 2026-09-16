@@ -180,7 +180,8 @@ namespace monopoly::sequence
 
         [[nodiscard]] std::expected<SequenceNodeId, RuntimeError> start(
             std::shared_ptr<const SequenceProgram> program,
-            std::uint16_t priority = 0, ClockStartOptions options = {});
+            std::uint16_t priority = 0, ClockStartOptions options = {},
+            std::optional<SequenceTransform> initialTransform = std::nullopt);
         [[nodiscard]] std::expected<void, RuntimeError> update(std::int32_t parentClock);
         [[nodiscard]] std::expected<void, RuntimeError> stop(SequenceNodeId node);
         void stopAll();
