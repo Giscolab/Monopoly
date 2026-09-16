@@ -57,6 +57,9 @@ namespace monopoly::statsui
         int bankHotelsRemaining{};
         std::array<BankDeedState, rules::SquareCount> bankDeeds{};
         bool activeDatasetAvailable{true};
+        int mouseX{};
+        int mouseY{};
+        bool mouseKnown{};
         bool portfolioVisible{};
         bool initialized{};
     };

@@ -130,6 +130,8 @@ struct SyntheticSequenceResources
                 // UDStats autonomous DAT_MAIN backgrounds.
                 for (const auto tag : {0x000BU, 0x000CU, 0x000DU, 0x000EU, 0x00CDU})
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDStats Deed floater frame TAB_deedinfo.
+                items[0x00C6] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDStats calculator background/textbox and idle function/number buttons.
                 items[0x006A] = {LegacyDataType::Chunky, bitmapSequence};
                 for (std::uint32_t tag = 0x006DU; tag <= 0x0074U; ++tag)
@@ -351,7 +353,7 @@ struct SyntheticSequenceResources
                 // house and hotel use fixed language-graphics tags.
                 items[0x090C] = {LegacyDataType::Chunky, finiteButton};
                 items[0x090D] = {LegacyDataType::Chunky, finiteButton};
-                for (std::uint32_t tag = 0x0CD0U; tag <= 0x0DFFU; ++tag)
+                for (std::uint32_t tag = 0x0CD0U; tag <= 0x0E03U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
                 // Player property-bar Get Out of Jail cards: Chance / Community.
                 for (std::uint32_t tag = 0x0992U; tag <= 0x0993U; ++tag)

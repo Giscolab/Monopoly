@@ -219,6 +219,7 @@ namespace monopoly::statsui
         if (visible && !state.portfolioVisible)
             refresh(state, gameState);
         state.portfolioVisible = visible;
+        if (!visible) state.mouseKnown = false;
     }
 
     bool selectCategory(
@@ -263,6 +264,13 @@ namespace monopoly::statsui
     {
         syncView(state, gameState, view);
         if (!state.portfolioVisible) return false;
+        if (message.type == uimsg::Type::MouseMoved)
+        {
+            state.mouseX = static_cast<int>(message.numberA);
+            state.mouseY = static_cast<int>(message.numberB);
+            state.mouseKnown = true;
+            return false;
+        }
         if (message.type != uimsg::Type::MouseLeftDown) return false;
 
         const int x = static_cast<int>(message.numberA);
