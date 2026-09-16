@@ -164,6 +164,19 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL3)
 
+# L_Fonts.cpp uses Windows GDI for Arial.ttf. SDL3_ttf is the portable
+# replacement for font metrics/rasterization; keep its dependencies vendored.
+set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
+set(SDLTTF_SAMPLES OFF CACHE BOOL "" FORCE)
+set(SDLTTF_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    SDL3_ttf
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf.git
+    GIT_TAG release-3.2.2
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(SDL3_ttf)
+
 add_library(
     MonopolyDataCore
     STATIC
@@ -380,6 +393,7 @@ target_link_libraries(
     MonopolyModern
     PRIVATE
     SDL3::SDL3
+    SDL3_ttf::SDL3_ttf
     MonopolyDataCore
     MonopolyGPU3DCore
 )
@@ -479,6 +493,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/AudioRuntime.cpp
+    src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
     src/TokenVoiceCatalog.cpp
     src/PennybagsCatalog.cpp

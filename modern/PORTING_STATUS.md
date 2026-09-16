@@ -6,8 +6,9 @@ effectivement present sous `modern/`.
 
 ## Recapitulatif du 16 septembre 2026
 
-Le 16 septembre ajoute 40 commits sur `master` (dont une mise a jour documentaire),
-principalement autour de `UDStats`, `UDChat`, des voix Europe et du voice-chat.
+Le cycle du 16 septembre couvre principalement `UDStats`, `UDChat`, les voix
+Europe, le voice-chat et maintenant le demarrage du backend fonts portable. Le nombre
+de commits continue d evoluer pendant ce cycle et n est donc plus utilise comme indicateur.
 Ce recapitulatif est l'etat courant; les bilans dates du 14 et du 15 ci-dessous
 restent des snapshots historiques et ne doivent pas etre lus comme le dernier
 etat du port.
@@ -19,10 +20,10 @@ etat du port.
 | Voix / audio | `17cb877`, `64fd9ae`, `283a3a3`, `f29fda4`, `1137dc0` | Transport voice-chat, validation des paquets, mappings complets des 32 cartes Europe et handoff musique Credits `WAV_credit_a -> WAV_m1`. |
 | File MESS / sessions voice-chat | `3609b32`, `4ffbc1c` | Dequeue prioritaire du voice-chat pendant un game-queue lock, parseur ArtLib `CHAT/fmt/dims/volm/DATN/DAT1/POSN/STOP` et jusqu'a 10 sessions de reception par source. Capture, codec GSM 6.10 et lecture audio restent hors de ce lot. |
 
-Indicateurs structurels recalcules sur la matrice actuelle : **37/41 familles
-engagees = 90,2 %** (les 6 familles `LEGACY_UNUSED` sont exclues) et **60 %
+Indicateurs structurels recalcules sur la matrice actuelle : **38/41 familles
+engagees = 92,7 %** (les 6 familles `LEGACY_UNUSED` sont exclues) et **61 %
 d'indice automatique** sur 68 entrees actives : 18 completes/remplacees,
-46 partielles et 4 non demarrees. L'ancienne estimation globale de 75 % du
+47 partielles et 3 non demarrees. L'ancienne estimation globale de 75 % du
 14 septembre est conservee uniquement comme snapshot historique; elle n'est
 pas reutilisee comme estimation courante sans nouvel audit fonctionnel global.
 
@@ -150,7 +151,7 @@ de `UDOpts` a maintenant un owner runtime reel. Token Voices possede desormais s
 | `Source/artlib/L_Grafix.*`, `L_Rend2D.*`, `L_Sprite.*` | `Display`, `SequenceBitmapRenderData`, `SequenceWorld2DSlot`, `World2DRenderer` | `PORTED_PARTIAL` | composition 2D, clipping, priorites, surfaces | SDL_GPU, assets, transformation 800x600 | Les feuilles bitmap de sequence ont un chemin actif jusqu'au quad SDL_GPU : ordre depth-first/priorite, cache RGBA8, alpha source, viewport/scissor letterbox et readback D3D12 sont testes. Les sprites UI generiques, fonts, surfaces/blits hors sequence et clipping fin restent a construire. |
 | `Source/artlib/L_Rend3D.*` | `GPUFrame`, `SequenceWorld3DSlot`, `World3DGPUScene`, `World3DProjection`, `World3DRenderer` | `PORTED_PARTIAL` | slot World3D 1, viewport, camera/projection, bounds/culling, draw indexed et meshes animes | SDL_GPU, `SequenceRenderData`, PC3D moderne | Le chemin sequence -> slot 1 -> scene GPU -> renderer -> GPUFrame est actif. Bounds, projection ecran, culling, textures HMD et vertex buffers MIMe par node sont testes sur D3D12 reel. Camera 3D/FOV/SetCamera sont raccordes. La visibility 3D historique est maintenant auditee : `SequenceMoved()` retourne toujours TRUE pour un mesh (commentaire source inclus), donc le culling moderne reste strictement renderer-only et ne pilote pas `scrollingWorld`. Restent certains contrats de scene et primitives HMD non consommees. |
 | `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData`, `SequenceBitmapRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice, feuilles 2D/3D/audio | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot`, `SequenceWorld2DSlot` | Grouping/indirect/tweeker, feuilles mesh 3D, feuilles bitmap 2D, records Sound WAV et records camera 3D sont executes; Start/Stop/SetEndingAction, MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont raccordes. `GetInfo` expose le sous-ensemble effectivement lu par Monopoly (clock/endTime/matrice monde 3D) avec la recherche `FindNextSequence`, et `GetChildMeshWorldMatrix` parcourt uniquement le sous-arbre du premier root selectionne. ForceRedraw est porte avec son cycle transitoire de redraw et la reevaluation cible/ancetres. StartXY/StartMoved transportent maintenant leur transform initial dans la commande Start elle-meme : plusieurs racines partageant le meme DataId et la meme priorite conservent donc des positions independantes comme LE_SEQNCR_StartXY, au lieu qu un MoveMatching ulterieur deplace tous les doublons. Restent surtout labels generiques, model, callbacks et chains selon callers reels. |
-| `Source/artlib/L_Fonts.*`, `L_Print.*` | Aucun | `NOT_STARTED` | Arial 10, mesure/rendu de texte | font rasterizer portable, LANG | Choisir un backend portable et conserver metriques/layout observables. |
+| `Source/artlib/L_Fonts.*`, `L_Print.*` | `FontRuntime`, SDL3_ttf | `PORTED_PARTIAL` | Arial, mesure largeur/hauteur, rendu texte, taille, poids/styles et 10 slots de reglages | SDL3_ttf, font systeme/fichier explicite, LANG, futurs overlays 2D | `FontRuntime` porte maintenant le sous-contrat source utile : resolution explicite de `Arial.ttf`, mesure UTF-8 avec le `+1` de largeur retail, rasterisation non antialiasée `TTF_RenderText_Solid` vers RGBA8, taille, poids traduit en regular/bold, italic/underline/strikeout et 10 snapshots de reglages. `Engine::fontPlayback` recherche Arial d abord pres de l executable puis dans `%WINDIR%/Fonts` sous Windows sans imposer ce fallback aux autres plateformes. Restent le branchement des surfaces texte aux ecrans `UDStats`/`UDChat`/`UDTrade`/`UDAuct`/`UDPsel`/`UDOpts`, le word-wrap et les differences fines de metriques GDI/FreeType. |
 | `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer` partiel | `REPLACED_PORTABLE` | input clavier/souris | SDL3, `LogicalViewport` | Souris reconvertie vers 800x600 et bandes noires rejetees; rendu du pointeur et certains types d'evenements restent partiels. |
 | `Source/artlib/L_Sound.*`, `L_Midi.*` | `AudioRuntime`, `UDSoundRuntime`, `VoiceChatRuntime`, `VoiceChatPacket`, feuilles Sound de `SequenceRuntime`, `Engine` | `PORTED_PARTIAL` | WAV DAT, playback SDL3, gain, stop, boucle, lifecycle des sons de sequence/SFX Monopoly et protocole de sessions voice-chat | `LegacyDataArchive`, `LegacySequence`, SDL3 audio, Messaging | `AudioRuntime` lit directement les RIFF/WAVE DAT via `SDL_LoadWAV_IO`; les records Sound de `L_Seqncr` sont executes. `UDSoundRuntime` reutilise ce backend pour Warning/Click/Cash, musique m1..m5, Credits et voix de pions/Pennybags. Le sous-contrat ArtLib voice-chat est maintenant engage : framing `CHAT/fmt/dims/volm/DATN/DAT1/POSN/STOP`, validation en deux passes, limite retail de 10 sessions receveuses, sourceId et dequeue prioritaire pendant les locks de jeu. Restent MIDI, capture micro, compression/decompression GSM 6.10, lecture du flux vocal, attributs audio avances et les commentaires Pennybags non encore raccordes. |
 | `Source/artlib/L_Video.*` | Aucun | `NOT_STARTED` | opening movies | decoder/service video portable | Identifier fichiers et timing avant choix technique; ne pas porter VFW/Bink litteralement. |
@@ -486,7 +487,7 @@ indisponible.
 
 ## Prochaines priorites
 
-1. Porter le backend **fonts/GRAFIX texte** portable : il debloque les reliquats communs `UDStats`, `UDChat`, `UDTrade`, `UDAuct`, `UDPsel` et `UDOpts` sans inventer de metriques.
+1. Raccorder le nouveau **FontRuntime/GRAFIX texte** aux surfaces UI prioritaires (`UDStats`, `UDChat`, `UDTrade`, `UDAuct`, `UDPsel`, `UDOpts`) et au word-wrap sans inventer de metriques.
 2. Continuer `UDOpts` sur les chemins File encore reels : New/Exit avec confirmation Escape retail, puis Load/Save et leurs dialogues/persistence; Credits visuel reste lie au futur rendu texte/clipping.
 3. Poursuivre le voice-chat apres le transport/framing maintenant portes : capture micro, codec GSM 6.10 et lecture audio, sans reproduire litteralement les wrappers DirectSound/ACM Win32.
 4. Raccorder la voie **externe** `TextureCatalog -> ResourcePaths/BMP -> mesh` pour les substitutions ville/langue/plateau/devise; ne pas dupliquer la voie texture HMD embarquee `GsUIMG1 -> SDL_GPUTexture` deja fonctionnelle.
