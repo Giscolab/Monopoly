@@ -342,6 +342,8 @@ struct SyntheticSequenceResources
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
                 items[0x1027] = {LegacyDataType::Chunky, staticTradeIcon};
                 items[0x1053] = {LegacyDataType::Chunky, staticTradeIcon};
+                // UDStats Future/Immunity popup board TAB_tndisbrd.
+                items[0x1159] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDTrade cash popup: persistent background and Clear/Okay/Cancel idle CNKs.
                 for (const auto tag : {0x02D9U, 0x02DBU, 0x02DDU})
                     items[tag] = {LegacyDataType::Chunky, staticTradeIcon};
