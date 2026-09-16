@@ -32,9 +32,16 @@ namespace monopoly::chat
         std::u16string draft{};
         std::uint32_t recipientMask = (1u << rules::MaxPlayers) - 1u;
         std::uint32_t eligibleRecipients{};
+        int windowX{10};
+        int windowY{10};
+        int windowWidth{246};
+        int windowHeight{99};
+        int dragOffsetX{};
+        int dragOffsetY{};
         bool boxActive{};
         bool shaded{};
         bool optionsOpen{};
+        bool moving{};
     };
 
     void reset() noexcept;

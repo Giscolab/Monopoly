@@ -24,7 +24,8 @@ namespace monopoly::chat
             Objects result;
             if (!state.boxActive) return result;
 
-            result.push_back({mainId(ChatAllTag), ChatBarPriority, 183, 12});
+            result.push_back({mainId(ChatAllTag), ChatBarPriority,
+                state.windowX + state.windowWidth - 73, state.windowY + 2});
             std::size_t ordinal{};
             const auto playerCount = std::min<std::size_t>(
                 gameState.numberOfPlayers, rules::MaxPlayers);
@@ -37,14 +38,16 @@ namespace monopoly::chat
                 const auto colour = gameState.players[static_cast<std::size_t>(player)].colour;
                 if (colour >= rules::MaxPlayerColours) continue;
 
-                const int baseX = 164 - 19 * static_cast<int>(ordinal);
+                const int baseX = state.windowX + state.windowWidth -
+                    (static_cast<int>(ordinal) + 5) * 19 + 3;
                 result.push_back({mainId(static_cast<data::DataTag>(
-                    ChatPlayerColourBaseTag + colour)), ChatBarPriority, baseX, 13});
+                    ChatPlayerColourBaseTag + colour)), ChatBarPriority,
+                    baseX, state.windowY + 3});
                 if ((state.recipientMask & bit) != 0u)
                 {
                     result.push_back({mainId(static_cast<data::DataTag>(
                         ChatPlayerFocusBaseTag + colour)), ChatBarPriority,
-                        baseX + 4, 15});
+                        baseX + 4, state.windowY + 5});
                 }
                 ++ordinal;
             }

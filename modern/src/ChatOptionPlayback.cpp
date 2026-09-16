@@ -21,10 +21,12 @@ namespace monopoly::chat
             if (!state.boxActive) return result;
 
             result.push_back({mainId(ChatOptionButtonTag),
-                ChatOptionButtonPriority, 198, 12});
+                ChatOptionButtonPriority,
+                state.windowX + state.windowWidth - 58, state.windowY + 2});
             if (state.optionsOpen)
                 result.push_back({mainId(ChatOptionPanelTag),
-                    ChatOptionPanelPriority, 136, 26});
+                    ChatOptionPanelPriority,
+                    state.windowX + state.windowWidth - 120, state.windowY + 16});
             return result;
         }
     }
