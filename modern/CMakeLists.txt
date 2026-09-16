@@ -726,6 +726,7 @@ target_sources(
     src/StatsBankPlayback.cpp
     src/StatsCalculatorPlayback.cpp
     src/StatsPlayerPlayback.cpp
+    src/StatsPlayerAuxPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -871,6 +872,24 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsPlayerPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsPlayerPlayback COMMAND MonopolyStatsPlayerPlaybackTests)
+endif()
+
+# UDStats.cpp Player jail cards and Future/Immunity overlays
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsPlayerAuxPlaybackTests
+        tests/StatsPlayerAuxPlaybackTests.cpp
+        src/StatsPlayerAuxPlayback.cpp
+    )
+    target_include_directories(MonopolyStatsPlayerAuxPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolyStatsPlayerAuxPlaybackTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyStatsPlayerAuxPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.StatsPlayerAuxPlayback COMMAND MonopolyStatsPlayerAuxPlaybackTests)
 endif()
 
 # UDPenny.cpp pure token-voice reaction selectors and catalog fidelity
