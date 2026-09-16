@@ -1,6 +1,7 @@
 #include "ChatRuntime.hpp"
 #include "Messaging.hpp"
 
+#include <array>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -87,12 +88,31 @@ namespace
                 initial.fluffWindowWidth == 246 && initial.fluffWindowHeight == 99 &&
                 initial.fluffCategory == 0,
             "Fluff window starts at retail geometry and Greetings category");
+        require(chat::FluffCategoryLineCounts == std::array<int, 6>{19, 21, 18, 19, 14, 8},
+            "Fluff categories use exact retail line counts");
+
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 80), Sender, 0u, true);
+        require(chat::stateReadOnly().fluffLineOffset == 1,
+            "Fluff down arrow advances one line");
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 30), Sender, 0u, true);
+        require(chat::stateReadOnly().fluffLineOffset == 0,
+            "Fluff up arrow retreats one line");
+        require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 50),
+                    Sender, 0u, true) && chat::stateReadOnly().fluffScrolling,
+            "Fluff scrollbar begins retail drag tracking");
+        (void)chat::processInput(mouse(uimsg::Type::MouseMoved, 500, 100), Sender, 0u, true);
+        require(chat::stateReadOnly().fluffLineOffset == 18,
+            "Fluff scrollbar clamps to the last Greetings line");
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftUp, 500, 100), Sender, 0u, true);
+        require(!chat::stateReadOnly().fluffScrolling,
+            "Fluff scrollbar drag ends on left-button release");
 
         (void)chat::processInput(textInput("draft"), Sender, 0u, true);
         require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 438, 16),
                     Sender, 0u, true) && chat::stateReadOnly().fluffCategory == 3 &&
+                chat::stateReadOnly().fluffLineOffset == 0 &&
                 chat::stateReadOnly().draft.empty(),
-            "changing Fluff category clears the edit draft like GetCategory");
+            "changing Fluff category resets scroll and edit draft like GetCategory");
         (void)chat::processInput(textInput("x"), Sender, 0u, true);
         (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 438, 16), Sender, 0u, true);
         require(chat::stateReadOnly().draft == u"x",
@@ -130,17 +150,22 @@ namespace
             "Fluff close hotspot closes only the Fluff window");
     }
 
-    void testFluffIndependence()
+    void testFluffPersistence()
     {
         chat::reset();
         chat::toggle();
         (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 220, 14), Sender, 0u, true);
         chat::toggle();
         require(!chat::stateReadOnly().boxActive && chat::stateReadOnly().fluffOpen,
-            "Fluff window remains active when the main chat window closes");
-        require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 398, 16),
+            "FLUFF_BoxActive persists when the main Chat window closes");
+        require(!chat::processInput(mouse(uimsg::Type::MouseLeftDown, 398, 16),
+                    Sender, 0u, true) && chat::stateReadOnly().fluffCategory == 0,
+            "hidden Fluff controls do not process input while Chat is closed");
+        chat::toggle();
+        require(chat::stateReadOnly().boxActive && chat::stateReadOnly().fluffOpen &&
+                chat::processInput(mouse(uimsg::Type::MouseLeftDown, 398, 16),
                     Sender, 0u, true) && chat::stateReadOnly().fluffCategory == 1,
-            "Fluff category controls remain interactive while chat is closed");
+            "reopening Chat restores the persisted Fluff window and controls");
     }
 }
 
@@ -150,7 +175,7 @@ int main()
     {
         testOptionControls();
         testFluffWindowControls();
-        testFluffIndependence();
+        testFluffPersistence();
         return 0;
     }
     catch (const std::exception& error)

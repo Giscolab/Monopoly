@@ -68,29 +68,31 @@ namespace
 
         state.boxActive = false;
         require(fluff.sync(state, playback).has_value() &&
-                playback.commands().pendingCount() == 1 &&
-                fluff.objectCount() == 8,
-            "closing main Chat removes Messages but preserves Fluff window");
-        require(playback.update(2).has_value() && playback.world2D().size() == 8,
-            "Fluff chrome survives independently of main Chat");
+                playback.commands().pendingCount() == 9 &&
+                fluff.objectCount() == 0,
+            "closing main Chat hides Messages and all persisted Fluff chrome");
+        require(playback.update(2).has_value() && playback.world2D().size() == 0,
+            "hidden Fluff state publishes no roots while Chat is closed");
 
+        state.boxActive = true;
         state.fluffWindowX = 315;
         state.fluffWindowY = 45;
         require(fluff.sync(state, playback).has_value() &&
-                playback.commands().pendingCount() == 16,
-            "moving Fluff replaces all eight positioned title controls atomically");
+                playback.commands().pendingCount() == 9,
+            "reopening Chat republishes the persisted shaded Fluff window");
         require(playback.update(3).has_value(),
-            "moved Fluff chrome executes successfully");
+            "reopened moved Fluff chrome executes successfully");
         const auto* movedGreetings = object(playback,
             mainId(chat::ChatFluffCategoryTags[0]), chat::ChatFluffWindowPriority);
         require(movedGreetings && movedGreetings->worldTransform.values[6] == 418.0F &&
                 movedGreetings->worldTransform.values[7] == 47.0F,
-            "Fluff category positions follow the moved window");
+            "persisted Fluff category positions follow the moved window");
     }
 
     void testLifecycleAndFailures()
     {
         chat::State state{};
+        state.boxActive = true;
         state.fluffOpen = true;
         engine::SequencePlayback missing(nullptr);
         chat::FluffPlayback missingFluff;
@@ -103,8 +105,8 @@ namespace
         engine::SequencePlayback playback(resources.service.snapshot());
         chat::FluffPlayback fluff;
         require(fluff.sync(state, playback).has_value() &&
-                playback.update(0).has_value() && fluff.objectCount() == 10,
-            "Fluff can open while main Chat is closed");
+                playback.update(0).has_value() && fluff.objectCount() == 11,
+            "Chat+Fluff publishes Messages plus autonomous Fluff chrome");
         require(fluff.sync(state, playback).has_value() &&
                 playback.commands().pendingCount() == 0,
             "unchanged Fluff chrome queues no redundant commands");
@@ -112,8 +114,8 @@ namespace
         state.fluffOpen = false;
         require(fluff.sync(state, playback).has_value() &&
                 playback.commands().pendingCount() == 10 &&
-                fluff.objectCount() == 0,
-            "closing Fluff queues exact teardown of autonomous chrome");
+                fluff.objectCount() == 1,
+            "closing Fluff keeps only the main Chat Messages button");
     }
 }
 

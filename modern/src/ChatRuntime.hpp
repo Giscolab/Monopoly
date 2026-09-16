@@ -14,6 +14,10 @@ namespace monopoly::chat
 {
     inline constexpr std::size_t HistoryCapacity = 512;
     inline constexpr std::size_t MaxInputCharacters = 255;
+    inline constexpr std::array<int, 6> FluffCategoryLineCounts{
+        19, 21, 18, 19, 14, 8};
+    inline constexpr std::array<std::int64_t, 6> FluffCategoryMessageStarts{
+        1, 21, 43, 62, 82, 97};
 
     struct Entry
     {
@@ -51,6 +55,8 @@ namespace monopoly::chat
         int fluffDragOffsetY{};
         int fluffResizeOffsetX{};
         int fluffResizeOffsetY{};
+        int fluffLineOffset{};
+        int fluffSelectedLine{-1};
         std::size_t fluffCategory{};
         bool boxActive{};
         bool shaded{};
@@ -59,6 +65,7 @@ namespace monopoly::chat
         bool fluffShaded{};
         bool fluffMoving{};
         bool fluffSizing{};
+        bool fluffScrolling{};
         bool moving{};
         bool sizing{};
     };
@@ -74,6 +81,12 @@ namespace monopoly::chat
         std::uint32_t eligibleRecipients,
         bool networkMode);
     [[nodiscard]] bool processRuleMessage(const actions::Message& message);
+    [[nodiscard]] std::int64_t selectedFluffMessageId() noexcept;
+    [[nodiscard]] bool activateFluffLine(
+        std::size_t line,
+        rules::PlayerNumber sender,
+        std::uint32_t eligibleRecipients,
+        bool networkMode);
     [[nodiscard]] bool buildTextAction(
         rules::PlayerNumber from,
         rules::PlayerNumber to,

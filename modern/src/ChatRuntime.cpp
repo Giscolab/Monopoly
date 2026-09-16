@@ -104,11 +104,23 @@ namespace monopoly::chat
             return {state.windowX, state.windowY,
                 state.windowX + state.windowWidth - 1, state.windowY + 18};
         }
+        [[nodiscard]] constexpr ChatRect chatBoxRect(const State& state) noexcept
+        {
+            return {state.windowX, state.windowY + 18,
+                state.windowX + state.windowWidth - 1,
+                state.windowY + state.windowHeight - 1};
+        }
         [[nodiscard]] constexpr ChatRect fluffChatBarRect(const State& state) noexcept
         {
             return {state.fluffWindowX, state.fluffWindowY,
                 state.fluffWindowX + state.fluffWindowWidth - 1,
                 state.fluffWindowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect fluffChatBoxRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX, state.fluffWindowY + 18,
+                state.fluffWindowX + state.fluffWindowWidth - 1,
+                state.fluffWindowY + state.fluffWindowHeight - 1};
         }
         [[nodiscard]] constexpr ChatRect fluffCloseButtonRect(const State& state) noexcept
         {
@@ -128,6 +140,27 @@ namespace monopoly::chat
                 state.fluffWindowY + state.fluffWindowHeight - 18,
                 state.fluffWindowX + state.fluffWindowWidth - 1,
                 state.fluffWindowY + state.fluffWindowHeight - 1};
+        }
+        [[nodiscard]] constexpr ChatRect fluffUpButtonRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX + state.fluffWindowWidth - 18,
+                state.fluffWindowY + 18,
+                state.fluffWindowX + state.fluffWindowWidth - 1,
+                state.fluffWindowY + 35};
+        }
+        [[nodiscard]] constexpr ChatRect fluffDownButtonRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX + state.fluffWindowWidth - 18,
+                state.fluffWindowY + state.fluffWindowHeight - 35,
+                state.fluffWindowX + state.fluffWindowWidth - 1,
+                state.fluffWindowY + state.fluffWindowHeight - 18};
+        }
+        [[nodiscard]] constexpr ChatRect fluffScrollbarRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX + state.fluffWindowWidth - 17,
+                state.fluffWindowY + 35,
+                state.fluffWindowX + state.fluffWindowWidth - 2,
+                state.fluffWindowY + state.fluffWindowHeight - 35};
         }
         [[nodiscard]] constexpr ChatRect fluffCategoryRect(
             const State& state, std::size_t category) noexcept
@@ -177,6 +210,18 @@ namespace monopoly::chat
                 return true;
             }
             if (message.type == uimsg::Type::MouseMoved &&
+                runtime.fluffScrolling && !runtime.fluffShaded)
+            {
+                const auto scrollbar = fluffScrollbarRect(runtime);
+                const int pos = std::clamp(y, scrollbar.top, scrollbar.bottom);
+                const int lineCount = FluffCategoryLineCounts[runtime.fluffCategory];
+                const int height = scrollbar.bottom - scrollbar.top;
+                runtime.fluffLineOffset = height > 0
+                    ? ((pos - scrollbar.top) * (lineCount - 1)) / height
+                    : 0;
+                return true;
+            }
+            if (message.type == uimsg::Type::MouseMoved &&
                 runtime.fluffSizing && !runtime.fluffShaded)
             {
                 int width = x + runtime.fluffResizeOffsetX - runtime.fluffWindowX;
@@ -197,8 +242,43 @@ namespace monopoly::chat
                 runtime.fluffSizing = false;
                 return true;
             }
+            if (message.type == uimsg::Type::MouseLeftUp && runtime.fluffScrolling)
+            {
+                runtime.fluffScrolling = false;
+                return true;
+            }
+            if (message.type == uimsg::Type::MouseMoved ||
+                message.type == uimsg::Type::MouseLeftUp)
+            {
+                return (!runtime.fluffShaded &&
+                        fluffChatBoxRect(runtime).contains(x, y)) ||
+                    fluffChatBarRect(runtime).contains(x, y);
+            }
             if (message.type != uimsg::Type::MouseLeftDown) return false;
 
+            if (!runtime.fluffShaded && fluffScrollbarRect(runtime).contains(x, y))
+            {
+                runtime.fluffScrolling = true;
+                const auto scrollbar = fluffScrollbarRect(runtime);
+                const int pos = std::clamp(y, scrollbar.top, scrollbar.bottom);
+                const int lineCount = FluffCategoryLineCounts[runtime.fluffCategory];
+                const int height = scrollbar.bottom - scrollbar.top;
+                runtime.fluffLineOffset = height > 0
+                    ? ((pos - scrollbar.top) * (lineCount - 1)) / height
+                    : 0;
+                return true;
+            }
+            if (!runtime.fluffShaded && fluffUpButtonRect(runtime).contains(x, y))
+            {
+                if (runtime.fluffLineOffset > 0) --runtime.fluffLineOffset;
+                return true;
+            }
+            if (!runtime.fluffShaded && fluffDownButtonRect(runtime).contains(x, y))
+            {
+                const int lineCount = FluffCategoryLineCounts[runtime.fluffCategory];
+                if (runtime.fluffLineOffset < lineCount - 1) ++runtime.fluffLineOffset;
+                return true;
+            }
             if (!runtime.fluffShaded && fluffSizeButtonRect(runtime).contains(x, y))
             {
                 runtime.fluffSizing = true;
@@ -216,6 +296,7 @@ namespace monopoly::chat
                 runtime.fluffOpen = false;
                 runtime.fluffMoving = false;
                 runtime.fluffSizing = false;
+                runtime.fluffScrolling = false;
                 return true;
             }
             for (std::size_t category = 0; category < 6; ++category)
@@ -224,6 +305,8 @@ namespace monopoly::chat
                 if (runtime.fluffCategory != category)
                 {
                     runtime.fluffCategory = category;
+                    runtime.fluffLineOffset = 0;
+                    runtime.fluffSelectedLine = -1;
                     runtime.draft.clear();
                 }
                 return true;
@@ -235,7 +318,9 @@ namespace monopoly::chat
                 runtime.fluffDragOffsetY = y - runtime.fluffWindowY;
                 return true;
             }
-            return false;
+            return (!runtime.fluffShaded &&
+                    fluffChatBoxRect(runtime).contains(x, y)) ||
+                fluffChatBarRect(runtime).contains(x, y);
         }
 
         [[nodiscard]] bool processRecipientClick(
@@ -354,6 +439,32 @@ namespace monopoly::chat
             return changed;
         }
 
+        [[nodiscard]] std::int64_t fluffMessageId(
+            std::size_t category, std::size_t line) noexcept
+        {
+            if (category >= FluffCategoryLineCounts.size() ||
+                line >= static_cast<std::size_t>(FluffCategoryLineCounts[category]))
+                return 0;
+            return FluffCategoryMessageStarts[category] +
+                static_cast<std::int64_t>(line);
+        }
+
+        [[nodiscard]] bool buildCannedTextAction(
+            rules::PlayerNumber from, rules::PlayerNumber to,
+            std::int64_t cannedTextId, actions::Message& result)
+        {
+            if (!validSender(from) || !validTarget(to) || cannedTextId <= 0)
+                return false;
+            actions::Message message{};
+            message.action = actions::Type::TextChat;
+            message.fromPlayer = from;
+            message.toPlayer = rules::BankPlayer;
+            message.numberA = to;
+            message.numberC = cannedTextId;
+            result = std::move(message);
+            return true;
+        }
+
         void pushEntry(Entry entry)
         {
             std::size_t slot{};
@@ -397,6 +508,77 @@ namespace monopoly::chat
         return runtime.eligibleRecipients;
     }
 
+    std::int64_t selectedFluffMessageId() noexcept
+    {
+        if (runtime.fluffSelectedLine < 0) return 0;
+        return fluffMessageId(runtime.fluffCategory,
+            static_cast<std::size_t>(runtime.fluffSelectedLine));
+    }
+
+    bool activateFluffLine(
+        std::size_t line, rules::PlayerNumber sender,
+        std::uint32_t eligibleRecipients, bool networkMode)
+    {
+        if (!networkMode || !runtime.fluffOpen ||
+            runtime.fluffCategory >= FluffCategoryLineCounts.size() ||
+            line >= static_cast<std::size_t>(
+                FluffCategoryLineCounts[runtime.fluffCategory]))
+            return false;
+
+        const int selectedLine = static_cast<int>(line);
+        if (runtime.fluffSelectedLine != selectedLine)
+        {
+            runtime.fluffSelectedLine = selectedLine;
+            runtime.draft.clear();
+            return true;
+        }
+
+        const auto cannedTextId = fluffMessageId(runtime.fluffCategory, line);
+        if (!validSender(sender) || cannedTextId == 0) return true;
+
+        const auto playerMask = (1u << rules::MaxPlayers) - 1u;
+        eligibleRecipients &= playerMask;
+        runtime.eligibleRecipients = eligibleRecipients;
+        const auto recipients = runtime.recipientMask & eligibleRecipients;
+
+        if (eligibleRecipients == 0u || recipients == eligibleRecipients)
+        {
+            actions::Message action{};
+            if (buildCannedTextAction(sender, rules::AllPlayers,
+                    cannedTextId, action) && messaging::sendAction(action))
+            {
+                runtime.fluffSelectedLine = -1;
+                runtime.draft.clear();
+            }
+            return true;
+        }
+
+        std::array<actions::Message, rules::MaxPlayers> batch{};
+        std::size_t count{};
+        for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+            if ((recipients & (1u << player)) != 0u &&
+                buildCannedTextAction(sender, player, cannedTextId, batch[count]))
+                ++count;
+
+        const auto queued = messaging::queuedActionCount();
+        if (queued > messaging::MessageQueueCapacity ||
+            count > messaging::MessageQueueCapacity - queued)
+            return true;
+        for (std::size_t index = 0; index < count; ++index)
+            if (!messaging::sendAction(batch[index]))
+                return true;
+
+        Entry echo{};
+        echo.from = sender;
+        echo.to = sender;
+        echo.cannedTextId = cannedTextId;
+        echo.privateMessage = true;
+        pushEntry(std::move(echo));
+        runtime.fluffSelectedLine = -1;
+        runtime.draft.clear();
+        return true;
+    }
+
     bool processInput(
         const uimsg::Message& message,
         rules::PlayerNumber sender,
@@ -424,10 +606,14 @@ namespace monopoly::chat
 
         const int pointerX = static_cast<int>(message.numberA);
         const int pointerY = static_cast<int>(message.numberB);
-        if (processFluffPointer(message))
-            return true;
         if (!runtime.boxActive)
             return false;
+
+        const bool activeFluffGesture = runtime.fluffMoving ||
+            runtime.fluffSizing || runtime.fluffScrolling;
+        if (activeFluffGesture && processFluffPointer(message))
+            return true;
+
         if (message.type == uimsg::Type::MouseMoved && runtime.moving)
         {
             runtime.windowX = pointerX - runtime.dragOffsetX;
@@ -505,16 +691,34 @@ namespace monopoly::chat
             }
             if (runtime.shaded) return false;
         }
+
+        if (message.type == uimsg::Type::MouseMoved ||
+            message.type == uimsg::Type::MouseLeftUp ||
+            message.type == uimsg::Type::MouseLeftDown)
+        {
+            if ((!runtime.shaded && chatBoxRect(runtime).contains(pointerX, pointerY)) ||
+                chatBarRect(runtime).contains(pointerX, pointerY))
+                return true;
+            if (processFluffPointer(message))
+                return true;
+        }
+
         if (runtime.shaded)
             return false;
 
         if (message.type == uimsg::Type::TextInput)
         {
-            (void)appendUtf8(message.text);
+            if (runtime.fluffSelectedLine < 0)
+                (void)appendUtf8(message.text);
             return true;
         }
         if (message.type != uimsg::Type::KeyboardPressed)
             return false;
+
+        if (runtime.fluffSelectedLine >= 0)
+            (void)activateFluffLine(
+                static_cast<std::size_t>(runtime.fluffSelectedLine),
+                sender, eligibleRecipients, networkMode);
 
         const auto key = static_cast<SDL_Scancode>(message.numberA);
         if (key == SDL_SCANCODE_BACKSPACE)
