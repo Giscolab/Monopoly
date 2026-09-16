@@ -742,6 +742,41 @@ target_sources(
 )
 
 if(BUILD_TESTING)
+    add_executable(
+        MonopolyChatRuntimeTests
+        tests/ChatRuntimeTests.cpp
+        src/ChatRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyChatRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(MonopolyChatRuntimeTests PRIVATE SDL3::SDL3)
+    if(MSVC)
+        target_compile_options(MonopolyChatRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.ChatRuntime COMMAND MonopolyChatRuntimeTests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyChatFluffPlaybackTests
+        tests/ChatFluffPlaybackTests.cpp
+        src/ChatFluffPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyChatFluffPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolyChatFluffPlaybackTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyChatFluffPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.ChatFluffPlayback COMMAND MonopolyChatFluffPlaybackTests)
+endif()
+
+if(BUILD_TESTING)
 
     add_executable(
         MonopolyUserInterfaceRoutingTests
