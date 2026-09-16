@@ -89,11 +89,18 @@ namespace monopoly::statsui
                     (displayed % DeedGridColumns);
                 const int y = DeedGridY + DeedGridRowStep *
                     (displayed / DeedGridColumns);
-                result.push_back({id, DeedGridPriority, x, y});
+                result.push_back({square, id, DeedGridPriority, x, y});
                 ++displayed;
             }
             return result;
         }
+    }
+
+    std::expected<std::vector<DeedPlayback::Published>, std::string>
+    planDeedGrid(const State& state, const rules::GameState& gameState,
+        const PlayerPlaybackInputs& inputs)
+    {
+        return desiredObjects(state, gameState, inputs);
     }
 
     std::expected<void, std::string> DeedPlayback::sync(
@@ -105,7 +112,7 @@ namespace monopoly::statsui
         if (desiredView == display::Screen2D::Portfolio &&
             state.screen == Screen::Deed)
         {
-            auto planned = desiredObjects(state, gameState, inputs);
+            auto planned = planDeedGrid(state, gameState, inputs);
             if (!planned) return std::unexpected(planned.error());
             desired = std::move(*planned);
         }

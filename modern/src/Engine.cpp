@@ -38,6 +38,7 @@
 #include "StatsPlayerPlayback.hpp"
 #include "StatsPlayerAuxPlayback.hpp"
 #include "StatsDeedPlayback.hpp"
+#include "StatsDeedFloaterPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
 #include "OptionsHelpPlayback.hpp"
@@ -105,6 +106,7 @@ namespace monopoly::engine
         statsui::PlayerPlayback statsPlayerPlayback;
         statsui::PlayerAuxPlayback statsPlayerAuxPlayback;
         statsui::DeedPlayback statsDeedPlayback;
+        statsui::DeedFloaterPlayback statsDeedFloaterPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
         optionsui::HelpPlayback optionsHelpPlayback;
@@ -1257,6 +1259,12 @@ namespace monopoly::engine
             if (!statsDeedSync)
                 return SDL_SetError("UDStats Deed playback: %s",
                     statsDeedSync.error().c_str());
+            const auto statsDeedFloaterSync = statsDeedFloaterPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                displayState.city, displayState.desired2DView, *session);
+            if (!statsDeedFloaterSync)
+                return SDL_SetError("UDStats Deed floater playback: %s",
+                    statsDeedFloaterSync.error().c_str());
             const auto& iBarState = ibar::stateReadOnly();
             const auto selectedDeed = iBarState.selectedDeed;
             const auto selectedBit = selectedDeed
@@ -1509,6 +1517,7 @@ namespace monopoly::engine
         statsPlayerPlayback.reset();
         statsPlayerAuxPlayback.reset();
         statsDeedPlayback.reset();
+        statsDeedFloaterPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();
         optionsHelpPlayback.reset();

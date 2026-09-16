@@ -22,6 +22,7 @@ namespace monopoly::statsui
     public:
         struct Published
         {
+            int square{-1};
             data::DataId id{data::EmptyDataId};
             std::uint16_t priority{};
             int x{};
@@ -43,4 +44,8 @@ namespace monopoly::statsui
     private:
         std::vector<Published> current_;
     };
+
+    [[nodiscard]] std::expected<std::vector<DeedPlayback::Published>, std::string>
+    planDeedGrid(const State& state, const rules::GameState& gameState,
+        const PlayerPlaybackInputs& inputs);
 }
