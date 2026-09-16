@@ -35,6 +35,7 @@
 #include "StatsPlayback.hpp"
 #include "StatsBankPlayback.hpp"
 #include "StatsCalculatorPlayback.hpp"
+#include "StatsPlayerPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
 #include "OptionsHelpPlayback.hpp"
@@ -99,6 +100,7 @@ namespace monopoly::engine
         statsui::Playback statsPlayback;
         statsui::BankPlayback statsBankPlayback;
         statsui::CalculatorPlayback statsCalculatorPlayback;
+        statsui::PlayerPlayback statsPlayerPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
         optionsui::HelpPlayback optionsHelpPlayback;
@@ -1224,6 +1226,21 @@ namespace monopoly::engine
                     ruleState, iBarActivePlayer) != rules::MaxPlayers;
             const auto bssmAvailability =
                 iBarBSSMAvailability(ruleState, iBarActivePlayer);
+            statsui::PlayerPlaybackInputs statsPlayerInputs{};
+            statsPlayerInputs.mode = effectiveRuleMode;
+            statsPlayerInputs.iBarPlayer = iBarActivePlayer;
+            statsPlayerInputs.iBarPlayerLocalHuman =
+                iBarActivePlayer < rules::MaxPlayers &&
+                ui::localplayers::slotIsLocalHumanPlayer(iBarActivePlayer);
+            statsPlayerInputs.buildProperties = bssmAvailability.buildProperties;
+            statsPlayerInputs.sellProperties = bssmAvailability.sellProperties;
+            statsPlayerInputs.mortgageProperties = bssmAvailability.mortgageProperties;
+            const auto statsPlayerSync = statsPlayerPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                displayState.desired2DView, *session);
+            if (!statsPlayerSync)
+                return SDL_SetError("UDStats Player playback: %s",
+                    statsPlayerSync.error().c_str());
             const auto& iBarState = ibar::stateReadOnly();
             const auto selectedDeed = iBarState.selectedDeed;
             const auto selectedBit = selectedDeed
@@ -1473,6 +1490,7 @@ namespace monopoly::engine
         statsPlayback.reset();
         statsBankPlayback.reset();
         statsCalculatorPlayback.reset();
+        statsPlayerPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();
         optionsHelpPlayback.reset();
