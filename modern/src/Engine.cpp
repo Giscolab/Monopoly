@@ -1279,6 +1279,9 @@ namespace monopoly::engine
             if (!statsPlayerAuxSync)
                 return SDL_SetError("UDStats Player aux playback: %s",
                     statsPlayerAuxSync.error().c_str());
+            statsui::setFutureImmunityIcons(
+                userinterface::statsFutureImmunityState(),
+                statsPlayerAuxPlayback.iconHits());
             const auto statsDeedSync = statsDeedPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);

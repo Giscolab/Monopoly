@@ -33,6 +33,7 @@ namespace monopoly::userinterface
         optionsui::State optionsProjection;
         statsui::State statsProjection;
         statsui::CalculatorUIState statsCalculatorProjection;
+        statsui::FutureImmunityState statsFutureImmunityProjection;
 
         constexpr std::array<std::uint32_t, rules::SquareCount> ResyncPropertyBits{{
             0, 1u<<0, 0, 1u<<1, 0, 1u<<2, 1u<<3, 0, 1u<<4, 1u<<5,
@@ -191,6 +192,14 @@ namespace monopoly::userinterface
     const statsui::CalculatorUIState& statsCalculatorStateReadOnly() noexcept
     {
         return statsCalculatorProjection;
+    }
+    statsui::FutureImmunityState& statsFutureImmunityState() noexcept
+    {
+        return statsFutureImmunityProjection;
+    }
+    const statsui::FutureImmunityState& statsFutureImmunityStateReadOnly() noexcept
+    {
+        return statsFutureImmunityProjection;
     }
     namespace
     {
@@ -509,6 +518,7 @@ namespace monopoly::userinterface
         optionsui::reset(optionsProjection);
         statsui::reset(statsProjection);
         statsui::resetCalculatorUI(statsCalculatorProjection);
+        statsui::resetFutureImmunity(statsFutureImmunityProjection);
         chat::reset();
         pendingPieceIdleTransition.reset();
         iBarGameJustLoaded = false;
@@ -1119,6 +1129,10 @@ namespace monopoly::userinterface
             statsui::refresh(statsProjection, uiRuleState);
         }
 
+        if (statsFutureImmunityProjection.open)
+            statsui::refreshFutureImmunity(
+                statsFutureImmunityProjection, uiRuleState);
+
         playerselection::processMessage(
             message
         );
@@ -1169,6 +1183,9 @@ namespace monopoly::userinterface
             display::stateReadOnly().desired2DView);
         statsui::syncCalculatorView(
             statsCalculatorProjection,
+            display::stateReadOnly().desired2DView);
+        statsui::syncFutureImmunityView(
+            statsFutureImmunityProjection, statsProjection.screen,
             display::stateReadOnly().desired2DView);
 
         // ProcessPlayersUI(NULL) original entretient les effets UI
@@ -1259,6 +1276,9 @@ namespace monopoly::userinterface
         // the default Player/Turn projection immediately.
         (void)statsui::processInput(
             statsProjection, uiRuleState, display::state().desired2DView, message);
+        (void)statsui::processFutureImmunityInput(
+            statsFutureImmunityProjection, uiRuleState,
+            statsProjection.screen, display::state().desired2DView, message);
         (void)statsui::processCalculatorInput(
             statsCalculatorProjection, uiRuleState,
             display::state().desired2DView, message);
