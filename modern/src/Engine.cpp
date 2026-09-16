@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
+#include "FontRuntime.hpp"
 #include "UDSoundRuntime.hpp"
 #include "UDPennyVoice.hpp"
 #include "UISound.hpp"
@@ -85,6 +86,8 @@ namespace monopoly::engine
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
         std::unique_ptr<audio::Runtime> audioRuntime;
+        std::unique_ptr<fonts::Runtime> fontRuntime;
+        bool fontDisabled{};
         udsound::Runtime monopolySoundRuntime;
         std::vector<sequence::SequenceNodeId> activeSequenceSounds;
         bool audioDisabled{};
@@ -825,6 +828,37 @@ namespace monopoly::engine
             if (auto resources = startup::resources())
                 audioRuntime = std::make_unique<audio::Runtime>(std::move(resources));
         return audioRuntime.get();
+    }
+
+    fonts::Runtime* fontPlayback()
+    {
+        if (fontDisabled) return nullptr;
+        if (!fontRuntime)
+        {
+            auto candidate = std::make_unique<fonts::Runtime>();
+            std::vector<std::filesystem::path> roots;
+            if (const char* base = SDL_GetBasePath(); base && *base)
+                roots.emplace_back(base);
+#ifdef _WIN32
+            if (const char* windows = std::getenv("WINDIR"); windows && *windows)
+                roots.emplace_back(std::filesystem::path(windows) / "Fonts");
+#endif
+            const auto arial = fonts::resolveRetailArial(roots);
+            if (!arial)
+            {
+                std::cerr << "Font runtime disabled: " << arial.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            if (const auto selected = candidate->setFont(*arial, "Arial"); !selected)
+            {
+                std::cerr << "Font runtime disabled: " << selected.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            fontRuntime = std::move(candidate);
+        }
+        return fontRuntime.get();
     }
 
     udsound::Runtime* monopolySoundPlayback()
@@ -1627,6 +1661,8 @@ namespace monopoly::engine
         monopolySoundRuntime.reset(audioRuntime.get());
         audioRuntime.reset();
         audioDisabled = false;
+        fontRuntime.reset();
+        fontDisabled = false;
         playback.reset();
         activeBoardSequence.reset();
         activeWorldCamera.reset();
