@@ -34,6 +34,7 @@
 #include "OptionsNavigationPlayback.hpp"
 #include "StatsPlayback.hpp"
 #include "StatsBankPlayback.hpp"
+#include "StatsCalculatorPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
 #include "OptionsHelpPlayback.hpp"
@@ -97,6 +98,7 @@ namespace monopoly::engine
         optionsui::NavigationPlayback optionsNavigationPlayback;
         statsui::Playback statsPlayback;
         statsui::BankPlayback statsBankPlayback;
+        statsui::CalculatorPlayback statsCalculatorPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
         optionsui::HelpPlayback optionsHelpPlayback;
@@ -1148,6 +1150,11 @@ namespace monopoly::engine
             if (!statsBankSync)
                 return SDL_SetError("UDStats Bank playback: %s",
                     statsBankSync.error().c_str());
+            const auto statsCalculatorSync = statsCalculatorPlayback.sync(
+                displayState.desired2DView, *session);
+            if (!statsCalculatorSync)
+                return SDL_SetError("UDStats calculator playback: %s",
+                    statsCalculatorSync.error().c_str());
             const auto optionsNavigationSync = optionsNavigationPlayback.sync(
                 userinterface::optionsStateReadOnly(),
                 displayState.desired2DView, *session);
@@ -1465,6 +1472,7 @@ namespace monopoly::engine
         optionsNavigationPlayback.reset();
         statsPlayback.reset();
         statsBankPlayback.reset();
+        statsCalculatorPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();
         optionsHelpPlayback.reset();

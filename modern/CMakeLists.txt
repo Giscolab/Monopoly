@@ -724,6 +724,7 @@ target_sources(
     src/StatsUI.cpp
     src/StatsPlayback.cpp
     src/StatsBankPlayback.cpp
+    src/StatsCalculatorPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -832,6 +833,24 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsBankPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsBankPlayback COMMAND MonopolyStatsBankPlaybackTests)
+endif()
+
+# UDStats.cpp autonomous calculator visuals
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsCalculatorPlaybackTests
+        tests/StatsCalculatorPlaybackTests.cpp
+        src/StatsCalculatorPlayback.cpp
+    )
+    target_include_directories(MonopolyStatsCalculatorPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolyStatsCalculatorPlaybackTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyStatsCalculatorPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.StatsCalculatorPlayback COMMAND MonopolyStatsCalculatorPlaybackTests)
 endif()
 
 # UDPenny.cpp pure token-voice reaction selectors and catalog fidelity

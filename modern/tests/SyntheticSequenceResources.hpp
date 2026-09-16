@@ -130,6 +130,13 @@ struct SyntheticSequenceResources
                 // UDStats autonomous DAT_MAIN backgrounds.
                 for (const auto tag : {0x000BU, 0x000CU, 0x000DU, 0x000EU, 0x00CDU})
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDStats calculator background/textbox and idle function/number buttons.
+                items[0x006A] = {LegacyDataType::Chunky, bitmapSequence};
+                for (std::uint32_t tag = 0x006DU; tag <= 0x0074U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                for (std::uint32_t tag = 0x007DU; tag <= 0x0086U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x0091] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDTrade Future/Immunity dialog arrows: CNK_byahadni / CNK_byahaupi.
                 items[0x0007] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0009] = {LegacyDataType::Chunky, bitmapSequence};
@@ -290,6 +297,9 @@ struct SyntheticSequenceResources
                      0x019BU,0x019CU,0x019DU,0x019EU,0x019FU,0x01A0U,0x01A1U,0x01A2U,
                      0x01A3U,0x01A4U,0x01A5U,0x01A6U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
+                // UDStats calculator Enter idle, English and alternate language packs.
+                items[0x01FE] = {LegacyDataType::Chunky, staticTradeIcon};
+                items[0x0388] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDStats SOLD / MORTGAGED signs (USA language graphics).
                 items[0x0E3D] = {LegacyDataType::Chunky, staticTradeIcon};
                 items[0x0F17] = {LegacyDataType::Chunky, staticTradeIcon};
