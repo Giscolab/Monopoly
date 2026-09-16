@@ -6,6 +6,77 @@ namespace monopoly::penny
 {
     namespace
     {
+        using CardTag = std::uint16_t;
+
+        inline constexpr std::array<int, 12> NativeSystemByCity{
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 9};
+
+        struct CityCurrencyTags
+        {
+            CardTag native{};
+            CardTag euro{};
+            CardTag other{};
+        };
+
+        inline constexpr std::array<CityCurrencyTags, 12> ChanceCard1Tags{{
+            {0x0056,0x0060,0x0061}, {0x0065,0x006F,0x0070},
+            {0x0074,0x007E,0x007F}, {0x0083,0x008D,0x008E},
+            {0x0092,0x009C,0x009D}, {0x00A1,0x00AB,0x00AC},
+            {0x00B0,0x00BA,0x00BB}, {0x00C8,0x00C9,0x00CA},
+            {0x00CE,0x00D8,0x00D9}, {0x00EA,0x00F4,0x00F5},
+            {0x00F9,0x0103,0x0103}, {0x00DD,0x00E7,0x00E7}}};
+        inline constexpr std::array<CityCurrencyTags, 12> ChanceCard7Tags{{
+            {0x005B,0x0062,0x0063}, {0x006A,0x0071,0x0072},
+            {0x0079,0x0080,0x0081}, {0x0088,0x008F,0x0090},
+            {0x0097,0x009E,0x009F}, {0x00A6,0x00AD,0x00AE},
+            {0x00B5,0x00BC,0x00BD}, {0x00C3,0x00CB,0x00CC},
+            {0x00D3,0x00DA,0x00DB}, {0x00EF,0x00F6,0x00F7},
+            {0x00FE,0x0104,0x0104}, {0x00E2,0x00E8,0x00E8}}};
+
+        [[nodiscard]] CardTag cityCurrencyTag(
+            const std::array<CityCurrencyTags, 12>& table, int city,
+            int monetarySystem) noexcept
+        {
+            if (city < 0 || city >= static_cast<int>(table.size())) return 0;
+            const auto index = static_cast<std::size_t>(city);
+            if (monetarySystem == NativeSystemByCity[index]) return table[index].native;
+            if (monetarySystem == 12) return table[index].euro;
+            return table[index].other;
+        }
+
+        [[nodiscard]] CardTag europeChanceCardTag(
+            std::uint8_t cardIndex, int city, int monetarySystem) noexcept
+        {
+            static constexpr std::array<std::array<CardTag, 13>, 7> SystemCards{{
+                {{0x0055,0x0064,0x0073,0x0082,0x0091,0x00A0,0x00AF,0x00BE,0x00CD,0x00DC,0x00E9,0x00F8,0x004E}},
+                {{0x0057,0x0066,0x0075,0x0084,0x0093,0x00A2,0x00B1,0x00BF,0x00CF,0x00DE,0x00EB,0x00FA,0x004F}},
+                {{0x0058,0x0067,0x0076,0x0085,0x0094,0x00A3,0x00B2,0x00C0,0x00D0,0x00DF,0x00EC,0x00FB,0x0050}},
+                {{0x0059,0x0068,0x0077,0x0086,0x0095,0x00A4,0x00B3,0x00C1,0x00D1,0x00E0,0x00ED,0x00FC,0x0051}},
+                {{0x005C,0x006B,0x007A,0x0089,0x0098,0x00A7,0x00B6,0x00C4,0x00D4,0x00E3,0x00F0,0x00FF,0x0052}},
+                {{0x005D,0x006C,0x007B,0x008A,0x0099,0x00A8,0x00B7,0x00C5,0x00D5,0x00E4,0x00F1,0x0100,0x0053}},
+                {{0x005F,0x006E,0x007D,0x008C,0x009B,0x00AA,0x00B9,0x00C7,0x00D7,0x00E6,0x00F3,0x0102,0x0054}}}};
+            static constexpr std::array<std::uint8_t, 7> SystemCardIndices{0,3,4,5,10,12,14};
+            if (monetarySystem >= 0 && monetarySystem < 13)
+                for (std::size_t row = 0; row < SystemCardIndices.size(); ++row)
+                    if (cardIndex == SystemCardIndices[row])
+                        return SystemCards[row][static_cast<std::size_t>(monetarySystem)];
+
+            if (cardIndex == 1) return cityCurrencyTag(ChanceCard1Tags, city, monetarySystem);
+            if (cardIndex == 7) return cityCurrencyTag(ChanceCard7Tags, city, monetarySystem);
+            if (city < 0 || city >= 12) return 0;
+            switch (cardIndex)
+            {
+            case 2: return 0x0105;
+            case 6: { static constexpr std::array<CardTag,12> t{0x005A,0x0069,0x0078,0x0087,0x0096,0x00A5,0x00B4,0x00C2,0x00D2,0x00EE,0x00FD,0x00E1}; return t[static_cast<std::size_t>(city)]; }
+            case 8: return 0x0106;
+            case 9: return 0x0107;
+            case 11: return 0x0108;
+            case 13: { static constexpr std::array<CardTag,12> t{0x005E,0x006D,0x007C,0x008B,0x009A,0x00A9,0x00B8,0x00C6,0x00D6,0x00F2,0x0101,0x00E5}; return t[static_cast<std::size_t>(city)]; }
+            case 15: return 0x0109;
+            default: return 0;
+            }
+        }
+
         [[nodiscard]] bool validPlayer(
             const rules::GameState& state,
             rules::PlayerNumber player) noexcept
@@ -349,6 +420,23 @@ namespace monopoly::penny
             return std::nullopt;
         return data::packDataId(data::LegacyGroupId::LanguageDialog,
             static_cast<data::DataTag>(0x0811u + cardIndex));
+    }
+
+    std::optional<data::DataId> cardReadWave(
+        data::BoardEdition edition, data::LanguageId language, int city,
+        int monetarySystem, std::uint8_t cardIndex) noexcept
+    {
+        if (cardIndex >= 32) return std::nullopt;
+        if (edition == data::BoardEdition::Usa)
+            return cardReadWave(edition, cardIndex);
+        if (city < 0)
+            city = static_cast<int>(language) -
+                static_cast<int>(data::LanguageId::EnglishUk);
+        if (cardIndex >= 16) return std::nullopt;
+        const auto tag = europeChanceCardTag(cardIndex, city, monetarySystem);
+        if (tag == 0) return std::nullopt;
+        return data::packDataId(data::LegacyGroupId::LanguageDialog,
+            static_cast<data::DataTag>(tag));
     }
 
     std::optional<TokenReaction> landedOnSquareReaction(

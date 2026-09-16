@@ -50,6 +50,10 @@ namespace monopoly::audio
         {
             return resources_ ? resources_->context().board : data::BoardEdition::Usa;
         }
+        [[nodiscard]] data::LanguageId language() const noexcept
+        {
+            return resources_ ? resources_->context().language : data::LanguageId::EnglishUs;
+        }
 
     private:
         struct Voice;
