@@ -57,6 +57,12 @@ namespace monopoly::audio
         if (ownsAudioSubsystem_)
             SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
+
+    std::expected<void, std::string> Runtime::ensureReady()
+    {
+        return ensureAudio();
+    }
+
     std::expected<void, std::string> Runtime::ensureAudio()
     {
         if (audioReady_)

@@ -622,6 +622,8 @@ namespace monopoly::userinterface
                 iBarRuleProjection.player = 0;
                 iBarGameJustLoaded = true;
             }
+            // Userifce.cpp restarts voice chat after every client resync.
+            (void)engine::startVoiceChat();
         }
 
         dicePrompt.process(message);
@@ -1128,6 +1130,8 @@ namespace monopoly::userinterface
                 // portable. La transition d'ecran, elle, est exacte et
                 // reste differee jusqu'au prochain show DISPLAY.
                 display::setBackdrop(display::Screen2D::Main);
+                // Retail starts capture here only when MESS_NetworkMode is true.
+                (void)engine::startVoiceChat();
                 break;
             }
 

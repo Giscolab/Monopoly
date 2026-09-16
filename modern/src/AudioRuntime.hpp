@@ -35,6 +35,7 @@ namespace monopoly::audio
         Runtime(const Runtime&) = delete;
         Runtime& operator=(const Runtime&) = delete;
 
+        [[nodiscard]] std::expected<void, std::string> ensureReady();
         [[nodiscard]] std::expected<void, std::string> play(
             PlaybackKey key,
             data::DataId waveDataId,
