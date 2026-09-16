@@ -57,6 +57,41 @@ namespace monopoly::chat
             return {state.windowX, state.windowY,
                 state.windowX + 19, state.windowY + 18};
         }
+        [[nodiscard]] constexpr ChatRect optionPanelRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 120, state.windowY + 16,
+                state.windowX + state.windowWidth - 22, state.windowY + 68};
+        }
+        [[nodiscard]] constexpr ChatRect bgAlphaUpRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 113, state.windowY + 18,
+                state.windowX + state.windowWidth - 97, state.windowY + 33};
+        }
+        [[nodiscard]] constexpr ChatRect bgAlphaDownRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 43, state.windowY + 18,
+                state.windowX + state.windowWidth - 26, state.windowY + 33};
+        }
+        [[nodiscard]] constexpr ChatRect textAlphaUpRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 113, state.windowY + 34,
+                state.windowX + state.windowWidth - 97, state.windowY + 49};
+        }
+        [[nodiscard]] constexpr ChatRect textAlphaDownRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 43, state.windowY + 34,
+                state.windowX + state.windowWidth - 26, state.windowY + 49};
+        }
+        [[nodiscard]] constexpr ChatRect fontSizeUpRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 113, state.windowY + 50,
+                state.windowX + state.windowWidth - 97, state.windowY + 65};
+        }
+        [[nodiscard]] constexpr ChatRect fontSizeDownRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 43, state.windowY + 50,
+                state.windowX + state.windowWidth - 26, state.windowY + 65};
+        }
         [[nodiscard]] constexpr ChatRect sizeButtonRect(const State& state) noexcept
         {
             return {state.windowX + state.windowWidth - 20,
@@ -76,6 +111,25 @@ namespace monopoly::chat
                 (static_cast<int>(ordinal) + 5) * 19 + 3;
             return {left, state.windowY + 3, left + 17, state.windowY + 15};
         }
+        [[nodiscard]] bool processOptionPanelClick(int x, int y) noexcept
+        {
+            if (!runtime.optionsOpen || !optionPanelRect(runtime).contains(x, y))
+                return false;
+            if (fontSizeDownRect(runtime).contains(x, y) && runtime.fontSize < 14)
+                ++runtime.fontSize;
+            else if (fontSizeUpRect(runtime).contains(x, y) && runtime.fontSize > 7)
+                --runtime.fontSize;
+            else if (bgAlphaUpRect(runtime).contains(x, y) && runtime.backgroundAlphaIndex > 0)
+                --runtime.backgroundAlphaIndex;
+            else if (bgAlphaDownRect(runtime).contains(x, y) && runtime.backgroundAlphaIndex < 16)
+                ++runtime.backgroundAlphaIndex;
+            else if (textAlphaUpRect(runtime).contains(x, y) && runtime.textAlphaIndex > 1)
+                --runtime.textAlphaIndex;
+            else if (textAlphaDownRect(runtime).contains(x, y) && runtime.textAlphaIndex < 16)
+                ++runtime.textAlphaIndex;
+            return true;
+        }
+
         [[nodiscard]] bool processRecipientClick(
             int x, int y, std::uint32_t eligible) noexcept
         {
@@ -296,6 +350,8 @@ namespace monopoly::chat
         {
             const int x = static_cast<int>(message.numberA);
             const int y = static_cast<int>(message.numberB);
+            if (processOptionPanelClick(x, y))
+                return true;
             if (processRecipientClick(x, y, eligibleRecipients))
                 return true;
             if (!runtime.shaded && sizeButtonRect(runtime).contains(x, y))

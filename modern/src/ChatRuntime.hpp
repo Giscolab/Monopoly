@@ -40,6 +40,9 @@ namespace monopoly::chat
         int dragOffsetY{};
         int resizeOffsetX{};
         int resizeOffsetY{};
+        int fontSize{7};
+        int textAlphaIndex{10};
+        int backgroundAlphaIndex{10};
         bool boxActive{};
         bool shaded{};
         bool optionsOpen{};
