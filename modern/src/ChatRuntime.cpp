@@ -104,6 +104,39 @@ namespace monopoly::chat
             return {state.windowX, state.windowY,
                 state.windowX + state.windowWidth - 1, state.windowY + 18};
         }
+        [[nodiscard]] constexpr ChatRect fluffChatBarRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX, state.fluffWindowY,
+                state.fluffWindowX + state.fluffWindowWidth - 1,
+                state.fluffWindowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect fluffCloseButtonRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX, state.fluffWindowY,
+                state.fluffWindowX + 19, state.fluffWindowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect fluffShadeButtonRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX + state.fluffWindowWidth - 21,
+                state.fluffWindowY + 1,
+                state.fluffWindowX + state.fluffWindowWidth - 1,
+                state.fluffWindowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect fluffSizeButtonRect(const State& state) noexcept
+        {
+            return {state.fluffWindowX + state.fluffWindowWidth - 20,
+                state.fluffWindowY + state.fluffWindowHeight - 18,
+                state.fluffWindowX + state.fluffWindowWidth - 1,
+                state.fluffWindowY + state.fluffWindowHeight - 1};
+        }
+        [[nodiscard]] constexpr ChatRect fluffCategoryRect(
+            const State& state, std::size_t category) noexcept
+        {
+            const int left = state.fluffWindowX + state.fluffWindowWidth -
+                143 + static_cast<int>(category) * 20;
+            return {left, state.fluffWindowY + 2,
+                left + 20, state.fluffWindowY + 17};
+        }
         [[nodiscard]] constexpr ChatRect recipientButtonRect(
             const State& state, std::size_t ordinal) noexcept
         {
@@ -128,6 +161,81 @@ namespace monopoly::chat
             else if (textAlphaDownRect(runtime).contains(x, y) && runtime.textAlphaIndex < 16)
                 ++runtime.textAlphaIndex;
             return true;
+        }
+
+        [[nodiscard]] bool processFluffPointer(
+            const uimsg::Message& message) noexcept
+        {
+            if (!runtime.fluffOpen) return false;
+            const int x = static_cast<int>(message.numberA);
+            const int y = static_cast<int>(message.numberB);
+
+            if (message.type == uimsg::Type::MouseMoved && runtime.fluffMoving)
+            {
+                runtime.fluffWindowX = x - runtime.fluffDragOffsetX;
+                runtime.fluffWindowY = y - runtime.fluffDragOffsetY;
+                return true;
+            }
+            if (message.type == uimsg::Type::MouseMoved &&
+                runtime.fluffSizing && !runtime.fluffShaded)
+            {
+                int width = x + runtime.fluffResizeOffsetX - runtime.fluffWindowX;
+                int height = y + runtime.fluffResizeOffsetY - runtime.fluffWindowY;
+                width = std::clamp(width, 246, 1601);
+                height = std::clamp(height, 99, 1201);
+                runtime.fluffWindowWidth = (width / 5) * 5 + 1;
+                runtime.fluffWindowHeight = ((height - 19) / 5) * 5 + 19;
+                return true;
+            }
+            if (message.type == uimsg::Type::MouseLeftUp && runtime.fluffMoving)
+            {
+                runtime.fluffMoving = false;
+                return true;
+            }
+            if (message.type == uimsg::Type::MouseLeftUp && runtime.fluffSizing)
+            {
+                runtime.fluffSizing = false;
+                return true;
+            }
+            if (message.type != uimsg::Type::MouseLeftDown) return false;
+
+            if (!runtime.fluffShaded && fluffSizeButtonRect(runtime).contains(x, y))
+            {
+                runtime.fluffSizing = true;
+                runtime.fluffResizeOffsetX = runtime.fluffWindowX + runtime.fluffWindowWidth - x;
+                runtime.fluffResizeOffsetY = runtime.fluffWindowY + runtime.fluffWindowHeight - y;
+                return true;
+            }
+            if (fluffShadeButtonRect(runtime).contains(x, y))
+            {
+                runtime.fluffShaded = !runtime.fluffShaded;
+                return true;
+            }
+            if (fluffCloseButtonRect(runtime).contains(x, y))
+            {
+                runtime.fluffOpen = false;
+                runtime.fluffMoving = false;
+                runtime.fluffSizing = false;
+                return true;
+            }
+            for (std::size_t category = 0; category < 6; ++category)
+            {
+                if (!fluffCategoryRect(runtime, category).contains(x, y)) continue;
+                if (runtime.fluffCategory != category)
+                {
+                    runtime.fluffCategory = category;
+                    runtime.draft.clear();
+                }
+                return true;
+            }
+            if (fluffChatBarRect(runtime).contains(x, y))
+            {
+                runtime.fluffMoving = true;
+                runtime.fluffDragOffsetX = x - runtime.fluffWindowX;
+                runtime.fluffDragOffsetY = y - runtime.fluffWindowY;
+                return true;
+            }
+            return false;
         }
 
         [[nodiscard]] bool processRecipientClick(
@@ -308,14 +416,18 @@ namespace monopoly::chat
         if (!networkMode)
         {
             runtime.boxActive = false;
+            runtime.fluffOpen = false;
             runtime.shaded = false;
+            runtime.fluffShaded = false;
             return false;
         }
-        if (!runtime.boxActive)
-            return false;
 
         const int pointerX = static_cast<int>(message.numberA);
         const int pointerY = static_cast<int>(message.numberB);
+        if (processFluffPointer(message))
+            return true;
+        if (!runtime.boxActive)
+            return false;
         if (message.type == uimsg::Type::MouseMoved && runtime.moving)
         {
             runtime.windowX = pointerX - runtime.dragOffsetX;

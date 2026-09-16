@@ -17,11 +17,36 @@ namespace monopoly::chat
             const State& state)
         {
             std::vector<FluffPlayback::Published> result;
-            if (!state.boxActive) return result;
+            if (state.boxActive)
+            {
+                result.push_back({mainId(ChatFluffButtonTag),
+                    ChatFluffButtonPriority,
+                    state.windowX + state.windowWidth - 40, state.windowY + 2});
+            }
+            if (!state.fluffOpen) return result;
 
-            result.push_back({mainId(ChatFluffButtonTag),
-                ChatFluffButtonPriority,
-                state.windowX + state.windowWidth - 40, state.windowY + 2});
+            result.push_back({mainId(ChatFluffCloseTag), ChatFluffWindowPriority,
+                state.fluffWindowX, state.fluffWindowY});
+            result.push_back({mainId(ChatFluffShadeTag), ChatFluffWindowPriority,
+                state.fluffWindowX + state.fluffWindowWidth - 22,
+                state.fluffWindowY});
+            for (std::size_t category = 0; category < ChatFluffCategoryTags.size(); ++category)
+            {
+                result.push_back({mainId(ChatFluffCategoryTags[category]),
+                    ChatFluffWindowPriority,
+                    state.fluffWindowX + state.fluffWindowWidth - 143 +
+                        static_cast<int>(category) * 20,
+                    state.fluffWindowY + 2});
+            }
+            if (!state.fluffShaded)
+            {
+                result.push_back({mainId(ChatFluffUpTag), ChatFluffWindowPriority,
+                    state.fluffWindowX + state.fluffWindowWidth - 18,
+                    state.fluffWindowY + 18});
+                result.push_back({mainId(ChatFluffDownTag), ChatFluffWindowPriority,
+                    state.fluffWindowX + state.fluffWindowWidth - 18,
+                    state.fluffWindowY + state.fluffWindowHeight - 35});
+            }
             return result;
         }
     }
@@ -42,15 +67,16 @@ namespace monopoly::chat
             if (std::find(current_.begin(), current_.end(), object) == current_.end())
                 added.push_back(object);
 
-        std::shared_ptr<const sequence::SequenceProgram> program;
-        if (!added.empty())
+        std::vector<std::shared_ptr<const sequence::SequenceProgram>> programs;
+        programs.reserve(added.size());
+        for (const auto& object : added)
         {
             auto loaded = sequence::SequenceProgram::load(
-                playback.resources(), added.front().id);
+                playback.resources(), object.id);
             if (!loaded)
                 return std::unexpected(
                     "UDChat fluff resource failed: " + loaded.error().detail);
-            program = std::move(*loaded);
+            programs.push_back(std::move(*loaded));
         }
 
         const std::size_t required = removed.size() + added.size();
@@ -64,11 +90,14 @@ namespace monopoly::chat
                     object.id, object.priority, false}))
                 return std::unexpected("validated UDChat fluff stop rejected");
 
-        for (const auto& object : added)
+        for (std::size_t index = 0; index < added.size(); ++index)
+        {
+            const auto& object = added[index];
             if (!playback.commands().enqueue(sequence::StartSequenceCommand{
-                    program, object.priority, {},
+                    programs[index], object.priority, {},
                     sequence::moveXYTransform(object.x, object.y)}))
                 return std::unexpected("validated UDChat fluff start rejected");
+        }
 
         current_ = std::move(desired);
         return {};

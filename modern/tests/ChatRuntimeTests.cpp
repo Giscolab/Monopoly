@@ -66,9 +66,9 @@ namespace
         require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 198, 12),
                     Sender, 0u, true) && chat::stateReadOnly().optionsOpen,
             "Options hotspot opens the retail panel");
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 143, 28), Sender, 0u, true);
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 143, 44), Sender, 0u, true);
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 213, 60), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 143, 28), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 143, 44), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 213, 60), Sender, 0u, true);
         require(chat::stateReadOnly().backgroundAlphaIndex == 9 &&
                 chat::stateReadOnly().textAlphaIndex == 9 &&
                 chat::stateReadOnly().fontSize == 8,
@@ -88,42 +88,42 @@ namespace
                 initial.fluffCategory == 0,
             "Fluff window starts at retail geometry and Greetings category");
 
-        chat::processInput(textInput("draft"), Sender, 0u, true);
+        (void)chat::processInput(textInput("draft"), Sender, 0u, true);
         require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 438, 16),
                     Sender, 0u, true) && chat::stateReadOnly().fluffCategory == 3 &&
                 chat::stateReadOnly().draft.empty(),
             "changing Fluff category clears the edit draft like GetCategory");
-        chat::processInput(textInput("x"), Sender, 0u, true);
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 438, 16), Sender, 0u, true);
+        (void)chat::processInput(textInput("x"), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 438, 16), Sender, 0u, true);
         require(chat::stateReadOnly().draft == u"x",
             "reselecting the current Fluff category preserves the draft");
 
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 16), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 16), Sender, 0u, true);
         require(chat::stateReadOnly().fluffShaded,
             "Fluff shade hotspot hides the body without closing the window");
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 16), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 16), Sender, 0u, true);
         require(!chat::stateReadOnly().fluffShaded,
             "Fluff shade hotspot restores the body");
 
         require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 500, 100),
                     Sender, 0u, true) && chat::stateReadOnly().fluffSizing,
             "Fluff resize hotspot starts sizing");
-        chat::processInput(mouse(uimsg::Type::MouseMoved, 600, 200), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseMoved, 600, 200), Sender, 0u, true);
         require(chat::stateReadOnly().fluffWindowWidth == 346 &&
                 chat::stateReadOnly().fluffWindowHeight == 199,
             "Fluff resize uses retail bounds and five-pixel quantization");
-        chat::processInput(mouse(uimsg::Type::MouseLeftUp, 600, 200), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftUp, 600, 200), Sender, 0u, true);
         require(!chat::stateReadOnly().fluffSizing,
             "Fluff resize ends on left-button release");
 
         require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 300, 15),
                     Sender, 0u, true) && chat::stateReadOnly().fluffMoving,
             "Fluff title bar starts window dragging");
-        chat::processInput(mouse(uimsg::Type::MouseMoved, 350, 50), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseMoved, 350, 50), Sender, 0u, true);
         require(chat::stateReadOnly().fluffWindowX == 315 &&
                 chat::stateReadOnly().fluffWindowY == 45,
             "Fluff drag preserves the retail pointer offset without clamp");
-        chat::processInput(mouse(uimsg::Type::MouseLeftUp, 350, 50), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftUp, 350, 50), Sender, 0u, true);
 
         require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 320, 50),
                     Sender, 0u, true) && !chat::stateReadOnly().fluffOpen,
@@ -134,7 +134,7 @@ namespace
     {
         chat::reset();
         chat::toggle();
-        chat::processInput(mouse(uimsg::Type::MouseLeftDown, 220, 14), Sender, 0u, true);
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 220, 14), Sender, 0u, true);
         chat::toggle();
         require(!chat::stateReadOnly().boxActive && chat::stateReadOnly().fluffOpen,
             "Fluff window remains active when the main chat window closes");

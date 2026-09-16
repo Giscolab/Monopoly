@@ -3,6 +3,7 @@
 #include "ChatRuntime.hpp"
 #include "SequencePlayback.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -12,7 +13,14 @@
 namespace monopoly::chat
 {
     inline constexpr std::uint16_t ChatFluffButtonPriority = 5230;
+    inline constexpr std::uint16_t ChatFluffWindowPriority = 5225;
     inline constexpr data::DataTag ChatFluffButtonTag = 0x00B4;
+    inline constexpr data::DataTag ChatFluffUpTag = 0x00A4;
+    inline constexpr data::DataTag ChatFluffDownTag = 0x00A3;
+    inline constexpr data::DataTag ChatFluffShadeTag = 0x00B0;
+    inline constexpr data::DataTag ChatFluffCloseTag = 0x00C2;
+    inline constexpr std::array<data::DataTag, 6> ChatFluffCategoryTags{
+        0x00B2, 0x00AF, 0x00B1, 0x00C4, 0x00B7, 0x00B5};
 
     class FluffPlayback final
     {
