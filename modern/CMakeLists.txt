@@ -732,6 +732,7 @@ target_sources(
     src/StatsPlayerCashPlayback.cpp
     src/StatsPlayerAuxPlayback.cpp
     src/StatsFutureImmunityUI.cpp
+    src/StatsFutureImmunityPlayback.cpp
     src/StatsDeedPlayback.cpp
     src/StatsDeedFloaterPlayback.cpp
     src/StatsDeedBarPlayback.cpp

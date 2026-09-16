@@ -39,6 +39,7 @@
 #include "StatsPlayerPlayback.hpp"
 #include "StatsPlayerCashPlayback.hpp"
 #include "StatsPlayerAuxPlayback.hpp"
+#include "StatsFutureImmunityPlayback.hpp"
 #include "StatsDeedPlayback.hpp"
 #include "StatsDeedFloaterPlayback.hpp"
 #include "StatsDeedBarPlayback.hpp"
@@ -110,6 +111,7 @@ namespace monopoly::engine
         statsui::PlayerPlayback statsPlayerPlayback;
         statsui::PlayerCashPlayback statsPlayerCashPlayback;
         statsui::PlayerAuxPlayback statsPlayerAuxPlayback;
+        statsui::FutureImmunityPlayback statsFutureImmunityPlayback;
         statsui::DeedPlayback statsDeedPlayback;
         statsui::DeedFloaterPlayback statsDeedFloaterPlayback;
         statsui::DeedBarPlayback statsDeedBarPlayback;
@@ -1282,6 +1284,12 @@ namespace monopoly::engine
             statsui::setFutureImmunityIcons(
                 userinterface::statsFutureImmunityState(),
                 statsPlayerAuxPlayback.iconHits());
+            const auto statsFutureImmunitySync = statsFutureImmunityPlayback.sync(
+                userinterface::statsFutureImmunityStateReadOnly(),
+                displayState.desired2DView, *session);
+            if (!statsFutureImmunitySync)
+                return SDL_SetError("UDStats Future/Immunity playback: %s",
+                    statsFutureImmunitySync.error().c_str());
             const auto statsDeedSync = statsDeedPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
@@ -1553,6 +1561,7 @@ namespace monopoly::engine
         statsPlayerPlayback.reset();
         statsPlayerCashPlayback.reset();
         statsPlayerAuxPlayback.reset();
+        statsFutureImmunityPlayback.reset();
         statsDeedPlayback.reset();
         statsDeedFloaterPlayback.reset();
         statsDeedBarPlayback.reset();
