@@ -731,6 +731,7 @@ target_sources(
     src/StatsPlayerPlayback.cpp
     src/StatsPlayerCashPlayback.cpp
     src/StatsPlayerAuxPlayback.cpp
+    src/StatsFutureImmunityUI.cpp
     src/StatsDeedPlayback.cpp
     src/StatsDeedFloaterPlayback.cpp
     src/StatsDeedBarPlayback.cpp
@@ -760,6 +761,7 @@ if(BUILD_TESTING)
         src/StatsUI.cpp
         src/StatsCalculatorUI.cpp
         src/StatsCalculatorLogic.cpp
+        src/StatsFutureImmunityUI.cpp
         src/IBarLayout.cpp
         src/AIUtility.cpp
         src/BoardRules.cpp

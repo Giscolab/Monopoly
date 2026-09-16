@@ -12,6 +12,7 @@
 #include "OptionsUI.hpp"
 #include "StatsUI.hpp"
 #include "StatsCalculatorUI.hpp"
+#include "StatsFutureImmunityUI.hpp"
 
 #include <cstdint>
 #include <expected>
@@ -32,6 +33,8 @@ namespace monopoly::userinterface
     const statsui::State& statsStateReadOnly() noexcept;
     statsui::CalculatorUIState& statsCalculatorState() noexcept;
     const statsui::CalculatorUIState& statsCalculatorStateReadOnly() noexcept;
+    statsui::FutureImmunityState& statsFutureImmunityState() noexcept;
+    const statsui::FutureImmunityState& statsFutureImmunityStateReadOnly() noexcept;
     [[nodiscard]] bool beginTradeFromIBar(rules::PlayerNumber iBarPlayer) noexcept;
     [[nodiscard]] bool beginOptionsFromIBar() noexcept;
     [[nodiscard]] std::expected<void, std::string> sendReadyResponses(

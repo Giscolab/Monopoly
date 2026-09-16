@@ -129,17 +129,21 @@ namespace monopoly::statsui
                     continue;
                 if (hasHit(gameState, player, rules::CountHitType::RentImmunity))
                 {
-                    result.push_back({immunityId, PlayerAuxPriority,
-                        static_cast<int>(column) * boxWidth + boxWidth -
-                            immunitySize->first - 10 + iconGapOffset,
-                        224 + boxHeight - immunitySize->second});
+                    const int x = static_cast<int>(column) * boxWidth + boxWidth -
+                        immunitySize->first - 10 + iconGapOffset;
+                    const int y = 224 + boxHeight - immunitySize->second;
+                    result.push_back({immunityId, PlayerAuxPriority, x, y,
+                        FutureImmunityIcon{FutureImmunityKind::Immunity, player,
+                            {x, y, x + immunitySize->first, y + immunitySize->second}}});
                 }
                 if (hasHit(gameState, player, rules::CountHitType::FutureRent))
                 {
-                    result.push_back({futureId, PlayerAuxPriority,
-                        static_cast<int>(column) * boxWidth + boxWidth -
-                            futureSize->first - 10 + iconGapOffset,
-                        224 + boxHeight - futureSize->second - 20});
+                    const int x = static_cast<int>(column) * boxWidth + boxWidth -
+                        futureSize->first - 10 + iconGapOffset;
+                    const int y = 224 + boxHeight - futureSize->second - 20;
+                    result.push_back({futureId, PlayerAuxPriority, x, y,
+                        FutureImmunityIcon{FutureImmunityKind::Future, player,
+                            {x, y, x + futureSize->first, y + futureSize->second}}});
                 }
 
                 const int deedGapOffset = 3 + 3 * static_cast<int>(column);
@@ -156,6 +160,15 @@ namespace monopoly::statsui
             return result;
         }
     }
+    std::vector<FutureImmunityIcon> PlayerAuxPlayback::iconHits() const
+    {
+        std::vector<FutureImmunityIcon> result;
+        result.reserve(current_.size());
+        for (const auto& object : current_)
+            if (object.icon) result.push_back(*object.icon);
+        return result;
+    }
+
     std::expected<void, std::string> PlayerAuxPlayback::sync(
         const State& state, const rules::GameState& gameState,
         const PlayerPlaybackInputs& inputs,

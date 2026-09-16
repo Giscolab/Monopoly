@@ -1,10 +1,12 @@
 #pragma once
 
 #include "StatsPlayerPlayback.hpp"
+#include "StatsFutureImmunityUI.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +29,7 @@ namespace monopoly::statsui
             std::uint16_t priority{};
             int x{};
             int y{};
+            std::optional<FutureImmunityIcon> icon;
             friend bool operator==(const Published&, const Published&) = default;
         };
         [[nodiscard]] std::expected<void, std::string> sync(
@@ -40,6 +43,7 @@ namespace monopoly::statsui
         {
             return current_.size();
         }
+        [[nodiscard]] std::vector<FutureImmunityIcon> iconHits() const;
 
     private:
         std::vector<Published> current_;
