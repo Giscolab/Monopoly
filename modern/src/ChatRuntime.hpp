@@ -14,6 +14,7 @@ namespace monopoly::chat
 {
     inline constexpr std::size_t HistoryCapacity = 512;
     inline constexpr std::size_t MaxInputCharacters = 255;
+    inline constexpr std::size_t InputHistoryCapacity = 100;
     inline constexpr std::array<int, 6> FluffCategoryLineCounts{
         19, 21, 18, 19, 14, 8};
     inline constexpr std::array<std::int64_t, 6> FluffCategoryMessageStarts{
@@ -34,6 +35,9 @@ namespace monopoly::chat
         std::size_t count{};
         std::size_t outputOffset{};
         std::u16string draft{};
+        std::array<std::u16string, InputHistoryCapacity> inputHistory{};
+        std::size_t inputHistoryCount{};
+        std::size_t inputHistoryOffset{};
         std::uint32_t recipientMask = (1u << rules::MaxPlayers) - 1u;
         std::uint32_t eligibleRecipients{};
         int windowX{10};
@@ -68,6 +72,7 @@ namespace monopoly::chat
         bool fluffScrolling{};
         bool moving{};
         bool sizing{};
+        bool scrolling{};
     };
 
     void reset() noexcept;
