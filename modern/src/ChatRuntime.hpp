@@ -34,6 +34,7 @@ namespace monopoly::chat
         std::uint32_t eligibleRecipients{};
         bool boxActive{};
         bool shaded{};
+        bool optionsOpen{};
     };
 
     void reset() noexcept;

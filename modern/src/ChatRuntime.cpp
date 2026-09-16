@@ -33,6 +33,9 @@ namespace monopoly::chat
         };
 
         inline constexpr ChatRect AllButtonRect{180, 12, 196, 26};
+        inline constexpr ChatRect OptionsButtonRect{198, 12, 214, 26};
+        inline constexpr ChatRect ShadeButtonRect{235, 11, 255, 28};
+        inline constexpr ChatRect CloseButtonRect{10, 10, 29, 28};
         [[nodiscard]] constexpr ChatRect recipientButtonRect(std::size_t ordinal) noexcept
         {
             const int left = 164 - 19 * static_cast<int>(ordinal);
@@ -178,9 +181,8 @@ namespace monopoly::chat
 
     void toggle() noexcept
     {
+        // CHAT_Toggle() preserves CHAT_shade / CHAT_options across close/open.
         runtime.boxActive = !runtime.boxActive;
-        if (runtime.boxActive)
-            runtime.shaded = false;
     }
 
     void setRecipientMask(std::uint32_t mask) noexcept
@@ -225,10 +227,28 @@ namespace monopoly::chat
 
         if (message.type == uimsg::Type::MouseLeftDown)
         {
-            if (processRecipientClick(
-                    static_cast<int>(message.numberA),
-                    static_cast<int>(message.numberB), eligibleRecipients))
+            const int x = static_cast<int>(message.numberA);
+            const int y = static_cast<int>(message.numberB);
+            if (processRecipientClick(x, y, eligibleRecipients))
                 return true;
+            if (OptionsButtonRect.contains(x, y))
+            {
+                runtime.optionsOpen = !runtime.optionsOpen;
+                if (runtime.optionsOpen && runtime.shaded)
+                    runtime.shaded = false;
+                return true;
+            }
+            if (ShadeButtonRect.contains(x, y))
+            {
+                runtime.shaded = !runtime.shaded;
+                if (runtime.shaded) runtime.optionsOpen = false;
+                return true;
+            }
+            if (CloseButtonRect.contains(x, y))
+            {
+                runtime.boxActive = false;
+                return true;
+            }
             if (runtime.shaded) return false;
         }
         if (runtime.shaded)
