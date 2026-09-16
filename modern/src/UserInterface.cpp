@@ -32,6 +32,7 @@ namespace monopoly::userinterface
         tradeui::State tradeProjection;
         optionsui::State optionsProjection;
         statsui::State statsProjection;
+        statsui::CalculatorUIState statsCalculatorProjection;
 
         constexpr std::array<std::uint32_t, rules::SquareCount> ResyncPropertyBits{{
             0, 1u<<0, 0, 1u<<1, 0, 1u<<2, 1u<<3, 0, 1u<<4, 1u<<5,
@@ -182,6 +183,14 @@ namespace monopoly::userinterface
     const statsui::State& statsStateReadOnly() noexcept
     {
         return statsProjection;
+    }
+    statsui::CalculatorUIState& statsCalculatorState() noexcept
+    {
+        return statsCalculatorProjection;
+    }
+    const statsui::CalculatorUIState& statsCalculatorStateReadOnly() noexcept
+    {
+        return statsCalculatorProjection;
     }
     namespace
     {
@@ -499,6 +508,7 @@ namespace monopoly::userinterface
         tradeui::reset(tradeProjection);
         optionsui::reset(optionsProjection);
         statsui::reset(statsProjection);
+        statsui::resetCalculatorUI(statsCalculatorProjection);
         chat::reset();
         pendingPieceIdleTransition.reset();
         iBarGameJustLoaded = false;
@@ -1157,6 +1167,9 @@ namespace monopoly::userinterface
         statsui::syncView(
             statsProjection, uiRuleState,
             display::stateReadOnly().desired2DView);
+        statsui::syncCalculatorView(
+            statsCalculatorProjection,
+            display::stateReadOnly().desired2DView);
 
         // ProcessPlayersUI(NULL) original entretient les effets UI
         // periodiques, mais ne valide pas une phase UDPSEL. Le commit
@@ -1246,6 +1259,9 @@ namespace monopoly::userinterface
         // the default Player/Turn projection immediately.
         (void)statsui::processInput(
             statsProjection, uiRuleState, display::state().desired2DView, message);
+        (void)statsui::processCalculatorInput(
+            statsCalculatorProjection, uiRuleState,
+            display::state().desired2DView, message);
         if (message.type == uimsg::Type::MouseLeftDown &&
             display::state().desired2DView == display::Screen2D::Portfolio)
         {

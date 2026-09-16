@@ -1,5 +1,6 @@
 #include "StatsCalculatorPlayback.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <variant>
@@ -17,6 +18,17 @@ namespace monopoly::statsui
         [[nodiscard]] constexpr data::DataId languageId(data::DataTag tag) noexcept
         {
             return data::packDataId(data::LegacyGroupId::LanguageGraphics, tag);
+        }
+
+        [[nodiscard]] sequence::Matrix2D calculatorTokenTransform(
+            int x, int y) noexcept
+        {
+            auto transform = sequence::identity2D();
+            transform.values[0] = CalculatorTokenScale;
+            transform.values[4] = CalculatorTokenScale;
+            transform.values[6] = static_cast<float>(x);
+            transform.values[7] = static_cast<float>(y);
+            return transform;
         }
 
         [[nodiscard]] std::expected<
@@ -43,10 +55,14 @@ namespace monopoly::statsui
     }
 
     std::expected<void, std::string> CalculatorPlayback::sync(
-        display::Screen2D desiredView, engine::SequencePlayback& playback)
+        display::Screen2D desiredView, const CalculatorUIState& ui,
+        const rules::GameState& gameState,
+        engine::SequencePlayback& playback)
     {
         const bool desiredVisible = desiredView == display::Screen2D::Portfolio;
         std::array<std::optional<Published>, SlotCount> desired{};
+        std::array<std::optional<sequence::SequenceTransform>, SlotCount>
+            initialTransforms{};
         std::optional<std::pair<data::DataId,
             std::shared_ptr<const sequence::SequenceProgram>>> enterProgram;
         if (desiredVisible)
@@ -55,23 +71,65 @@ namespace monopoly::statsui
                 CalculatorBackgroundPriority};
             desired[1] = Published{mainId(CalculatorTextBoxTag),
                 CalculatorBackgroundPriority};
-            for (std::size_t index = 0; index < 10; ++index)
-                desired[2 + index] = Published{mainId(static_cast<data::DataTag>(
-                    CalculatorNumberIdleBaseTag + index)), CalculatorButtonPriority};
-            data::DataId enterId{};
-            if (published_[12])
-                enterId = published_[12]->id;
-            else
+
+            const bool numberButtonsVisible =
+                ui.picker != CalculatorPicker::Player;
+            if (numberButtonsVisible)
             {
-                auto loaded = loadEnter(playback);
-                if (!loaded) return std::unexpected(loaded.error());
-                enterProgram = std::move(*loaded);
-                enterId = enterProgram->first;
+                for (std::size_t index = 0; index < 10; ++index)
+                {
+                    const auto base = ui.pressedNumber && *ui.pressedNumber == index
+                        ? CalculatorNumberPressBaseTag
+                        : CalculatorNumberIdleBaseTag;
+                    desired[2 + index] = Published{mainId(
+                        static_cast<data::DataTag>(base + index)),
+                        CalculatorButtonPriority};
+                }
+
+                data::DataId enterId{};
+                if (published_[12])
+                    enterId = published_[12]->id;
+                else
+                {
+                    auto loaded = loadEnter(playback);
+                    if (!loaded) return std::unexpected(loaded.error());
+                    enterProgram = std::move(*loaded);
+                    enterId = enterProgram->first;
+                }
+                desired[12] = Published{enterId, CalculatorButtonPriority};
             }
-            desired[12] = Published{enterId, CalculatorButtonPriority};
+
             for (std::size_t index = 0; index < 8; ++index)
-                desired[13 + index] = Published{mainId(static_cast<data::DataTag>(
-                    CalculatorFunctionIdleBaseTag + index)), CalculatorButtonPriority};
+            {
+                const bool pressed = ui.activeFunction &&
+                    static_cast<std::uint8_t>(*ui.activeFunction) == index;
+                const auto base = pressed
+                    ? CalculatorFunctionPressBaseTag
+                    : CalculatorFunctionIdleBaseTag;
+                desired[13 + index] = Published{mainId(
+                    static_cast<data::DataTag>(base + index)),
+                    CalculatorButtonPriority};
+            }
+
+            if (ui.picker == CalculatorPicker::Player)
+            {
+                const auto count = std::min<std::size_t>(
+                    gameState.numberOfPlayers, rules::MaxPlayers);
+                for (std::size_t index = 0; index < count; ++index)
+                {
+                    const auto token = gameState.players[index].token;
+                    if (token >= rules::MaxTokens)
+                        return std::unexpected(
+                            "UDStats calculator token index is out of range");
+                    const auto slot = 21 + index;
+                    desired[slot] = Published{mainId(static_cast<data::DataTag>(
+                        CalculatorTokenBaseTag + token)), CalculatorButtonPriority};
+                    const auto rect = calculatorTokenRect(
+                        static_cast<rules::PlayerNumber>(index));
+                    initialTransforms[slot] = sequence::SequenceTransform{
+                        calculatorTokenTransform(rect.left, rect.top)};
+                }
+            }
         }
 
         std::array<std::shared_ptr<const sequence::SequenceProgram>, SlotCount> programs{};
@@ -113,7 +171,8 @@ namespace monopoly::statsui
                     published_[slot]->id, published_[slot]->priority, false});
             if (desired[slot])
                 commands.push_back(sequence::StartSequenceCommand{
-                    programs[slot], desired[slot]->priority, {}});
+                    programs[slot], desired[slot]->priority, {},
+                    initialTransforms[slot]});
         }
 
         for (auto& command : commands)

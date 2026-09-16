@@ -134,9 +134,9 @@ struct SyntheticSequenceResources
                 items[0x00C6] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDStats calculator background/textbox and idle function/number buttons.
                 items[0x006A] = {LegacyDataType::Chunky, bitmapSequence};
-                for (std::uint32_t tag = 0x006DU; tag <= 0x0074U; ++tag)
+                for (std::uint32_t tag = 0x006DU; tag <= 0x007CU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
-                for (std::uint32_t tag = 0x007DU; tag <= 0x0086U; ++tag)
+                for (std::uint32_t tag = 0x007DU; tag <= 0x0090U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0091] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDTrade Future/Immunity dialog arrows: CNK_byahadni / CNK_byahaupi.
