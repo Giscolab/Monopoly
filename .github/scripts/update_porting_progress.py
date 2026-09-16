@@ -45,14 +45,21 @@ def parse_status(path: Path) -> tuple[Counter[str], Counter[str], str]:
 
 
 def functional_estimate(text: str) -> float:
-    match = re.search(
-        r"Progression fonctionnelle estim(?:ee|ée)\s*:\s*(?:environ\s*)?([0-9]+(?:[.,][0-9]+)?)\s*%",
+    # This percentage is manually audited. Accept both an undated marker and
+    # dated audit snapshots; never silently turn a wording change into 0%.
+    matches = list(re.finditer(
+        r"Progression fonctionnelle estim(?:ee|\u00e9e)"
+        r"(?:\s+au\s+[^:\r\n]+)?\s*:\s*"
+        r"(?:environ\s*)?([0-9]+(?:[.,][0-9]+)?)\s*%",
         text,
         flags=re.IGNORECASE,
-    )
-    if not match:
-        return 0.0
-    return float(match.group(1).replace(",", "."))
+    ))
+    if not matches:
+        raise ValueError(
+            "PORTING_STATUS.md has no audited functional estimate; "
+            "refusing to render a misleading 0%"
+        )
+    return float(matches[-1].group(1).replace(",", "."))
 
 
 def calculate_index(counts: Counter[str]) -> tuple[int, int, int]:
@@ -83,7 +90,7 @@ def format_percent(value: float) -> str:
 def render_svg(functional: float, families: float, index: int) -> str:
     width = 600
     metrics = (
-        ("Estimation fonctionnelle", functional, "#2da44e"),
+        ("Dernier audit fonctionnel", functional, "#2da44e"),
         ("Familles engagees", families, "#0969da"),
         ("Indice mecanique", float(index), "#8250df"),
     )
@@ -109,7 +116,7 @@ def render_svg(functional: float, families: float, index: int) -> str:
         )
 
     aria = (
-        f"Functional {format_percent(functional)}, "
+        f"Last audited functional {format_percent(functional)}, "
         f"families engaged {format_percent(families)}, mechanical {index}%"
     )
     body = "\n".join(rows)
@@ -133,7 +140,7 @@ def write_summary(
 ) -> None:
     with path.open("a", encoding="utf-8") as stream:
         stream.write("## Porting progress\n")
-        stream.write(f"- **Functional estimate**: {format_percent(functional)}\n")
+        stream.write(f"- **Last audited functional estimate**: {format_percent(functional)}\n")
         stream.write(
             f"- **Families engaged**: {format_percent(families)} "
             f"({family_engaged} / {family_active})\n"
@@ -143,7 +150,7 @@ def write_summary(
         stream.write(f"- **Partial**: {counts['PORTED_PARTIAL']}\n")
         stream.write(f"- **Not started**: {counts['NOT_STARTED']}\n\n")
         stream.write(
-            "> Functional estimate is read from PORTING_STATUS; family engagement and the "
+            "> The functional value is the latest explicitly audited estimate read from PORTING_STATUS; family engagement and the "
             "mechanical index are calculated automatically from matrix statuses.\n"
         )
 
