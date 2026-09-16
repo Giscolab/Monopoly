@@ -164,6 +164,11 @@ struct SyntheticSequenceResources
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0321] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0322] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDChat recipient colour buttons, All and selected focus overlays.
+                for (std::uint32_t tag = 0x00A8U; tag <= 0x00AEU; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                for (std::uint32_t tag = 0x00BBU; tag <= 0x00C0U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDStats Deed owner-colour bars: TAB_dndsdp00 + colour.
                 for (std::uint32_t tag = 0x00C7U; tag <= 0x00CCU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};

@@ -703,6 +703,7 @@ target_sources(
     PRIVATE
     src/UIMessages.cpp
     src/ChatRuntime.cpp
+    src/ChatRecipientPlayback.cpp
     src/UserInterface.cpp
     src/AuctionUI.cpp
     src/AuctionPlayback.cpp
