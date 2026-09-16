@@ -30,6 +30,7 @@
 #include "PieceBuildingDisplay.hpp"
 #include "PieceShadowDisplay.hpp"
 #include "AuctionPlayback.hpp"
+#include "AuctionTextPlayback.hpp"
 #include "AuctionPennyBagsPlayback.hpp"
 #include "TradeBackdropPlayback.hpp"
 #include "TradeTokenPlayback.hpp"
@@ -110,6 +111,7 @@ namespace monopoly::engine
         pieces::PieceBuildingDisplay pieceBuildingDisplay;
         pieces::PieceShadowDisplay pieceShadowDisplay;
         auctionui::Playback auctionPlayback;
+        auctionui::TextPlayback auctionTextPlayback;
         auctionui::PennyBagsPlayback auctionPennyBagsPlayback;
         tradeui::BackdropPlayback tradeBackdropPlayback;
         tradeui::TokenPlayback tradeTokenPlayback;
@@ -1213,6 +1215,13 @@ namespace monopoly::engine
                 displayState.desired2DView, displayState.city, *session);
             if (!auctionSync)
                 return SDL_SetError("Auction playback: %s", auctionSync.error().c_str());
+            const auto auctionTextSync = auctionTextPlayback.sync(
+                userinterface::auctionStateReadOnly(), ruleState,
+                displayState.desired2DView, displayState.system,
+                fontPlayback(), *session);
+            if (!auctionTextSync)
+                return SDL_SetError("Auction text playback: %s",
+                    auctionTextSync.error().c_str());
             const auto pennyBagsSync = auctionPennyBagsPlayback.sync(
                 userinterface::auctionState(), ruleState,
                 displayState.desired2DView, *session,
@@ -1699,6 +1708,7 @@ namespace monopoly::engine
         pieceBuildingDisplay.reset();
         pieceShadowDisplay.reset();
         auctionPlayback.reset();
+        auctionTextPlayback.reset();
         auctionPennyBagsPlayback.reset();
         tradeBackdropPlayback.reset();
         tradeTokenPlayback.reset();

@@ -537,6 +537,7 @@ target_sources(
     src/AudioRuntime.cpp
     src/Gsm610Codec.cpp
     src/VoiceChatAudioRuntime.cpp
+    src/MoneyFormat.cpp
     src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
     src/TokenVoiceCatalog.cpp
@@ -768,6 +769,7 @@ target_sources(
     src/UserInterface.cpp
     src/AuctionUI.cpp
     src/AuctionPlayback.cpp
+    src/AuctionTextPlayback.cpp
     src/AuctionPennyBagsPlayback.cpp
     src/TradeUI.cpp
     src/TradePropertyPlayback.cpp
