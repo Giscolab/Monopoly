@@ -723,6 +723,7 @@ target_sources(
     src/OptionsHelpPlayback.cpp
     src/StatsUI.cpp
     src/StatsPlayback.cpp
+    src/StatsBankPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -811,6 +812,26 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsPlayback COMMAND MonopolyStatsPlaybackTests)
+endif()
+
+# UDStats.cpp autonomous Bank houses/hotels and property overlays
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsBankPlaybackTests
+        tests/StatsBankPlaybackTests.cpp
+        src/StatsBankPlayback.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyStatsBankPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolyStatsBankPlaybackTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyStatsBankPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.StatsBankPlayback COMMAND MonopolyStatsBankPlaybackTests)
 endif()
 
 # UDPenny.cpp pure token-voice reaction selectors and catalog fidelity
