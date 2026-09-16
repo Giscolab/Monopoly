@@ -32,6 +32,7 @@ namespace monopoly::messaging
 
     std::size_t currentQueueSize();
     bool receiveAction(actions::Message& message);
+    bool receiveVoiceChatOnly(actions::Message& message);
 
     bool serverMode();
     bool networkMode();

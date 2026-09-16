@@ -64,11 +64,27 @@ namespace monopoly::userinterface
             firstTimeStep = false;
         }
 
-        // Userifce.cpp::AdvanceTimeStep() stops consuming RULE messages
-        // while display-driven animation locks are active. Voice-chat-only
-        // bypass is not present because voice chat is not yet ported.
+        // Userifce.cpp::AdvanceTimeStep() stops consuming ordinary RULE
+        // messages while display-driven animation locks are active, but it
+        // still removes ACTION/NOTIFY_VOICE_CHAT from the middle of MESS so
+        // audio does not break up behind a long token animation.
         if (gameQueueGate.blocks(timers::tickCount()))
         {
+            actions::Message voiceMessage{};
+            if (messaging::receiveVoiceChatOnly(voiceMessage))
+            {
+                if ((voiceMessage.toPlayer == rules::AllPlayers ||
+                     voiceMessage.toPlayer == rules::BankPlayer) &&
+                    messaging::serverMode())
+                {
+                    rules::process(voiceMessage);
+                }
+
+                processRuleMessage(voiceMessage);
+                update();
+                ai::processMessage(ruleStateReadOnly(), voiceMessage);
+                return;
+            }
             update();
             return;
         }

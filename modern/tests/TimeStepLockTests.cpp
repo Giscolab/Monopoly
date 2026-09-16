@@ -42,6 +42,10 @@ namespace monopoly::messaging
         queuedMessageAvailable = false;
         return true;
     }
+    bool receiveVoiceChatOnly(actions::Message&)
+    {
+        return false;
+    }
     bool serverMode() { return false; }
 }
 
