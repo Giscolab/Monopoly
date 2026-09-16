@@ -1427,7 +1427,9 @@ namespace monopoly::engine
                 if (auto* output = audioPlayback())
                 {
                     const auto wave = penny::cardReadWave(
-                        output->boardEdition(), *iBarInputs.desiredCardIndex);
+                        output->boardEdition(), output->language(),
+                        displayState.city, displayState.system,
+                        *iBarInputs.desiredCardIndex);
                     if (wave)
                     {
                         const auto spoken = playPennybagsSpecific(*wave,
