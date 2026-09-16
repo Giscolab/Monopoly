@@ -1176,7 +1176,7 @@ namespace monopoly::engine
             const auto statsCalculatorPickerSync =
                 statsCalculatorDeedPickerPlayback.sync(
                     userinterface::statsCalculatorStateReadOnly(),
-                    displayState.desired2DView, *session);
+                    displayState.city, displayState.desired2DView, *session);
             if (!statsCalculatorPickerSync)
                 return SDL_SetError("UDStats calculator deed picker: %s",
                     statsCalculatorPickerSync.error().c_str());

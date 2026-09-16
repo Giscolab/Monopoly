@@ -37,6 +37,7 @@ namespace monopoly::statsui
             state.activeFunction = static_cast<CalculatorFunction>(index);
             state.hoveredFunction = index;
             state.selection = {};
+            state.hoveredDeed.reset();
             state.result.reset();
             state.error.reset();
             state.pressedNumber.reset();
@@ -65,6 +66,7 @@ namespace monopoly::statsui
             const auto deed = calculatorDeedHit(x, y);
             if (!deed) return false;
             state.selection.deed = *deed;
+            state.hoveredDeed.reset();
 
             if (state.activeFunction == CalculatorFunction::FutureValueToOther)
             {
@@ -181,6 +183,12 @@ namespace monopoly::statsui
         const int y = static_cast<int>(message.numberB);
         if (message.type == uimsg::Type::MouseMoved)
         {
+            if (state.picker == CalculatorPicker::Deed)
+            {
+                state.hoveredDeed = calculatorDeedHit(x, y);
+                return false;
+            }
+            state.hoveredDeed.reset();
             if (state.step >= CalculatorStep::Second) return false;
             const auto function = calculatorFunctionHit(x, y);
             if (function)

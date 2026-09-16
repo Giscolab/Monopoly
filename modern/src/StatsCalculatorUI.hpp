@@ -32,6 +32,7 @@ namespace monopoly::statsui
         CalculatorStep step{CalculatorStep::RollOver};
         CalculatorPicker picker{CalculatorPicker::None};
         std::optional<std::uint8_t> hoveredFunction;
+        std::optional<int> hoveredDeed;
         std::optional<CalculatorFunction> activeFunction;
         CalculatorSelection selection{};
         std::optional<CalculatorResult> result;
