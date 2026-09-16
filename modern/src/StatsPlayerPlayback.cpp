@@ -97,6 +97,7 @@ namespace monopoly::statsui
             const bool localBssm = bssmMode(inputs.mode) &&
                 inputs.iBarPlayerLocalHuman;
 
+            int boxGapOffset = 3;
             for (std::size_t column = 0; column < count; ++column)
             {
                 const auto player = state.playerOrder[column];
@@ -110,12 +111,13 @@ namespace monopoly::statsui
                 if (colour >= rules::MaxPlayerColours)
                     return std::unexpected(
                         "UDStats Player colour is out of range");
-                const int columnOffset = 3 + 3 * static_cast<int>(column);
+                const int deedColumnOffset = 3 + 3 * static_cast<int>(column);
                 result.push_back({
                     mainId(static_cast<data::DataTag>(geometry.boxBaseTag + colour)),
                     PlayerBoxPriority,
-                    static_cast<int>(column) * geometry.boxWidth + columnOffset,
+                    static_cast<int>(column) * geometry.boxWidth + boxGapOffset,
                     224});
+                boxGapOffset += 3;
 
                 std::array<bool, 11> counted{};
                 for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
@@ -152,7 +154,7 @@ namespace monopoly::statsui
                             "UDStats Player deed column compression failed");
                     const int depth = order % 3;
                     const int x = static_cast<int>(column) * geometry.boxWidth +
-                        columnOffset + geometry.deedBoxX +
+                        deedColumnOffset + geometry.deedBoxX +
                         groupColumn * widthApart + 4 * depth;
                     const int y = geometry.deedBoxY + 20 * depth;
                     const auto id = deedId(square,

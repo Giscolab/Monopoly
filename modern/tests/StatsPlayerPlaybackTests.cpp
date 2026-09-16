@@ -104,6 +104,8 @@ namespace
         game.squares[3].owner = 0;
         game.squares[6].owner = 1;
         auto state = playerState(2);
+        state.playerOrder[0] = 1;
+        state.playerOrder[1] = 0;
 
         SyntheticSequenceResources resources;
         engine::SequencePlayback sequence(resources.service.snapshot());
@@ -123,6 +125,15 @@ namespace
             statsui::PlayerDeedNormalBaseTag);
         require(sequence.runtime().matching(med, 521, false).size() == 1,
             "Mortgage eligibility reuses the normal deed face like retail");
+        const auto playerBox = data::packDataId(data::LegacyGroupId::Main,
+            statsui::PlayerBoxLargeBaseTag);
+        const auto playerRoots = sequence.runtime().matching(playerBox, 500, false);
+        const auto playerView = playerRoots.empty()
+            ? std::optional<sequence::SequenceNodeView>{}
+            : sequence.runtime().inspect(playerRoots.front());
+        require(playerView &&
+                std::get<sequence::Matrix2D>(playerView->localTransform).values[6] == 201.0F,
+            "local BSSM player box keeps displayed-only retail gap accumulation");
         game.squares[1].mortgaged = true;
         inputs.mode = ibar::RuleMode::UnMortgage;
         require(playback.sync(state, game, inputs,
