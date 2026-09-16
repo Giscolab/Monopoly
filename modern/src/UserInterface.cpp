@@ -1246,6 +1246,15 @@ namespace monopoly::userinterface
         // the default Player/Turn projection immediately.
         (void)statsui::processInput(
             statsProjection, uiRuleState, display::state().desired2DView, message);
+        if (message.type == uimsg::Type::MouseLeftDown &&
+            display::state().desired2DView == display::Screen2D::Portfolio)
+        {
+            if (const auto square = statsui::propertyActionHit(
+                    statsProjection, uiRuleState,
+                    static_cast<int>(message.numberA),
+                    static_cast<int>(message.numberB)))
+                (void)ibar::activateProperty(*square);
+        }
 
         const bool tradePartnerDialogWasVisible = tradeProjection.playerSelectVisible;
         if (const auto partner = tradeui::planPartnerSelection(

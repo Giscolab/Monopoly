@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Display.hpp"
+#include "IBarLayout.hpp"
+#include "IBarRuleState.hpp"
 #include "RuleTypes.hpp"
 #include "UIMessages.hpp"
 
@@ -57,6 +59,12 @@ namespace monopoly::statsui
         int bankHotelsRemaining{};
         std::array<BankDeedState, rules::SquareCount> bankDeeds{};
         bool activeDatasetAvailable{true};
+        ibar::RuleMode propertyActionMode{ibar::RuleMode::Nothing};
+        rules::PlayerNumber propertyActionPlayer{rules::NobodyPlayer};
+        bool propertyActionPlayerLocalHuman{};
+        ibar::layout::PropertyMask buildProperties{};
+        ibar::layout::PropertyMask sellProperties{};
+        ibar::layout::PropertyMask mortgageProperties{};
         int mouseX{};
         int mouseY{};
         bool mouseKnown{};
@@ -88,6 +96,14 @@ namespace monopoly::statsui
         const rules::GameState& gameState) noexcept;
     [[nodiscard]] std::optional<Screen> categoryHit(int x, int y) noexcept;
     [[nodiscard]] std::optional<std::uint8_t> sortHit(int x, int y) noexcept;
+    void setPropertyActionContext(State& state, ibar::RuleMode mode,
+        rules::PlayerNumber player, bool localHuman,
+        ibar::layout::PropertyMask buildProperties,
+        ibar::layout::PropertyMask sellProperties,
+        ibar::layout::PropertyMask mortgageProperties) noexcept;
+    [[nodiscard]] std::optional<int> propertyActionHit(
+        const State& state, const rules::GameState& gameState,
+        int x, int y) noexcept;
     [[nodiscard]] bool processInput(
         State& state, const rules::GameState& gameState,
         display::Screen2D view, const uimsg::Message& message) noexcept;

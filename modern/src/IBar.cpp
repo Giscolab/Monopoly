@@ -1105,6 +1105,15 @@ namespace monopoly::ibar
     }
 
 
+    bool activateProperty(int square)
+    {
+        if (!globalState.initialized || square < 0 ||
+            square >= static_cast<int>(rules::SquareCount))
+            return false;
+        globalState.propertyCurrentMouseOver = square;
+        return handlePropertyClick(square);
+    }
+
     State& state()
     {
         return globalState;

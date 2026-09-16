@@ -754,6 +754,7 @@ if(BUILD_TESTING)
         src/OptionsUI.cpp
         src/IBarLayout.cpp
         src/StatsUI.cpp
+        src/IBarLayout.cpp
         src/AIUtility.cpp
         src/BoardRules.cpp
     )
