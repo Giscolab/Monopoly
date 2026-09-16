@@ -31,7 +31,7 @@ namespace monopoly::statsui
         };
 
         [[nodiscard]] std::expected<void, std::string> sync(
-            const CalculatorUIState& ui,
+            const CalculatorUIState& ui, int city,
             display::Screen2D desiredView,
             engine::SequencePlayback& playback);
 

@@ -1,4 +1,7 @@
 #include "StatsCalculatorDeedPickerPlayback.hpp"
+#include "StatsDeedFloaterPlayback.hpp"
+
+#include <algorithm>
 
 #include <memory>
 #include <utility>
@@ -14,8 +17,17 @@ namespace monopoly::statsui
                     PlayerDeedNormalBaseTag + property));
         }
 
+        [[nodiscard]] data::DataId cornerDeedId(int square, int city) noexcept
+        {
+            const int property = ibar::layout::propertyIndex(square);
+            if (property < 0) return data::EmptyDataId;
+            return data::packDataId(data::LegacyGroupId::LanguageGraphics,
+                static_cast<data::DataTag>(DeedFloaterCardBaseTag + property +
+                    DeedFloaterCardsPerCity * std::max(city, 0)));
+        }
+
         [[nodiscard]] std::vector<CalculatorDeedPickerPlayback::Published>
-        desiredPicker(const CalculatorUIState& ui,
+        desiredPicker(const CalculatorUIState& ui, int city,
             display::Screen2D desiredView)
         {
             std::vector<CalculatorDeedPickerPlayback::Published> result;
@@ -23,7 +35,7 @@ namespace monopoly::statsui
                 ui.picker != CalculatorPicker::Deed)
                 return result;
 
-            result.reserve(28);
+            result.reserve(29);
             for (int square = 0;
                  square < static_cast<int>(rules::SquareCount); ++square)
             {
@@ -37,32 +49,46 @@ namespace monopoly::statsui
                     CalculatorDeedPickerY +
                         CalculatorDeedPickerRowStep * (property / CalculatorDeedPickerColumns)});
             }
+            if (ui.hoveredDeed)
+            {
+                const auto id = cornerDeedId(*ui.hoveredDeed, city);
+                if (id != data::EmptyDataId)
+                    result.push_back({id, CalculatorDeedPickerPriority, 600, -2});
+            }
             return result;
         }
     }
 
     std::expected<void, std::string> CalculatorDeedPickerPlayback::sync(
-        const CalculatorUIState& ui,
+        const CalculatorUIState& ui, int city,
         display::Screen2D desiredView,
         engine::SequencePlayback& playback)
     {
-        auto desired = desiredPicker(ui, desiredView);
+        auto desired = desiredPicker(ui, city, desiredView);
         if (desired == current_) return {};
 
-        std::vector<std::shared_ptr<const sequence::SequenceProgram>> programs;
-        programs.reserve(desired.size());
+        std::vector<Published> removed;
+        std::vector<Published> added;
+        for (const auto& object : current_)
+            if (std::find(desired.begin(), desired.end(), object) == desired.end())
+                removed.push_back(object);
         for (const auto& object : desired)
+            if (std::find(current_.begin(), current_.end(), object) == current_.end())
+                added.push_back(object);
+
+        std::vector<std::shared_ptr<const sequence::SequenceProgram>> programs;
+        programs.reserve(added.size());
+        for (const auto& object : added)
         {
             auto loaded = sequence::SequenceProgram::load(
                 playback.resources(), object.id);
             if (!loaded)
                 return std::unexpected(
-                    "UDStats calculator deed picker failed: " +
-                    loaded.error().detail);
+                    "UDStats calculator deed picker failed: " + loaded.error().detail);
             programs.push_back(std::move(*loaded));
         }
 
-        const std::size_t required = current_.size() + desired.size();
+        const std::size_t required = removed.size() + added.size();
         if (required > sequence::SequenceCommandQueue::Capacity -
                 playback.commands().pendingCount())
         {
@@ -70,7 +96,7 @@ namespace monopoly::statsui
                 "sequence command queue cannot fit calculator deed picker transition");
         }
 
-        for (const auto& object : current_)
+        for (const auto& object : removed)
         {
             if (!playback.commands().enqueue(
                     sequence::StopSequenceCommand{
@@ -78,9 +104,9 @@ namespace monopoly::statsui
                 return std::unexpected(
                     "validated calculator deed picker stop rejected");
         }
-        for (std::size_t index = 0; index < desired.size(); ++index)
+        for (std::size_t index = 0; index < added.size(); ++index)
         {
-            const auto& object = desired[index];
+            const auto& object = added[index];
             if (!playback.commands().enqueue(
                     sequence::StartSequenceCommand{
                         programs[index], object.priority, {},
