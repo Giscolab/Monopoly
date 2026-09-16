@@ -24,6 +24,9 @@ namespace monopoly::statsui
     inline constexpr data::DataTag BankDeedBaseTag = 0x05E6;
     inline constexpr data::DataTag BankMortgageSignTag = 0x0E3D;
     inline constexpr data::DataTag BankSoldSignTag = 0x0F17;
+    inline constexpr data::DataTag BankLiabilityDividendCardTag = 0x0818;
+    inline constexpr data::DataTag BankLiabilityErrorCardTag = 0x08F1;
+    inline constexpr float BankLiabilityCardScale = 0.3F;
 
     [[nodiscard]] std::optional<Rect> bankDeedRect(int square) noexcept;
     [[nodiscard]] data::DataId bankDeedSequence(int square) noexcept;
@@ -44,6 +47,7 @@ namespace monopoly::statsui
             int x{};
             int y{};
             bool positioned{};
+            float scale{1.0F};
             friend bool operator==(const Published&, const Published&) = default;
         };
 

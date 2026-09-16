@@ -24,6 +24,17 @@ namespace monopoly::statsui
             return data::packDataId(data::LegacyGroupId::LanguageGraphics, tag);
         }
 
+        [[nodiscard]] sequence::Matrix2D scaleTranslate2D(
+            float scale, int x, int y) noexcept
+        {
+            auto transform = sequence::identity2D();
+            transform.values[0] = scale;
+            transform.values[4] = scale;
+            transform.values[6] = static_cast<float>(x);
+            transform.values[7] = static_cast<float>(y);
+            return transform;
+        }
+
         [[nodiscard]] std::expected<std::pair<int, int>, std::string>
         bitmapSize(const sequence::SequenceProgram& program)
         {
@@ -192,6 +203,20 @@ namespace monopoly::statsui
             }
             return result;
         }
+
+        [[nodiscard]] Objects liabilityObjects(
+            engine::SequencePlayback& playback)
+        {
+            Objects result;
+            const auto resources = playback.resources();
+            if (!resources || resources->context().board != data::BoardEdition::Usa)
+                return result;
+            result.push_back({languageId(BankLiabilityDividendCardTag),
+                51, 365, 275, true, BankLiabilityCardScale});
+            result.push_back({languageId(BankLiabilityErrorCardTag),
+                51, 365, 358, true, BankLiabilityCardScale});
+            return result;
+        }
     }
 
     std::optional<Rect> bankDeedRect(int square) noexcept
@@ -223,6 +248,8 @@ namespace monopoly::statsui
             if (!objects) return std::unexpected(objects.error());
             desired = std::move(*objects);
         }
+        else if (visible && state.activeSort == 2)
+            desired = liabilityObjects(playback);
 
         if (desired == current_) return {};
 
@@ -259,7 +286,10 @@ namespace monopoly::statsui
         for (const auto& object : desired)
         {
             std::optional<sequence::SequenceTransform> transform;
-            if (object.positioned)
+            if (object.positioned && object.scale != 1.0F)
+                transform = sequence::SequenceTransform{
+                    scaleTranslate2D(object.scale, object.x, object.y)};
+            else if (object.positioned)
                 transform = sequence::moveXYTransform(object.x, object.y);
             if (!playback.commands().enqueue(sequence::StartSequenceCommand{
                     programs.at(object.id), object.priority, {}, std::move(transform)}))

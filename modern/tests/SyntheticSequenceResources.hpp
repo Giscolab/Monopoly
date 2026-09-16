@@ -310,6 +310,9 @@ struct SyntheticSequenceResources
                 // UDStats calculator Enter idle, English and alternate language packs.
                 items[0x01FE] = {LegacyDataType::Chunky, staticTradeIcon};
                 items[0x0388] = {LegacyDataType::Chunky, staticTradeIcon};
+                // UDStats Liabilities autonomous dividend/error cards.
+                items[0x0818] = {LegacyDataType::Chunky, staticTradeIcon};
+                items[0x08F1] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDStats SOLD / MORTGAGED signs (USA language graphics).
                 items[0x0E3D] = {LegacyDataType::Chunky, staticTradeIcon};
                 items[0x0F17] = {LegacyDataType::Chunky, staticTradeIcon};
