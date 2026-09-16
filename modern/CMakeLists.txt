@@ -735,6 +735,8 @@ target_sources(
     src/TradeActionButtonPlayback.cpp
     src/OptionsUI.cpp
     src/OptionsFilePlayback.cpp
+    src/OptionsSaveRuntime.cpp
+    src/OptionsSavePlayback.cpp
     src/OptionsNavigationPlayback.cpp
     src/OptionsOptionPlayback.cpp
     src/OptionsTogglePlayback.cpp
@@ -755,6 +757,32 @@ target_sources(
     src/StatsDeedFloaterPlayback.cpp
     src/StatsDeedBarPlayback.cpp
 )
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyOptionsSaveRuntimeTests
+        tests/OptionsSaveRuntimeTests.cpp
+        src/OptionsSaveRuntime.cpp
+        src/FontRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyOptionsSaveRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(
+        MonopolyOptionsSaveRuntimeTests PRIVATE
+        SDL3::SDL3
+        SDL3_ttf::SDL3_ttf
+        MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyOptionsSaveRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(
+        NAME Monopoly.OptionsSaveRuntime
+        COMMAND MonopolyOptionsSaveRuntimeTests)
+endif()
 
 if(BUILD_TESTING)
     add_executable(

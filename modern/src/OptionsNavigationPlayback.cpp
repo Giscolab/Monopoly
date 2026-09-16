@@ -12,6 +12,8 @@ namespace monopoly::optionsui
     {
         [[nodiscard]] std::optional<MenuButton> menuForScreen(Screen screen) noexcept
         {
+            if (screen == Screen::LoadBoard || screen == Screen::LoadGame)
+                return MenuButton::File;
             const auto value = static_cast<std::uint8_t>(screen);
             if (value >= static_cast<std::uint8_t>(MenuButton::Count))
                 return std::nullopt;

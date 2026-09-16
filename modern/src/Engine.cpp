@@ -32,6 +32,7 @@
 #include "TradeTokenPlayback.hpp"
 #include "TradeActionButtonPlayback.hpp"
 #include "OptionsFilePlayback.hpp"
+#include "OptionsSavePlayback.hpp"
 #include "OptionsNavigationPlayback.hpp"
 #include "StatsPlayback.hpp"
 #include "ChatRecipientPlayback.hpp"
@@ -110,6 +111,7 @@ namespace monopoly::engine
         tradeui::TokenPlayback tradeTokenPlayback;
         tradeui::ActionButtonPlayback tradeActionButtonPlayback;
         optionsui::FilePlayback optionsFilePlayback;
+        optionsui::SavePlayback optionsSavePlayback;
         ibar::EscapeConfirmationPlayback escapeConfirmationPlayback;
         optionsui::NavigationPlayback optionsNavigationPlayback;
         statsui::Playback statsPlayback;
@@ -1201,6 +1203,12 @@ namespace monopoly::engine
             if (!optionsFileSync)
                 return SDL_SetError("Options File-screen playback: %s",
                     optionsFileSync.error().c_str());
+            const auto optionsSaveSync = optionsSavePlayback.sync(
+                userinterface::optionsSaveStateReadOnly(),
+                displayState.desired2DView, fontPlayback(), *session);
+            if (!optionsSaveSync)
+                return SDL_SetError("Options Load/Save playback: %s",
+                    optionsSaveSync.error().c_str());
             const auto escapeSync = escapeConfirmationPlayback.sync(
                 ibar::stateReadOnly(), isUsaBoardEdition(), *session);
             if (!escapeSync)
@@ -1622,6 +1630,7 @@ namespace monopoly::engine
         tradeTokenPlayback.reset();
         tradeActionButtonPlayback.reset();
         optionsFilePlayback.reset();
+        optionsSavePlayback.reset();
         escapeConfirmationPlayback.reset();
         optionsNavigationPlayback.reset();
         statsPlayback.reset();

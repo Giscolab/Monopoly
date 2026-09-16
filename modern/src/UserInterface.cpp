@@ -1,5 +1,6 @@
 #include "UserInterface.hpp"
 #include "UISound.hpp"
+#include "Engine.hpp"
 #include "Display.hpp"
 #include "TimeStep.hpp"
 #include "PlayerSelection.hpp"
@@ -670,6 +671,10 @@ namespace monopoly::userinterface
             ui::localplayers::slotIsLocalPlayer(
                 static_cast<rules::PlayerNumber>(message.numberC)))
         {
+            // A rejected retail save request cannot leave a stale pending slot:
+            // no NOTIFY_GAME_STATE_FOR_SAVE will follow this failed action.
+            optionsSaveProjection.pendingSaveSlot.reset();
+            optionsSaveProjection.pendingMetadata = {};
             // UDIBar uses WAV_tmpnext here, deliberately not the generic warning.
             engine::playSaveFailureSound();
         }
@@ -1280,6 +1285,7 @@ namespace monopoly::userinterface
             optionsInput.pressedOptionOkay;
         if (optionClicked) engine::playClickSound();
 
+        bool loadGameDispatched = false;
         if (saveInput.requestLoad)
         {
             const auto blob = optionsui::readSelectedGameBlob(optionsSaveProjection);
@@ -1298,6 +1304,7 @@ namespace monopoly::userinterface
             }
             if (sent)
             {
+                loadGameDispatched = true;
                 auto& displayState = display::state();
                 const auto metadata = optionsui::applySelectedMetadata(
                     optionsSaveProjection, uiRuleState,
@@ -1324,6 +1331,10 @@ namespace monopoly::userinterface
                             ? language - 2 : 0;
                     }
                 }
+                // SetUpLoadedGame() leaves Options immediately; the RULE resync
+                // that follows completes the loaded-game projection.
+                optionsProjection.active = false;
+                display::setBackdrop(display::Screen2D::Main);
             }
             else
             {
@@ -1350,7 +1361,11 @@ namespace monopoly::userinterface
         }
 
         if (saveInput.closeDialog)
+        {
             optionsui::closeSaveDialog(optionsSaveProjection);
+            if (!loadGameDispatched)
+                optionsProjection.currentScreen = optionsui::Screen::File;
+        }
 
         if (optionsInput.pressedFileButton == optionsui::FileButton::NewGame)
         {
@@ -1358,6 +1373,24 @@ namespace monopoly::userinterface
             // removes the File screen and fakes Escape into UDIBAR.
             optionsProjection.active = false;
             (void)ibar::requestNewGameConfirmation();
+        }
+        else if (optionsInput.pressedFileButton == optionsui::FileButton::Load)
+        {
+            const auto opened = optionsui::refreshSaveSlots(
+                optionsSaveProjection, optionsui::FileDialogMode::Load);
+            if (opened)
+                optionsProjection.currentScreen = optionsui::Screen::LoadGame;
+            else
+                engine::playWarningSound();
+        }
+        else if (optionsInput.pressedFileButton == optionsui::FileButton::Save)
+        {
+            const auto opened = optionsui::refreshSaveSlots(
+                optionsSaveProjection, optionsui::FileDialogMode::Save);
+            if (opened)
+                optionsProjection.currentScreen = optionsui::Screen::LoadGame;
+            else
+                engine::playWarningSound();
         }
         else if (optionsInput.pressedFileButton == optionsui::FileButton::Exit)
         {
