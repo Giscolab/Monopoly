@@ -43,6 +43,7 @@ namespace monopoly::chat
         bool boxActive{};
         bool shaded{};
         bool optionsOpen{};
+        bool fluffOpen{};
         bool moving{};
         bool sizing{};
     };

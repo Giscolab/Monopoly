@@ -35,6 +35,7 @@
 #include "StatsPlayback.hpp"
 #include "ChatRecipientPlayback.hpp"
 #include "ChatOptionPlayback.hpp"
+#include "ChatFluffPlayback.hpp"
 #include "StatsBankPlayback.hpp"
 #include "StatsCalculatorPlayback.hpp"
 #include "StatsCalculatorDeedPickerPlayback.hpp"
@@ -109,6 +110,7 @@ namespace monopoly::engine
         statsui::Playback statsPlayback;
         chat::RecipientPlayback chatRecipientPlayback;
         chat::OptionPlayback chatOptionPlayback;
+        chat::FluffPlayback chatFluffPlayback;
         statsui::BankPlayback statsBankPlayback;
         statsui::CalculatorPlayback statsCalculatorPlayback;
         statsui::CalculatorDeedPickerPlayback statsCalculatorDeedPickerPlayback;
@@ -1168,6 +1170,11 @@ namespace monopoly::engine
             if (!chatOptionSync)
                 return SDL_SetError("UDChat option playback: %s",
                     chatOptionSync.error().c_str());
+            const auto chatFluffSync = chatFluffPlayback.sync(
+                chat::stateReadOnly(), *session);
+            if (!chatFluffSync)
+                return SDL_SetError("UDChat fluff playback: %s",
+                    chatFluffSync.error().c_str());
             const auto statsSync = statsPlayback.sync(
                 userinterface::statsStateReadOnly(),
                 displayState.desired2DView, *session);
@@ -1571,6 +1578,7 @@ namespace monopoly::engine
         statsPlayback.reset();
         chatRecipientPlayback.reset();
         chatOptionPlayback.reset();
+        chatFluffPlayback.reset();
         statsBankPlayback.reset();
         statsCalculatorPlayback.reset();
         statsCalculatorDeedPickerPlayback.reset();
