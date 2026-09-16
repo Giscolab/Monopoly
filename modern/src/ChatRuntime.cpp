@@ -32,14 +32,37 @@ namespace monopoly::chat
             { return x >= left && x < right && y >= top && y < bottom; }
         };
 
-        inline constexpr ChatRect AllButtonRect{180, 12, 196, 26};
-        inline constexpr ChatRect OptionsButtonRect{198, 12, 214, 26};
-        inline constexpr ChatRect ShadeButtonRect{235, 11, 255, 28};
-        inline constexpr ChatRect CloseButtonRect{10, 10, 29, 28};
-        [[nodiscard]] constexpr ChatRect recipientButtonRect(std::size_t ordinal) noexcept
+        [[nodiscard]] constexpr ChatRect allButtonRect(const State& state) noexcept
         {
-            const int left = 164 - 19 * static_cast<int>(ordinal);
-            return {left, 13, left + 17, 25};
+            return {state.windowX + state.windowWidth - 76, state.windowY + 2,
+                state.windowX + state.windowWidth - 60, state.windowY + 16};
+        }
+        [[nodiscard]] constexpr ChatRect optionsButtonRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 58, state.windowY + 2,
+                state.windowX + state.windowWidth - 42, state.windowY + 16};
+        }
+        [[nodiscard]] constexpr ChatRect shadeButtonRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 21, state.windowY + 1,
+                state.windowX + state.windowWidth - 1, state.windowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect closeButtonRect(const State& state) noexcept
+        {
+            return {state.windowX, state.windowY,
+                state.windowX + 19, state.windowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect chatBarRect(const State& state) noexcept
+        {
+            return {state.windowX, state.windowY,
+                state.windowX + state.windowWidth - 1, state.windowY + 18};
+        }
+        [[nodiscard]] constexpr ChatRect recipientButtonRect(
+            const State& state, std::size_t ordinal) noexcept
+        {
+            const int left = state.windowX + state.windowWidth -
+                (static_cast<int>(ordinal) + 5) * 19 + 3;
+            return {left, state.windowY + 3, left + 17, state.windowY + 15};
         }
         [[nodiscard]] bool processRecipientClick(
             int x, int y, std::uint32_t eligible) noexcept
@@ -50,14 +73,14 @@ namespace monopoly::chat
             {
                 const auto bit = 1u << static_cast<unsigned>(player);
                 if ((eligible & bit) == 0u) continue;
-                if (recipientButtonRect(ordinal).contains(x, y))
+                if (recipientButtonRect(runtime, ordinal).contains(x, y))
                 {
                     runtime.recipientMask ^= bit;
                     return true;
                 }
                 ++ordinal;
             }
-            if (!AllButtonRect.contains(x, y)) return false;
+            if (!allButtonRect(runtime).contains(x, y)) return false;
             const bool enableAll = (runtime.recipientMask & eligible) != eligible;
             runtime.recipientMask = enableAll
                 ? (1u << rules::MaxPlayers) - 1u : 0u;
@@ -225,28 +248,49 @@ namespace monopoly::chat
         if (!runtime.boxActive)
             return false;
 
+        const int pointerX = static_cast<int>(message.numberA);
+        const int pointerY = static_cast<int>(message.numberB);
+        if (message.type == uimsg::Type::MouseMoved && runtime.moving)
+        {
+            runtime.windowX = pointerX - runtime.dragOffsetX;
+            runtime.windowY = pointerY - runtime.dragOffsetY;
+            return true;
+        }
+        if (message.type == uimsg::Type::MouseLeftUp && runtime.moving)
+        {
+            runtime.moving = false;
+            return true;
+        }
+
         if (message.type == uimsg::Type::MouseLeftDown)
         {
             const int x = static_cast<int>(message.numberA);
             const int y = static_cast<int>(message.numberB);
             if (processRecipientClick(x, y, eligibleRecipients))
                 return true;
-            if (OptionsButtonRect.contains(x, y))
+            if (optionsButtonRect(runtime).contains(x, y))
             {
                 runtime.optionsOpen = !runtime.optionsOpen;
                 if (runtime.optionsOpen && runtime.shaded)
                     runtime.shaded = false;
                 return true;
             }
-            if (ShadeButtonRect.contains(x, y))
+            if (shadeButtonRect(runtime).contains(x, y))
             {
                 runtime.shaded = !runtime.shaded;
                 if (runtime.shaded) runtime.optionsOpen = false;
                 return true;
             }
-            if (CloseButtonRect.contains(x, y))
+            if (closeButtonRect(runtime).contains(x, y))
             {
                 runtime.boxActive = false;
+                return true;
+            }
+            if (chatBarRect(runtime).contains(x, y))
+            {
+                runtime.moving = true;
+                runtime.dragOffsetX = x - runtime.windowX;
+                runtime.dragOffsetY = y - runtime.windowY;
                 return true;
             }
             if (runtime.shaded) return false;
