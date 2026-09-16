@@ -729,6 +729,7 @@ target_sources(
     src/StatsPlayerAuxPlayback.cpp
     src/StatsDeedPlayback.cpp
     src/StatsDeedFloaterPlayback.cpp
+    src/StatsDeedBarPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -931,6 +932,26 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsDeedFloaterPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsDeedFloaterPlayback COMMAND MonopolyStatsDeedFloaterPlaybackTests)
+endif()
+
+# UDStats.cpp Deed owner-colour bars for Owner sort
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsDeedBarPlaybackTests
+        tests/StatsDeedBarPlaybackTests.cpp
+        src/StatsDeedBarPlayback.cpp
+        src/StatsDeedPlayback.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(MonopolyStatsDeedBarPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(MonopolyStatsDeedBarPlaybackTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyStatsDeedBarPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.StatsDeedBarPlayback COMMAND MonopolyStatsDeedBarPlaybackTests)
 endif()
 
 # UDPenny.cpp pure token-voice reaction selectors and catalog fidelity
