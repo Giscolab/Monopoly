@@ -52,6 +52,13 @@ namespace monopoly::chat
             return {state.windowX, state.windowY,
                 state.windowX + 19, state.windowY + 18};
         }
+        [[nodiscard]] constexpr ChatRect sizeButtonRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 20,
+                state.windowY + state.windowHeight - 18,
+                state.windowX + state.windowWidth - 1,
+                state.windowY + state.windowHeight - 1};
+        }
         [[nodiscard]] constexpr ChatRect chatBarRect(const State& state) noexcept
         {
             return {state.windowX, state.windowY,
@@ -256,9 +263,27 @@ namespace monopoly::chat
             runtime.windowY = pointerY - runtime.dragOffsetY;
             return true;
         }
+        if (message.type == uimsg::Type::MouseMoved &&
+            runtime.sizing && !runtime.shaded)
+        {
+            int width = pointerX + runtime.resizeOffsetX - runtime.windowX;
+            int height = pointerY + runtime.resizeOffsetY - runtime.windowY;
+            width = std::clamp(width, 246, 1601);
+            height = std::clamp(height, 99, 1201);
+            width = (width / 5) * 5 + 1;
+            height = ((height - 19) / 5) * 5 + 19;
+            runtime.windowWidth = width;
+            runtime.windowHeight = height;
+            return true;
+        }
         if (message.type == uimsg::Type::MouseLeftUp && runtime.moving)
         {
             runtime.moving = false;
+            return true;
+        }
+        if (message.type == uimsg::Type::MouseLeftUp && runtime.sizing)
+        {
+            runtime.sizing = false;
             return true;
         }
 
@@ -268,6 +293,13 @@ namespace monopoly::chat
             const int y = static_cast<int>(message.numberB);
             if (processRecipientClick(x, y, eligibleRecipients))
                 return true;
+            if (!runtime.shaded && sizeButtonRect(runtime).contains(x, y))
+            {
+                runtime.sizing = true;
+                runtime.resizeOffsetX = runtime.windowX + runtime.windowWidth - x;
+                runtime.resizeOffsetY = runtime.windowY + runtime.windowHeight - y;
+                return true;
+            }
             if (optionsButtonRect(runtime).contains(x, y))
             {
                 runtime.optionsOpen = !runtime.optionsOpen;
