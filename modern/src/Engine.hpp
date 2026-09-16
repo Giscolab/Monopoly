@@ -27,6 +27,8 @@ namespace monopoly::engine
     udsound::Runtime* monopolySoundPlayback();
     void playWarningSound() noexcept;
     void playClickSound() noexcept;
+    bool startVoiceChat() noexcept;
+    void stopVoiceChat() noexcept;
     bool initialize(SDL_Window* window);
     bool runCyclicFunctions();
     void shutdown();

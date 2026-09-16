@@ -1,5 +1,8 @@
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
+#include "VoiceChatAudioRuntime.hpp"
+#include "VoiceChatRuntime.hpp"
+#include "Messaging.hpp"
 #include "FontRuntime.hpp"
 #include "UDSoundRuntime.hpp"
 #include "UDPennyVoice.hpp"
@@ -88,6 +91,7 @@ namespace monopoly::engine
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
         std::unique_ptr<audio::Runtime> audioRuntime;
+        std::unique_ptr<voicechat::AudioRuntime> voiceChatAudioRuntime;
         std::unique_ptr<fonts::Runtime> fontRuntime;
         bool fontDisabled{};
         udsound::Runtime monopolySoundRuntime;
@@ -834,6 +838,63 @@ namespace monopoly::engine
         return audioRuntime.get();
     }
 
+    namespace
+    {
+        [[nodiscard]] bool receiveVoiceChatAudioEvent(
+            const voicechat::packet::Event& event, std::uint32_t sourceId)
+        {
+            auto* output = audioPlayback();
+            if (output == nullptr)
+                return false;
+            if (!voiceChatAudioRuntime)
+                voiceChatAudioRuntime =
+                    std::make_unique<voicechat::AudioRuntime>(*output);
+            return voiceChatAudioRuntime->handleEvent(event, sourceId);
+        }
+    }
+
+    bool startVoiceChat() noexcept
+    {
+        if (!messaging::networkMode())
+        {
+            stopVoiceChat();
+            return false;
+        }
+
+        const auto& voiceOptions =
+            userinterface::ruleStateReadOnly().options.voiceChat;
+        voicechat::AudioRuntime::Settings settings{};
+        if (voiceOptions.compressorName == L"GSM 6.10")
+            settings.codec = voicechat::AudioRuntime::Codec::Gsm610;
+        else if (voiceOptions.compressorName == L"No Compression")
+            settings.codec = voicechat::AudioRuntime::Codec::Pcm;
+        else
+            return false;
+
+        auto* output = audioPlayback();
+        if (output == nullptr)
+            return false;
+        if (!voiceChatAudioRuntime)
+            voiceChatAudioRuntime = std::make_unique<voicechat::AudioRuntime>(*output);
+        if (voiceChatAudioRuntime->captureActive())
+            return true;
+
+        const auto started = voiceChatAudioRuntime->startCapture(settings);
+        if (!started)
+        {
+            std::cerr << "Voice chat capture unavailable: "
+                      << started.error() << '\n';
+            return false;
+        }
+        return true;
+    }
+
+    void stopVoiceChat() noexcept
+    {
+        if (voiceChatAudioRuntime)
+            voiceChatAudioRuntime->stopCapture();
+    }
+
     fonts::Runtime* fontPlayback()
     {
         if (fontDisabled) return nullptr;
@@ -1106,6 +1167,7 @@ namespace monopoly::engine
                 << '\r\n';
         }
 
+        voicechat::setReceiveEventSink(&receiveVoiceChatAudioEvent);
         return true;
     }
 
@@ -1114,6 +1176,18 @@ namespace monopoly::engine
         // Le vieux timer Windows tournait indépendamment à 60 Hz.
         // Notre implémentation moderne rattrape ici les ticks écoulés.
         timers::pump();
+
+        if (voiceChatAudioRuntime && voiceChatAudioRuntime->captureActive())
+        {
+            const auto pumped =
+                voiceChatAudioRuntime->pumpCapture(timers::tickCount());
+            if (!pumped)
+            {
+                std::cerr << "Voice chat capture stopped: "
+                          << pumped.error() << '\n';
+                voiceChatAudioRuntime->stopCapture();
+            }
+        }
 
         // Ensuite viendront les équivalents de :
         // LI_SEQNCR_TimerTick()
@@ -1675,6 +1749,10 @@ namespace monopoly::engine
         if (tokenVoiceQueueLockHeld) userinterface::unlockGameQueue();
         tokenVoiceQueueLockHeld = false;
         activeSequenceSounds.clear();
+        voicechat::setReceiveEventSink(nullptr);
+        if (voiceChatAudioRuntime)
+            voiceChatAudioRuntime->closeAllReceivers();
+        voiceChatAudioRuntime.reset();
         monopolySoundRuntime.reset(audioRuntime.get());
         audioRuntime.reset();
         audioDisabled = false;

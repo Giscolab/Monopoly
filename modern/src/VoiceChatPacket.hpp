@@ -1,11 +1,17 @@
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
+#include <vector>
 
 namespace monopoly::voicechat::packet
 {
+    inline constexpr std::size_t MaximumPacketBytes =
+        std::numeric_limits<std::uint16_t>::max();
+
     enum class EventKind : std::uint8_t
     {
         Start,
@@ -147,7 +153,7 @@ namespace monopoly::voicechat::packet
         std::uint32_t sourceId,
         EventSink sink = nullptr) noexcept
     {
-        if (bytes.empty())
+        if (bytes.empty() || bytes.size() > MaximumPacketBytes)
             return ParseStatus::Malformed;
 
         std::size_t offset{};
@@ -192,6 +198,103 @@ namespace monopoly::voicechat::packet
             offset += size;
         }
 
+
         return ParseStatus::Ok;
+    }
+
+    namespace detail
+    {
+        inline void appendLe16(std::vector<std::uint8_t>& bytes,
+            std::uint16_t value)
+        {
+            bytes.push_back(static_cast<std::uint8_t>(value));
+            bytes.push_back(static_cast<std::uint8_t>(value >> 8u));
+        }
+
+        inline void appendLe32(std::vector<std::uint8_t>& bytes,
+            std::uint32_t value)
+        {
+            for (unsigned shift = 0; shift < 32u; shift += 8u)
+                bytes.push_back(static_cast<std::uint8_t>(value >> shift));
+        }
+
+        [[nodiscard]] inline bool appendChunk(
+            std::vector<std::uint8_t>& bytes, std::uint32_t id,
+            std::span<const std::uint8_t> payload)
+        {
+            if (payload.size() > std::numeric_limits<std::uint32_t>::max() ||
+                bytes.size() + 8u + payload.size() > MaximumPacketBytes)
+                return false;
+            appendLe32(bytes, id);
+            appendLe32(bytes, static_cast<std::uint32_t>(payload.size()));
+            bytes.insert(bytes.end(), payload.begin(), payload.end());
+            return true;
+        }
+    }
+
+    [[nodiscard]] inline bool makeStartPacket(
+        WaveFormat format, std::span<const std::uint8_t> extraFormatBytes,
+        std::uint32_t dimensions, std::uint32_t volume,
+        std::vector<std::uint8_t>& packet)
+    {
+        if (extraFormatBytes.size() > std::numeric_limits<std::uint16_t>::max())
+            return false;
+        format.extraSize = static_cast<std::uint16_t>(extraFormatBytes.size());
+        std::vector<std::uint8_t> wireFormat;
+        wireFormat.reserve(18u + extraFormatBytes.size());
+        detail::appendLe16(wireFormat, format.formatTag);
+        detail::appendLe16(wireFormat, format.channels);
+        detail::appendLe32(wireFormat, format.samplesPerSecond);
+        detail::appendLe32(wireFormat, format.averageBytesPerSecond);
+        detail::appendLe16(wireFormat, format.blockAlign);
+        detail::appendLe16(wireFormat, format.bitsPerSample);
+        detail::appendLe16(wireFormat, format.extraSize);
+        wireFormat.insert(wireFormat.end(),
+            extraFormatBytes.begin(), extraFormatBytes.end());
+
+        std::vector<std::uint8_t> chat;
+        const auto scalarChunk = [&](std::uint32_t id, std::uint32_t value)
+        {
+            std::vector<std::uint8_t> scalar;
+            scalar.reserve(4u);
+            detail::appendLe32(scalar, value);
+            return detail::appendChunk(chat, id, scalar);
+        };
+        if (!detail::appendChunk(chat, fourCC('f', 'm', 't', ' '), wireFormat) ||
+            !scalarChunk(fourCC('d', 'i', 'm', 's'), dimensions) ||
+            !scalarChunk(fourCC('v', 'o', 'l', 'm'), volume))
+            return false;
+        packet.clear();
+        return detail::appendChunk(packet, fourCC('C', 'H', 'A', 'T'), chat);
+    }
+
+    [[nodiscard]] inline bool makeDataPacket(
+        std::span<const std::uint8_t> data, bool afterSilence,
+        std::vector<std::uint8_t>& packet)
+    {
+        packet.clear();
+        return detail::appendChunk(packet,
+            afterSilence ? fourCC('D', 'A', 'T', '1')
+                         : fourCC('D', 'A', 'T', 'N'), data);
+    }
+
+    [[nodiscard]] inline bool makeStopPacket(std::vector<std::uint8_t>& packet)
+    {
+        packet.clear();
+        return detail::appendChunk(packet, fourCC('S', 'T', 'O', 'P'), {});
+    }
+
+    [[nodiscard]] inline bool makePositionPacket(
+        std::span<const float> coordinates,
+        std::vector<std::uint8_t>& packet)
+    {
+        if (coordinates.empty() || coordinates.size() > 3u)
+            return false;
+        std::vector<std::uint8_t> payload;
+        payload.reserve(coordinates.size() * sizeof(float));
+        for (const float value : coordinates)
+            detail::appendLe32(payload, std::bit_cast<std::uint32_t>(value));
+        packet.clear();
+        return detail::appendChunk(packet, fourCC('P', 'O', 'S', 'N'), payload);
     }
 }

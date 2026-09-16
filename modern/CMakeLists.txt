@@ -164,6 +164,47 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL3)
 
+# ArtLib voice chat uses Microsoft GSM 6.10 WAV #49 framing. The classic
+# Degener/Bormann libgsm implementation exposes compatible WAV49 packing;
+# pin the exact source revision and compile only its codec library.
+FetchContent_Declare(
+    libgsm
+    GIT_REPOSITORY https://github.com/timothytylee/libgsm.git
+    GIT_TAG 98f1708fb5e06a0dfebd58a3b40d610823db9715
+)
+FetchContent_MakeAvailable(libgsm)
+
+add_library(
+    MonopolyGsm610
+    STATIC
+    ${libgsm_SOURCE_DIR}/src/add.c
+    ${libgsm_SOURCE_DIR}/src/code.c
+    ${libgsm_SOURCE_DIR}/src/debug.c
+    ${libgsm_SOURCE_DIR}/src/decode.c
+    ${libgsm_SOURCE_DIR}/src/long_term.c
+    ${libgsm_SOURCE_DIR}/src/lpc.c
+    ${libgsm_SOURCE_DIR}/src/preprocess.c
+    ${libgsm_SOURCE_DIR}/src/rpe.c
+    ${libgsm_SOURCE_DIR}/src/gsm_destroy.c
+    ${libgsm_SOURCE_DIR}/src/gsm_decode.c
+    ${libgsm_SOURCE_DIR}/src/gsm_encode.c
+    ${libgsm_SOURCE_DIR}/src/gsm_explode.c
+    ${libgsm_SOURCE_DIR}/src/gsm_implode.c
+    ${libgsm_SOURCE_DIR}/src/gsm_create.c
+    ${libgsm_SOURCE_DIR}/src/gsm_print.c
+    ${libgsm_SOURCE_DIR}/src/gsm_option.c
+    ${libgsm_SOURCE_DIR}/src/short_term.c
+    ${libgsm_SOURCE_DIR}/src/table.c
+)
+target_include_directories(
+    MonopolyGsm610
+    PUBLIC ${libgsm_SOURCE_DIR}/inc
+)
+target_compile_definitions(
+    MonopolyGsm610
+    PRIVATE NeedFunctionPrototypes=1 SASR WAV49
+)
+
 # L_Fonts.cpp uses Windows GDI for Arial.ttf. SDL3_ttf is the portable
 # replacement for font metrics/rasterization; keep its dependencies vendored.
 set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
@@ -394,6 +435,7 @@ target_link_libraries(
     PRIVATE
     SDL3::SDL3
     SDL3_ttf::SDL3_ttf
+    MonopolyGsm610
     MonopolyDataCore
     MonopolyGPU3DCore
 )
@@ -493,6 +535,8 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/AudioRuntime.cpp
+    src/Gsm610Codec.cpp
+    src/VoiceChatAudioRuntime.cpp
     src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
     src/TokenVoiceCatalog.cpp
