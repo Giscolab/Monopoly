@@ -122,6 +122,7 @@ namespace monopoly::ibar
 
 
     void setPropertyHitState(layout::PropertyMask visibleProperties) noexcept;
+    [[nodiscard]] bool activateProperty(int square);
 
 
     State& state();

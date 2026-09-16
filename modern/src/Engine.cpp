@@ -1243,6 +1243,11 @@ namespace monopoly::engine
             statsPlayerInputs.buildProperties = bssmAvailability.buildProperties;
             statsPlayerInputs.sellProperties = bssmAvailability.sellProperties;
             statsPlayerInputs.mortgageProperties = bssmAvailability.mortgageProperties;
+            statsui::setPropertyActionContext(
+                userinterface::statsState(), effectiveRuleMode, iBarActivePlayer,
+                statsPlayerInputs.iBarPlayerLocalHuman,
+                bssmAvailability.buildProperties, bssmAvailability.sellProperties,
+                bssmAvailability.mortgageProperties);
             const auto statsPlayerSync = statsPlayerPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
