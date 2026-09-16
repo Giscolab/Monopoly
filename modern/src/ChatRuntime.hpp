@@ -38,10 +38,13 @@ namespace monopoly::chat
         int windowHeight{99};
         int dragOffsetX{};
         int dragOffsetY{};
+        int resizeOffsetX{};
+        int resizeOffsetY{};
         bool boxActive{};
         bool shaded{};
         bool optionsOpen{};
         bool moving{};
+        bool sizing{};
     };
 
     void reset() noexcept;
