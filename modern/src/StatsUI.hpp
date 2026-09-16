@@ -37,6 +37,8 @@ namespace monopoly::statsui
         {
             return x >= left && x < right && y >= top && y < bottom;
         }
+
+        friend bool operator==(const Rect&, const Rect&) = default;
     };
 
     struct State

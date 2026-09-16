@@ -149,6 +149,12 @@ struct SyntheticSequenceResources
                 // UDIBar score strip: jail bars, token atlas, large/small colour bars.
                 for (std::uint32_t tag = 0x01BFU; tag <= 0x01D6U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDStats Bank player bars plus repeated house/hotel sprites.
+                items.resize(0x0323);
+                for (std::uint32_t tag = 0x0001U; tag <= 0x0006U; ++tag)
+                    items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x0321] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x0322] = {LegacyDataType::Chunky, bitmapSequence};
             }
             else if (i == 1)
             {
@@ -284,6 +290,9 @@ struct SyntheticSequenceResources
                      0x019BU,0x019CU,0x019DU,0x019EU,0x019FU,0x01A0U,0x01A1U,0x01A2U,
                      0x01A3U,0x01A4U,0x01A5U,0x01A6U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
+                // UDStats SOLD / MORTGAGED signs (USA language graphics).
+                items[0x0E3D] = {LegacyDataType::Chunky, staticTradeIcon};
+                items[0x0F17] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDOpts File screen: title plus New/Load/Save/Exit/Cancel incoming CNKs.
                 items[0x023A] = {LegacyDataType::Chunky, staticTradeIcon};
                 for (const auto tag : {0x0241U, 0x023EU, 0x0244U, 0x0238U, 0x0235U})
