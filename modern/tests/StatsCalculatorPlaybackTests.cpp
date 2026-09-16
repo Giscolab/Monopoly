@@ -44,8 +44,11 @@ namespace
         SyntheticSequenceResources resources;
         engine::SequencePlayback sequence(resources.service.snapshot());
         statsui::CalculatorPlayback playback;
+        statsui::CalculatorUIState ui{};
+        rules::GameState gameState{};
 
-        require(playback.sync(display::Screen2D::Portfolio, sequence).has_value(),
+        require(playback.sync(display::Screen2D::Portfolio,
+                    ui, gameState, sequence).has_value(),
             "Portfolio queues the autonomous calculator layer");
         require(playback.visible() && sequence.commands().pendingCount() == 21,
             "calculator queues exactly 21 retail sequences");
@@ -71,11 +74,11 @@ namespace
                     languageId(statsui::CalculatorEnterIdleTag), 100, false).size() == 1,
             "Enter uses the active language-graphics sequence at priority 100");
 
-        require(playback.sync(display::Screen2D::Portfolio, sequence).has_value() &&
+        require(playback.sync(display::Screen2D::Portfolio, ui, gameState, sequence).has_value() &&
                 sequence.commands().pendingCount() == 0,
             "unchanged Portfolio calculator emits no redundant commands");
 
-        require(playback.sync(display::Screen2D::Main, sequence).has_value() &&
+        require(playback.sync(display::Screen2D::Main, ui, gameState, sequence).has_value() &&
                 sequence.commands().pendingCount() == 21 && sequence.update(1).has_value(),
             "leaving Portfolio queues and executes calculator teardown");
         require(!playback.visible() &&

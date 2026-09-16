@@ -1161,7 +1161,9 @@ namespace monopoly::engine
                 return SDL_SetError("UDStats Bank playback: %s",
                     statsBankSync.error().c_str());
             const auto statsCalculatorSync = statsCalculatorPlayback.sync(
-                displayState.desired2DView, *session);
+                displayState.desired2DView,
+                userinterface::statsCalculatorStateReadOnly(),
+                ruleState, *session);
             if (!statsCalculatorSync)
                 return SDL_SetError("UDStats calculator playback: %s",
                     statsCalculatorSync.error().c_str());

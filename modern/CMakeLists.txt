@@ -726,6 +726,7 @@ target_sources(
     src/StatsBankPlayback.cpp
     src/StatsCalculatorPlayback.cpp
     src/StatsCalculatorLogic.cpp
+    src/StatsCalculatorUI.cpp
     src/StatsPlayerPlayback.cpp
     src/StatsPlayerAuxPlayback.cpp
     src/StatsDeedPlayback.cpp
@@ -755,6 +756,8 @@ if(BUILD_TESTING)
         src/OptionsUI.cpp
         src/IBarLayout.cpp
         src/StatsUI.cpp
+        src/StatsCalculatorUI.cpp
+        src/StatsCalculatorLogic.cpp
         src/IBarLayout.cpp
         src/AIUtility.cpp
         src/BoardRules.cpp
@@ -848,6 +851,11 @@ if(BUILD_TESTING)
         MonopolyStatsCalculatorPlaybackTests
         tests/StatsCalculatorPlaybackTests.cpp
         src/StatsCalculatorPlayback.cpp
+        src/StatsCalculatorUI.cpp
+        src/StatsCalculatorLogic.cpp
+        src/IBarLayout.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
     )
     target_include_directories(MonopolyStatsCalculatorPlaybackTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
