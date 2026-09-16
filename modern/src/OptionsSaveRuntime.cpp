@@ -43,8 +43,9 @@ namespace monopoly::optionsui
         [[nodiscard]] std::uint16_t readU16(
             std::span<const std::uint8_t> bytes, std::size_t& offset) noexcept
         {
-            const auto result = static_cast<std::uint16_t>(bytes[offset]) |
-                static_cast<std::uint16_t>(bytes[offset + 1]) << 8U;
+            const std::uint16_t result = static_cast<std::uint16_t>(
+                static_cast<std::uint16_t>(bytes[offset]) |
+                (static_cast<std::uint16_t>(bytes[offset + 1]) << 8U));
             offset += 2;
             return result;
         }
@@ -76,8 +77,9 @@ namespace monopoly::optionsui
 
             for (std::size_t index = 0; index < CustomBoardBytes; ++index)
             {
-                const auto value = index < metadata.customBoardName.size()
-                    ? static_cast<std::uint8_t>(metadata.customBoardName[index]) : 0U;
+                const std::uint8_t value = index < metadata.customBoardName.size()
+                    ? static_cast<std::uint8_t>(metadata.customBoardName[index])
+                    : std::uint8_t{0};
                 bytes.push_back(value);
             }
             return bytes;
@@ -91,11 +93,17 @@ namespace monopoly::optionsui
 
             SaveMetadata metadata{};
             std::size_t offset{};
+            bool descriptionTerminated = false;
             for (std::size_t index = 0; index < DescriptionUnits; ++index)
             {
                 const auto value = readU16(bytes, offset);
-                if (value == 0) continue;
-                if (metadata.description.size() + 1U >= DescriptionUnits)
+                if (value == 0)
+                {
+                    descriptionTerminated = true;
+                    continue;
+                }
+                if (descriptionTerminated ||
+                    metadata.description.size() + 1U >= DescriptionUnits)
                     continue;
                 metadata.description.push_back(static_cast<char16_t>(value));
             }
