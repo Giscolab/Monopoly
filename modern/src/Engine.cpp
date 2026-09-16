@@ -37,6 +37,7 @@
 #include "StatsCalculatorPlayback.hpp"
 #include "StatsCalculatorDeedPickerPlayback.hpp"
 #include "StatsPlayerPlayback.hpp"
+#include "StatsPlayerCashPlayback.hpp"
 #include "StatsPlayerAuxPlayback.hpp"
 #include "StatsDeedPlayback.hpp"
 #include "StatsDeedFloaterPlayback.hpp"
@@ -107,6 +108,7 @@ namespace monopoly::engine
         statsui::CalculatorPlayback statsCalculatorPlayback;
         statsui::CalculatorDeedPickerPlayback statsCalculatorDeedPickerPlayback;
         statsui::PlayerPlayback statsPlayerPlayback;
+        statsui::PlayerCashPlayback statsPlayerCashPlayback;
         statsui::PlayerAuxPlayback statsPlayerAuxPlayback;
         statsui::DeedPlayback statsDeedPlayback;
         statsui::DeedFloaterPlayback statsDeedFloaterPlayback;
@@ -1265,6 +1267,12 @@ namespace monopoly::engine
             if (!statsPlayerSync)
                 return SDL_SetError("UDStats Player playback: %s",
                     statsPlayerSync.error().c_str());
+            const auto statsPlayerCashSync = statsPlayerCashPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                displayState.desired2DView, *session);
+            if (!statsPlayerCashSync)
+                return SDL_SetError("UDStats Player cash playback: %s",
+                    statsPlayerCashSync.error().c_str());
             const auto statsPlayerAuxSync = statsPlayerAuxPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
@@ -1540,6 +1548,7 @@ namespace monopoly::engine
         statsCalculatorPlayback.reset();
         statsCalculatorDeedPickerPlayback.reset();
         statsPlayerPlayback.reset();
+        statsPlayerCashPlayback.reset();
         statsPlayerAuxPlayback.reset();
         statsDeedPlayback.reset();
         statsDeedFloaterPlayback.reset();

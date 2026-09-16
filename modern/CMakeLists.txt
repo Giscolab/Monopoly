@@ -729,6 +729,7 @@ target_sources(
     src/StatsCalculatorLogic.cpp
     src/StatsCalculatorUI.cpp
     src/StatsPlayerPlayback.cpp
+    src/StatsPlayerCashPlayback.cpp
     src/StatsPlayerAuxPlayback.cpp
     src/StatsDeedPlayback.cpp
     src/StatsDeedFloaterPlayback.cpp

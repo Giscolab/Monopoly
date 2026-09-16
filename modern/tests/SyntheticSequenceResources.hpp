@@ -159,7 +159,7 @@ struct SyntheticSequenceResources
                 for (std::uint32_t tag = 0x01BFU; tag <= 0x01D6U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDStats Bank player bars plus repeated house/hotel sprites.
-                items.resize(0x0355);
+                items.resize(0x0356);
                 for (std::uint32_t tag = 0x0001U; tag <= 0x0006U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0321] = {LegacyDataType::Chunky, bitmapSequence};
@@ -170,6 +170,8 @@ struct SyntheticSequenceResources
                 // UDStats Player large/small colour boxes.
                 for (std::uint32_t tag = 0x0349U; tag <= 0x0354U; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDStats Player cash icon TAB_snpscsh1.
+                items[0x0355U] = {LegacyDataType::Chunky, bitmapSequence};
             }
             else if (i == 1)
             {
