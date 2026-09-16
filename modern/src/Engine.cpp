@@ -36,6 +36,7 @@
 #include "StatsBankPlayback.hpp"
 #include "StatsCalculatorPlayback.hpp"
 #include "StatsPlayerPlayback.hpp"
+#include "StatsPlayerAuxPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
 #include "OptionsHelpPlayback.hpp"
@@ -101,6 +102,7 @@ namespace monopoly::engine
         statsui::BankPlayback statsBankPlayback;
         statsui::CalculatorPlayback statsCalculatorPlayback;
         statsui::PlayerPlayback statsPlayerPlayback;
+        statsui::PlayerAuxPlayback statsPlayerAuxPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
         optionsui::HelpPlayback optionsHelpPlayback;
@@ -1241,6 +1243,12 @@ namespace monopoly::engine
             if (!statsPlayerSync)
                 return SDL_SetError("UDStats Player playback: %s",
                     statsPlayerSync.error().c_str());
+            const auto statsPlayerAuxSync = statsPlayerAuxPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                displayState.desired2DView, *session);
+            if (!statsPlayerAuxSync)
+                return SDL_SetError("UDStats Player aux playback: %s",
+                    statsPlayerAuxSync.error().c_str());
             const auto& iBarState = ibar::stateReadOnly();
             const auto selectedDeed = iBarState.selectedDeed;
             const auto selectedBit = selectedDeed
@@ -1491,6 +1499,7 @@ namespace monopoly::engine
         statsBankPlayback.reset();
         statsCalculatorPlayback.reset();
         statsPlayerPlayback.reset();
+        statsPlayerAuxPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();
         optionsHelpPlayback.reset();
