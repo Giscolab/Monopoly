@@ -77,6 +77,25 @@ namespace monopoly::penny
             }
         }
 
+        [[nodiscard]] CardTag europeCommunityCardTag(
+            std::uint8_t cardIndex, int city, int monetarySystem) noexcept
+        {
+            if (cardIndex < 16 || cardIndex >= 32) return 0;
+            if (cardIndex == 20)
+                return city >= 0 && city < 12 ? static_cast<CardTag>(0x01DC) : 0;
+            if (monetarySystem < 0 || monetarySystem >= 13) return 0;
+
+            // dat_lk02 keeps 15 spoken variants per monetary system: files
+            // 01..04 then 06..16. Card 20 is the shared country-dependent 05.
+            static constexpr std::array<CardTag, 13> BaseBySystem{
+                0x0128, 0x0137, 0x0146, 0x0155, 0x0164, 0x0173,
+                0x0182, 0x0191, 0x01A0, 0x01AF, 0x01BE, 0x01CD, 0x010A};
+            const auto offset = static_cast<CardTag>(
+                cardIndex < 20 ? cardIndex - 16 : cardIndex - 17);
+            return static_cast<CardTag>(
+                BaseBySystem[static_cast<std::size_t>(monetarySystem)] + offset);
+        }
+
         [[nodiscard]] bool validPlayer(
             const rules::GameState& state,
             rules::PlayerNumber player) noexcept
@@ -432,8 +451,9 @@ namespace monopoly::penny
         if (city < 0)
             city = static_cast<int>(language) -
                 static_cast<int>(data::LanguageId::EnglishUk);
-        if (cardIndex >= 16) return std::nullopt;
-        const auto tag = europeChanceCardTag(cardIndex, city, monetarySystem);
+        const auto tag = cardIndex < 16
+            ? europeChanceCardTag(cardIndex, city, monetarySystem)
+            : europeCommunityCardTag(cardIndex, city, monetarySystem);
         if (tag == 0) return std::nullopt;
         return data::packDataId(data::LegacyGroupId::LanguageDialog,
             static_cast<data::DataTag>(tag));
