@@ -2064,6 +2064,7 @@ target_sources(
     src/IBar.cpp
     src/IBarLayout.cpp
     src/IBarBackdropPlayback.cpp
+    src/EscapeConfirmationPlayback.cpp
     src/IBarCardPlayback.cpp
     src/IBarJailCardPlayback.cpp
     src/IBarScoreStripPlayback.cpp
