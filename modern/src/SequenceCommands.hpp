@@ -23,6 +23,7 @@ namespace monopoly::sequence
         std::shared_ptr<const SequenceProgram> program;
         std::uint16_t priority{};
         ClockStartOptions options{};
+        std::optional<SequenceTransform> initialTransform;
     };
     struct StopSequenceCommand
     {

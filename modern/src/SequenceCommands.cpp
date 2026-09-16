@@ -125,7 +125,8 @@ namespace monopoly::sequence
                 if constexpr (std::is_same_v<Command, StartSequenceCommand>)
                 {
                     const auto result = runtime_.start(
-                        std::move(value.program), value.priority, value.options);
+                        std::move(value.program), value.priority, value.options,
+                        std::move(value.initialTransform));
                     outcomes_.push_back(SequenceCommandOutcome{SequenceCommandKind::Start,
                         result ? std::optional<SequenceNodeId>(*result) : std::nullopt,
                         result ? 1U : 0U, result ? std::nullopt : std::optional<RuntimeError>(result.error())});
