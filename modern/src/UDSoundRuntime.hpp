@@ -48,7 +48,7 @@ namespace monopoly::udsound
         [[nodiscard]] std::expected<void, std::string> cashDown(audio::Runtime& audio);
         [[nodiscard]] std::expected<void, std::string> syncMusic(
             audio::Runtime& audio, bool gameInProgress, bool musicOn,
-            std::uint8_t tuneIndex);
+            std::uint8_t tuneIndex, bool creditsActive = false);
         [[nodiscard]] std::expected<void, std::string> syncCash(
             audio::Runtime& audio, ibar::ScoreCashChange change);
 
@@ -93,6 +93,7 @@ namespace monopoly::udsound
             TokenVoiceClipPolicy policy);
 
         std::optional<data::DataId> currentMusic_;
+        std::uint8_t creditsMusicStatus_{};
         std::optional<PendingTalkingVoice> pendingTalkingVoice_;
         std::array<bool, TokenVoiceTokenCount> watchedTokenVoices_{};
         bool watchedPennybags_{};

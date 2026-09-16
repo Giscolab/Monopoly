@@ -59,18 +59,43 @@ namespace monopoly::udsound
 
     std::expected<void, std::string> Runtime::syncMusic(
         audio::Runtime& audio, bool gameInProgress,
-        bool musicOn, std::uint8_t tuneIndex)
+        bool musicOn, std::uint8_t tuneIndex, bool creditsActive)
     {
-        if (!gameInProgress || !musicOn)
+        data::DataId desired{};
+        bool loop = true;
+
+        if (creditsActive)
         {
-            if (currentMusic_) audio.stop(MusicKey);
-            currentMusic_.reset();
-            return {};
+            const auto credits = mainData(CreditsTag);
+            const auto creditsLoop = mainData(MusicBaseTag);
+            if (creditsMusicStatus_ == 0)
+                creditsMusicStatus_ = 1;
+            else if (creditsMusicStatus_ == 1 &&
+                currentMusic_ == credits && !audio.active(MusicKey))
+                creditsMusicStatus_ = 2;
+
+            desired = creditsMusicStatus_ == 2 ? creditsLoop : credits;
+            loop = creditsMusicStatus_ == 2;
         }
-        const auto safeTune = std::min<std::uint8_t>(tuneIndex, MusicTuneCount - 1);
-        const auto desired = mainData(static_cast<data::DataTag>(MusicBaseTag + safeTune));
+        else
+        {
+            creditsMusicStatus_ = 0;
+            if (!gameInProgress || !musicOn)
+            {
+                if (currentMusic_) audio.stop(MusicKey);
+                currentMusic_.reset();
+                return {};
+            }
+            const auto safeTune = std::min<std::uint8_t>(
+                tuneIndex, MusicTuneCount - 1);
+            desired = mainData(static_cast<data::DataTag>(
+                MusicBaseTag + safeTune));
+        }
+
         if (currentMusic_ == desired && audio.active(MusicKey)) return {};
-        const auto played = audio.play(MusicKey, desired, 0.20F, true);
+        if (currentMusic_ && *currentMusic_ != desired)
+            audio.stop(MusicKey);
+        const auto played = audio.play(MusicKey, desired, 0.20F, loop);
         if (!played) return played;
         currentMusic_ = desired;
         return {};
@@ -254,6 +279,7 @@ namespace monopoly::udsound
                 audio->stop(tokenVoiceKey(token));
         }
         currentMusic_.reset();
+        creditsMusicStatus_ = 0;
         pendingTalkingVoice_.reset();
         watchedTokenVoices_.fill(false);
         watchedPennybags_ = false;

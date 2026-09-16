@@ -980,9 +980,14 @@ namespace monopoly::engine
                 *output, iBarBackdropPlayback.scoreTextState(player).lastCashChange);
             if (!cash) return cash;
         }
+        const auto creditsMusic =
+            displayState.desired2DView == display::Screen2D::Options &&
+            userinterface::optionsStateReadOnly().currentScreen ==
+                optionsui::Screen::Credits;
         const auto music = monopolySoundRuntime.syncMusic(
             *output, runtime::state().gameInProgress,
-            displayState.optionMusicOn, displayState.optionMusicTuneIndex);
+            displayState.optionMusicOn, displayState.optionMusicTuneIndex,
+            creditsMusic);
         if (!music) return music;
         const auto watched = monopolySoundRuntime.syncTokenVoices(*output);
         if (!watched) return std::unexpected(watched.error());
