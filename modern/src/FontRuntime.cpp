@@ -217,6 +217,100 @@ namespace monopoly::fonts
         return Metrics{width, height};
     }
 
+    std::expected<std::vector<std::string>, Error> Runtime::wrap(
+        std::string_view utf8, int width) const
+    {
+        if (width <= 0)
+            return std::unexpected(makeError(ErrorCode::MeasureFailed,
+                settings_.fontPath, "word-wrap width must be positive"));
+        if (utf8.empty()) return std::vector<std::string>{{}};
+
+        auto nextBoundary = [](std::string_view text, std::size_t offset) noexcept
+        {
+            if (offset >= text.size()) return text.size();
+            ++offset;
+            while (offset < text.size() &&
+                   (static_cast<unsigned char>(text[offset]) & 0xC0U) == 0x80U)
+                ++offset;
+            return offset;
+        };
+        auto replaceNonBreakingMarkers = [](std::string value)
+        {
+            std::replace(value.begin(), value.end(), '_', ' ');
+            return value;
+        };
+
+        std::vector<std::string> lines;
+        std::string remaining(utf8);
+        for (;;)
+        {
+            const auto whole = measure(remaining);
+            if (!whole) return std::unexpected(whole.error());
+            if (whole->width <= width)
+            {
+                // CHAT_WordWrap does not translate '_' in its final remainder;
+                // preserve that historical quirk instead of normalizing it.
+                lines.push_back(std::move(remaining));
+                break;
+            }
+
+            std::size_t cut = std::string::npos;
+            std::size_t resume = std::string::npos;
+            std::size_t search = remaining.size();
+            while (search != 0)
+            {
+                const auto space = remaining.rfind(' ', search - 1);
+                if (space == std::string::npos) break;
+                std::size_t prefixEnd = space;
+                while (prefixEnd > 0 && remaining[prefixEnd - 1] == ' ')
+                    --prefixEnd;
+                if (prefixEnd != 0)
+                {
+                    const auto prefixMetrics = measure(
+                        std::string_view(remaining).substr(0, prefixEnd));
+                    if (!prefixMetrics)
+                        return std::unexpected(prefixMetrics.error());
+                    if (prefixMetrics->width <= width)
+                    {
+                        cut = prefixEnd;
+                        resume = space + 1;
+                        break;
+                    }
+                }
+                search = space;
+            }
+
+            if (cut == std::string::npos)
+            {
+                std::size_t best{};
+                for (std::size_t end = nextBoundary(remaining, 0);
+                     end <= remaining.size() && end != 0;)
+                {
+                    const auto prefixMetrics = measure(
+                        std::string_view(remaining).substr(0, end));
+                    if (!prefixMetrics)
+                        return std::unexpected(prefixMetrics.error());
+                    if (prefixMetrics->width > width && best != 0)
+                        break;
+                    best = end; // always consume at least one code point.
+                    if (end == remaining.size()) break;
+                    end = nextBoundary(remaining, end);
+                }
+                cut = best;
+                resume = best;
+            }
+
+            lines.push_back(replaceNonBreakingMarkers(remaining.substr(0, cut)));
+            remaining.erase(0, resume);
+            if (remaining.empty())
+            {
+                lines.emplace_back();
+                break;
+            }
+        }
+        return lines;
+    }
+
     std::expected<data::LegacyBitmapRGBA8, Error> Runtime::render(
         std::string_view utf8, std::uint32_t colorRef) const
     {

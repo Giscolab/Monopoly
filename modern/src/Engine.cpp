@@ -58,9 +58,13 @@
 #include "TradePropertyPlayback.hpp"
 #include "TradeOfferIconPlayback.hpp"
 #include "TradeCashDialogPlayback.hpp"
+#include "TradeCashTextPlayback.hpp"
+#include "TradeNamePlayback.hpp"
+#include "TradePanelTextPlayback.hpp"
 #include "TradeContractDialogPlayback.hpp"
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
+#include "IBarScoreTextPlayback.hpp"
 #include "IBarBackdropPlayback.hpp"
 #include "EscapeConfirmationPlayback.hpp"
 #include "LocalPlayers.hpp"
@@ -139,6 +143,9 @@ namespace monopoly::engine
         optionsui::HelpPlayback optionsHelpPlayback;
         tradeui::PropertyPlayback tradePropertyPlayback;
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
+        tradeui::CashTextPlayback tradeCashTextPlayback;
+        tradeui::NamePlayback tradeNamePlayback;
+        tradeui::PanelTextPlayback tradePanelTextPlayback;
         tradeui::CashDialogPlayback tradeCashDialogPlayback;
         tradeui::ContractDialogPlayback tradeContractDialogPlayback;
         boarddisplay::BoardBackdropPlayback boardBackdropPlayback;
@@ -149,6 +156,7 @@ namespace monopoly::engine
         dice::Playback dicePlayback;
         dice::TwoDPlayback dice2DPlayback;
         ibar::BackdropPlayback iBarBackdropPlayback;
+        ibar::ScoreTextPlayback iBarScoreTextPlayback;
         bool diceQueueLockHeld{};
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
@@ -923,6 +931,71 @@ namespace monopoly::engine
                 fontDisabled = true;
                 return nullptr;
             }
+            // DISPLAY_initialize() retail establishes Arial at 12 px,
+            // weight 700 and non-italic before every subsystem derives its
+            // saved font slots. Keep that shared baseline exact.
+            if (const auto sized = candidate->setSize(12); !sized)
+            {
+                std::cerr << "Font runtime disabled: " << sized.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            candidate->setWeight(700);
+            candidate->setItalic(false);
+            candidate->setUnderline(false);
+            candidate->setStrikeOut(false);
+            if (const auto saved = candidate->saveSettings(0); !saved)
+            {
+                std::cerr << "Font runtime disabled: " << saved.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+
+            // UDChat derives slots 8/9 from the display font by changing the
+            // size to 7. UDTrade uses slot 7 at size 8, weight 700.
+            if (const auto sized = candidate->setSize(7); !sized)
+            {
+                std::cerr << "Font runtime disabled: " << sized.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            if (const auto saved = candidate->saveSettings(8); !saved)
+            {
+                std::cerr << "Font runtime disabled: " << saved.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            if (const auto saved = candidate->saveSettings(9); !saved)
+            {
+                std::cerr << "Font runtime disabled: " << saved.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            if (const auto restored = candidate->restoreSettings(0); !restored)
+            {
+                std::cerr << "Font runtime disabled: " << restored.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            if (const auto sized = candidate->setSize(8); !sized)
+            {
+                std::cerr << "Font runtime disabled: " << sized.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            candidate->setWeight(700);
+            if (const auto saved = candidate->saveSettings(7); !saved)
+            {
+                std::cerr << "Font runtime disabled: " << saved.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
+            if (const auto restored = candidate->restoreSettings(0); !restored)
+            {
+                std::cerr << "Font runtime disabled: " << restored.error().detail << '\n';
+                fontDisabled = true;
+                return nullptr;
+            }
             fontRuntime = std::move(candidate);
         }
         return fontRuntime.get();
@@ -1374,6 +1447,25 @@ namespace monopoly::engine
             if (!tradeIconSync)
                 return SDL_SetError("Trade offer-icon playback: %s",
                     tradeIconSync.error().c_str());
+            const auto tradeCashTextSync = tradeCashTextPlayback.sync(
+                userinterface::tradeStateReadOnly(), ruleState,
+                displayState.desired2DView, displayState.system,
+                fontPlayback(), *session);
+            if (!tradeCashTextSync)
+                return SDL_SetError("Trade cash-text playback: %s",
+                    tradeCashTextSync.error().c_str());
+            const auto tradeNameSync = tradeNamePlayback.sync(
+                userinterface::tradeStateReadOnly(), ruleState,
+                displayState.desired2DView, fontPlayback(), *session);
+            if (!tradeNameSync)
+                return SDL_SetError("Trade name playback: %s",
+                    tradeNameSync.error().c_str());
+            const auto tradePanelTextSync = tradePanelTextPlayback.sync(
+                userinterface::tradeStateReadOnly(),
+                displayState.desired2DView, fontPlayback(), *session);
+            if (!tradePanelTextSync)
+                return SDL_SetError("Trade panel-text playback: %s",
+                    tradePanelTextSync.error().c_str());
             const auto tradeCashDialogSync = tradeCashDialogPlayback.sync(
                 userinterface::tradeState(),
                 displayState.desired2DView, tick, *session);
@@ -1557,6 +1649,17 @@ namespace monopoly::engine
             if (!backdropSync)
                 return SDL_SetError("IBar backdrop playback: %s",
                     backdropSync.error().c_str());
+            std::array<ibar::ScoreTextState, rules::MaxPlayers> scoreTextStates{};
+            for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                scoreTextStates[player] = iBarBackdropPlayback.scoreTextState(player);
+            const auto resources = startup::resources();
+            const auto scoreTextSync = iBarScoreTextPlayback.sync(
+                *scorePlan, scoreTextStates, displayState.system,
+                resources ? resources->context().board : data::BoardEdition::Usa,
+                fontPlayback(), *session);
+            if (!scoreTextSync)
+                return SDL_SetError("IBar score text playback: %s",
+                    scoreTextSync.error().c_str());
             if (previousCardVisualState == ibar::CardVisualState::Off &&
                 iBarBackdropPlayback.cardVisualState() == ibar::CardVisualState::DeckOut &&
                 iBarInputs.desiredCardIndex)
@@ -1736,6 +1839,9 @@ namespace monopoly::engine
         optionsHelpPlayback.reset();
         tradePropertyPlayback.reset();
         tradeOfferIconPlayback.reset();
+        tradeCashTextPlayback.reset();
+        tradeNamePlayback.reset();
+        tradePanelTextPlayback.reset();
         tradeCashDialogPlayback.reset();
         tradeContractDialogPlayback.reset();
         boardBackdropPlayback.reset();
@@ -1748,6 +1854,7 @@ namespace monopoly::engine
         dicePlayback.reset();
         dice2DPlayback.reset();
         iBarBackdropPlayback.reset();
+        iBarScoreTextPlayback.reset();
         display::cancelDiceCameraOverride();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;

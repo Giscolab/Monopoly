@@ -774,6 +774,9 @@ target_sources(
     src/TradeUI.cpp
     src/TradePropertyPlayback.cpp
     src/TradeOfferIconPlayback.cpp
+    src/TradeCashTextPlayback.cpp
+    src/TradeNamePlayback.cpp
+    src/TradePanelTextPlayback.cpp
     src/TradeCashDialogPlayback.cpp
     src/TradeContractDialogPlayback.cpp
     src/TradeBackdropPlayback.cpp
@@ -2142,6 +2145,7 @@ target_sources(
     src/IBarCardPlayback.cpp
     src/IBarJailCardPlayback.cpp
     src/IBarScoreStripPlayback.cpp
+    src/IBarScoreTextPlayback.cpp
     src/IBarPropertyPlayback.cpp
     src/IBarCurrentPlayerPlayback.cpp
     src/IBarBankPlayback.cpp
