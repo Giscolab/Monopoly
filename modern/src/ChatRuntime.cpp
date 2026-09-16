@@ -42,6 +42,11 @@ namespace monopoly::chat
             return {state.windowX + state.windowWidth - 58, state.windowY + 2,
                 state.windowX + state.windowWidth - 42, state.windowY + 16};
         }
+        [[nodiscard]] constexpr ChatRect fluffButtonRect(const State& state) noexcept
+        {
+            return {state.windowX + state.windowWidth - 40, state.windowY + 2,
+                state.windowX + state.windowWidth - 24, state.windowY + 16};
+        }
         [[nodiscard]] constexpr ChatRect shadeButtonRect(const State& state) noexcept
         {
             return {state.windowX + state.windowWidth - 21, state.windowY + 1,
@@ -316,6 +321,11 @@ namespace monopoly::chat
             if (closeButtonRect(runtime).contains(x, y))
             {
                 runtime.boxActive = false;
+                return true;
+            }
+            if (fluffButtonRect(runtime).contains(x, y))
+            {
+                runtime.fluffOpen = !runtime.fluffOpen;
                 return true;
             }
             if (chatBarRect(runtime).contains(x, y))

@@ -705,6 +705,7 @@ target_sources(
     src/ChatRuntime.cpp
     src/ChatRecipientPlayback.cpp
     src/ChatOptionPlayback.cpp
+    src/ChatFluffPlayback.cpp
     src/UserInterface.cpp
     src/AuctionUI.cpp
     src/AuctionPlayback.cpp
