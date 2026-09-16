@@ -112,7 +112,12 @@ namespace monopoly::statsui
         }
         for (auto& command : commands)
         {
-            if (!playback.commands().enqueue(std::move(command)))
+            const auto queued = std::visit(
+                [&](auto value)
+                {
+                    return playback.commands().enqueue(std::move(value));
+                }, std::move(command));
+            if (!queued)
                 return std::unexpected("validated UDStats Deed floater command rejected");
         }
 
