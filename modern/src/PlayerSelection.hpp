@@ -4,13 +4,19 @@
 #include "Display.hpp"
 #include "RuleTypes.hpp"
 #include "UIMessages.hpp"
+#include "PlayerSetupFlow.hpp"
 
 #include <array>
 #include <cstdint>
 #include <string>
+#include <filesystem>
+#include <expected>
+#include <span>
 
 namespace monopoly::playerselection
 {
+    struct RenderState;
+    struct RuleHit;
     struct PlayerInfo
     {
         std::wstring name;
@@ -53,6 +59,13 @@ namespace monopoly::playerselection
     void update();
 
     void show();
+
+    [[nodiscard]] RenderState renderStateReadOnly();
+    void setPlaybackState(bool ready, std::span<const RuleHit> rules,
+        ui::playersetup::Rect restore, ui::playersetup::Rect shortGame);
+    [[nodiscard]] std::expected<void, std::string> configureHistory(std::filesystem::path path);
+    [[nodiscard]] bool consumeLoadRequest() noexcept;
+    void recordGameStarted();
 
     void processMessage(const actions::Message& message);
 

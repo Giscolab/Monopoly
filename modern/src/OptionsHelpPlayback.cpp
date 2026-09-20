@@ -27,7 +27,7 @@ namespace monopoly::optionsui
     {
         const bool desiredVisible =
             desiredView == display::Screen2D::Options &&
-            state.active && state.currentScreen == Screen::Help;
+            state.active && state.currentScreen == Screen::Help && !state.quickHelpVisible;
         if (desiredVisible == visible_)
             return {};
 

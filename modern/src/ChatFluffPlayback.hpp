@@ -36,7 +36,8 @@ namespace monopoly::chat
 
         [[nodiscard]] std::expected<void, std::string> sync(
             const State& state,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback,
+            bool bodyControlsInBackground = false);
 
         void reset() noexcept { current_.clear(); }
         [[nodiscard]] std::size_t objectCount() const noexcept

@@ -30,6 +30,7 @@ namespace monopoly::userinterface
     const tradeui::State& tradeStateReadOnly() noexcept;
     optionsui::State& optionsState() noexcept;
     const optionsui::State& optionsStateReadOnly() noexcept;
+    [[nodiscard]] rules::PlayerNumber chatSenderPlayer() noexcept;
     optionsui::SaveRuntimeState& optionsSaveState() noexcept;
     const optionsui::SaveRuntimeState& optionsSaveStateReadOnly() noexcept;
     statsui::State& statsState() noexcept;

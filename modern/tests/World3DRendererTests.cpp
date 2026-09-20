@@ -42,7 +42,7 @@ namespace
     }
 
     std::shared_ptr<const data::MeshRuntimeAsset> makeAsset(
-        data::DataId id, bool textured = false)
+        data::DataId id, bool textured = false, bool contrastingTexture = false)
     {
         auto render = std::make_shared<data::MeshRenderData>();
         render->vertices = {
@@ -70,6 +70,11 @@ namespace
                 0U, 255U, 0U, 255U,  0U, 255U, 0U, 255U,
                 0U, 255U, 0U, 255U,  0U, 255U, 0U, 255U};
 
+            if (contrastingTexture)
+                image->rgba = {
+                    255U, 0U, 0U, 255U, 0U, 255U, 0U, 255U,
+                    255U, 0U, 0U, 255U, 0U, 255U, 0U, 255U};
+
             data::MeshTextureRegion region;
             region.key = 1U;
             region.page = 0U;
@@ -94,16 +99,16 @@ namespace
         asset->renderData = std::move(render);
         return asset;
     }
-    engine::SequenceWorld3DSlot makeSlot(bool textured = false)
+    engine::SequenceWorld3DSlot makeSlot(bool textured = false, bool contrastingTexture = false)
     {
         engine::SequenceWorld3DSlot slot;
         sequence::SequenceMeshRenderItem item;
         item.node = 1;
-        item.contentsDataId = data::packDataId(8, 1);
+        item.contentsDataId = data::packDataId(8, contrastingTexture ? 2 : 1);
         item.priority = 7;
         item.clock = 12;
         item.worldTransform = sequence::identity3D();
-        item.asset = makeAsset(item.contentsDataId, textured);
+        item.asset = makeAsset(item.contentsDataId, textured, contrastingTexture);
         (void)slot.sync({item});
 
         engine::World3DCamera camera;
@@ -552,6 +557,43 @@ namespace
             expect(texturedRead && greenPixels > 0U,
                 "real SDL_GPU sampling reads embedded RGBA8 HMD pixels into the framebuffer");
         }
+        // The exact same uploaded 2x2 red/green texture is drawn three times.
+        // Point sampling can only select an unmixed texel; bilinear sampling
+        // must introduce interior red+green pixels, then switching back must
+        // restore the original framebuffer byte for byte.
+        const auto contrasting = makeSlot(true, true);
+        std::array<std::uint8_t, 64U * 64U * 4U> pointPixels{}, linearPixels{}, restoredPixels{};
+        const auto sample = [&](bool linear, auto& output) {
+            renderer->setBilinearFiltering(linear);
+            expect(renderer->bilinearFiltering() == linear,
+                "World3D filtering getter reflects the selected runtime option");
+            auto* frame = SDL_AcquireGPUCommandBuffer(device);
+            if (!frame) return false;
+            if (!clearTarget(frame, target))
+            { (void)SDL_CancelGPUCommandBuffer(frame); return false; }
+            const auto rendered = renderer->render(frame, target, 64U, 64U, viewport, contrasting);
+            if (!rendered)
+            { (void)SDL_CancelGPUCommandBuffer(frame); return false; }
+            return downloadTarget(device, frame, target, output);
+        };
+        const bool pointRead = sample(false, pointPixels);
+        const bool linearRead = sample(true, linearPixels);
+        const bool restoredRead = sample(false, restoredPixels);
+        const auto mixedPixels = [](const auto& image) {
+            std::size_t count{};
+            for (std::size_t i = 0; i < image.size(); i += 4)
+                if (image[i] > 16 && image[i + 1] > 16 && image[i + 2] < 4 && image[i + 3] > 200)
+                    ++count;
+            return count;
+        };
+        expect(pointRead && linearRead && restoredRead,
+            "all three filter states execute and read back on the real GPU");
+        expect(pointRead && countRedPixels(pointPixels) > 0 && mixedPixels(pointPixels) == 0,
+            "point sampling preserves unmixed red and green texels");
+        expect(linearRead && mixedPixels(linearPixels) > 0 && pointPixels != linearPixels,
+            "bilinear filtering interpolates the actual 2x2 HMD pattern in GPU readback");
+        expect(restoredRead && pointPixels == restoredPixels,
+            "switching filtering off restores point-sampled GPU pixels exactly");
         std::cout << "[GPU] releasing renderer and target\n";
         renderer->reset();
         SDL_ReleaseGPUTexture(device, target);

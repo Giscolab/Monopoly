@@ -66,6 +66,13 @@
 #include "DiceDisplay.hpp"
 #include "IBar.hpp"
 #include "IBarScoreTextPlayback.hpp"
+#include "IBarRuntimeTextPlayback.hpp"
+#include "ChatTextPlayback.hpp"
+#include "OptionsVisualPlayback.hpp"
+#include "StatsTextPlayback.hpp"
+#include "PlayerSelection.hpp"
+#include "PlayerSelectionPlayback.hpp"
+#include "RuleCards.hpp"
 #include "IBarBackdropPlayback.hpp"
 #include "EscapeConfirmationPlayback.hpp"
 #include "LocalPlayers.hpp"
@@ -163,6 +170,12 @@ namespace monopoly::engine
         dice::TwoDPlayback dice2DPlayback;
         ibar::BackdropPlayback iBarBackdropPlayback;
         ibar::ScoreTextPlayback iBarScoreTextPlayback;
+        ibar::RuntimeTextPlayback iBarRuntimeTextPlayback;
+        chat::TextPlayback chatTextPlayback;
+        optionsui::VisualPlayback optionsVisualPlayback;
+        statsui::TextPlayback statsTextPlayback;
+        playerselection::PlayerSelectionPlayback playerSelectionPlayback;
+        std::optional<statsui::AccountRuntime> statsAccountRuntime;
         bool diceQueueLockHeld{};
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
         bool pieceIdleQueueLockHeld{};
@@ -1195,6 +1208,9 @@ namespace monopoly::engine
         return {};
     }
 
+    statsui::AccountRuntime* statsAccounts() noexcept
+    { return statsAccountRuntime ? &*statsAccountRuntime : nullptr; }
+
     bool initialize(SDL_Window* window)
     {
         if (window == nullptr)
@@ -1203,6 +1219,33 @@ namespace monopoly::engine
         }
 
         gameWindow = window;
+        auto* preferencePath = SDL_GetPrefPath("Giscolab", "Monopoly");
+        if (!preferencePath) return false;
+        const auto historyPath = std::filesystem::path(preferencePath) / "acchist.txt";
+        const auto playerHistoryPath = std::filesystem::path(preferencePath) / "Monopoly.ini";
+        SDL_free(preferencePath);
+        if (const auto configured = playerselection::configureHistory(playerHistoryPath); !configured)
+        {
+            std::cerr << "Player history: " << configured.error() << '\n';
+            gameWindow = nullptr;
+            return false;
+        }
+        statsAccountRuntime.emplace();
+        if (const auto opened = statsAccountRuntime->open(historyPath); !opened)
+        {
+            std::cerr << "Stats account history: " << opened.error() << '\n';
+            statsAccountRuntime.reset();
+            gameWindow = nullptr;
+            return false;
+        }
+        rules::cards::setBankPayoutObserver([](rules::cards::BankPayout payout)
+        {
+            if (auto* accounts = statsAccounts())
+            {
+                if (payout == rules::cards::BankPayout::Dividend50) accounts->recordDividend();
+                else accounts->recordBankError();
+            }
+        });
 
         if (!uimsg::initialize())
         {
@@ -1331,6 +1374,13 @@ namespace monopoly::engine
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
             const auto& ruleState = userinterface::ruleStateReadOnly();
+            const auto playerSelectionSync = playerSelectionPlayback.sync(
+                playerselection::renderStateReadOnly(), fontPlayback(), *session);
+            if (!playerSelectionSync)
+                return SDL_SetError("Player selection playback: %s", playerSelectionSync.error().c_str());
+            playerselection::setPlaybackState(playerSelectionPlayback.ready(),
+                playerSelectionPlayback.ruleHits(), playerSelectionPlayback.restoreRect(),
+                playerSelectionPlayback.shortRect());
             const auto auctionSync = auctionPlayback.sync(
                 userinterface::auctionStateReadOnly(), ruleState,
                 displayState.desired2DView, displayState.city, *session);
@@ -1418,6 +1468,11 @@ namespace monopoly::engine
             if (!escapeSync)
                 return SDL_SetError("Escape confirmation playback: %s",
                     escapeSync.error().c_str());
+            const auto chatTextSync = chatTextPlayback.sync(
+                chat::stateReadOnly(), ruleState, userinterface::chatSenderPlayer(),
+                fontPlayback(), *session);
+            if (!chatTextSync)
+                return SDL_SetError("Chat text playback: %s", chatTextSync.error().c_str());
             const auto chatRecipientSync = chatRecipientPlayback.sync(
                 chat::stateReadOnly(), ruleState, *session);
             if (!chatRecipientSync)
@@ -1429,7 +1484,7 @@ namespace monopoly::engine
                 return SDL_SetError("UDChat option playback: %s",
                     chatOptionSync.error().c_str());
             const auto chatFluffSync = chatFluffPlayback.sync(
-                chat::stateReadOnly(), *session);
+                chat::stateReadOnly(), *session, true);
             if (!chatFluffSync)
                 return SDL_SetError("UDChat fluff playback: %s",
                     chatFluffSync.error().c_str());
@@ -1439,12 +1494,6 @@ namespace monopoly::engine
             if (!statsSync)
                 return SDL_SetError("UDStats playback: %s",
                     statsSync.error().c_str());
-            const auto statsBankSync = statsBankPlayback.sync(
-                userinterface::statsStateReadOnly(), ruleState,
-                displayState.desired2DView, *session);
-            if (!statsBankSync)
-                return SDL_SetError("UDStats Bank playback: %s",
-                    statsBankSync.error().c_str());
             const auto statsCalculatorSync = statsCalculatorPlayback.sync(
                 displayState.desired2DView,
                 userinterface::statsCalculatorStateReadOnly(),
@@ -1459,6 +1508,11 @@ namespace monopoly::engine
             if (!statsCalculatorPickerSync)
                 return SDL_SetError("UDStats calculator deed picker: %s",
                     statsCalculatorPickerSync.error().c_str());
+            const auto optionsVisualSync = optionsVisualPlayback.sync(
+                userinterface::optionsState(), displayState.desired2DView,
+                tick, fontPlayback(), *session);
+            if (!optionsVisualSync)
+                return SDL_SetError("Options visual playback: %s", optionsVisualSync.error().c_str());
             const auto optionsNavigationSync = optionsNavigationPlayback.sync(
                 userinterface::optionsStateReadOnly(),
                 displayState.desired2DView, *session);
@@ -1613,6 +1667,27 @@ namespace monopoly::engine
             if (!statsDeedBarSync)
                 return SDL_SetError("UDStats Deed owner-bar playback: %s",
                     statsDeedBarSync.error().c_str());
+            if (statsAccountRuntime)
+            {
+                const auto statsTextSync = statsTextPlayback.sync(
+                    userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                    userinterface::statsCalculatorStateReadOnly(),
+                    userinterface::statsFutureImmunityStateReadOnly(), statsAccountRuntime->state(),
+                    displayState.city, displayState.system, displayState.desired2DView,
+                    fontPlayback(), *session);
+                if (!statsTextSync)
+                    return SDL_SetError("Stats text playback: %s", statsTextSync.error().c_str());
+                const auto& stats = userinterface::statsStateReadOnly();
+                if (displayState.desired2DView == display::Screen2D::Portfolio &&
+                    stats.screen == statsui::Screen::Bank && stats.activeSort == 3)
+                    statsAccountRuntime->setScrollLimit(statsTextPlayback.historyScrollLimit());
+            }
+            const auto statsBankSync = statsBankPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState,
+                displayState.desired2DView, *session,
+                statsAccountRuntime ? &statsAccountRuntime->state() : nullptr);
+            if (!statsBankSync)
+                return SDL_SetError("UDStats Bank playback: %s", statsBankSync.error().c_str());
             const auto& iBarState = ibar::stateReadOnly();
             const auto selectedDeed = iBarState.selectedDeed;
             const auto selectedBit = selectedDeed
@@ -1715,6 +1790,16 @@ namespace monopoly::engine
             if (!scoreTextSync)
                 return SDL_SetError("IBar score text playback: %s",
                     scoreTextSync.error().c_str());
+            const auto runtimeTextSync = iBarRuntimeTextPlayback.sync(
+                ruleState, iBarState, iBarRules, iBarVisible,
+                displayState.desired2DView == display::Screen2D::Main ||
+                    displayState.desired2DView == display::Screen2D::Trade,
+                iBarActivePlayer, tick, displayState.system,
+                resources ? resources->context().board : data::BoardEdition::Usa,
+                fontPlayback(), *session);
+            if (!runtimeTextSync)
+                return SDL_SetError("IBar runtime text playback: %s",
+                    runtimeTextSync.error().c_str());
             if (previousCardVisualState == ibar::CardVisualState::Off &&
                 iBarBackdropPlayback.cardVisualState() == ibar::CardVisualState::DeckOut &&
                 iBarInputs.desiredCardIndex)
@@ -1836,6 +1921,7 @@ namespace monopoly::engine
                     if (!loaded) return SDL_SetError("World3D pipeline: %s", loaded.error().detail.c_str());
                     worldRenderer = std::move(*loaded);
                 }
+                worldRenderer->setBilinearFiltering(displayState.optionFilteringOn);
             }
             const auto lightingSync = syncBoardLighting(
                 *session, ruleState, displayState);
@@ -1859,6 +1945,8 @@ namespace monopoly::engine
 
     void shutdown()
     {
+        rules::cards::setBankPayoutObserver(nullptr);
+        statsAccountRuntime.reset();
         pieceMovePlayback = {};
         pieceJailPlayback = {};
         pieceIdlePlayback = {};
@@ -1911,6 +1999,11 @@ namespace monopoly::engine
         dice2DPlayback.reset();
         iBarBackdropPlayback.reset();
         iBarScoreTextPlayback.reset();
+        iBarRuntimeTextPlayback.reset();
+        chatTextPlayback.reset();
+        optionsVisualPlayback.reset();
+        statsTextPlayback.reset();
+        playerSelectionPlayback.reset();
         display::cancelDiceCameraOverride();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;

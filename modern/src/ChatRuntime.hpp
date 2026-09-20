@@ -27,6 +27,8 @@ namespace monopoly::chat
         std::int64_t cannedTextId{};
         std::u16string text{};
         bool privateMessage{};
+        std::wstring displayName{};
+        bool senderNameCaptured{};
     };
     struct State
     {
@@ -34,6 +36,12 @@ namespace monopoly::chat
         std::size_t first{};
         std::size_t count{};
         std::size_t outputOffset{};
+        std::size_t wrappedOutputLines{};
+        std::size_t outputLinesInWindow{};
+        std::uint64_t historyRevision{};
+        int fontHeight{};
+        bool outputLayoutReady{};
+        bool followLatest{true};
         std::u16string draft{};
         std::array<std::u16string, InputHistoryCapacity> inputHistory{};
         std::size_t inputHistoryCount{};
@@ -75,6 +83,13 @@ namespace monopoly::chat
         bool scrolling{};
     };
 
+    // Refresh from UI state before RULE ingress or local input. Entry names
+    // are captured on arrival, as CHAT_ReceiveMessage formatted its history.
+    void setPlayerNames(const rules::GameState& gameState);
+    // Published by the measured FontRuntime layout, never guessed from points.
+    void setOutputLayoutMetrics(std::size_t wrappedLines, int fontHeight,
+        std::size_t visibleLines) noexcept;
+    void setFluffSelectionText(std::int64_t cannedTextId, std::u16string_view text);
     void reset() noexcept;
     void toggle() noexcept;
     void setRecipientMask(std::uint32_t mask) noexcept;

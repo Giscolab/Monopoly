@@ -37,9 +37,10 @@ namespace monopoly::data
                 recipe.mesh, location, fileName, context);
             if (!relative)
                 return std::unexpected(std::string(relative.error().detail));
-            const auto resolved = paths.resolve(*relative);
+            const auto resolved = resolveBoardTexturePath(paths,
+                recipe.mesh, location, fileName, context);
             if (!resolved)
-                return std::unexpected(*relative + ": " + resolved.error().detail);
+                return std::unexpected(resolved.error());
 
             // Stock TexInfo images are at most 256x256 BI_RGB 24-bit.
             // Bound file allocation as well as the existing decoder's pixels.
@@ -66,6 +67,11 @@ namespace monopoly::data
                 return std::unexpected(*relative + ": " + image.error().detail);
 
             auto expected = textureDimensions(recipe.resolution);
+            // Custom city name files follow the same source filename anomaly
+            // as retail High/128: CT07/08/09_256 are still 256 pixels wide.
+            if (context.city == -1 && location == TextureLocation::SelectedCityNames &&
+                fileName.find("_256") != std::string_view::npos)
+                expected = textureDimensions(TextureResolution::Pixels256);
             // TexInfo's high-detail 128 recipe intentionally references three
             // 256 city-name files. Preserve their physical corpus dimensions.
             for (const auto& asset : legacyTextureCorpusManifest())

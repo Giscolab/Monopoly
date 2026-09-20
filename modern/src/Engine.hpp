@@ -12,6 +12,8 @@ namespace monopoly::fonts
     class Runtime;
 }
 
+namespace monopoly::statsui { class AccountRuntime; }
+
 namespace monopoly::udsound
 {
     class Runtime;
@@ -24,6 +26,7 @@ namespace monopoly::engine
     SequencePlayback* sequencePlayback();
     audio::Runtime* audioPlayback();
     fonts::Runtime* fontPlayback();
+    statsui::AccountRuntime* statsAccounts() noexcept;
     udsound::Runtime* monopolySoundPlayback();
     void playWarningSound() noexcept;
     void playClickSound() noexcept;

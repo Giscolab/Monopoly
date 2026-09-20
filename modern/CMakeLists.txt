@@ -231,6 +231,7 @@ add_library(
     src/SequenceRuntime.cpp
     src/SequenceCommands.cpp
     src/SequencePlayback.cpp
+    src/StatsAccountRuntime.cpp
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
@@ -876,6 +877,7 @@ if(BUILD_TESTING)
         MonopolyUserInterfaceRoutingTests
         tests/UserInterfaceRoutingTests.cpp
         src/UserInterface.cpp
+        src/OptionsHelpRuntime.cpp
         src/IBarRuleState.cpp
         src/RuntimeState.cpp
         src/PieceMoveIngress.cpp
@@ -1522,6 +1524,8 @@ target_sources(
     PRIVATE
     src/Display.cpp
     src/PlayerSelection.cpp
+    src/PlayerSelectionHistory.cpp
+    src/PlayerSelectionPlayback.cpp
 )
 
 target_sources(
@@ -2206,6 +2210,11 @@ target_sources(
     src/IBarJailCardPlayback.cpp
     src/IBarScoreStripPlayback.cpp
     src/IBarScoreTextPlayback.cpp
+    src/IBarRuntimeTextPlayback.cpp
+    src/ChatTextPlayback.cpp
+    src/OptionsHelpRuntime.cpp
+    src/OptionsVisualPlayback.cpp
+    src/StatsTextPlayback.cpp
     src/IBarPropertyPlayback.cpp
     src/IBarCurrentPlayerPlayback.cpp
     src/IBarBankPlayback.cpp
@@ -3150,4 +3159,53 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyBoardBackdropPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.BoardBackdropPlayback COMMAND MonopolyBoardBackdropPlaybackTests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyFontRuntimeTests tests/FontRuntimeTests.cpp src/FontRuntime.cpp)
+    target_include_directories(MonopolyFontRuntimeTests PRIVATE src tests)
+    target_link_libraries(MonopolyFontRuntimeTests PRIVATE SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+    if(MSVC)
+        target_compile_options(MonopolyFontRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.FontRuntime COMMAND MonopolyFontRuntimeTests)
+    set_tests_properties(Monopoly.FontRuntime PROPERTIES TIMEOUT 30)
+    add_executable(MonopolyIBarRuntimeTextPlaybackTests
+        tests/IBarRuntimeTextPlaybackTests.cpp src/IBarRuntimeTextPlayback.cpp
+        src/FontRuntime.cpp src/MoneyFormat.cpp)
+    target_include_directories(MonopolyIBarRuntimeTextPlaybackTests PRIVATE src tests)
+    target_link_libraries(MonopolyIBarRuntimeTextPlaybackTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+    if(MSVC)
+        target_compile_options(MonopolyIBarRuntimeTextPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.IBarRuntimeTextPlayback COMMAND MonopolyIBarRuntimeTextPlaybackTests)
+    set_tests_properties(Monopoly.IBarRuntimeTextPlayback PROPERTIES TIMEOUT 30)
+
+    add_executable(MonopolyChatTextPlaybackTests tests/ChatTextPlaybackTests.cpp
+        src/ChatTextPlayback.cpp src/ChatRuntime.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyOptionsVisualPlaybackTests tests/OptionsVisualPlaybackTests.cpp
+        src/OptionsVisualPlayback.cpp src/OptionsHelpRuntime.cpp src/OptionsUI.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyPlayerSelectionPlaybackTests tests/PlayerSelectionPlaybackTests.cpp
+        src/PlayerSelectionPlayback.cpp src/PlayerSelectionHistory.cpp
+        src/PlayerSetupFlow.cpp src/RuleOptions.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyStatsTextPlaybackTests tests/StatsTextPlaybackTests.cpp
+        src/StatsTextPlayback.cpp src/StatsDeedPlayback.cpp src/StatsUI.cpp
+        src/StatsCalculatorUI.cpp src/StatsCalculatorLogic.cpp src/AIUtility.cpp
+        src/BoardRules.cpp src/IBarLayout.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyStatsAccountRuntimeTests tests/StatsAccountRuntimeTests.cpp
+        src/RuleCards.cpp src/CardDeckRuntime.cpp src/RuleEconomy.cpp
+        src/PhaseStack.cpp src/Messaging.cpp src/BoardRules.cpp src/RuleOptions.cpp)
+    foreach(UI_TEST IN ITEMS ChatTextPlayback OptionsVisualPlayback PlayerSelectionPlayback
+            StatsTextPlayback StatsAccountRuntime)
+        target_include_directories(Monopoly${UI_TEST}Tests PRIVATE src tests)
+        target_link_libraries(Monopoly${UI_TEST}Tests PRIVATE
+            MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+        if(MSVC)
+            target_compile_options(Monopoly${UI_TEST}Tests PRIVATE /W4 /permissive-)
+        endif()
+        add_test(NAME Monopoly.${UI_TEST} COMMAND Monopoly${UI_TEST}Tests)
+        set_tests_properties(Monopoly.${UI_TEST} PROPERTIES TIMEOUT 60)
+    endforeach()
+    target_link_libraries(MonopolyStatsDeedBarPlaybackTests PRIVATE SDL3::SDL3)
 endif()

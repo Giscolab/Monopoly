@@ -70,6 +70,7 @@ namespace monopoly::statsui
         bool mouseKnown{};
         bool portfolioVisible{};
         bool initialized{};
+        int historyArrowPressed{-1};
     };
 
     [[nodiscard]] constexpr Rect categoryRect(std::uint8_t index) noexcept
@@ -107,4 +108,7 @@ namespace monopoly::statsui
     [[nodiscard]] bool processInput(
         State& state, const rules::GameState& gameState,
         display::Screen2D view, const uimsg::Message& message) noexcept;
+    // Returns one font line to scroll, matching the two account-history arrows.
+    [[nodiscard]] int historyScrollInput(State& state, display::Screen2D view,
+        const uimsg::Message& message) noexcept;
 }

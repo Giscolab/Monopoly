@@ -1,4 +1,6 @@
 #include "PlayerSelection.hpp"
+#include "PlayerSelectionPlayback.hpp"
+#include "PlayerSelectionHistory.hpp"
 
 #include "Display.hpp"
 #include "ExtendedInitialization.hpp"
@@ -25,14 +27,18 @@ namespace monopoly::playerselection
         ui::playersetup::State setupFlowState;
 
         ui::playersetupsound::State setupSoundState;
+        bool playbackAttached{};
+        bool playbackReady{};
+        std::vector<RuleHit> ruleHits;
+        ui::playersetup::Rect restoreRuleRect{}, shortRuleRect{};
+        PlayerSelectionHistory history;
+        bool loadRequested{};
+        ui::playersetup::Button pressedButton{ui::playersetup::Button::None};
+        std::uint64_t pressSerial{};
 
         bool hasHiScoreInformation()
         {
-            // L'original appelle udpsel_PrintHiScoreInfo().
-            //
-            // Le fichier historique des scores n'est pas encore porté.
-            // En son absence, UDPSEL saute lui-même cet écran.
-            return false;
+            return !history.highScores().empty();
         }
 
         void playSetupPhaseSound(display::PlayerSetupPhase phase) noexcept
@@ -58,8 +64,6 @@ namespace monopoly::playerselection
 
         bool hasPreviousPlayerLog()
         {
-            // La lecture/persistance INI reste a porter, mais la logique
-            // SelectPlayer conserve maintenant les entrees deja chargees.
             return setupFlowState.playerLogCount != 0;
         }
 
@@ -236,10 +240,23 @@ namespace monopoly::playerselection
 
         void initializeTokenNames()
         {
-            // Fallback US original.
-            //
-            // Ces chaînes seront remplacées par LANG lorsque
-            // les ressources DAT/LANG seront raccordées.
+            // Retail token names come from the selected LANG bank.
+            const auto resources = startup::resources();
+            if (resources && resources->language() && resources->language()->catalog)
+            {
+                for (std::uint8_t token = 0; token < rules::MaxTokens; ++token)
+                {
+                    const auto value = resources->language()->catalog->message(920 + token);
+                    if (value)
+                    {
+                        std::wstring name;
+                        for (const auto unit : **value) name.push_back(static_cast<wchar_t>(unit));
+                        ui::playersetup::setTokenName(setupFlowState, token, name);
+                    }
+                }
+                return;
+            }
+            // Source US names remain available for resource-free rules tests.
 
             ui::playersetup::setTokenName(
                 setupFlowState,
@@ -814,6 +831,30 @@ namespace monopoly::playerselection
             const rules::GameState& uiState =
                 userinterface::ruleStateReadOnly();
 
+            if (setupFlowState.phase == ui::playersetup::Phase::CustomizeRules && playbackAttached)
+            {
+                const int px = static_cast<int>(x), py = static_cast<int>(y);
+                for (const auto& hit : ruleHits)
+                {
+                    if (!hit.rect.contains(px, py)) continue;
+                    const auto command = ui::playersetup::customRuleChoice(
+                        setupFlowState, uiState, hit.rule, hit.choice);
+                    executeSetupCommand(command);
+                    globalState.forcedRefresh = true;
+                    return true;
+                }
+                const auto button = restoreRuleRect.contains(px, py)
+                    ? ui::playersetup::Button::RulesRestoreStandard
+                    : shortRuleRect.contains(px, py) ? ui::playersetup::Button::RulesShortGame
+                    : ui::playersetup::Button::None;
+                if (button != ui::playersetup::Button::None)
+                {
+                    executeSetupCommand(ui::playersetup::clickButton(setupFlowState, uiState, button));
+                    globalState.forcedRefresh = true;
+                    return true;
+                }
+            }
+
 
             const auto button =
                 ui::playersetup::buttonAt(
@@ -849,6 +890,9 @@ namespace monopoly::playerselection
                     button
                 );
 
+            pressedButton = button;
+            ++pressSerial;
+
 
             syncLegacyStateFromFlow();
 
@@ -874,6 +918,11 @@ namespace monopoly::playerselection
     bool initialize()
     {
         globalState = {};
+        playbackAttached = playbackReady = false;
+        ruleHits.clear();
+        loadRequested = false;
+        pressedButton = ui::playersetup::Button::None;
+        pressSerial = 0;
         ui::playersetupsound::resetPlayback(setupSoundState);
 
 
@@ -884,6 +933,9 @@ namespace monopoly::playerselection
 
 
         initializeTokenNames();
+        if (history.configured())
+            ui::playersetup::setPlayerLogEntries(setupFlowState,
+                userinterface::ruleStateReadOnly(), history.names());
 
 
         ui::localplayers::reset();
@@ -904,6 +956,8 @@ namespace monopoly::playerselection
     void shutdown()
     {
         globalState = {};
+        playbackAttached = playbackReady = false;
+        ruleHits.clear();
 
         setupFlowState = {};
         ui::playersetupsound::resetPlayback(setupSoundState);
@@ -944,6 +998,9 @@ namespace monopoly::playerselection
 
             case display::PlayerSetupPhase::SelectPlayer:
             {
+                if (history.configured())
+                    ui::playersetup::setPlayerLogEntries(setupFlowState,
+                        userinterface::ruleStateReadOnly(), history.names());
                 if (hasPreviousPlayerLog())
                 {
                     displayState.desiredPlayerSetupPhase =
@@ -1081,23 +1138,14 @@ namespace monopoly::playerselection
         playSetupPhaseSound(displayState.currentPlayerSetupPhase);
 
 
-        // Sans animations, le port condense anim-out, startPhase et anim-in
-        // dans ce show. La phase precedente rejoint donc la phase courante
-        // une fois la transition stabilisee.
+        // The renderer retains its outgoing objects until their clocks finish.
         displayState.previousPlayerSetupPhase =
             displayState.currentPlayerSetupPhase;
     }
 
     void show()
     {
-        // ====================================================
-        // DISPLAY_UDPSEL_Show().
-        //
-        // Les animations LE_SEQNCR ne sont pas encore portées.
-        // La machine current/desired déjà présente dans
-        // update() constitue donc actuellement le passage
-        // immédiat anim-out -> anim-in -> phase stable.
-        // ====================================================
+        // The owner-thread PlayerSelectionPlayback realizes the visual phase.
 
         const display::Screen2D desiredView =
             display::stateReadOnly().desired2DView;
@@ -1113,15 +1161,71 @@ namespace monopoly::playerselection
         update();
 
 
-        // udpsel_ForcedRefresh est un one-shot consomme par
-        // DISPLAY_UDPSEL_Show(). Les objets graphiques a reconstruire ne
-        // sont pas encore portes, mais l'intention ne doit pas rester
-        // perpetuellement armee.
+        // Visual state is reconciled every owner-thread frame.
         globalState.forcedRefresh = false;
+    }
+
+    RenderState renderStateReadOnly()
+    {
+        syncFlowFromLegacyState();
+        return {setupFlowState, userinterface::ruleStateReadOnly(),
+            display::stateReadOnly().desired2DView, static_cast<int>(ui::localplayers::count()),
+            display::stateReadOnly().system, history.highScores(), pressedButton, pressSerial};
+    }
+
+    std::expected<void, std::string> configureHistory(std::filesystem::path path)
+    {
+        if (auto result = history.open(std::move(path)); !result) return result;
+        ui::playersetup::setPlayerLogEntries(setupFlowState,
+            userinterface::ruleStateReadOnly(), history.names());
+        return {};
+    }
+
+    bool consumeLoadRequest() noexcept
+    {
+        const bool result = loadRequested;
+        loadRequested = false;
+        return result;
+    }
+
+    void setPlaybackState(bool ready, std::span<const RuleHit> hits,
+        ui::playersetup::Rect restore, ui::playersetup::Rect shortGame)
+    {
+        playbackAttached = true;
+        playbackReady = ready;
+        ruleHits.assign(hits.begin(), hits.end());
+        restoreRuleRect = restore;
+        shortRuleRect = shortGame;
+    }
+
+    void recordGameStarted()
+    {
+        if (history.configured())
+        {
+            const auto& game = userinterface::ruleStateReadOnly();
+            std::vector<HistoryPlayer> players;
+            for (rules::PlayerNumber i=0;i<game.numberOfPlayers && i<rules::MaxPlayers;++i)
+                players.push_back({game.players[i].name,game.players[i].aiPlayerLevel,
+                    ui::localplayers::slotIsLocalPlayer(i)});
+            if (auto result=history.gameStarted(players);!result)
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,"Player history: %s",result.error().c_str());
+        }
     }
 
     void processMessage(const actions::Message& message)
     {
+        if (message.action == actions::Type::NotifyGameStarting)
+            recordGameStarted();
+        if (history.configured() && message.action == actions::Type::NotifyGameOver)
+        {
+            const auto& game = userinterface::ruleStateReadOnly();
+            if (message.numberA>=0 && message.numberA<game.numberOfPlayers && message.numberA<rules::MaxPlayers)
+            {
+                const auto& winner=game.players[static_cast<std::size_t>(message.numberA)];
+                if (auto result=history.gameOver(winner.name,static_cast<int>(message.numberB),winner.aiPlayerLevel);!result)
+                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,"Player history: %s",result.error().c_str());
+            }
+        }
         switch (message.action)
         {
             case actions::Type::NotifyNamePlayer:
@@ -1351,6 +1455,13 @@ namespace monopoly::playerselection
         const display::PlayerSetupPhase phase =
             displayState.currentPlayerSetupPhase;
 
+        // ENTERNAME accepts typing during anim-in, as in UDPsel. Clicks cannot
+        // operate controls while the previous visual phase is still leaving.
+        if (playbackAttached && (!playbackReady ||
+            displayState.currentPlayerSetupPhase != displayState.desiredPlayerSetupPhase) &&
+            message.type == uimsg::Type::MouseLeftDown)
+            return;
+
 
         // ----------------------------------------------------
         // SOURIS
@@ -1365,6 +1476,13 @@ namespace monopoly::playerselection
 
             const std::int64_t y =
                 message.numberB;
+
+            if (phase == display::PlayerSetupPhase::HiScore &&
+                pointInside(x, y, 341, 452, 468, 488))
+            {
+                switchPhase(display::PlayerSetupPhase::LocalOrNetwork);
+                return;
+            }
 
 
             // ------------------------------------------------
@@ -1420,8 +1538,7 @@ namespace monopoly::playerselection
                 }
 
 
-                // Saved game :
-                // sera raccordé avec UDOPTS/FileScreen.
+                // The UI owner consumes this and opens its existing load workflow.
                 if (
                     pointInside(
                         x,
@@ -1432,6 +1549,7 @@ namespace monopoly::playerselection
                         428
                     ))
                 {
+                    loadRequested = true;
                     return;
                 }
             }

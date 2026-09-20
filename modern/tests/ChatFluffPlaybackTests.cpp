@@ -89,6 +89,28 @@ namespace
             "persisted Fluff category positions follow the moved window");
     }
 
+    void testBackgroundComposedBodyControls()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        chat::FluffPlayback fluff;
+        chat::State state;
+        state.boxActive = true;
+        state.fluffOpen = true;
+        require(fluff.sync(state, playback).has_value() && playback.update(0).has_value(),
+            "standalone Fluff begins with both body-arrow roots");
+        require(fluff.sync(state, playback, true).has_value() &&
+                playback.commands().pendingCount() == 2 && fluff.objectCount() == 9 && playback.update(1).has_value(),
+            "background-composed Fluff removes exactly two opaque body overlays");
+        require(playback.runtime().matching(mainId(chat::ChatFluffDownTag), chat::ChatFluffWindowPriority).empty() &&
+                playback.runtime().matching(mainId(chat::ChatFluffUpTag), chat::ChatFluffWindowPriority).empty(),
+            "alpha-composed background arrows have no duplicate opaque sequence roots");
+        for (const auto tag : chat::ChatFluffCategoryTags)
+            require(object(playback, mainId(tag), chat::ChatFluffWindowPriority) != nullptr,
+                "all category title controls remain published");
+        require(fluff.sync(state, playback, false).has_value() && playback.update(2).has_value() && fluff.objectCount() == 11,
+            "standalone mode restores the body controls without losing title chrome");
+    }
     void testLifecycleAndFailures()
     {
         chat::State state{};
@@ -125,6 +147,7 @@ int main()
     {
         testWindowChrome();
         testLifecycleAndFailures();
+        testBackgroundComposedBodyControls();
         return 0;
     }
     catch (const std::exception& error)

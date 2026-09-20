@@ -21,12 +21,18 @@ namespace monopoly::statsui
             const PlayerPlaybackInputs& inputs)
         {
             Objects result;
-            if (state.activeSort != 1) return result;
-
             auto grid = planDeedGrid(state, gameState, inputs);
             if (!grid) return std::unexpected(grid.error());
             for (const auto& item : *grid)
             {
+                if (state.activeSort != 1)
+                {
+                    // UDStats sort-by-price/rent/earnings draws TAB_dvaldisp
+                    // under the runtime 52x13 value text at this same origin.
+                    result.push_back({mainId(0x00D0), DeedOwnerBarPriority,
+                        item.x + DeedOwnerBarOffsetX, item.y + DeedOwnerBarOffsetY});
+                    continue;
+                }
                 const auto owner = gameState.squares[
                     static_cast<std::size_t>(item.square)].owner;
                 if (owner >= gameState.numberOfPlayers ||

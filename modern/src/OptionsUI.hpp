@@ -6,6 +6,8 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace monopoly::optionsui
 {
@@ -63,10 +65,10 @@ namespace monopoly::optionsui
 
     inline constexpr std::uint8_t MusicTuneCount = 5;
 
-    inline constexpr std::array<OptionToggle, 7> SupportedOptionToggles{
+    inline constexpr std::array<OptionToggle, 8> SupportedOptionToggles{
         OptionToggle::TokenVoices, OptionToggle::HostComments, OptionToggle::Music,
         OptionToggle::TokenAnimations, OptionToggle::Camera, OptionToggle::Lighting,
-        OptionToggle::Board3D};
+        OptionToggle::Board3D, OptionToggle::Filtering};
 
     struct Rect
     {
@@ -90,6 +92,13 @@ namespace monopoly::optionsui
         std::uint8_t originalMusicTuneIndex{};
         bool optionSnapshotLoaded{};
         bool active{};
+        std::array<Rect, MusicTuneCount> musicChoiceRects{};
+        bool quickHelpVisible{};
+        std::string quickHelpText;
+        std::vector<std::string> quickHelpLines;
+        std::size_t quickHelpFirstLine{};
+        std::size_t quickHelpLinesPerPage{1};
+        std::array<Rect, 3> quickHelpButtonRects{};
     };
 
     struct InputResult
@@ -100,6 +109,7 @@ namespace monopoly::optionsui
         std::optional<HelpButton> pressedHelpButton;
         std::optional<OptionToggle> pressedOptionToggle;
         bool pressedOptionOkay{};
+        std::optional<std::uint8_t> pressedMusicTune;
     };
 
     [[nodiscard]] Rect menuButtonRect(MenuButton button) noexcept;
@@ -120,7 +130,8 @@ namespace monopoly::optionsui
         bool tokenVoicesOn, bool hostCommentsOn,
         bool musicOn, std::uint8_t musicTuneIndex,
         bool tokenAnimationsOn, bool cameraMovementOn,
-        bool lightingOn, bool board3DOn) noexcept;
+        bool lightingOn, bool board3DOn,
+        bool filteringOn = true) noexcept;
 
     [[nodiscard]] bool selectMusicTune(State& state, std::uint8_t tuneIndex) noexcept;
 

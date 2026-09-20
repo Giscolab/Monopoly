@@ -165,6 +165,65 @@ namespace
             images->front()->height == 256 && pixel(*images->front(), 0, 0, {11, 5, 3, 255}),
             "128px recipe preserves the catalog's intentional 256px city-name asset and RGB pixels");
     }
+    void testCustomRoots()
+    {
+        Fixture fixture;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        expect(paths.has_value(), "custom fixture stock roots initialize");
+        if (!paths) return;
+        BoardTextureContext context;
+        context.city = -1;
+        context.customRoot = fixture.root / "custom";
+        auto customRecipe = recipe(false);
+        customRecipe.mesh = BoardMeshKind::CityMedium;
+        customRecipe.meshDataId = boardMeshDataId(customRecipe.mesh);
+        customRecipe.textures.front().location = TextureLocation::SelectedCityPhotos;
+        customRecipe.textures.front().fileName = "CT01_128.BMP";
+        expect(write(fixture, "custom/Photos/CT01_128.BMP", bmp(128, false, false, false)) &&
+            write(fixture, "Photos/CT01_128.BMP", bmp(128, false)),
+            "custom photo and misleading stock-root photo are distinct fixtures");
+        auto images = loadBoardTextureImages(*paths, customRecipe, context);
+        expect(images && images->size() == 1 && pixel(*images->front(), 0, 0, {11,5,3,255}),
+            "city -1 resolves photos exclusively beneath its explicit custom root");
+        std::filesystem::remove(context.customRoot / "Photos/CT01_128.BMP");
+        expect(!loadBoardTextureImages(*paths, customRecipe, context),
+            "missing custom photo cannot fall back to an identically named stock-root file");
+        context.customRoot = "relative";
+        expect(!loadBoardTextureImages(*paths, customRecipe, context),
+            "custom asset root must be absolute");
+        context.customRoot = fixture.root / "custom";
+        expect(!boardTextureRelativePath(customRecipe.mesh,
+            TextureLocation::SelectedCityNames, "../outside.bmp", context),
+            "custom basename cannot escape its selected root");
+        const auto common = boardTextureRelativePath(customRecipe.mesh,
+            TextureLocation::SharedCityCommon, "COMMON.BMP", context);
+        expect(common && *common == "Cities/Common/Medium/COMMON.BMP",
+            "USA custom meshes retain the source shared stock common-texture directory");
+        context.edition = BoardEdition::Europe;
+        context.language = LanguageId::French;
+        context.currency = 3;
+        const auto name = boardTextureRelativePath(customRecipe.mesh,
+            TextureLocation::SelectedCityNames, "CT01_128.BMP", context);
+        const auto language = boardTextureRelativePath(customRecipe.mesh,
+            TextureLocation::Language, "LANG05_128.BMP", context);
+        const auto currency = boardTextureRelativePath(customRecipe.mesh,
+            TextureLocation::Currency, "CUR01_128.BMP", context);
+        expect(name && *name == "Medium/CT01_128.BMP" &&
+            language && *language == "Languages/Lang01/Medium/LANG05_128.BMP" &&
+            currency && *currency == "Currency/Curr03/Medium/CUR01_128.BMP" &&
+            !boardTextureRelativePath(customRecipe.mesh, TextureLocation::SelectedBoard,
+                "BRD01_128.BMP", context),
+            "European custom names use the custom root while language/currency remain stock and Board-1 is forbidden");
+        customRecipe.mesh = BoardMeshKind::CityHigh;
+        customRecipe.meshDataId = boardMeshDataId(customRecipe.mesh);
+        customRecipe.textures.front().location = TextureLocation::SelectedCityNames;
+        customRecipe.textures.front().fileName = "CT07_256.BMP";
+        expect(write(fixture, "custom/High/CT07_256.BMP", bmp(256, false, false, false)),
+            "custom High/128 physical 256px name fixture written");
+        images = loadBoardTextureImages(*paths, customRecipe, context);
+        expect(images && images->front()->width == 256,
+            "custom city recipes preserve the source 256px name anomaly with unchanged recipe resolution");
+    }
     void testPaletteOverlayAndFailure()
     {
         Fixture fixture;
@@ -228,6 +287,7 @@ int main()
     testContextPaths();
     testPaletteOverlayAndFailure();
     testCatalogDimensionException();
+    testCustomRoots();
     std::cout << (failures ? "Board texture runtime tests FAILED\n" :
         "Board texture runtime tests passed\n");
     return failures ? 1 : 0;

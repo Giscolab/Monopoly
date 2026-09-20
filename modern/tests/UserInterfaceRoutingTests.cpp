@@ -21,6 +21,8 @@
 namespace
 {
     int failures = 0;
+    monopoly::ibar::State routingIBarState{};
+    bool enterExitCreditsOnNextIBarInput{};
     bool acceptRecipient = true;
     int localResetCount = 0;
     int queueLockDepth = 0;
@@ -113,6 +115,7 @@ namespace
 
 namespace monopoly::ibar
 {
+    const State& stateReadOnly() { return routingIBarState; }
     RuleMode resolveRuleMode(RuleMode projectedMode, rules::PlayerNumber) noexcept
     { return projectedMode; }
     rules::PlayerNumber resolveRulePlayer(rules::PlayerNumber projectedPlayer) noexcept
@@ -148,6 +151,7 @@ namespace monopoly::engine
     // Production save-dialog logic is linked below and sees the same nullable
     // dependencies as application startup before those services exist.
     fonts::Runtime* fontPlayback() { return nullptr; }
+    statsui::AccountRuntime* statsAccounts() noexcept { return nullptr; }
     bool startVoiceChat() noexcept { return false; }
     void stopVoiceChat() noexcept {}
     void playWarningSound() noexcept { route.push_back("warning"); }
@@ -425,6 +429,7 @@ namespace monopoly::messaging
 
 namespace monopoly::chat
 {
+    void setPlayerNames(const rules::GameState&) {}
     void reset() noexcept {}
 
     bool processInput(const uimsg::Message&, rules::PlayerNumber, std::uint32_t, bool)
@@ -440,6 +445,8 @@ namespace monopoly::chat
 
 namespace monopoly::playerselection
 {
+    bool consumeLoadRequest() noexcept { return false; }
+    void recordGameStarted() {}
     void processMessage(const actions::Message&)
     {
         route.push_back("playerselection");
@@ -456,6 +463,17 @@ namespace monopoly::ibar
     void processLibraryMessage(const uimsg::Message&)
     {
         route.push_back("ibar-ui");
+        // This routing fixture models the IBar owner's completed transition;
+        // actual escape/confirmation behavior is covered by IBar tests.
+        if (enterExitCreditsOnNextIBarInput)
+        {
+            enterExitCreditsOnNextIBarInput = false;
+            routingIBarState.userChoseToExit = true;
+            auto& options = userinterface::optionsState();
+            options.currentScreen = optionsui::Screen::Credits;
+            options.active = true;
+            display::setBackdrop(display::Screen2D::Options);
+        }
     }
 
     void processRuleMessage(const actions::Message&, RuleMode) noexcept
@@ -604,6 +622,50 @@ namespace
         runtime::reset();
     }
 
+    void testOptionsMusicPreviewRollbackAndExitConsumption()
+    {
+        using namespace monopoly;
+        runtime::reset(); runtime::state().gameInProgress = true;
+        userinterface::resetRuleProjection(); routingIBarState = {};
+        routingDisplayState = {};
+        routingDisplayState.current2DView = display::Screen2D::Trade;
+        routingDisplayState.desired2DView = display::Screen2D::Trade;
+        routingDisplayState.optionMusicTuneIndex = 3;
+        expect(userinterface::beginOptionsFromIBar(), "music rollback fixture opens options");
+        const auto clickRect = [](optionsui::Rect rect) {
+            uimsg::Message click; click.type = uimsg::Type::MouseLeftDown;
+            click.numberA = rect.left + 1; click.numberB = rect.top + 1;
+            return userinterface::processUIMessage(click);
+        };
+        expect(clickRect(optionsui::menuButtonRect(optionsui::MenuButton::Option)) &&
+                userinterface::optionsStateReadOnly().originalMusicTuneIndex == 3,
+            "Option tab snapshots original music tune");
+        // The real renderer publishes these measured hit rectangles. A routing
+        // fixture needs only one explicit rectangle, not a fabricated font.
+        userinterface::optionsState().musicChoiceRects[0] = {10, 200, 80, 225};
+        expect(clickRect({10, 200, 80, 225}) && routingDisplayState.optionMusicTuneIndex == 0,
+            "music row click previews the selected tune through DISPLAY");
+        expect(clickRect(optionsui::menuButtonRect(optionsui::MenuButton::File)) &&
+                routingDisplayState.optionMusicTuneIndex == 3,
+            "leaving Option tab rolls preview back to the original tune");
+        expect(clickRect(optionsui::menuButtonRect(optionsui::MenuButton::Option)), "re-enter music options");
+        userinterface::optionsState().musicChoiceRects[0] = {10, 200, 80, 225};
+        expect(clickRect({10, 200, 80, 225}) && clickRect(optionsui::optionOkayRect()) &&
+                routingDisplayState.optionMusicTuneIndex == 0,
+            "Option OK commits the preview instead of rolling it back");
+
+        expect(userinterface::beginOptionsFromIBar(), "exit-credit routing fixture opens options");
+        enterExitCreditsOnNextIBarInput = true;
+        uimsg::Message accept; accept.type = uimsg::Type::MouseLeftDown;
+        accept.numberA = 300; accept.numberB = 100;
+        expect(userinterface::processUIMessage(accept) && routingIBarState.userChoseToExit &&
+                userinterface::optionsStateReadOnly().active &&
+                userinterface::optionsStateReadOnly().currentScreen == optionsui::Screen::Credits &&
+                requestedBackdrop == display::Screen2D::Options,
+            "click entering exit credits is consumed before UDOpts can dismiss the new screen");
+        routingIBarState = {}; enterExitCreditsOnNextIBarInput = false;
+        userinterface::resetRuleProjection(); runtime::reset();
+    }
     void testAuctionBidRouting()
     {
         using namespace monopoly;
@@ -1995,6 +2057,7 @@ int main()
     testUiModuleOrder();
     testOptionsEntryAndCancelRouting();
     testOptionsSupportedToggleRouting();
+    testOptionsMusicPreviewRollbackAndExitConsumption();
     testAuctionBidRouting();
     testAuctionRuleRouting();
     testAuctionReadyResponses();

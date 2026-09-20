@@ -13,6 +13,8 @@
 
 namespace monopoly::rules::cards
 {
+    namespace { BankPayoutObserver payoutObserver{}; }
+    void setBankPayoutObserver(BankPayoutObserver observer) noexcept { payoutObserver = observer; }
     namespace
     {
         constexpr std::uint8_t GoSquare = 0;
@@ -647,8 +649,7 @@ namespace monopoly::rules::cards
 
                 popAndRestart(state);
 
-                // g_Card200Counter du build non-hotseat était
-                // uniquement une statistique extérieure aux règles.
+                if (payoutObserver) payoutObserver(BankPayout::BankError200);
                 break;
             }
 
@@ -729,7 +730,7 @@ namespace monopoly::rules::cards
 
                 popAndRestart(state);
 
-                // g_Card50Counter idem : statistique externe.
+                if (payoutObserver) payoutObserver(BankPayout::Dividend50);
                 break;
             }
 

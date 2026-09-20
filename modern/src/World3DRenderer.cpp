@@ -173,6 +173,8 @@ namespace monopoly::engine
         pipeline_ = std::move(other.pipeline_);
         meshCache_ = std::move(other.meshCache_);
         textureSampler_ = std::exchange(other.textureSampler_, nullptr);
+        linearSampler_ = std::exchange(other.linearSampler_, nullptr);
+        bilinearFiltering_ = std::exchange(other.bilinearFiltering_, false);
         whiteTexture_ = std::exchange(other.whiteTexture_, nullptr);
         depthTarget_ = std::exchange(other.depthTarget_, nullptr);
         depthWidth_ = std::exchange(other.depthWidth_, 0U);
@@ -197,8 +199,11 @@ namespace monopoly::engine
             SDL_ReleaseGPUTexture(device_, whiteTexture_);
         if (device_ && textureSampler_)
             SDL_ReleaseGPUSampler(device_, textureSampler_);
+        if (device_ && linearSampler_)
+            SDL_ReleaseGPUSampler(device_, linearSampler_);
         whiteTexture_ = nullptr;
         textureSampler_ = nullptr;
+        linearSampler_ = nullptr;
     }
 
     void World3DRenderer::reset() noexcept
@@ -210,6 +215,7 @@ namespace monopoly::engine
         pipeline_.reset();
         device_ = nullptr;
         lighting_ = {};
+        bilinearFiltering_ = false;
     }
 
     bool World3DRenderer::ensureDepthTarget(
@@ -275,12 +281,24 @@ namespace monopoly::engine
                 "could not create retail-compatible World3D point sampler"));
         }
 
+        // RenderSettings.inl toggles stage-0 MIN/MAG only; preserve wrap and
+        // disabled mipmapping for both samplers. The 2D overlay is unaffected.
+        samplerInfo.min_filter = samplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
+        auto* linearSampler = SDL_CreateGPUSampler(device, &samplerInfo);
+        if (!linearSampler)
+        {
+            SDL_ReleaseGPUSampler(device, sampler);
+            SDL_ReleaseGPUTexture(device, *whiteTexture);
+            return std::unexpected(rendererError(World3DRendererErrorCode::SamplerCreationFailed,
+                "could not create World3D bilinear sampler"));
+        }
         World3DRenderer result;
         result.device_ = device;
         result.pipeline_ = std::move(*pipeline);
         result.meshCache_ = std::make_unique<MeshGPUCache>(device);
         result.whiteTexture_ = *whiteTexture;
         result.textureSampler_ = sampler;
+        result.linearSampler_ = linearSampler;
         return result;
     }
 
@@ -398,7 +416,7 @@ namespace monopoly::engine
 
             const SDL_GPUTextureSamplerBinding textureBinding{
                 batch.gpuTexture != nullptr ? batch.gpuTexture : whiteTexture_,
-                textureSampler_};
+                bilinearFiltering_ ? linearSampler_ : textureSampler_};
             SDL_BindGPUFragmentSamplers(pass, 0U, &textureBinding, 1U);
 
             SDL_DrawGPUIndexedPrimitives(pass,

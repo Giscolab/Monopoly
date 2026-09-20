@@ -1072,6 +1072,7 @@ namespace monopoly::ibar
                 globalState.decompositionHousesToSell.reset();
                 globalState.cashAnimationAmount = message.numberC;
                 globalState.cashAnimationTick = tick;
+                ++globalState.cashAnimationSerial;
                 globalState.buttonBarForceUpdate = true;
             }
             return;

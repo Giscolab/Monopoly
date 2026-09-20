@@ -323,7 +323,7 @@ namespace
                 !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Camera)] &&
                 state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Lighting)] &&
                 !state.optionOn[static_cast<std::size_t>(optionsui::OptionToggle::Board3D)],
-            "Option tab snapshots seven supported runtime owners");
+            "Option tab snapshots eight supported runtime owners");
 
         require(optionsui::selectMusicTune(state, 4) && state.musicTuneIndex == 4 &&
                 !optionsui::selectMusicTune(state, 5) && state.musicTuneIndex == 4,
@@ -347,10 +347,10 @@ namespace
         engine::SequencePlayback playback(resources.service.snapshot());
         optionsui::TogglePlayback toggles;
         require(toggles.sync(state, display::Screen2D::Options, playback) &&
-                playback.commands().pendingCount() == 42,
-            "seven supported toggles open as two Start+Move+Stay roots each");
-        require(playback.update(0).has_value() && playback.world2D().size() == 14,
-            "supported Option toggles publish fourteen Overlay2D roots");
+                playback.commands().pendingCount() == 48,
+            "eight supported toggles open as two Start+Move+Stay roots each");
+        require(playback.update(0).has_value() && playback.world2D().size() == 16,
+            "supported Option toggles publish sixteen Overlay2D roots");
 
         const auto cameraOnId = optionsui::toggleSequence(true, false);
         const auto cameraOffId = optionsui::toggleSequence(false, false);
@@ -384,9 +384,9 @@ namespace
             click(creditsTab.left + 1, creditsTab.top + 1));
         require(!state.optionSnapshotLoaded &&
                 toggles.sync(state, display::Screen2D::Options, playback) &&
-                playback.commands().pendingCount() == 14 && playback.update(2).has_value() &&
+                playback.commands().pendingCount() == 16 && playback.update(2).has_value() &&
                 playback.world2D().size() == 0,
-            "leaving Option tab discards snapshot and stops fourteen supported toggle roots");
+            "leaving Option tab discards snapshot and stops sixteen supported toggle roots");
     }
 
     void testHelpScreen()

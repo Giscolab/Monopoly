@@ -1,4 +1,5 @@
 #include "TextureCatalog.hpp"
+#include "ResourcePaths.hpp"
 
 #include <array>
 #include <cstddef>
@@ -615,11 +616,13 @@ namespace monopoly::data
                 static_cast<std::uint32_t>(context.edition),
                 "texture edition must be USA or Europe");
         }
-        if (context.city < 0)
+        const bool custom = context.city == -1;
+        if (context.city < -1 || (custom &&
+            (context.customRoot.empty() || !context.customRoot.is_absolute() || !isCityMesh(mesh))))
         {
             return fail(TextureCatalogErrorCode::InvalidTextureContext,
                 static_cast<std::uint32_t>(context.city),
-                "custom board texture roots are not supported");
+                "custom city -1 requires a city mesh and an explicit absolute asset root");
         }
         const bool usa = context.edition == BoardEdition::Usa;
         // DISPLAY_CITY_MAX is 11 for USA and 12 for Europe (Display.h).
@@ -643,11 +646,11 @@ namespace monopoly::data
                     static_cast<std::uint32_t>(context.currency),
                     "European texture currency must be in the stock range 0..12");
             }
-            if (isCityMesh(mesh))
+            if (isCityMesh(mesh) && !custom)
             {
                 return fail(TextureCatalogErrorCode::InvalidTextureContext,
                     static_cast<std::uint32_t>(boardMeshTag(mesh)),
-                    "European city meshes require an unsupported custom board root");
+                    "European city meshes require custom city -1");
             }
         }
         if (fileName.empty() || fileName == "." || fileName == ".." ||
@@ -664,6 +667,11 @@ namespace monopoly::data
         {
             case TextureLocation::SelectedCityPhotos:
             case TextureLocation::SelectedCityNames:
+                if (custom)
+                {
+                    directory = location == TextureLocation::SelectedCityPhotos ? "Photos" : detail;
+                    break;
+                }
                 if (!usa || (isCityMesh(mesh) && context.city == 0) ||
                     (location == TextureLocation::SelectedCityPhotos && !isCityMesh(mesh)))
                 {
@@ -691,7 +699,7 @@ namespace monopoly::data
                 break;
 
             case TextureLocation::SelectedBoard:
-                if (!usa)
+                if (!usa && !custom)
                     directory = indexedTextureDirectory("Boards", "Board",
                         static_cast<std::size_t>(context.city), detail);
                 break;
@@ -703,8 +711,8 @@ namespace monopoly::data
                 break;
 
             case TextureLocation::CustomBoard2D:
-                return fail(TextureCatalogErrorCode::InvalidTextureContext, 0,
-                    "custom 2D board texture roots are not supported");
+                if (custom) directory = "2DBoards";
+                break;
         }
         if (directory.empty())
         {
@@ -715,6 +723,30 @@ namespace monopoly::data
         directory.push_back('/');
         directory.append(fileName);
         return directory;
+    }
+
+    std::expected<std::filesystem::path, std::string> resolveBoardTexturePath(
+        const ResourcePaths& stockPaths, BoardMeshKind mesh, TextureLocation location,
+        std::string_view fileName, const BoardTextureContext& context)
+    {
+        const auto relative = boardTextureRelativePath(mesh, location, fileName, context);
+        if (!relative) return std::unexpected(std::string(relative.error().detail));
+        const bool custom = context.city == -1 &&
+            (location == TextureLocation::SelectedCityPhotos ||
+             location == TextureLocation::SelectedCityNames ||
+             location == TextureLocation::CustomBoard2D);
+        if (custom)
+        {
+            const std::array roots{context.customRoot};
+            const auto paths = ResourcePaths::create(roots);
+            if (!paths) return std::unexpected(paths.error().detail);
+            const auto resolved = paths->resolve(*relative);
+            if (!resolved) return std::unexpected(*relative + ": " + resolved.error().detail);
+            return *resolved;
+        }
+        const auto resolved = stockPaths.resolve(*relative);
+        if (!resolved) return std::unexpected(*relative + ": " + resolved.error().detail);
+        return *resolved;
     }
 
 

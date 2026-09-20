@@ -1,6 +1,8 @@
 #include "ChatRuntime.hpp"
 #include "Messaging.hpp"
 
+#include <SDL3/SDL_scancode.h>
+
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -167,6 +169,95 @@ namespace
                     Sender, 0u, true) && chat::stateReadOnly().fluffCategory == 1,
             "reopening Chat restores the persisted Fluff window and controls");
     }
+
+    uimsg::Message key(SDL_Scancode scancode)
+    {
+        uimsg::Message message{};
+        message.type = uimsg::Type::KeyboardPressed;
+        message.numberA = scancode;
+        return message;
+    }
+
+    void testWrappedOutputScrolling()
+    {
+        chat::reset();
+        actions::Message incoming;
+        incoming.action = actions::Type::NotifyTextChat;
+        incoming.numberA = rules::AllPlayers;
+        incoming.numberB = 0;
+        incoming.stringA[0] = L'x';
+        require(chat::processRuleMessage(incoming) && chat::processRuleMessage(incoming),
+            "two logical messages enter the public history");
+        chat::setOutputLayoutMetrics(12, 18, 3);
+        require(chat::stateReadOnly().count == 2 && chat::stateReadOnly().outputOffset == 9 &&
+            chat::stateReadOnly().wrappedOutputLines == 12 && chat::stateReadOnly().fontHeight == 18,
+            "new messages scroll to the final visible wrapped lines, not logical-message count");
+        require(chat::processInput(key(SDL_SCANCODE_PAGEUP), Sender, 0u, true) &&
+            chat::stateReadOnly().outputOffset == 8, "PageUp advances by one wrapped output line");
+        chat::setOutputLayoutMetrics(12, 18, 3);
+        require(chat::stateReadOnly().outputOffset == 8,
+            "unchanged measured layout preserves explicit scroll position");
+        for (int i = 0; i < 6; ++i)
+            (void)chat::processInput(key(SDL_SCANCODE_PAGEDOWN), Sender, 0u, true);
+        require(chat::stateReadOnly().outputOffset == 11,
+            "PageDown clamps to the last wrapped line even with only two history entries");
+        chat::setOutputLayoutMetrics(4, 18, 3);
+        require(chat::stateReadOnly().outputOffset == 3, "rewrapping a wider window clamps old scroll offset");
+        require(chat::processRuleMessage(incoming), "new message follows explicit scrolling");
+        chat::setOutputLayoutMetrics(15, 18, 3);
+        require(chat::stateReadOnly().outputOffset == 12,
+            "new arrival restores the retail follow-latest wrapped offset");
+    }
+
+    void testPublicPrivateSpectatorRouting()
+    {
+        chat::reset();
+        sentMessages.clear();
+        chat::toggle();
+        constexpr std::uint32_t Eligible = (1u << 1) | (1u << 2);
+        (void)chat::processInput(textInput("hello"), Sender, Eligible, true);
+        (void)chat::processInput(key(SDL_SCANCODE_RETURN), Sender, Eligible, true);
+        require(sentMessages.size() == 1 && sentMessages[0].numberA == rules::AllPlayers &&
+            sentMessages[0].fromPlayer == Sender && sentMessages[0].toPlayer == rules::BankPlayer,
+            "selecting all eligible recipients sends one public TextChat to RULE");
+        sentMessages.clear();
+        chat::setRecipientMask(1u << 2);
+        (void)chat::processInput(textInput("private"), Sender, Eligible, true);
+        (void)chat::processInput(key(SDL_SCANCODE_RETURN), Sender, Eligible, true);
+        require(sentMessages.size() == 1 && sentMessages[0].numberA == 2 &&
+            chat::stateReadOnly().count == 1 && chat::entryAt(0)->privateMessage &&
+            chat::entryAt(0)->from == Sender && chat::entryAt(0)->text == u"private",
+            "private selection addresses only that player and preserves sender's private history echo");
+        sentMessages.clear();
+        chat::setRecipientMask(Eligible);
+        (void)chat::processInput(textInput("watching"), rules::SpectatorPlayer, Eligible, true);
+        (void)chat::processInput(key(SDL_SCANCODE_RETURN), rules::SpectatorPlayer, Eligible, true);
+        require(sentMessages.size() == 1 && sentMessages[0].fromPlayer == rules::SpectatorPlayer &&
+            sentMessages[0].numberA == rules::AllPlayers,
+            "spectator text retains its source identity and public destination");
+    }
+
+    void testMeasuredFluffSelection()
+    {
+        chat::reset();
+        sentMessages.clear();
+        chat::toggle();
+        (void)chat::processInput(mouse(uimsg::Type::MouseLeftDown, 220, 14), Sender, 0u, true);
+        chat::setOutputLayoutMetrics(0, 18, 3);
+        require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 275, 65), Sender, 0u, true) &&
+            chat::stateReadOnly().fluffSelectedLine == 2 && sentMessages.empty(),
+            "first Fluff click selects row using measured eighteen-pixel font height");
+        const auto id = chat::selectedFluffMessageId();
+        chat::setFluffSelectionText(id + 1, u"stale layout");
+        require(chat::stateReadOnly().draft.empty(), "stale translated Fluff selection cannot replace the edit text");
+        chat::setFluffSelectionText(id, u"Selected localized message");
+        require(chat::stateReadOnly().draft == u"Selected localized message",
+            "current Fluff selection copies its resolved LANG text into the edit line");
+        require(chat::processInput(mouse(uimsg::Type::MouseLeftDown, 275, 65), Sender, 0u, true) &&
+            sentMessages.size() == 1 && sentMessages[0].numberC == id &&
+            sentMessages[0].binaryDataA.empty() && chat::stateReadOnly().fluffSelectedLine == -1,
+            "second click sends the selected canned ID rather than fabricating transmitted text");
+    }
 }
 
 int main()
@@ -176,6 +267,9 @@ int main()
         testOptionControls();
         testFluffWindowControls();
         testFluffPersistence();
+        testWrappedOutputScrolling();
+        testPublicPrivateSpectatorRouting();
+        testMeasuredFluffSelection();
         return 0;
     }
     catch (const std::exception& error)

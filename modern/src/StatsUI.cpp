@@ -132,7 +132,7 @@ namespace monopoly::statsui
             state.bankDeeds.fill(BankDeedState::Hidden);
             state.bankHousesRemaining = gameState.options.maximumHouses;
             state.bankHotelsRemaining = gameState.options.maximumHotels;
-            state.activeDatasetAvailable = state.activeSort < 2;
+            state.activeDatasetAvailable = true;
 
             if (state.activeSort == 0)
             {
@@ -395,6 +395,31 @@ namespace monopoly::statsui
         if (state.screen == Screen::Deed)
             return deedPropertyHit(state, gameState, x, y);
         return std::nullopt;
+    }
+
+    int historyScrollInput(State& state, display::Screen2D view,
+        const uimsg::Message& message) noexcept
+    {
+        if (view != display::Screen2D::Portfolio || state.screen != Screen::Bank ||
+            state.activeSort != 3)
+        {
+            state.historyArrowPressed = -1;
+            return 0;
+        }
+        if (message.type == uimsg::Type::MouseLeftUp)
+            state.historyArrowPressed = -1;
+        if (message.type != uimsg::Type::MouseLeftDown) return 0;
+        const int x = static_cast<int>(message.numberA);
+        const int y = static_cast<int>(message.numberB);
+        for (int arrow = 0; arrow < 2; ++arrow)
+        {
+            const Rect rect{745, 402 - arrow * 119, 763, 428 - arrow * 119};
+            if (!rect.contains(x, y)) continue;
+            state.historyArrowPressed = arrow;
+            return arrow == 0 ? 1 : -1;
+        }
+        state.historyArrowPressed = -1;
+        return 0;
     }
 
     bool processInput(

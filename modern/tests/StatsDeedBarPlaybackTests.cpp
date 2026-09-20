@@ -1,5 +1,5 @@
 #include "StatsDeedBarPlayback.hpp"
-#include "SyntheticSequenceResources.hpp"
+#include "SyntheticTextResources.hpp"
 
 #include <iostream>
 #include <optional>
@@ -36,7 +36,7 @@ namespace
         game.squares[3].owner = 1;
         auto state = deedState();
 
-        SyntheticSequenceResources resources;
+        SyntheticTextResources resources({}, {{0x00D0, {data::LegacyDataType::Chunky, SyntheticSequenceResources::words({0x03000014, 0, 0x04000000, 2, 0x000000A0})}}});
         engine::SequencePlayback sequence(resources.service.snapshot());
         statsui::DeedBarPlayback playback;
         require(playback.sync(state, game, {},
@@ -60,8 +60,19 @@ namespace
         state.activeSort = 0;
         require(playback.sync(state, game, {},
                     display::Screen2D::Portfolio, sequence) && sequence.update(1) &&
-                playback.objectCount() == 0,
-            "non-owner deed sorts remove static owner bars");
+                playback.objectCount() == 28,
+            "price sort publishes one value background per property");
+        require(sequence.runtime().matching(player0Bar, statsui::DeedOwnerBarPriority, false).empty(),
+            "price sort removes the old owner-colour bars");
+        state.activeSort = 2;
+        require(playback.sync(state, game, {}, display::Screen2D::Portfolio, sequence) && sequence.update(2) && playback.objectCount() == 28,
+            "rent sort keeps all 28 property value backgrounds");
+        state.activeSort = 3;
+        require(playback.sync(state, game, {}, display::Screen2D::Portfolio, sequence) && sequence.update(3) && playback.objectCount() == 0,
+            "earnings sort omits all zero-earning properties");
+        state.deedMetric[1] = 123;
+        require(playback.sync(state, game, {}, display::Screen2D::Portfolio, sequence) && sequence.update(4) && playback.objectCount() == 1,
+            "earnings sort publishes the nonzero property value background");
     }
 }
 

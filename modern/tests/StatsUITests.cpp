@@ -148,14 +148,14 @@ int main()
         "bank Properties view projects hidden/available/sold/mortgaged retail states");
 
     (void)statsui::selectSort(projection, 2, state);
-    expect(!projection.activeDatasetAvailable,
-        "bank Liabilities remains explicitly unavailable without legacy counters");
+    expect(projection.activeDatasetAvailable,
+        "bank Liabilities exposes the account-owned legacy counters");
     (void)statsui::selectSort(projection, 3, state);
-    expect(!projection.activeDatasetAvailable,
-        "bank Account History remains unavailable without the legacy journal backend");
+    expect(projection.activeDatasetAvailable,
+        "bank Account History exposes the persistent journal backend");
     (void)statsui::selectCategory(projection, statsui::Screen::Player, state);
     expect(projection.activeDatasetAvailable,
-        "leaving an unavailable Bank dataset restores portable Player data");
+        "leaving Bank restores Player data");
     state.players[0].cash = 1234;
     state.players[1].cash = 0;
     state.players[2].cash = 0;
@@ -186,5 +186,19 @@ int main()
            projection.screen == statsui::Screen::Deed && projection.initialized,
         "Portfolio category click activates the Deed projection");
 
+    projection.screen = statsui::Screen::Bank;
+    projection.activeSort = 3;
+    click.numberA = 750; click.numberB = 410;
+    expect(statsui::historyScrollInput(projection, display::Screen2D::Portfolio, click) == 1 && projection.historyArrowPressed == 0,
+        "history down arrow requests one physical text line and pressed artwork");
+    click.numberB = 290;
+    expect(statsui::historyScrollInput(projection, display::Screen2D::Portfolio, click) == -1 && projection.historyArrowPressed == 1,
+        "history up arrow requests one preceding physical line");
+    click.type = uimsg::Type::MouseLeftUp;
+    expect(statsui::historyScrollInput(projection, display::Screen2D::Portfolio, click) == 0 && projection.historyArrowPressed == -1,
+        "history mouse release restores arrow artwork without another scroll");
+    click.type = uimsg::Type::MouseLeftDown;
+    expect(statsui::historyScrollInput(projection, display::Screen2D::Main, click) == 0,
+        "history arrows stay inactive outside Portfolio");
     return failures == 0 ? 0 : 1;
 }

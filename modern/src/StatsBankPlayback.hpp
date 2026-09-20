@@ -1,6 +1,7 @@
-﻿#pragma once
+#pragma once
 
 #include "StatsUI.hpp"
+#include "StatsAccountRuntime.hpp"
 #include "SequencePlayback.hpp"
 
 #include <cstdint>
@@ -36,7 +37,8 @@ namespace monopoly::statsui
     public:
         [[nodiscard]] std::expected<void, std::string> sync(
             const State& state, const rules::GameState& gameState,
-            display::Screen2D desiredView, engine::SequencePlayback& playback);
+            display::Screen2D desiredView, engine::SequencePlayback& playback,
+            const AccountState* accounts = nullptr);
         void reset() noexcept { current_.clear(); }
         [[nodiscard]] std::size_t objectCount() const noexcept { return current_.size(); }
 

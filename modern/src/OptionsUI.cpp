@@ -131,7 +131,8 @@ namespace monopoly::optionsui
         bool tokenVoicesOn, bool hostCommentsOn,
         bool musicOn, std::uint8_t musicTuneIndex,
         bool tokenAnimationsOn, bool cameraMovementOn,
-        bool lightingOn, bool board3DOn) noexcept
+        bool lightingOn, bool board3DOn,
+        bool filteringOn) noexcept
     {
         state.optionOn[static_cast<std::size_t>(OptionToggle::TokenVoices)] = tokenVoicesOn;
         state.optionOn[static_cast<std::size_t>(OptionToggle::HostComments)] = hostCommentsOn;
@@ -142,6 +143,7 @@ namespace monopoly::optionsui
         state.optionOn[static_cast<std::size_t>(OptionToggle::Camera)] = cameraMovementOn;
         state.optionOn[static_cast<std::size_t>(OptionToggle::Lighting)] = lightingOn;
         state.optionOn[static_cast<std::size_t>(OptionToggle::Board3D)] = board3DOn;
+        state.optionOn[static_cast<std::size_t>(OptionToggle::Filtering)] = filteringOn;
         state.optionSnapshotLoaded = true;
     }
 
@@ -174,6 +176,8 @@ namespace monopoly::optionsui
         if (menu)
         {
             result.pressedMenuButton = menu;
+            state.quickHelpVisible = false;
+            state.musicChoiceRects = {};
             state.currentScreen = static_cast<Screen>(static_cast<std::uint8_t>(*menu));
             state.optionSnapshotLoaded = false;
             return result;
@@ -191,6 +195,15 @@ namespace monopoly::optionsui
                 return result;
             }
             if (!state.optionSnapshotLoaded) return result;
+            for (std::uint8_t index = 0; index < MusicTuneCount; ++index)
+            {
+                if (state.musicChoiceRects[index].contains(x, y))
+                {
+                    state.musicTuneIndex = index;
+                    result.pressedMusicTune = index;
+                    return result;
+                }
+            }
             for (const auto toggle : SupportedOptionToggles)
             {
                 if (optionToggleRect(toggle, true).contains(x, y) ||
@@ -205,8 +218,30 @@ namespace monopoly::optionsui
             return result;
         }
 
+        if (state.currentScreen == Screen::Credits && message.numberB >= 0 && message.numberB < 486)
+        {
+            state.active = false;
+            result.requestedBackdrop = state.previousView;
+            return result;
+        }
+
         if (state.currentScreen == Screen::Help)
         {
+            if (state.quickHelpVisible)
+            {
+                for (std::size_t index = 0; index < 3; ++index)
+                {
+                    if (!state.quickHelpButtonRects[index].contains(
+                            static_cast<int>(message.numberA), static_cast<int>(message.numberB))) continue;
+                    if (index == 0 && state.quickHelpFirstLine > 0)
+                        state.quickHelpFirstLine -= std::min(state.quickHelpFirstLine, state.quickHelpLinesPerPage);
+                    else if (index == 1 && state.quickHelpFirstLine + state.quickHelpLinesPerPage < state.quickHelpLines.size())
+                        state.quickHelpFirstLine += state.quickHelpLinesPerPage;
+                    else if (index == 2) state.quickHelpVisible = false;
+                    return result;
+                }
+                return result;
+            }
             const auto button = helpButtonHit(
                 static_cast<int>(message.numberA),
                 static_cast<int>(message.numberB));

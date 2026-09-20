@@ -101,6 +101,8 @@ namespace monopoly::engine
                 const SequenceWorld3DSlot& slot);
 
         void reset() noexcept;
+        void setBilinearFiltering(bool enabled) noexcept { bilinearFiltering_ = enabled; }
+        [[nodiscard]] bool bilinearFiltering() const noexcept { return bilinearFiltering_; }
         void setLighting(const World3DLighting& lighting) noexcept
         { lighting_ = lighting; }
         [[nodiscard]] const World3DLighting& lighting() const noexcept
@@ -120,6 +122,8 @@ namespace monopoly::engine
         World3DPipeline pipeline_;
         std::unique_ptr<MeshGPUCache> meshCache_;
         SDL_GPUSampler* textureSampler_{};
+        SDL_GPUSampler* linearSampler_{};
+        bool bilinearFiltering_{};
         SDL_GPUTexture* whiteTexture_{};
         SDL_GPUTexture* depthTarget_{};
         std::uint32_t depthWidth_{};

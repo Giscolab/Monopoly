@@ -2,6 +2,7 @@
 #include "SyntheticSequenceResources.hpp"
 
 #include <iostream>
+#include <fstream>
 #include <string_view>
 
 namespace
@@ -120,6 +121,67 @@ namespace
             playback.runtimeBitmaps().asset(cachedCamera2Surface) == cachedCamera2Asset,
             "Main cache hit reuses compiled surface without refreshing TimeLoaded");
         expect(playback.update(60).has_value(), "cached Main backdrop transition executes");
+    }
+    void testCustomBackdropRoots()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        const auto firstRoot = resources.directory / "CustomOne";
+        const auto secondRoot = resources.directory / "CustomTwo";
+        const auto writeSet = [&](const std::filesystem::path& root, std::uint8_t red)
+        {
+            std::filesystem::create_directories(root / "2DBoards");
+            for (const auto name : data::twoDimensionalBoardTextureNames())
+            {
+                auto bytes = SyntheticSequenceResources::bitmap24();
+                bytes[62] = std::byte{0}; bytes[63] = std::byte{0};
+                bytes[64] = static_cast<std::byte>(red);
+                std::ofstream out(root / "2DBoards" / name, std::ios::binary);
+                out.write(reinterpret_cast<const char*>(bytes.data()),
+                    static_cast<std::streamsize>(bytes.size()));
+                if (!out) return false;
+            }
+            return true;
+        };
+        expect(writeSet(firstRoot, 91) && writeSet(secondRoot, 183),
+            "two complete synthetic custom camera sets are written");
+        engine::SequencePlayback playback(resources.service.snapshot());
+        boarddisplay::BoardBackdropPlayback backdrop;
+        auto custom = input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, 1, -1);
+        custom.customRoot = firstRoot;
+        expect(backdrop.sync(custom, playback).has_value() && playback.update(1).has_value(),
+            "custom city -1 loads its real external BMP through the production decoder");
+        auto asset = playback.runtimeBitmaps().asset(backdrop.activeBackdrop());
+        expect(asset && asset->image.pixels[0] == 91 && backdrop.mainBuffers()[0].cityLoaded == -1,
+            "custom camera pixels reach the runtime bitmap without a stock replacement");
+        custom.customRoot = secondRoot; custom.tick = 2;
+        expect(backdrop.sync(custom, playback).has_value() && playback.update(2).has_value(),
+            "changing only the selected custom root invalidates the sentinel-city cache key");
+        asset = playback.runtimeBitmaps().asset(backdrop.activeBackdrop());
+        expect(asset && asset->image.pixels[0] == 183,
+            "second custom root cannot reuse first root camera pixels");
+        const auto retained = asset;
+        custom.customRoot = resources.directory / "Missing";
+        expect(!backdrop.sync(custom, playback) && playback.commands().pendingCount() == 0 &&
+            playback.runtimeBitmaps().asset(backdrop.activeBackdrop()) == retained,
+            "missing custom set preserves the previously published board and never falls back");
+        custom.customRoot = firstRoot; custom.tick = 3;
+        expect(backdrop.sync(custom, playback).has_value() && playback.update(3).has_value(),
+            "returning to the first root reuses its correctly keyed camera cache");
+        custom.view = display::Screen2D::Trade; custom.tick = 4;
+        expect(backdrop.sync(custom, playback).has_value() && playback.update(4).has_value(),
+            "custom Trade intentionally follows the source classic-small-board branch");
+        asset = playback.runtimeBitmaps().asset(backdrop.activeBackdrop());
+        expect(asset && asset->image.width == 400 && asset->image.pixels[0] == 0 &&
+            asset->image.pixels[1] == 2,
+            "USA custom Trade explicitly addresses classic city 0 camera 1");
+        std::filesystem::remove(firstRoot / "2DBoards" / "2DVIEW39.BMP");
+        boarddisplay::BoardBackdropPlayback fresh;
+        engine::SequencePlayback freshPlayback(resources.service.snapshot());
+        custom.view = display::Screen2D::Main;
+        expect(!fresh.sync(custom, freshPlayback) && freshPlayback.commands().pendingCount() == 0,
+            "custom selection requires all 39 source camera files before first publication");
     }
 
     void testCityAddressingAndCache()
@@ -281,6 +343,7 @@ int main()
     testCityAddressingAndCache();
     testTradePortfolioAndStop();
     testFailuresAreTransactional();
+    testCustomBackdropRoots();
     std::cout << "Board backdrop failures: " << failures << '\n';
     return failures == 0 ? 0 : 1;
 }

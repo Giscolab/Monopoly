@@ -14,6 +14,8 @@
 #include "VoiceChatRuntime.hpp"
 #include "UDPennyVoice.hpp"
 #include "OptionsSaveRuntime.hpp"
+#include "OptionsHelpRuntime.hpp"
+#include "StatsAccountRuntime.hpp"
 #include "ExtendedInitialization.hpp"
 
 #include "RuntimeState.hpp"
@@ -408,6 +410,8 @@ namespace monopoly::userinterface
         }
     }
 
+    rules::PlayerNumber chatSenderPlayer() noexcept { return chatSender(); }
+
     std::expected<void, std::string> sendReadyResponses(
         std::uint32_t playerMask,
         std::int64_t serial)
@@ -561,6 +565,21 @@ namespace monopoly::userinterface
 
         // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
         display::noteBoardActivity();
+        if (auto* accounts = engine::statsAccounts())
+        {
+            if (message.action == actions::Type::NotifyGameStarting)
+            {
+                if (const auto reset = accounts->resetGame(); !reset)
+                    SDL_Log("Stats account reset: %s", reset.error().c_str());
+            }
+            if (const auto resources = startup::resources())
+            {
+                const auto recorded = accounts->processRuleMessage(message, uiRuleState,
+                    ibar::resolveRulePlayer(iBarRuleProjection.player),
+                    display::stateReadOnly().city, *resources);
+                if (!recorded) SDL_Log("Stats account history: %s", recorded.error().c_str());
+            }
+        }
 
         const bool chatBroadcastTarget = message.numberA >= rules::MaxPlayers;
         const bool chatLocalTarget = message.numberA >= 0 &&
@@ -575,6 +594,7 @@ namespace monopoly::userinterface
             // owns the target slot. Broadcast/spectator targets (>= MaxPlayers)
             // are visible everywhere. message.toPlayer is only the transport
             // recipient and cannot replace this application-level filter.
+            chat::setPlayerNames(uiRuleState);
             (void)chat::processRuleMessage(message);
         }
 
@@ -611,6 +631,10 @@ namespace monopoly::userinterface
             const bool resynced = applyClientResyncBlob(uiRuleState, message.binaryDataA, &cause);
             if (resynced && cause == 2)
             {
+                playerselection::recordGameStarted();
+                if (auto* accounts = engine::statsAccounts())
+                    if (const auto reset = accounts->resetGame(); !reset)
+                        SDL_Log("Stats loaded-game history reset: %s", reset.error().c_str());
                 runtime::state().gameInProgress = true;
                 display::setBackdrop(display::Screen2D::Main);
                 ibar::restoreRuleTracking();
@@ -1250,6 +1274,7 @@ namespace monopoly::userinterface
 
     bool processUIMessage(const uimsg::Message& message)
     {
+        chat::setPlayerNames(uiRuleState);
         // ProcessLibraryMessage() original appelle
         // AdvanceTimeStep() ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  chaque message ArtLib.
         advanceTimeStep();
@@ -1280,23 +1305,48 @@ namespace monopoly::userinterface
             (void)messaging::sendAction(action);
         }
         display::processBoardInput(message);
+        const bool exitCreditsWereActive = ibar::stateReadOnly().userChoseToExit;
+        const bool optionPreviewWasActive = optionsProjection.active &&
+            optionsProjection.currentScreen == optionsui::Screen::Option &&
+            optionsProjection.optionSnapshotLoaded;
+        const auto originalMusicTune = optionsProjection.originalMusicTuneIndex;
         ibar::processLibraryMessage(
             message
         );
-        const auto saveInput = optionsui::processSaveDialogInput(
-            optionsSaveProjection, message, engine::fontPlayback(),
-            startup::resources());
+        const bool exitCreditsConsumed = exitCreditsWereActive ||
+            ibar::stateReadOnly().userChoseToExit;
+        const auto saveInput = exitCreditsConsumed ? optionsui::SaveDialogInput{} :
+            optionsui::processSaveDialogInput(optionsSaveProjection, message,
+                engine::fontPlayback(), startup::resources());
         optionsui::InputResult optionsInput{};
-        if (!saveInput.consumed)
+        if (!saveInput.consumed && !exitCreditsConsumed)
             optionsInput = optionsui::processInput(
                 optionsProjection, display::state().desired2DView, message);
+        if (optionPreviewWasActive && !optionsInput.pressedOptionOkay &&
+            (!optionsProjection.active || !optionsProjection.optionSnapshotLoaded ||
+             optionsProjection.currentScreen != optionsui::Screen::Option))
+            display::applyMusicTune(originalMusicTune);
         if (saveInput.playClick) engine::playClickSound();
         const bool optionClicked = optionsInput.pressedMenuButton.has_value() ||
             optionsInput.pressedFileButton.has_value() ||
             optionsInput.pressedHelpButton.has_value() ||
             optionsInput.pressedOptionToggle.has_value() ||
+            optionsInput.pressedMusicTune.has_value() ||
             optionsInput.pressedOptionOkay;
         if (optionClicked) engine::playClickSound();
+        if (optionsInput.pressedMusicTune)
+            display::applyMusicTune(optionsProjection.musicTuneIndex);
+        if (optionsInput.pressedHelpButton == optionsui::HelpButton::QuickHelp ||
+            optionsInput.pressedHelpButton == optionsui::HelpButton::FullHelp)
+        {
+            const auto resources = startup::resources();
+            const auto opened = resources
+                ? (optionsInput.pressedHelpButton == optionsui::HelpButton::QuickHelp
+                    ? optionsui::openQuickHelp(optionsProjection, *resources)
+                    : optionsui::openFullHelp(*resources))
+                : std::expected<void, std::string>(std::unexpected("Help resources unavailable"));
+            if (!opened) engine::playWarningSound();
+        }
 
         bool loadGameDispatched = false;
         if (saveInput.requestLoad)
@@ -1418,7 +1468,8 @@ namespace monopoly::userinterface
                 displayState.optionMusicOn, displayState.optionMusicTuneIndex,
                 displayState.optionTokenAnimationsOn,
                 displayState.optionCameraMovementOn,
-                displayState.optionLightingOn, displayState.game3DOn);
+                displayState.optionLightingOn, displayState.game3DOn,
+                displayState.optionFilteringOn);
         }
         if (optionsInput.pressedOptionOkay && optionsProjection.optionSnapshotLoaded)
         {
@@ -1430,6 +1481,7 @@ namespace monopoly::userinterface
             display::applyHostCommentsOption(value(optionsui::OptionToggle::HostComments));
             display::applyMusicOption(value(optionsui::OptionToggle::Music));
             display::applyMusicTune(optionsProjection.musicTuneIndex);
+            display::state().optionFilteringOn = value(optionsui::OptionToggle::Filtering);
             display::applyRuntimeOptions(
                 value(optionsui::OptionToggle::TokenAnimations),
                 value(optionsui::OptionToggle::Camera),
@@ -1441,11 +1493,27 @@ namespace monopoly::userinterface
 
 
         playerselection::processLibraryMessage(message);
+        if (playerselection::consumeLoadRequest())
+        {
+            const auto opened = optionsui::refreshSaveSlots(
+                optionsSaveProjection, optionsui::FileDialogMode::Load);
+            if (opened)
+            {
+                optionsProjection.previousView = display::Screen2D::PlayerSelect;
+                optionsProjection.currentScreen = optionsui::Screen::LoadGame;
+                optionsProjection.active = true;
+                display::setBackdrop(display::Screen2D::Options);
+            }
+            else engine::playWarningSound();
+        }
         // Retail input order places UDSTATS after UDPSEL and before UDTRADE.
         // Entering Portfolio through IBar in this same message also initializes
         // the default Player/Turn projection immediately.
         (void)statsui::processInput(
             statsProjection, uiRuleState, display::state().desired2DView, message);
+        const auto historyScroll = statsui::historyScrollInput(
+            statsProjection, display::state().desired2DView, message);
+        if (auto* accounts = engine::statsAccounts()) accounts->scroll(historyScroll);
         (void)statsui::processFutureImmunityInput(
             statsFutureImmunityProjection, uiRuleState,
             statsProjection.screen, display::state().desired2DView, message);

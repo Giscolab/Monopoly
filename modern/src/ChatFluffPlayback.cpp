@@ -14,7 +14,7 @@ namespace monopoly::chat
         }
 
         [[nodiscard]] std::vector<FluffPlayback::Published> desiredObjects(
-            const State& state)
+            const State& state, bool bodyControlsInBackground)
         {
             std::vector<FluffPlayback::Published> result;
             if (state.boxActive)
@@ -38,7 +38,9 @@ namespace monopoly::chat
                         static_cast<int>(category) * 20,
                     state.fluffWindowY + 2});
             }
-            if (!state.fluffShaded)
+            // TextPlayback already composites these arrows into the alpha
+            // background. Separate opaque sequences would cover that alpha.
+            if (!state.fluffShaded && !bodyControlsInBackground)
             {
                 result.push_back({mainId(ChatFluffUpTag), ChatFluffWindowPriority,
                     state.fluffWindowX + state.fluffWindowWidth - 18,
@@ -53,9 +55,10 @@ namespace monopoly::chat
 
     std::expected<void, std::string> FluffPlayback::sync(
         const State& state,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback,
+        bool bodyControlsInBackground)
     {
-        auto desired = desiredObjects(state);
+        auto desired = desiredObjects(state, bodyControlsInBackground);
         if (desired == current_) return {};
 
         std::vector<Published> removed;

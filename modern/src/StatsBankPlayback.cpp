@@ -231,7 +231,8 @@ namespace monopoly::statsui
 
     std::expected<void, std::string> BankPlayback::sync(
         const State& state, const rules::GameState& gameState,
-        display::Screen2D desiredView, engine::SequencePlayback& playback)
+        display::Screen2D desiredView, engine::SequencePlayback& playback,
+        const AccountState* accounts)
     {
         Objects desired;
         const bool visible = desiredView == display::Screen2D::Portfolio &&
@@ -250,6 +251,18 @@ namespace monopoly::statsui
         }
         else if (visible && state.activeSort == 2)
             desired = liabilityObjects(playback);
+        else if (visible && state.activeSort == 3 && accounts)
+        {
+            for (int arrow = 0; arrow < 2; ++arrow)
+            {
+                const bool enabled = arrow == 0 ? accounts->scrollLines < accounts->scrollLimit :
+                    accounts->scrollLines > 0;
+                if (!enabled) continue;
+                const auto tag = static_cast<data::DataTag>(0x0007 + arrow * 2 +
+                    (state.historyArrowPressed == arrow ? 1 : 0));
+                desired.push_back({mainId(tag), 620, 0, 0, false});
+            }
+        }
 
         if (desired == current_) return {};
 

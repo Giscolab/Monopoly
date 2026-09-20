@@ -61,6 +61,7 @@ namespace monopoly::ibar
         std::optional<std::uint8_t> desiredBuyAuctionSquare;
         std::optional<std::int64_t> cashAnimationAmount;
         std::uint64_t cashAnimationTick{};
+        std::uint64_t cashAnimationSerial{};
         std::optional<std::int64_t> decompositionHousesToSell;
         bool buttonBarForceUpdate{};
 

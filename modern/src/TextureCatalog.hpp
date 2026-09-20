@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -13,6 +14,7 @@
 
 namespace monopoly::data
 {
+    class ResourcePaths;
     // Les valeurs sont les tags HMD_board_* de Dat_Mon/dat_3d.h.
     enum class BoardMeshKind : DataTag
     {
@@ -140,17 +142,25 @@ namespace monopoly::data
         LanguageId language = LanguageId::EnglishUs;
         int city = 0;
         int currency = 13;
+        // Absolute asset directory selected and validated by the options owner.
+        std::filesystem::path customRoot;
     };
 
 
-    // Stock resource paths from UDUTILS_LoadBoardTextureSet / SwitchToBoardEURO.
-    // Custom boards require a separate explicit root and are not supported here.
+    // Paths from UDUTILS_LoadBoardTextureSet / SwitchToBoardEURO. Photos,
+    // names and 2D views for city -1 are relative to customRoot; all other
+    // locations remain relative to the stock ResourcePaths roots.
     // The original filename and the High/Medium mesh directory are preserved.
     [[nodiscard]] std::expected<std::string, TextureCatalogError>
     boardTextureRelativePath(
         BoardMeshKind mesh,
         TextureLocation location,
         std::string_view fileName,
+        const BoardTextureContext& context);
+
+    [[nodiscard]] std::expected<std::filesystem::path, std::string>
+    resolveBoardTexturePath(const ResourcePaths& stockPaths,
+        BoardMeshKind mesh, TextureLocation location, std::string_view fileName,
         const BoardTextureContext& context);
 
 
