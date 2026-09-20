@@ -263,6 +263,22 @@ namespace monopoly::tradeui
                 static_cast<int>(state.contractList.size()) - 1);
         }
 
+        void rebuildContractPropertyList(State& state, std::uint32_t added)
+        {
+            // UDTrade_ProcessFutureTrade / ProcessImmunityTrade rebuild the
+            // selected deeds in property-bit order and scroll to the new one.
+            state.contractList.clear();
+            for (unsigned bit = 0; bit < 28; ++bit)
+            {
+                const auto mask = 1U << bit;
+                if ((state.contractProperties & mask) == 0) continue;
+                if (mask == added)
+                    state.contractListOffset = static_cast<int>(state.contractList.size());
+                state.contractList.push_back({0, mask, false});
+            }
+            clampContractListOffset(state);
+        }
+
         void closeContractDialog(State& state) noexcept
         {
             state.contractDialogVisible = false;
@@ -396,6 +412,14 @@ namespace monopoly::tradeui
             }
 
             if (message.type != uimsg::Type::MouseLeftDown) return;
+            // Handle arrows before the early returns in modes 1/2/3, so the
+            // same five-row viewport works while creating and viewing rights.
+            if (ContractUpRect.contains(x, y) || ContractDownRect.contains(x, y))
+            {
+                state.contractListOffset += ContractUpRect.contains(x, y) ? -1 : 1;
+                clampContractListOffset(state);
+                return;
+            }
             if (state.contractDialogMode == 0)
             {
                 if (ContractOkayRect.contains(x, y))
@@ -409,6 +433,8 @@ namespace monopoly::tradeui
                     state.contractDialogSide = static_cast<std::uint8_t>(1u - (box % 2u));
                     state.contractDialogMode = 1;
                     state.contractProperties = 0;
+                    state.contractList.clear();
+                    state.contractListOffset = 0;
                     return;
                 }
             }
@@ -437,7 +463,11 @@ namespace monopoly::tradeui
                 else
                     legal = (box == 1 || box == 2) &&
                         (((projection.after[1] | projection.afterMortgaged[1]) & bit) != 0);
-                if (legal) state.contractProperties ^= bit;
+                if (legal)
+                {
+                    state.contractProperties ^= bit;
+                    rebuildContractPropertyList(state, state.contractProperties & bit);
+                }
                 return;
             }
             else if (state.contractDialogMode == 2)
@@ -511,10 +541,6 @@ namespace monopoly::tradeui
                 }
             }
 
-            if (ContractUpRect.contains(x, y))
-                --state.contractListOffset;
-            else if (ContractDownRect.contains(x, y))
-                ++state.contractListOffset;
             clampContractListOffset(state);
         }
 

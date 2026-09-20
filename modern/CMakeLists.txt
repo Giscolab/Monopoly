@@ -779,6 +779,7 @@ target_sources(
     src/TradePanelTextPlayback.cpp
     src/TradeCashDialogPlayback.cpp
     src/TradeContractDialogPlayback.cpp
+    src/TradeContractTextPlayback.cpp
     src/TradeBackdropPlayback.cpp
     src/TradeTokenPlayback.cpp
     src/TradeActionButtonPlayback.cpp
