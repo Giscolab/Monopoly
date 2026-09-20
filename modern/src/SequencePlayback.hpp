@@ -4,6 +4,9 @@
 #include "SequenceWorld3DSlot.hpp"
 #include "SequenceWorld2DSlot.hpp"
 #include "RuntimeBitmapSurface.hpp"
+#include "TextureCatalog.hpp"
+
+#include <tuple>
 
 namespace monopoly::engine
 {
@@ -44,6 +47,9 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> setCameraNumber(
             std::uint8_t cameraNumber);
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
+        [[nodiscard]] std::expected<void, std::string> configureBoardTextures(
+            data::BoardMeshKind mesh, data::TextureResolution resolution,
+            int city, int currency);
         sequence::SequenceCommandQueue& commands() noexcept { return commands_; }
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }
         SequenceWorld3DSlot& world() noexcept { return world_; }
@@ -57,6 +63,9 @@ namespace monopoly::engine
             loadProgram(data::DataId id);
 
         data::MeshRuntimeCache meshes_;
+        using BoardTextureSelection = std::tuple<data::BoardMeshKind,
+            data::TextureResolution, data::BoardEdition, data::LanguageId, int, int>;
+        std::optional<BoardTextureSelection> boardTextureSelection_;
         data::RuntimeBitmapStore runtimeBitmaps_;
         sequence::SequenceRuntime runtime_;
         sequence::SequenceCommandQueue commands_;

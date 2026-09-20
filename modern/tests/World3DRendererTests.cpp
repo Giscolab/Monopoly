@@ -500,8 +500,8 @@ namespace
             boardScale.values[5] = 0.10F;
             boardScale.values[10] = 0.10F;
             expect(playback.startMoved(boardId, display::Board3DPriority,
-                boardScale).has_value() && playback.commands().pendingCount() == 2,
-                "UDBoard board start queues Start plus MoveTheWorks atomically");
+                boardScale).has_value() && playback.commands().pendingCount() == 1,
+                "UDBoard board Start carries its initial scale atomically");
             expect(playback.update(1).has_value(),
                 "retail board-tag HMD start and scale execute in one playback cycle");
             const auto boardMeshes = playback.runtime().meshInstances();

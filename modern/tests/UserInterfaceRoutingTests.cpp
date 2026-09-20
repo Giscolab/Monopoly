@@ -6,6 +6,10 @@
 #include "RuleArchive.hpp"
 #include "Messaging.hpp"
 #include "ChatRuntime.hpp"
+#include "Engine.hpp"
+#include "ExtendedInitialization.hpp"
+#include "IBar.hpp"
+#include "LocalPlayers.hpp"
 #include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
 
@@ -114,6 +118,22 @@ namespace monopoly::ibar
     rules::PlayerNumber resolveRulePlayer(rules::PlayerNumber projectedPlayer) noexcept
     { return projectedPlayer; }
     void restoreRuleTracking() noexcept { ++iBarRestoreCount; }
+    // No interactive IBar owner is initialized in this routing fixture.
+    bool requestNewGameConfirmation() noexcept
+    {
+        route.push_back("ibar-new-game");
+        return false;
+    }
+    bool requestExitConfirmation() noexcept
+    {
+        route.push_back("ibar-exit");
+        return false;
+    }
+    bool activateProperty(int)
+    {
+        route.push_back("ibar-property");
+        return false;
+    }
     void inspectPlayer(rules::PlayerNumber player) noexcept
     {
         inspectedIBarPlayer = player;
@@ -124,6 +144,12 @@ namespace monopoly::ibar
 
 namespace monopoly::engine
 {
+    // This routing fixture has no live font/resources or capture owner.
+    // Production save-dialog logic is linked below and sees the same nullable
+    // dependencies as application startup before those services exist.
+    fonts::Runtime* fontPlayback() { return nullptr; }
+    bool startVoiceChat() noexcept { return false; }
+    void stopVoiceChat() noexcept {}
     void playWarningSound() noexcept { route.push_back("warning"); }
     void playSaveFailureSound() noexcept { route.push_back("save-failure"); }
     void playClickSound() noexcept { route.push_back("click"); }
@@ -149,6 +175,15 @@ namespace monopoly::engine
         route.push_back("jailchoice");
     }
 }
+
+namespace monopoly::startup
+{
+    std::shared_ptr<const data::ResourceSnapshot> resources() noexcept
+    {
+        return {};
+    }
+}
+
 
 namespace monopoly::display
 {
@@ -241,6 +276,13 @@ namespace monopoly::ui::localplayers
     {
         return player < rules::MaxPlayers &&
             (localHumanMask & (1u << player)) != 0;
+    }
+
+    rules::PlayerNumber anyLocalPlayer(const rules::GameState& state)
+    {
+        for (rules::PlayerNumber player = 0; player < state.numberOfPlayers; ++player)
+            if (slotIsLocalPlayer(player)) return player;
+        return rules::NobodyPlayer;
     }
 
     rules::PlayerNumber currentUIPlayer()

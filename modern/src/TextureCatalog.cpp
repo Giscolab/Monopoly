@@ -576,9 +576,145 @@ namespace monopoly::data
 
             case TextureCatalogErrorCode::InvalidTextureResolution:
                 return "InvalidTextureResolution";
+
+            case TextureCatalogErrorCode::InvalidTextureContext:
+                return "InvalidTextureContext";
+
+            case TextureCatalogErrorCode::InvalidTextureLocation:
+                return "InvalidTextureLocation";
+
+            case TextureCatalogErrorCode::InvalidTextureFileName:
+                return "InvalidTextureFileName";
         }
 
         return "InvalidTextureCatalogErrorCode";
+    }
+
+
+    std::expected<std::string, TextureCatalogError> boardTextureRelativePath(
+        BoardMeshKind mesh,
+        TextureLocation location,
+        std::string_view fileName,
+        const BoardTextureContext& context)
+    {
+        const auto fail = [](TextureCatalogErrorCode code,
+            std::uint32_t rawValue, std::string_view detail)
+        {
+            return std::unexpected(TextureCatalogError{code, rawValue, detail});
+        };
+        if (!isValidBoardMeshKind(mesh))
+        {
+            return fail(TextureCatalogErrorCode::InvalidBoardMeshKind,
+                static_cast<std::uint32_t>(boardMeshTag(mesh)),
+                "board mesh must be one of the four TexInfo HMD tags");
+        }
+        if (context.edition != BoardEdition::Usa &&
+            context.edition != BoardEdition::Europe)
+        {
+            return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                static_cast<std::uint32_t>(context.edition),
+                "texture edition must be USA or Europe");
+        }
+        if (context.city < 0)
+        {
+            return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                static_cast<std::uint32_t>(context.city),
+                "custom board texture roots are not supported");
+        }
+        const bool usa = context.edition == BoardEdition::Usa;
+        // DISPLAY_CITY_MAX is 11 for USA and 12 for Europe (Display.h).
+        if (context.city >= (usa ? 11 : 12))
+        {
+            return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                static_cast<std::uint32_t>(context.city),
+                "city is outside the stock edition range");
+        }
+        if (!usa)
+        {
+            const auto language = static_cast<unsigned>(context.language);
+            if (language < 2 || language > 10)
+            {
+                return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                    language, "European texture language must be UK through Norwegian");
+            }
+            if (context.currency < 0 || context.currency > 12)
+            {
+                return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                    static_cast<std::uint32_t>(context.currency),
+                    "European texture currency must be in the stock range 0..12");
+            }
+            if (isCityMesh(mesh))
+            {
+                return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                    static_cast<std::uint32_t>(boardMeshTag(mesh)),
+                    "European city meshes require an unsupported custom board root");
+            }
+        }
+        if (fileName.empty() || fileName == "." || fileName == ".." ||
+            fileName.find_first_of("/\\:") != std::string_view::npos ||
+            fileName.find('\0') != std::string_view::npos)
+        {
+            return fail(TextureCatalogErrorCode::InvalidTextureFileName, 0,
+                "texture filename must be a nonempty basename");
+        }
+
+        const std::string_view detail = isHighDetailMesh(mesh) ? "High" : "Medium";
+        std::string directory;
+        switch (location)
+        {
+            case TextureLocation::SelectedCityPhotos:
+            case TextureLocation::SelectedCityNames:
+                if (!usa || (isCityMesh(mesh) && context.city == 0) ||
+                    (location == TextureLocation::SelectedCityPhotos && !isCityMesh(mesh)))
+                {
+                    return fail(TextureCatalogErrorCode::InvalidTextureContext,
+                        static_cast<std::uint32_t>(context.city),
+                        "stock city photos and names require the matching USA board mesh");
+                }
+                directory = indexedTextureDirectory("Cities", "City",
+                    isCityMesh(mesh) ? static_cast<std::size_t>(context.city) : 0,
+                    location == TextureLocation::SelectedCityPhotos ? "Photos" : detail);
+                break;
+
+            case TextureLocation::SharedCityCommon:
+                if (usa)
+                {
+                    directory = "Cities/Common/";
+                    directory.append(detail);
+                }
+                break;
+
+            case TextureLocation::Language:
+                if (!usa)
+                    directory = indexedTextureDirectory("Languages", "Lang",
+                        static_cast<unsigned>(context.language) - 2, detail);
+                break;
+
+            case TextureLocation::SelectedBoard:
+                if (!usa)
+                    directory = indexedTextureDirectory("Boards", "Board",
+                        static_cast<std::size_t>(context.city), detail);
+                break;
+
+            case TextureLocation::Currency:
+                if (!usa)
+                    directory = indexedTextureDirectory("Currency", "Curr",
+                        static_cast<std::size_t>(context.currency), detail);
+                break;
+
+            case TextureLocation::CustomBoard2D:
+                return fail(TextureCatalogErrorCode::InvalidTextureContext, 0,
+                    "custom 2D board texture roots are not supported");
+        }
+        if (directory.empty())
+        {
+            return fail(TextureCatalogErrorCode::InvalidTextureLocation,
+                static_cast<std::uint32_t>(location),
+                "texture location is not used by this stock board edition");
+        }
+        directory.push_back('/');
+        directory.append(fileName);
+        return directory;
     }
 
 

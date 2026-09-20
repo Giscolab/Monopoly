@@ -3,14 +3,19 @@
 #include "Engine.hpp"
 #include "Game.hpp"
 #include "LogicalViewport.hpp"
+#include "Messaging.hpp"
+#include "TcpMessageTransport.hpp"
 #include "UIMessages.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <cmath>
+#include <charconv>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <string>
+#include <string_view>
 
 namespace
 {
@@ -116,9 +121,49 @@ namespace
 
 namespace monopoly
 {
-    int Application::run()
+    int Application::run(int argc, char** argv)
     {
         int result = 0;
+
+        bool networkRequested = false;
+        bool networkHost = false;
+        std::string networkAddress;
+        std::uint16_t networkPort = 0;
+        if (argc > 1)
+        {
+            const std::string_view mode(argv[1]);
+            const auto usage = []
+            {
+                std::cerr << "Usage: MonopolyModern [--voice-host IPv4:port | "
+                    "--voice-connect IPv4:port]\n"
+                    "TCP clients are voice spectators; remote player admission is not implemented.\n";
+            };
+            if (argc != 3 || (mode != "--voice-host" && mode != "--voice-connect"))
+            {
+                usage();
+                return 1;
+            }
+            const std::string_view endpoint(argv[2]);
+            const auto colon = endpoint.rfind(':');
+            if (colon == std::string_view::npos || colon == 0 || colon + 1 == endpoint.size())
+            {
+                usage();
+                return 1;
+            }
+            unsigned port = 0;
+            const auto parsed = std::from_chars(endpoint.data() + colon + 1,
+                endpoint.data() + endpoint.size(), port);
+            if (parsed.ec != std::errc{} || parsed.ptr != endpoint.data() + endpoint.size() ||
+                port == 0 || port > 65535)
+            {
+                usage();
+                return 1;
+            }
+            networkRequested = true;
+            networkHost = mode == "--voice-host";
+            networkAddress = endpoint.substr(0, colon);
+            networkPort = static_cast<std::uint16_t>(port);
+        }
 
         if (!SDL_Init(SDL_INIT_VIDEO))
         {
@@ -163,6 +208,24 @@ namespace monopoly
         if (game::startup())
         {
             bool finished = false;
+
+            if (networkRequested)
+            {
+                auto transport = messaging::openTcpTransport(
+                    networkHost, networkAddress, networkPort);
+                if (!transport)
+                {
+                    std::cerr << "Voice network startup failed: " << transport.error() << '\n';
+                    finished = true;
+                    result = 1;
+                }
+                else if (!messaging::startNetwork(std::move(*transport)))
+                {
+                    std::cerr << "Voice network owner could not be installed.\n";
+                    finished = true;
+                    result = 1;
+                }
+            }
 
             while (!finished)
             {
@@ -290,6 +353,10 @@ namespace monopoly
                 }
             }
 
+            // STOP is queued before the transport is destroyed. The final pump
+            // is best-effort; peers also clean up on EOF/heartbeat timeout.
+            engine::stopVoiceChat();
+            messaging::pumpNetwork();
             game::shutdown();
         }
         else

@@ -172,14 +172,18 @@ namespace
             std::filesystem::remove_all(root, ignored);
         }
     };
-    bool writeResources(const std::filesystem::path& root, const DataBytes& hmd)
+    bool writeResources(const std::filesystem::path& root, const DataBytes& hmd, bool duplicateMesh = false)
     {
         const std::array names{"dat_main.dat", "dat_pat.dat", "dat_bord.dat",
             "dat_brd2.dat", "dat_3d.dat", "dat_ln01.dat", "dat_lm01.dat", "dat_lk01.dat"};
         for (std::size_t index = 0; index < names.size(); ++index)
         {
             std::vector<ArchiveBuildItem> items;
-            if (index == 4) items.push_back({LegacyDataType::Hmd, hmd});
+            if (index == 4)
+            {
+                items.push_back({LegacyDataType::Hmd, hmd});
+                if (duplicateMesh) items.push_back({LegacyDataType::Hmd, hmd});
+            }
             else if (index == 5)
             {
                 items.push_back({LegacyDataType::IndexTable,
@@ -345,6 +349,149 @@ namespace
             bad.error().sourceError->code == MeshDataErrorCode::RangeOutOfBounds,
             "malformed embedded CLUT propagates a precise texture decode failure");
     }
+    void testTextureSubstitutionPreservesGeometry()
+    {
+        auto original = std::make_shared<HmdTextureImage>();
+        original->texturePage = 0x1234;
+        original->rawX = 64;
+        original->rawY = 256;
+        original->width = original->height = 128;
+        original->rgba.resize(128U * 128U * 4U, 17);
+        auto unlistedOriginal = std::make_shared<HmdTextureImage>(*original);
+        ++unlistedOriginal->texturePage;
+        const MeshTextureResolver resolver = [original, unlistedOriginal](const MeshTextureLookup& lookup)
+            -> std::optional<MeshTextureRegion>
+        {
+            const auto image = lookup.page == original->texturePage ? original : unlistedOriginal;
+            return MeshTextureRegion{lookup.page, lookup.page, 0, 0, 128, 128, image};
+        };
+        auto twoTriangles = texturedTriangle();
+        const DataBytes secondPolygon(twoTriangles.begin() + 17U * 4U,
+            twoTriangles.begin() + 23U * 4U);
+        twoTriangles.insert(twoTriangles.begin() + 23U * 4U,
+            secondPolygon.begin(), secondPolygon.end());
+        setWord(twoTriangles, 9, 0x8000001D);  // relocated vertices
+        setWord(twoTriangles, 10, 0x80000023); // relocated normals
+        setWord(twoTriangles, 15, 0x80020002); // two textured primitives
+        setWord(twoTriangles, 24, 0x12354433); // second primitive texture page
+        auto built = MeshXRuntime::build(parse(std::move(twoTriangles)), resolver);
+        expect(built.has_value(), "128px source texture builds normalized mesh geometry");
+        if (!built) return;
+        auto high = std::make_shared<HmdTextureImage>(*original);
+        high->width = high->height = 256;
+        high->rgba.assign(256U * 256U * 4U, 91);
+        const std::array<std::shared_ptr<const HmdTextureImage>, 1> replacements{high};
+        auto changed = built->withTextureImages(replacements);
+        expect(changed && changed->groups()[0].texture->sourceImage == high &&
+            changed->groups()[0].texture->width == 256 &&
+            changed->groups()[0].texture->height == 256,
+            "raw HMD identity selects a 256px replacement despite changed dimensions");
+        if (!changed) return;
+        expect(near(changed->vertices()[0].uv[0], 0x11 / 128.0F) &&
+            near(changed->vertices()[0].uv[1], 0x22 / 128.0F) &&
+            near(changed->vertices()[2].uv[0], 0x55 / 128.0F) &&
+            near(changed->vertices()[2].uv[1], 0x66 / 128.0F),
+            "128 to 256 substitution preserves UV coverage instead of halving it");
+        bool geometryUnchanged = changed->vertices().size() == built->vertices().size();
+        for (std::size_t i = 0; geometryUnchanged && i < built->vertices().size(); ++i)
+            geometryUnchanged = changed->vertices()[i].position == built->vertices()[i].position &&
+                changed->vertices()[i].normal == built->vertices()[i].normal &&
+                changed->vertices()[i].uv == built->vertices()[i].uv;
+        expect(geometryUnchanged && changed->source() == built->source() &&
+            changed->groups()[0].indices == built->groups()[0].indices &&
+            changed->bounds().minimum == built->bounds().minimum &&
+            changed->bounds().maximum == built->bounds().maximum &&
+            changed->groups()[0].material.rawDiffuse == built->groups()[0].material.rawDiffuse,
+            "texture substitution preserves immutable source, geometry, topology, bounds and material");
+        expect(built->groups()[0].texture->sourceImage == original &&
+            built->groups()[0].texture->width == 128,
+            "existing mesh owners retain their original texture after substitution");
+        const auto render = makeMeshRenderData(*changed);
+        expect(render.batches[0].texture->sourceImage == high &&
+            render.vertices[2].uv == built->vertices()[2].uv,
+            "replacement pixels and preserved UVs reach renderer-independent batches together");
+
+        auto otherX = std::make_shared<HmdTextureImage>(*high);
+        auto otherY = std::make_shared<HmdTextureImage>(*high);
+        auto otherPage = std::make_shared<HmdTextureImage>(*high);
+        ++otherX->rawX;
+        ++otherY->rawY;
+        otherPage->texturePage += 2;
+        const std::array<std::shared_ptr<const HmdTextureImage>, 3> unrelated{
+            otherX, otherY, otherPage};
+        for (const auto& image : unrelated)
+        {
+            const std::array<std::shared_ptr<const HmdTextureImage>, 2> unknown{high, image};
+            const auto refused = built->withTextureImages(unknown);
+            expect(!refused && refused.error().code == MeshRuntimeErrorCode::InvalidTextureRegion &&
+                built->groups()[0].texture->sourceImage == original,
+                "unknown raw X, raw Y or page rejects the complete replacement atomically");
+        }
+        expect(changed->groups().size() == 2 &&
+            changed->groups()[1].texture->sourceImage == unlistedOriginal &&
+            changed->groups()[1].texture->width == 128,
+            "original texture omitted from a valid replacement batch is preserved");
+        const std::array<std::shared_ptr<const HmdTextureImage>, 2> duplicate{high, high};
+        const auto rejected = built->withTextureImages(duplicate);
+        expect(!rejected && rejected.error().code == MeshRuntimeErrorCode::InvalidTextureRegion,
+            "ambiguous duplicate texture identities fail before publication");
+    }
+
+    void testTextureCacheRefreshAndRollback()
+    {
+        ResourceFixture fixture;
+        expect(writeResources(fixture.root, texturedTriangleWithEmbeddedImage(), true),
+            "resource fixture contains two independently cached textured HMD assets");
+        ResourceRuntime runtime;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        if (!paths || !runtime.initialize(*paths))
+        {
+            expect(false, "texture replacement resource snapshot initializes");
+            return;
+        }
+        MeshRuntimeCache cache(runtime.snapshot());
+        const auto boardId = packDataId(LegacyGroupId::ThreeD, 0);
+        const auto otherId = packDataId(LegacyGroupId::ThreeD, 1);
+        const auto before = cache.resolve(boardId);
+        const auto other = cache.resolve(otherId);
+        expect(before && other, "both textured assets resolve before replacement");
+        if (!before || !other) return;
+        const auto embedded = (*before)->mesh->groups()[0].texture->sourceImage;
+        auto pixels = std::make_shared<HmdTextureImage>(*embedded);
+        pixels->width = pixels->height = 256;
+        pixels->rgba.assign(256U * 256U * 4U, 117);
+        const std::array<std::shared_ptr<const HmdTextureImage>, 1> replacement{pixels};
+        expect(cache.replaceTextureImages(boardId, replacement).has_value(),
+            "cache publishes a complete texture substitution");
+        const auto after = cache.resolve(boardId);
+        const auto otherAfter = cache.resolve(otherId);
+        expect(after && after->get() != before->get() &&
+            (*after)->mesh->groups()[0].texture->sourceImage == pixels &&
+            (*after)->renderData->batches[0].texture->sourceImage == pixels,
+            "asset pointer refresh makes replacement visible to CPU and GPU cache consumers");
+        expect(otherAfter && otherAfter->get() == other->get() && cache.size() == 2 &&
+            (*before)->mesh->groups()[0].texture->sourceImage == embedded,
+            "other DataIds and retained old asset handles remain unchanged");
+        if (!after) return;
+        auto invalid = std::make_shared<HmdTextureImage>(*pixels);
+        invalid->rgba.pop_back();
+        const std::array<std::shared_ptr<const HmdTextureImage>, 1> malformed{invalid};
+        const auto failed = cache.replaceTextureImages(boardId, malformed);
+        const auto retained = cache.resolve(boardId);
+        expect(!failed && failed.error().code == MeshRuntimeErrorCode::InvalidTextureRegion &&
+            retained && retained->get() == after->get() &&
+            (*retained)->renderData->batches[0].texture->sourceImage == pixels,
+            "malformed replacement rolls back without changing the published asset");
+        expect(cache.replaceTextureImages(boardId, {}).has_value(),
+            "empty replacement restores original embedded texture data");
+        const auto restored = cache.resolve(boardId);
+        expect(restored && restored->get() != after->get() &&
+            (*restored)->mesh->groups()[0].texture->width == 4 &&
+            (*restored)->mesh->groups()[0].texture->height == 2 &&
+            (*restored)->mesh->groups()[0].texture->sourceImage->rgba == embedded->rgba &&
+            near((*restored)->renderData->vertices[1].uv[0], 0.75F),
+            "restoration rebuilds embedded pixels and their original UV coverage");
+    }
     void testTextureResolutionAndHistoricalDrop()
     {
         auto source = parse(texturedTriangle());
@@ -386,6 +533,8 @@ int main()
     testResourceScopedCache();
     testEmbeddedTextureResolution();
     testTextureResolutionAndHistoricalDrop();
+    testTextureSubstitutionPreservesGeometry();
+    testTextureCacheRefreshAndRollback();
     std::cout << (failures ? "MESHX runtime tests FAILED\n" :
         "MESHX runtime tests passed\n");
     return failures ? 1 : 0;

@@ -83,6 +83,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -98,6 +99,9 @@ namespace monopoly::engine
         std::unique_ptr<SequencePlayback> playback;
         std::unique_ptr<audio::Runtime> audioRuntime;
         std::unique_ptr<voicechat::AudioRuntime> voiceChatAudioRuntime;
+        bool voiceChatNetworkActive{};
+        bool voiceChatStartPending{};
+        std::string lastVoiceNetworkError;
         std::unique_ptr<fonts::Runtime> fontRuntime;
         bool fontDisabled{};
         udsound::Runtime monopolySoundRuntime;
@@ -256,10 +260,20 @@ namespace monopoly::engine
                 return {};
             }
 
-            // UDBoard.cpp:992-995 selects the medium classic mesh for city 0
-            // and the medium city mesh for every non-zero USA city.
-            const auto desired = data::boardMeshDataId(
-                data::usaBoardMeshForCity(state.city));
+            // UDBoard.cpp selects medium detail; stock Europe always uses the
+            // classic mesh. Its board/language/currency arrive through textures.
+            const auto resources = session.resources();
+            if (!resources)
+                return std::unexpected("board playback requires a resource snapshot");
+            const auto mesh = resources->context().board == data::BoardEdition::Usa
+                ? data::usaBoardMeshForCity(state.city)
+                : data::BoardMeshKind::ClassicMedium;
+            // Refresh BEFORE comparing DataId: e.g. USA city 1 -> 2 shares the
+            // city mesh but must publish new immutable CPU/GPU texture assets.
+            const auto textures = session.configureBoardTextures(
+                mesh, data::TextureResolution::Pixels128, state.city, state.system);
+            if (!textures) return textures;
+            const auto desired = data::boardMeshDataId(mesh);
             if (activeBoardSequence == desired) return {};
             if (activeBoardSequence)
             {
@@ -867,6 +881,7 @@ namespace monopoly::engine
 
     bool startVoiceChat() noexcept
     {
+        voiceChatStartPending = false;
         if (!messaging::networkMode())
         {
             stopVoiceChat();
@@ -891,6 +906,14 @@ namespace monopoly::engine
         if (voiceChatAudioRuntime->captureActive())
             return true;
 
+        // A resync can fill the last MESS slot with STOP. Retry CHAT once the
+        // queue drains instead of leaving a healthy microphone permanently off.
+        if (messaging::queuedActionCount() >= messaging::MessageQueueCapacity)
+        {
+            voiceChatStartPending = true;
+            return false;
+        }
+
         const auto started = voiceChatAudioRuntime->startCapture(settings);
         if (!started)
         {
@@ -903,6 +926,7 @@ namespace monopoly::engine
 
     void stopVoiceChat() noexcept
     {
+        voiceChatStartPending = false;
         if (voiceChatAudioRuntime)
             voiceChatAudioRuntime->stopCapture();
     }
@@ -1253,6 +1277,28 @@ namespace monopoly::engine
         // Le vieux timer Windows tournait indépendamment à 60 Hz.
         // Notre implémentation moderne rattrape ici les ticks écoulés.
         timers::pump();
+
+        messaging::pumpNetwork();
+        // MESS owns connectivity; closing the final connection tears down both
+        // capture and playback, including sources that never sent STOP.
+        if (!messaging::networkMode() && (voiceChatNetworkActive ||
+            (voiceChatAudioRuntime && voiceChatAudioRuntime->captureActive())))
+        {
+            stopVoiceChat();
+            if (voiceChatAudioRuntime)
+                voiceChatAudioRuntime->closeAllReceivers();
+            voicechat::resetSession();
+        }
+        voiceChatNetworkActive = messaging::networkMode();
+        if (!voiceChatNetworkActive)
+            voiceChatStartPending = false;
+        else if (voiceChatStartPending &&
+                 messaging::queuedActionCount() < messaging::MessageQueueCapacity)
+            (void)startVoiceChat();
+        const std::string networkError(messaging::networkError());
+        if (!networkError.empty() && networkError != lastVoiceNetworkError)
+            std::cerr << "Voice network: " << networkError << '\n';
+        lastVoiceNetworkError = networkError;
 
         if (voiceChatAudioRuntime && voiceChatAudioRuntime->captureActive())
         {
@@ -1880,6 +1926,9 @@ namespace monopoly::engine
         if (voiceChatAudioRuntime)
             voiceChatAudioRuntime->closeAllReceivers();
         voiceChatAudioRuntime.reset();
+        voiceChatNetworkActive = false;
+        voiceChatStartPending = false;
+        lastVoiceNetworkError.clear();
         monopolySoundRuntime.reset(audioRuntime.get());
         audioRuntime.reset();
         audioDisabled = false;

@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -125,6 +126,11 @@ namespace monopoly::data
         [[nodiscard]] std::expected<MeshPoseData, MeshRuntimeError> evaluatePose(
             std::int32_t poseA, std::int32_t poseB, float proportion) const;
 
+        // UDUTILS substitutions replace images after MESHX normalized its UVs.
+        // A 256px BMP replacing a 128px HMD image must keep those vertices.
+        [[nodiscard]] std::expected<MeshXRuntime, MeshRuntimeError> withTextureImages(
+            std::span<const std::shared_ptr<const HmdTextureImage>> images) const;
+
     private:
         std::shared_ptr<const LegacyMeshData> source_;
         std::vector<MeshVertex> vertices_;
@@ -171,6 +177,10 @@ namespace monopoly::data
             MeshTextureResolver textureResolver = {}, MeshRuntimeLimits limits = {});
         [[nodiscard]] std::expected<std::shared_ptr<const MeshRuntimeAsset>, MeshRuntimeError>
         resolve(DataId id);
+        // Prepare a complete replacement before publishing it; only this DataId
+        // changes. Empty images restore the original embedded texture payloads.
+        [[nodiscard]] std::expected<void, MeshRuntimeError> replaceTextureImages(
+            DataId id, std::span<const std::shared_ptr<const HmdTextureImage>> images);
         [[nodiscard]] std::size_t size() const noexcept;
         void clear() noexcept;
         [[nodiscard]] std::shared_ptr<const ResourceSnapshot> resources() const noexcept;

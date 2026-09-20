@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Actions.hpp"
+#include "MessageTransport.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 
 namespace monopoly::messaging
@@ -14,6 +16,12 @@ namespace monopoly::messaging
 
     bool initialize();
     void shutdown();
+
+    // Call after local startup and before the first game cycle. A connecting
+    // client is never a RULE server, even before/after its connection is live.
+    bool startNetwork(std::unique_ptr<Transport> transport);
+    void pumpNetwork();
+    [[nodiscard]] std::string_view networkError();
 
     bool sendAction(const actions::Message& message);
 

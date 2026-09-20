@@ -128,16 +128,19 @@ namespace
         const auto next = playback.runtimeBitmaps().create(2, 2, false);
         expect(next.has_value(), "second runtime DataNative surface allocates independently");
         if (!next) return;
-        expect(playback.transitionXY(*created, *next, 10, 20, 30).has_value() &&
-            playback.commands().pendingCount() == 3 && playback.update(61).has_value(),
-            "transitionXY reserves Stop/Start/Move and replaces runtime DataNative atomically");
+        expect(playback.transitionXY(*created, *next, 10, 20, 30).has_value(),
+            "transitionXY accepts the runtime DataNative replacement");
+        expect(playback.commands().pendingCount() == 2,
+            "transitionXY reserves Stop and Start with its instance-local transform atomically");
+        expect(playback.update(61).has_value(),
+            "runtime DataNative transition executes independently of command-count assertions");
         const auto transitioned = playback.runtime().bitmapInstances();
         expect(transitioned.size() == 1 && transitioned.front().contentsDataId == *next &&
             transitioned.front().worldTransform.values[6] == 20.0F &&
             transitioned.front().worldTransform.values[7] == 30.0F,
             "runtime DataNative replacement preserves one live Overlay2D root");
 
-        for (std::size_t i = 0; i < sequence::SequenceCommandQueue::Capacity - 2; ++i)
+        for (std::size_t i = 0; i < sequence::SequenceCommandQueue::Capacity - 1; ++i)
             (void)playback.commands().enqueue(sequence::StopSequenceCommand{*next, 999});
         const auto before = playback.commands().pendingCount();
         expect(!playback.transitionXY(*next, *created, 10, 0, 0) &&

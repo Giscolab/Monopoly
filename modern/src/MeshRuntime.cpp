@@ -451,6 +451,59 @@ namespace monopoly::data
         return result;
     }
 
+    std::expected<MeshXRuntime, MeshRuntimeError> MeshXRuntime::withTextureImages(
+        std::span<const std::shared_ptr<const HmdTextureImage>> images) const
+    {
+        for (std::size_t i = 0; i < images.size(); ++i)
+        {
+            const auto& image = images[i];
+            if (!image || image->width == 0 || image->height == 0 ||
+                std::uint64_t{image->width} * image->height >
+                    std::numeric_limits<std::size_t>::max() / 4U ||
+                image->rgba.size() != std::uint64_t{image->width} * image->height * 4U)
+                return std::unexpected(runtimeError(MeshRuntimeErrorCode::InvalidTextureRegion,
+                    "substituted texture must contain width*height RGBA8 bytes"));
+            for (std::size_t j = 0; j < i; ++j)
+                if (images[j]->texturePage == image->texturePage &&
+                    images[j]->rawX == image->rawX && images[j]->rawY == image->rawY)
+                    return std::unexpected(runtimeError(MeshRuntimeErrorCode::InvalidTextureRegion,
+                        "multiple substituted textures have the same raw HMD coordinates"));
+            const bool matched = std::any_of(groups_.begin(), groups_.end(),
+                [&](const MeshGroupRuntime& group)
+                {
+                    return group.texture && group.texture->sourceImage &&
+                        group.texture->sourceImage->texturePage == image->texturePage &&
+                        group.texture->sourceImage->rawX == image->rawX &&
+                        group.texture->sourceImage->rawY == image->rawY;
+                });
+            if (!matched)
+                return std::unexpected(runtimeError(MeshRuntimeErrorCode::InvalidTextureRegion,
+                    "substituted texture coordinates are absent from the mesh"));
+        }
+
+        MeshXRuntime replacement = *this;
+        // Modern may split one texture into several material groups. They all
+        // refer to the same original image and must receive the same payload.
+        for (auto& group : replacement.groups_)
+        {
+            if (!group.texture || !group.texture->sourceImage) continue;
+            const auto& original = *group.texture->sourceImage;
+            const auto found = std::find_if(images.begin(), images.end(),
+                [&](const auto& image)
+                {
+                    return image->texturePage == original.texturePage &&
+                        image->rawX == original.rawX && image->rawY == original.rawY;
+                });
+            if (found == images.end()) continue;
+            // Keys stay local to the immutable mesh asset. Its replacement
+            // pointer invalidates GPU ownership; other mesh banks are untouched.
+            group.texture->sourceImage = *found;
+            group.texture->width = (*found)->width;
+            group.texture->height = (*found)->height;
+        }
+        return replacement;
+    }
+
     MeshRuntimeCache::MeshRuntimeCache(
         std::shared_ptr<const ResourceSnapshot> resources,
         MeshTextureResolver textureResolver, MeshRuntimeLimits limits)
@@ -485,6 +538,33 @@ namespace monopoly::data
             MeshRuntimeAsset{id, std::move(mesh), std::move(renderData)});
         assets_.emplace(id, asset);
         return asset;
+    }
+
+    std::expected<void, MeshRuntimeError> MeshRuntimeCache::replaceTextureImages(
+        DataId id, std::span<const std::shared_ptr<const HmdTextureImage>> images)
+    {
+        if (!resources_)
+            return std::unexpected(runtimeError(MeshRuntimeErrorCode::MissingResources,
+                "texture substitution requires an immutable resource snapshot"));
+        auto source = openLegacyMeshData(resources_->banks(), id);
+        if (!source)
+        {
+            auto failure = runtimeError(MeshRuntimeErrorCode::SourceLoadFailed,
+                "texture substitution could not open the requested HMD DATA item");
+            failure.sourceError = source.error();
+            return std::unexpected(std::move(failure));
+        }
+        auto built = MeshXRuntime::build(
+            std::make_shared<const LegacyMeshData>(std::move(*source)), textureResolver_, limits_);
+        if (!built) return std::unexpected(built.error());
+        auto substituted = built->withTextureImages(images);
+        if (!substituted) return std::unexpected(substituted.error());
+        auto mesh = std::make_shared<const MeshXRuntime>(std::move(*substituted));
+        auto renderData = std::make_shared<const MeshRenderData>(makeMeshRenderData(*mesh));
+        auto asset = std::make_shared<const MeshRuntimeAsset>(
+            MeshRuntimeAsset{id, std::move(mesh), std::move(renderData)});
+        assets_.insert_or_assign(id, std::move(asset));
+        return {};
     }
 
     std::size_t MeshRuntimeCache::size() const noexcept { return assets_.size(); }

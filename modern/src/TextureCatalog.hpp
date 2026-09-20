@@ -114,7 +114,10 @@ namespace monopoly::data
     enum class TextureCatalogErrorCode : std::uint8_t
     {
         InvalidBoardMeshKind,
-        InvalidTextureResolution
+        InvalidTextureResolution,
+        InvalidTextureContext,
+        InvalidTextureLocation,
+        InvalidTextureFileName
     };
 
 
@@ -129,6 +132,26 @@ namespace monopoly::data
 
     using BoardTextureRecipeResult =
         std::expected<BoardTextureRecipe, TextureCatalogError>;
+
+
+    struct BoardTextureContext
+    {
+        BoardEdition edition = BoardEdition::Usa;
+        LanguageId language = LanguageId::EnglishUs;
+        int city = 0;
+        int currency = 13;
+    };
+
+
+    // Stock resource paths from UDUTILS_LoadBoardTextureSet / SwitchToBoardEURO.
+    // Custom boards require a separate explicit root and are not supported here.
+    // The original filename and the High/Medium mesh directory are preserved.
+    [[nodiscard]] std::expected<std::string, TextureCatalogError>
+    boardTextureRelativePath(
+        BoardMeshKind mesh,
+        TextureLocation location,
+        std::string_view fileName,
+        const BoardTextureContext& context);
 
 
     struct LegacyTextureAsset

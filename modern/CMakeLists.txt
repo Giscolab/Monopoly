@@ -247,6 +247,7 @@ add_library(
     src/LegacyManifest.cpp
     src/LegacyBitmap.cpp
     src/TextureCatalog.cpp
+    src/BoardTextureRuntime.cpp
 )
 
 target_include_directories(
@@ -889,6 +890,8 @@ if(BUILD_TESTING)
         src/RuleOptions.cpp
         src/TradeUI.cpp
         src/OptionsUI.cpp
+        src/OptionsSaveRuntime.cpp
+        src/FontRuntime.cpp
         src/IBarLayout.cpp
         src/StatsUI.cpp
         src/StatsCalculatorUI.cpp
@@ -903,6 +906,13 @@ if(BUILD_TESTING)
         MonopolyUserInterfaceRoutingTests
         PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(
+        MonopolyUserInterfaceRoutingTests PRIVATE
+        SDL3::SDL3
+        SDL3_ttf::SDL3_ttf
+        MonopolyDataCore
     )
 
     if(MSVC)
@@ -927,6 +937,7 @@ if(BUILD_TESTING)
         MonopolyStatsUITests
         tests/StatsUITests.cpp
         src/StatsUI.cpp
+        src/IBarLayout.cpp
         src/AIUtility.cpp
         src/BoardRules.cpp
     )
@@ -1437,8 +1448,56 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/Messaging.cpp
+    src/TcpMessageTransport.cpp
     src/RulesEngine.cpp
 )
+
+if(WIN32)
+    target_link_libraries(MonopolyModern PRIVATE ws2_32)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyTcpMessageTransportTests
+        tests/TcpMessageTransportTests.cpp
+        src/TcpMessageTransport.cpp
+        src/Messaging.cpp)
+    target_include_directories(MonopolyTcpMessageTransportTests PRIVATE src)
+    if(WIN32)
+        target_link_libraries(MonopolyTcpMessageTransportTests PRIVATE ws2_32)
+    endif()
+    if(MSVC)
+        target_compile_options(MonopolyTcpMessageTransportTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.TcpMessageTransport COMMAND MonopolyTcpMessageTransportTests)
+    set_tests_properties(Monopoly.TcpMessageTransport PROPERTIES TIMEOUT 30)
+
+    add_executable(MonopolyBoardTextureRuntimeTests tests/BoardTextureRuntimeTests.cpp)
+    target_link_libraries(MonopolyBoardTextureRuntimeTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyBoardTextureRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.BoardTextureRuntime COMMAND MonopolyBoardTextureRuntimeTests)
+
+    add_executable(MonopolyVoiceChatAudioRuntimeTests
+        tests/VoiceChatAudioRuntimeTests.cpp
+        src/AudioRuntime.cpp
+        src/VoiceChatAudioRuntime.cpp
+        src/Gsm610Codec.cpp
+        src/Messaging.cpp)
+    target_link_libraries(MonopolyVoiceChatAudioRuntimeTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 MonopolyGsm610)
+    if(MSVC)
+        target_compile_options(MonopolyVoiceChatAudioRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(TARGET MonopolyVoiceChatAudioRuntimeTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:MonopolyVoiceChatAudioRuntimeTests>
+            VERBATIM)
+    endif()
+    add_test(NAME Monopoly.VoiceChatAudioRuntime COMMAND MonopolyVoiceChatAudioRuntimeTests)
+    set_tests_properties(Monopoly.VoiceChatAudioRuntime PROPERTIES TIMEOUT 30)
+endif()
 
 target_sources(
     MonopolyModern
@@ -2190,11 +2249,13 @@ if(BUILD_TESTING)
         tests/IBarActionInputTests.cpp
         src/IBar.cpp
         src/IBarLayout.cpp
+        src/OptionsUI.cpp
     )
     target_include_directories(
         MonopolyIBarActionInputTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
+    target_link_libraries(MonopolyIBarActionInputTests PRIVATE SDL3::SDL3)
     if(MSVC)
         target_compile_options(
             MonopolyIBarActionInputTests PRIVATE /W4 /permissive-

@@ -618,8 +618,9 @@ namespace monopoly::rules::coreactions
             message.numberC;
 
 
-        // NS_LOCAL dans le runtime actuel.
-        relay.numberD = 0;
+        // Rule.cpp::ActionEchoChat uses the ingress computer address, not
+        // the claimed player or a payload field. MESS owns the modern ID.
+        relay.numberD = message.sourceId;
 
 
         relay.binaryDataA =

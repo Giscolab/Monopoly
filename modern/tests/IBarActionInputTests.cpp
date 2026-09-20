@@ -8,6 +8,7 @@
 #include "RuntimeState.hpp"
 #include "UserInterface.hpp"
 #include "UISound.hpp"
+#include "Timers.hpp"
 
 #include <array>
 #include <iostream>
@@ -20,6 +21,9 @@ namespace test_support
     monopoly::display::State displayState{};
     monopoly::rules::GameState ruleState{};
     monopoly::runtime::State runtimeState{};
+    monopoly::optionsui::State optionsState{};
+    std::uint64_t tick = 0;
+    int clickSoundCount = 0;
     std::vector<monopoly::actions::Message> sent;
     std::optional<monopoly::rules::PlayerNumber> clickedPlayer;
     std::array<bool, monopoly::rules::MaxPlayers> localHuman{{true, true, true, true, true, true}};
@@ -38,6 +42,7 @@ namespace test_support
 
 namespace monopoly::engine
 {
+    void playClickSound() noexcept { ++test_support::clickSoundCount; }
     void playPennybagsVoice(udsound::PennybagsVoice voice,
         udsound::TokenVoiceClipPolicy, bool) noexcept
     {
@@ -76,6 +81,11 @@ namespace monopoly::ui::localplayers
     }
 }
 
+namespace monopoly::timers
+{
+    std::uint64_t tickCount() { return test_support::tick; }
+}
+
 namespace monopoly::runtime
 {
     State& state() { return test_support::runtimeState; }
@@ -91,6 +101,14 @@ namespace monopoly::playerselection
 
 namespace monopoly::userinterface
 {
+    optionsui::State& optionsState() noexcept
+    {
+        return test_support::optionsState;
+    }
+    const optionsui::State& optionsStateReadOnly() noexcept
+    {
+        return test_support::optionsState;
+    }
     const rules::GameState& ruleStateReadOnly()
     {
         return test_support::ruleState;

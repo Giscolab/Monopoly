@@ -146,7 +146,10 @@ namespace monopoly::userinterface
             for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
                 next.players[player].firstMoveMade = (firstMoves & (1u << player)) != 0;
             const auto current = readU8();
-            if (current >= rules::MaxPlayers) return false;
+            // Before a game starts the authoritative state has no current
+            // player. Network admission can legitimately resync that state.
+            if (current >= rules::MaxPlayers && current != rules::NobodyPlayer)
+                return false;
             next.currentPlayer = current;
             state = std::move(next);
             if (resyncCause) *resyncCause = cause;
@@ -605,7 +608,8 @@ namespace monopoly::userinterface
         if (message.action == actions::Type::NotifyClientResyncInfo)
         {
             std::uint8_t cause{};
-            if (applyClientResyncBlob(uiRuleState, message.binaryDataA, &cause) && cause == 2)
+            const bool resynced = applyClientResyncBlob(uiRuleState, message.binaryDataA, &cause);
+            if (resynced && cause == 2)
             {
                 runtime::state().gameInProgress = true;
                 display::setBackdrop(display::Screen2D::Main);
@@ -622,8 +626,13 @@ namespace monopoly::userinterface
                 iBarRuleProjection.player = 0;
                 iBarGameJustLoaded = true;
             }
-            // Userifce.cpp restarts voice chat after every client resync.
-            (void)engine::startVoiceChat();
+            // LE_SOUND_ChatOn calls ChatOff even when already recording. This
+            // announces CHAT to newly admitted peers before subsequent DATN.
+            if (resynced)
+            {
+                engine::stopVoiceChat();
+                (void)engine::startVoiceChat();
+            }
         }
 
         dicePrompt.process(message);

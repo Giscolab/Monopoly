@@ -52,7 +52,7 @@ namespace
             backdrop.mainBuffers()[0].cityLoaded == 0 &&
             backdrop.mainBuffers()[0].viewLoaded == 1 &&
             backdrop.mainBuffers()[0].timeLoaded == 10 &&
-            playback.commands().pendingCount() == 2,
+            playback.commands().pendingCount() == 1,
             "first Main 2D view allocates four Main buffers plus shared Trade buffer");
         expect(playback.update(10).has_value(),
             "first Main backdrop StartCXYSlot equivalent executes");
@@ -88,8 +88,8 @@ namespace
             backdrop.currentMainBuffer() == 1 &&
             backdrop.mainBuffers()[1].viewLoaded == 2 &&
             backdrop.mainBuffers()[1].timeLoaded == 20 &&
-            playback.commands().pendingCount() == 3,
-            "second Main camera fills the oldest unused buffer with Stop/Start/Move");
+            playback.commands().pendingCount() == 2,
+            "second Main camera fills the oldest unused buffer with Stop and transformed Start");
         expect(playback.update(20).has_value(), "second Main backdrop transition executes");
 
         expect(backdrop.sync(input(display::Screen2D::Main, false,
@@ -204,11 +204,11 @@ namespace
         const auto tradeAsset = trade ? trade->asset : nullptr;
         expect(backdrop.sync(input(display::Screen2D::Portfolio, false,
             pieces::BoardCameraView::TopDownStarWars, 80), playback).has_value() &&
-            playback.commands().pendingCount() == 3 &&
+            playback.commands().pendingCount() == 2 &&
             playback.runtimeBitmaps().asset(backdrop.tradeSurface()) != tradeAsset,
             "Portfolio view change recompiles the same shared Trade surface");
         expect(playback.update(80).has_value(),
-            "Portfolio shared-surface Stop/Start/Move transition executes");
+            "Portfolio shared-surface Stop and transformed Start transition executes");
         const auto* portfolio = only2D(playback);
         expect(portfolio && portfolio->contentsDataId == backdrop.tradeSurface() &&
             portfolio->worldTransform.values[6] == 0.0F &&

@@ -141,6 +141,11 @@ namespace monopoly::actions
 
         std::vector<std::uint8_t> binaryData;
         std::vector<std::uint8_t> binaryDataA{};
+
+        // Ingress metadata assigned by MESS. Zero denotes the local host;
+        // remote IDs are unique for the lifetime of the host session.
+        // Never serialized as client-controlled message content.
+        std::uint32_t sourceId = 0;
     };
 }
 

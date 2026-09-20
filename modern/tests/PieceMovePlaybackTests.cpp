@@ -21,7 +21,9 @@ namespace
 
     data::DataId finiteSequenceId() noexcept
     {
-        return data::packDataId(data::LegacyGroupId::Main, 1);
+        // This shared synthetic 3D sequence has end=100, cadence=4,
+        // keep-frames and disk Stop. Main tag 1 belongs to a Stats bitmap.
+        return data::packDataId(data::LegacyGroupId::ThreeD, 0x0157);
     }
 
     PieceMoveInstruction moveItem(BoardCameraView camera,
@@ -43,8 +45,8 @@ namespace
 
         const auto queued = playback.transitionRySTxzDropStayAtEnd(
             std::nullopt, id, MovePriority, 0.25F, 1.0F, 10.0F, 20.0F);
-        expect(queued && playback.commands().pendingCount() == 3,
-            "StartRySTxzDrop queues Start, MoveRySTxz and StayAtEnd atomically");
+        expect(queued && playback.commands().pendingCount() == 2,
+            "StartRySTxzDrop queues transformed Start and StayAtEnd atomically");
         expect(playback.update(0).has_value(), "finite sequence starts at parent tick zero");
         auto info = playback.runtime().info(id, MovePriority, false);
         expect(info && info->sequenceClock == 0 && info->endTime == 100 &&
@@ -65,8 +67,8 @@ namespace
 
         const auto replaced = playback.transitionRySTxzDropStayAtEnd(
             id, id, MovePriority, -0.5F, 1.0F, 30.0F, 40.0F);
-        expect(replaced && playback.commands().pendingCount() == 4,
-            "same-ID transition preflights Stop plus three startup commands");
+        expect(replaced && playback.commands().pendingCount() == 3,
+            "same-ID transition preflights Stop, transformed Start and StayAtEnd");
         expect(playback.update(100).has_value(),
             "same-ID transition drains stop before replacement start");
         info = playback.runtime().info(id, MovePriority, false);

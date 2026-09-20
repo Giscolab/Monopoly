@@ -1,5 +1,6 @@
 #include "AuctionTextPlayback.hpp"
 
+#include "AuctionPlayback.hpp"
 #include "FontRuntime.hpp"
 #include "LanguageResources.hpp"
 #include "MoneyFormat.hpp"

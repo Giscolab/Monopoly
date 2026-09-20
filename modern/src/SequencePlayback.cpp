@@ -1,7 +1,33 @@
 #include "SequencePlayback.hpp"
+#include "BoardTextureRuntime.hpp"
 
 namespace monopoly::engine
 {
+    std::expected<void, std::string> SequencePlayback::configureBoardTextures(
+        data::BoardMeshKind mesh, data::TextureResolution resolution,
+        int city, int currency)
+    {
+        const auto resources = meshes_.resources();
+        if (!resources)
+            return std::unexpected("board textures require a resource snapshot");
+        const auto context = resources->context();
+        const BoardTextureSelection selection{
+            mesh, resolution, context.board, context.language, city, currency};
+        if (boardTextureSelection_ == selection) return {};
+
+        const auto recipe = context.board == data::BoardEdition::Usa
+            ? data::buildUsaTextureRecipe(mesh, resolution)
+            : data::buildEuropeanTextureRecipe(mesh, resolution);
+        if (!recipe) return std::unexpected(std::string(recipe.error().detail));
+        const auto images = data::loadBoardTextureImages(resources->paths(), *recipe,
+            {context.board, context.language, city, currency});
+        if (!images) return std::unexpected(images.error());
+        const auto replaced = meshes_.replaceTextureImages(recipe->meshDataId, *images);
+        if (!replaced) return std::unexpected(replaced.error().detail);
+        boardTextureSelection_ = selection;
+        return {};
+    }
+
     std::expected<std::shared_ptr<const sequence::SequenceProgram>, std::string>
     SequencePlayback::loadProgram(data::DataId id)
     {

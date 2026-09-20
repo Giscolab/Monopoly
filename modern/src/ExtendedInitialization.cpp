@@ -132,8 +132,9 @@ namespace monopoly::startup
         // ====================================================
         // MESS_StartNetworking() original se trouve ici.
         //
-        // Le transport réseau n'est pas encore porté :
-        // MESS reste actuellement en serveur local.
+        // Application installs the optional TCP voice session after this local
+        // startup and before the first cycle. Without explicit endpoint options,
+        // MESS stays local. DirectPlay/lobby and remote player admission are absent.
 
         // #if !USE_OPENING_MOVIES
         //

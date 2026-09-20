@@ -1,7 +1,7 @@
 #include "Application.hpp"
 
-int main()
+int main(int argc, char** argv)
 {
     monopoly::Application app;
-    return app.run();
+    return app.run(argc, argv);
 }
