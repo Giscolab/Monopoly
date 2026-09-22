@@ -3194,7 +3194,7 @@ if(BUILD_TESTING)
         src/StatsCalculatorUI.cpp src/StatsCalculatorLogic.cpp src/AIUtility.cpp
         src/BoardRules.cpp src/IBarLayout.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
     add_executable(MonopolyStatsAccountRuntimeTests tests/StatsAccountRuntimeTests.cpp
-        src/RuleCards.cpp src/CardDeckRuntime.cpp src/RuleEconomy.cpp
+        src/RuleCards.cpp src/CardDeckRuntime.cpp src/RuleEconomy.cpp src/RuleLifecycle.cpp
         src/PhaseStack.cpp src/Messaging.cpp src/BoardRules.cpp src/RuleOptions.cpp)
     foreach(UI_TEST IN ITEMS ChatTextPlayback OptionsVisualPlayback PlayerSelectionPlayback
             StatsTextPlayback StatsAccountRuntime)

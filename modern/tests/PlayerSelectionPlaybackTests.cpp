@@ -110,6 +110,17 @@ namespace
         checked(arial,"real Arial available without substitution");
         checked(font.setFont(*arial,"Arial"),"open real Arial");
         const auto settings=font.settings();
+        checked(font.saveSettings(8),"save font settings for UDPsel wrap probe");
+        checked(font.setSize(8),"set UDPsel rule font size");
+        font.setWeight(700);
+        const auto underscoreWidth=font.measure("Alpha_Beta");
+        checked(underscoreWidth,"measure UDPsel underscore probe");
+        const auto udpWrap=playerselection::detail::wrapRuleDescription(
+            font,"Alpha_Beta Gamma",underscoreWidth->width,2);
+        checked(udpWrap,"UDPsel rule wrapper accepts measured text");
+        require(*udpWrap==std::vector<std::string>{"Alpha_Beta","Gamma"},
+            "UDPsel rule wrapper preserves underscore and breaks only on spaces");
+        checked(font.restoreSettings(8),"restore font after UDPsel wrap probe");
         engine::SequencePlayback playback(fixture.service.snapshot());
         playerselection::PlayerSelectionPlayback owner;
         playerselection::RenderState state;
@@ -194,6 +205,7 @@ namespace
         require(reopened.names().back()==L"Renée" && reopened.highScores()[0].wins==3,"UTF-8 names and wins roundtrip in persistent INI");
         std::ifstream input(path);const std::string contents{std::istreambuf_iterator<char>{input},{}};
         require(contents.find("Quality=7")!=std::string::npos,"history updates preserve unrelated INI sections");
+        input.close(); // Windows replacement needs no live reader on Monopoly.ini.
         checked(reopened.gameStarted(players),"new game resets winner guard");
         checked(reopened.gameOver(L"Alice",100,0),"new game can credit same human again");
         require(reopened.highScores()[0].wins==4 && reopened.highScores()[0].greatestNetWorth==3000,"lesser win keeps greatest historical worth");

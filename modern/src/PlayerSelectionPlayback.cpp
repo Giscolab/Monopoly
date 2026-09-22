@@ -8,6 +8,88 @@
 
 namespace monopoly::playerselection
 {
+    namespace detail
+    {
+        std::expected<std::vector<std::string>, std::string> wrapRuleDescription(
+            fonts::Runtime& font, std::string_view value, int maxPixelWidth, std::size_t maxLines)
+        {
+            if (maxPixelWidth <= 0)
+                return std::unexpected("Player selection rule wrap width must be positive");
+
+            auto nextBoundary = [](std::string_view text, std::size_t offset) noexcept
+            {
+                if (offset >= text.size()) return text.size();
+                ++offset;
+                while (offset < text.size() &&
+                       (static_cast<unsigned char>(text[offset]) & 0xC0U) == 0x80U)
+                    ++offset;
+                return offset;
+            };
+
+            std::vector<std::string> lines;
+            std::string remaining(value);
+            while (!remaining.empty() && lines.size() < maxLines)
+            {
+                const auto whole = font.measure(remaining);
+                if (!whole) return std::unexpected(whole.error().detail);
+                if (whole->width <= maxPixelWidth)
+                {
+                    lines.push_back(std::move(remaining));
+                    break;
+                }
+
+                std::size_t cut = std::string::npos;
+                std::size_t search = remaining.size();
+                while (search != 0)
+                {
+                    const auto space = remaining.rfind(' ', search - 1);
+                    if (space == std::string::npos) break;
+                    const auto prefix = font.measure(std::string_view(remaining).substr(0, space));
+                    if (!prefix) return std::unexpected(prefix.error().detail);
+                    if (prefix->width <= maxPixelWidth)
+                    {
+                        cut = space;
+                        break;
+                    }
+                    search = space;
+                }
+
+                if (cut != std::string::npos)
+                {
+                    lines.push_back(remaining.substr(0, cut));
+                    remaining.erase(0, cut + 1);
+                    continue;
+                }
+
+                // udpsel_WordWrap hard-breaks the first word when no space-delimited
+                // prefix fits. Consume at least one whole UTF-8 code point.
+                auto wordEnd = remaining.find(' ');
+                if (wordEnd == std::string::npos) wordEnd = remaining.size();
+                std::size_t best{};
+                for (std::size_t end = nextBoundary(remaining, 0);
+                     end != 0 && end <= wordEnd;)
+                {
+                    const auto prefix = font.measure(std::string_view(remaining).substr(0, end));
+                    if (!prefix) return std::unexpected(prefix.error().detail);
+                    if (prefix->width > maxPixelWidth)
+                    {
+                        if (best == 0) best = end;
+                        break;
+                    }
+                    best = end;
+                    if (end == wordEnd) break;
+                    const auto next = nextBoundary(remaining, end);
+                    if (next == end) break;
+                    end = next;
+                }
+                if (best == 0) best = nextBoundary(remaining, 0);
+                lines.push_back(remaining.substr(0, best));
+                remaining.erase(0, best);
+            }
+            return lines;
+        }
+    }
+
     namespace
     {
         using P = ui::playersetup::Phase;
@@ -298,8 +380,8 @@ namespace monopoly::playerselection
                         auto metrics=font->measure(*label);if(!metrics)return std::unexpected(metrics.error().detail);
                         const int advance=(1+metrics->width/211)*22;
                         if(auto r=setFont(8,700);!r)return r;
-                        auto wrapped=font->wrap(*label,211);if(!wrapped)return std::unexpected(wrapped.error().detail);
-                        for(std::size_t line=0;line<std::min<std::size_t>(2,wrapped->size());++line)
+                        auto wrapped=detail::wrapRuleDescription(*font,*label,211,2);if(!wrapped)return std::unexpected(wrapped.error());
+                        for(std::size_t line=0;line<wrapped->size();++line)
                             if(auto r=draw(image,(*wrapped)[line],x+175,y-100+static_cast<int>(line)*18,false);!r)return r;
                         const int count=row==0?2:row<16?4:1;
                         for(int choice=0;choice<count;++choice)

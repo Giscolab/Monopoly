@@ -5,7 +5,11 @@
 #include "SequencePlayback.hpp"
 #include "PlayerSelectionHistory.hpp"
 
+#include <expected>
 #include <map>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace monopoly::fonts { class Runtime; }
 
@@ -29,6 +33,14 @@ namespace monopoly::playerselection
         rules::options::SetupRule rule;
         std::uint8_t choice{};
     };
+
+    namespace detail
+    {
+        // UDPsel.cpp owns a distinct space-only wrapper; do not route rule text
+        // through FontRuntime::wrap(), which intentionally follows UDChat quirks.
+        [[nodiscard]] std::expected<std::vector<std::string>, std::string> wrapRuleDescription(
+            fonts::Runtime& font, std::string_view text, int maxPixelWidth, std::size_t maxLines);
+    }
 
     // Owner-thread renderer. No sequence is substituted when a retail asset
     // is absent; sync returns the resource error and remains retryable.

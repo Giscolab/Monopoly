@@ -5,6 +5,12 @@
 #include <iostream>
 #include <stdexcept>
 
+namespace monopoly::messaging
+{
+    bool sendAction(const actions::Message&) { return true; }
+    std::size_t queuedActionCount() { return 0; }
+}
+
 namespace {
 using namespace monopoly;
 void require(bool ok, const char* text) { if (!ok) throw std::runtime_error(text); }
