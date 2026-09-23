@@ -1,15 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="620" height="140" viewBox="0 0 620 140" role="img" aria-label="Last audited functional 75%, families engaged 92.7%, mechanical 61%">
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="140" viewBox="0 0 620 140" role="img" aria-label="Last audited functional 75%, families engaged 100%, mechanical 63%">
   <title>Monopoly modern porting progress</title>
   <text x="10" y="24" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">Dernier audit fonctionnel</text>
   <text x="610" y="24" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">75%</text>
   <rect x="10" y="30" width="600" height="14" rx="7" fill="#d0d7de"/>
   <rect x="10" y="30" width="450" height="14" rx="7" fill="#2da44e"/>
   <text x="10" y="66" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">Familles engagees</text>
-  <text x="610" y="66" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">92.7%</text>
+  <text x="610" y="66" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">100%</text>
   <rect x="10" y="72" width="600" height="14" rx="7" fill="#d0d7de"/>
-  <rect x="10" y="72" width="556" height="14" rx="7" fill="#0969da"/>
+  <rect x="10" y="72" width="600" height="14" rx="7" fill="#0969da"/>
   <text x="10" y="108" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">Indice mecanique</text>
-  <text x="610" y="108" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">61%</text>
+  <text x="610" y="108" text-anchor="end" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#24292f">63%</text>
   <rect x="10" y="114" width="600" height="14" rx="7" fill="#d0d7de"/>
-  <rect x="10" y="114" width="366" height="14" rx="7" fill="#8250df"/>
+  <rect x="10" y="114" width="378" height="14" rx="7" fill="#8250df"/>
 </svg>
