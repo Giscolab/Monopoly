@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <optional>
 #include <string>
 
@@ -31,6 +32,7 @@ namespace monopoly::boarddisplay
         int city{};
         pieces::BoardCameraView camera{pieces::BoardCameraView::TopDownSoccer};
         std::uint32_t tick{};
+        std::filesystem::path customRoot;
     };
     struct BoardBackdropBuffer
     {
@@ -38,6 +40,7 @@ namespace monopoly::boarddisplay
         int cityLoaded{-1};
         int viewLoaded{-1};
         std::uint32_t timeLoaded{};
+        std::filesystem::path customRootLoaded;
     };
 
     class BoardBackdropPlayback final
@@ -62,12 +65,23 @@ namespace monopoly::boarddisplay
             engine::SequencePlayback& playback);
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, std::string>
         loadBoardBitmap(data::DataId id, engine::SequencePlayback& playback) const;
+        [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, std::string>
+        loadCustomBoardBitmap(std::uint32_t camera,
+            const std::filesystem::path& customRoot,
+            engine::SequencePlayback& playback) const;
+        [[nodiscard]] std::expected<void, std::string> validateCustomBoardSet(
+            const std::filesystem::path& customRoot,
+            engine::SequencePlayback& playback) const;
+        [[nodiscard]] std::expected<void, std::string> compileImageInto(
+            data::DataId surface, const data::LegacyBitmapRGBA8& sourceImage,
+            engine::SequencePlayback& playback) const;
         [[nodiscard]] std::expected<void, std::string> compileInto(
             data::DataId surface, data::DataId source,
             engine::SequencePlayback& playback) const;
         [[nodiscard]] std::expected<data::DataId, std::string> selectBackdrop(
             display::Screen2D view, int city, pieces::BoardCameraView camera,
-            std::uint32_t tick, engine::SequencePlayback& playback);
+            std::uint32_t tick, const std::filesystem::path& customRoot,
+            engine::SequencePlayback& playback);
 
         std::array<BoardBackdropBuffer, MainBoardBufferCount> mainBuffers_{};
         data::DataId tradeSurface_{data::EmptyDataId};
@@ -76,6 +90,8 @@ namespace monopoly::boarddisplay
         display::Screen2D currentView_{display::Screen2D::Invalid};
         std::optional<int> currentCity_;
         std::optional<pieces::BoardCameraView> currentCamera_;
+        std::filesystem::path currentCustomRoot_;
+        std::filesystem::path validatedCustomRoot_;
         bool surfacesReady_{};
     };
 }

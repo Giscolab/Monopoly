@@ -14,11 +14,14 @@
 #include "VoiceChatRuntime.hpp"
 #include "UDPennyVoice.hpp"
 #include "OptionsSaveRuntime.hpp"
+#include "OptionsCustomBoardRuntime.hpp"
 #include "OptionsHelpRuntime.hpp"
 #include "StatsAccountRuntime.hpp"
 #include "ExtendedInitialization.hpp"
 
 #include "RuntimeState.hpp"
+
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <bit>
@@ -38,6 +41,7 @@ namespace monopoly::userinterface
         tradeui::State tradeProjection;
         optionsui::State optionsProjection;
         optionsui::SaveRuntimeState optionsSaveProjection;
+        optionsui::CustomBoardState optionsCustomBoardProjection;
         statsui::State statsProjection;
         statsui::CalculatorUIState statsCalculatorProjection;
         statsui::FutureImmunityState statsFutureImmunityProjection;
@@ -194,6 +198,14 @@ namespace monopoly::userinterface
     const optionsui::SaveRuntimeState& optionsSaveStateReadOnly() noexcept
     {
         return optionsSaveProjection;
+    }
+    optionsui::CustomBoardState& optionsCustomBoardState() noexcept
+    {
+        return optionsCustomBoardProjection;
+    }
+    const optionsui::CustomBoardState& optionsCustomBoardStateReadOnly() noexcept
+    {
+        return optionsCustomBoardProjection;
     }
     statsui::State& statsState() noexcept
     {
@@ -537,6 +549,7 @@ namespace monopoly::userinterface
         tradeui::reset(tradeProjection);
         optionsui::reset(optionsProjection);
         optionsSaveProjection = {};
+        optionsCustomBoardProjection = {};
         statsui::reset(statsProjection);
         statsui::resetCalculatorUI(statsCalculatorProjection);
         statsui::resetFutureImmunity(statsFutureImmunityProjection);
@@ -1315,17 +1328,21 @@ namespace monopoly::userinterface
         );
         const bool exitCreditsConsumed = exitCreditsWereActive ||
             ibar::stateReadOnly().userChoseToExit;
-        const auto saveInput = exitCreditsConsumed ? optionsui::SaveDialogInput{} :
-            optionsui::processSaveDialogInput(optionsSaveProjection, message,
+        const auto customBoardInput = exitCreditsConsumed ? optionsui::CustomBoardInput{} :
+            optionsui::processCustomBoardInput(optionsCustomBoardProjection, message);
+        const auto saveInput = (customBoardInput.consumed || exitCreditsConsumed)
+            ? optionsui::SaveDialogInput{}
+            : optionsui::processSaveDialogInput(optionsSaveProjection, message,
                 engine::fontPlayback(), startup::resources());
         optionsui::InputResult optionsInput{};
-        if (!saveInput.consumed && !exitCreditsConsumed)
+        if (!customBoardInput.consumed && !saveInput.consumed && !exitCreditsConsumed)
             optionsInput = optionsui::processInput(
                 optionsProjection, display::state().desired2DView, message);
         if (optionPreviewWasActive && !optionsInput.pressedOptionOkay &&
             (!optionsProjection.active || !optionsProjection.optionSnapshotLoaded ||
              optionsProjection.currentScreen != optionsui::Screen::Option))
             display::applyMusicTune(originalMusicTune);
+        if (customBoardInput.playClick) engine::playClickSound();
         if (saveInput.playClick) engine::playClickSound();
         const bool optionClicked = optionsInput.pressedMenuButton.has_value() ||
             optionsInput.pressedFileButton.has_value() ||
@@ -1346,6 +1363,31 @@ namespace monopoly::userinterface
                     : optionsui::openFullHelp(*resources))
                 : std::expected<void, std::string>(std::unexpected("Help resources unavailable"));
             if (!opened) engine::playWarningSound();
+        }
+
+        if (customBoardInput.requestLoad)
+        {
+            const auto selection = optionsui::validateSelectedCustomBoard(
+                optionsCustomBoardProjection);
+            const auto committed = selection
+                ? playerselection::commitCustomBoard(selection->assetRoot)
+                : std::expected<void, std::string>(
+                    std::unexpected(selection.error()));
+            if (committed)
+            {
+                const auto previous = optionsCustomBoardProjection.previousView;
+                optionsui::closeCustomBoardDialog(optionsCustomBoardProjection);
+                optionsProjection.active = false;
+                display::setBackdrop(previous);
+            }
+            else engine::playWarningSound();
+        }
+        else if (customBoardInput.closeDialog)
+        {
+            const auto previous = optionsCustomBoardProjection.previousView;
+            optionsui::closeCustomBoardDialog(optionsCustomBoardProjection);
+            optionsProjection.active = false;
+            display::setBackdrop(previous);
         }
 
         bool loadGameDispatched = false;
@@ -1492,7 +1534,26 @@ namespace monopoly::userinterface
             display::setBackdrop(*optionsInput.requestedBackdrop);
 
 
-        playerselection::processLibraryMessage(message);
+        if (!customBoardInput.consumed)
+            playerselection::processLibraryMessage(message);
+        if (playerselection::consumeCustomBoardRequest())
+        {
+            const auto previous = display::stateReadOnly().desired2DView;
+            const char* basePath = SDL_GetBasePath();
+            const auto opened = basePath && *basePath
+                ? optionsui::openCustomBoardDialog(optionsCustomBoardProjection,
+                    std::filesystem::path(basePath), previous)
+                : std::expected<void, std::string>(
+                    std::unexpected("custom-board executable directory is unavailable"));
+            if (opened)
+            {
+                optionsProjection.previousView = previous;
+                optionsProjection.currentScreen = optionsui::Screen::LoadBoard;
+                optionsProjection.active = true;
+                display::setBackdrop(display::Screen2D::Options);
+            }
+            else engine::playWarningSound();
+        }
         if (playerselection::consumeLoadRequest())
         {
             const auto opened = optionsui::refreshSaveSlots(

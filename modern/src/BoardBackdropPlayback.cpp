@@ -3,6 +3,7 @@
 #include "LegacyBitmap.hpp"
 
 #include <algorithm>
+#include <fstream>
 #include <utility>
 #include <vector>
 
@@ -78,6 +79,7 @@ namespace monopoly::boarddisplay
             buffer.cityLoaded = -1;
             buffer.viewLoaded = -1;
             buffer.timeLoaded = 0;
+            buffer.customRootLoaded.clear();
             allocated.push_back(*created);
         }
 
@@ -111,31 +113,104 @@ namespace monopoly::boarddisplay
         if (!decoded) return std::unexpected(decoded.error().detail);
         return *decoded;
     }
-    std::expected<void, std::string> BoardBackdropPlayback::compileInto(
-        data::DataId surface, data::DataId source,
+    std::expected<data::LegacyBitmapRGBA8, std::string>
+    BoardBackdropPlayback::loadCustomBoardBitmap(
+        std::uint32_t camera, const std::filesystem::path& customRoot,
+        engine::SequencePlayback& playback) const
+    {
+        const auto resources = playback.resources();
+        if (!resources) return std::unexpected("custom UDBoard backdrop has no resource snapshot");
+        const auto names = data::twoDimensionalBoardTextureNames();
+        if (camera >= names.size())
+            return std::unexpected("custom UDBoard backdrop camera is outside 0..38");
+        const data::BoardTextureContext context{
+            resources->context().board, resources->context().language,
+            -1, 0, customRoot};
+        const auto resolved = data::resolveBoardTexturePath(resources->paths(),
+            data::BoardMeshKind::CityMedium, data::TextureLocation::CustomBoard2D,
+            names[camera], context);
+        if (!resolved) return std::unexpected(resolved.error());
+
+        constexpr std::uint64_t MaximumFileBytes = 4U * 1024U * 1024U;
+        std::ifstream input(*resolved, std::ios::binary | std::ios::ate);
+        if (!input) return std::unexpected("cannot open custom 2D board bitmap");
+        const auto size = input.tellg();
+        if (size < 0 || static_cast<std::uint64_t>(size) > MaximumFileBytes)
+            return std::unexpected("custom 2D board bitmap exceeds file budget");
+        std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+        input.seekg(0, std::ios::beg);
+        if (!bytes.empty())
+            input.read(reinterpret_cast<char*>(bytes.data()),
+                static_cast<std::streamsize>(bytes.size()));
+        if (!input) return std::unexpected("cannot read complete custom 2D board bitmap");
+        const auto decoded = data::decodeLegacyBitmapRGBA8(
+            bytes, static_cast<std::size_t>(MainBoardWidth) * MainBoardHeight);
+        if (!decoded) return std::unexpected(decoded.error().detail);
+        return *decoded;
+    }
+
+    std::expected<void, std::string> BoardBackdropPlayback::validateCustomBoardSet(
+        const std::filesystem::path& customRoot,
+        engine::SequencePlayback& playback) const
+    {
+        if (customRoot.empty() || !customRoot.is_absolute())
+            return std::unexpected("custom UDBoard backdrop requires an absolute asset root");
+        const auto resources = playback.resources();
+        if (!resources) return std::unexpected("custom UDBoard backdrop has no resource snapshot");
+        const data::BoardTextureContext context{
+            resources->context().board, resources->context().language,
+            -1, 0, customRoot};
+        std::error_code error;
+        for (const auto name : data::twoDimensionalBoardTextureNames())
+        {
+            const auto resolved = data::resolveBoardTexturePath(resources->paths(),
+                data::BoardMeshKind::CityMedium, data::TextureLocation::CustomBoard2D,
+                name, context);
+            if (!resolved) return std::unexpected(resolved.error());
+            if (!std::filesystem::is_regular_file(*resolved, error) || error)
+                return std::unexpected("custom 2D board set is incomplete");
+        }
+        return {};
+    }
+
+    std::expected<void, std::string> BoardBackdropPlayback::compileImageInto(
+        data::DataId surface, const data::LegacyBitmapRGBA8& sourceImage,
         engine::SequencePlayback& playback) const
     {
         const auto target = playback.runtimeBitmaps().asset(surface);
         if (!target)
             return std::unexpected("UDBoard backdrop runtime surface is missing");
-        const auto sourceImage = loadBoardBitmap(source, playback);
-        if (!sourceImage) return std::unexpected(sourceImage.error());
-
         auto composed = opaqueBlack(target->image.width, target->image.height);
         const auto copied = data::blitStraightRGBA8(
-            composed, *sourceImage, 0, 0, data::BitmapBlitMode::Replace);
+            composed, sourceImage, 0, 0, data::BitmapBlitMode::Replace);
         if (!copied) return std::unexpected(copied.error());
         return playback.runtimeBitmaps().update(surface, std::move(composed));
     }
 
+    std::expected<void, std::string> BoardBackdropPlayback::compileInto(
+        data::DataId surface, data::DataId source,
+        engine::SequencePlayback& playback) const
+    {
+        const auto sourceImage = loadBoardBitmap(source, playback);
+        if (!sourceImage) return std::unexpected(sourceImage.error());
+        return compileImageInto(surface, *sourceImage, playback);
+    }
+
     std::expected<data::DataId, std::string> BoardBackdropPlayback::selectBackdrop(
         display::Screen2D view, int city, pieces::BoardCameraView camera,
-        std::uint32_t tick, engine::SequencePlayback& playback)
+        std::uint32_t tick, const std::filesystem::path& customRoot,
+        engine::SequencePlayback& playback)
     {
-        const auto cityValue = cityIndex(city);
-        if (!cityValue) return std::unexpected(cityValue.error());
         const auto index = cameraIndex(camera);
         if (!index) return std::unexpected(index.error());
+        const bool custom = city == -1;
+        std::optional<std::uint32_t> cityValue;
+        if (!custom)
+        {
+            const auto stockCity = cityIndex(city);
+            if (!stockCity) return std::unexpected(stockCity.error());
+            cityValue = *stockCity;
+        }
 
         if (view == display::Screen2D::Main)
         {
@@ -150,7 +225,8 @@ namespace monopoly::boarddisplay
                     oldestIndex = i;
                 }
                 if (mainBuffers_[i].cityLoaded == city &&
-                    mainBuffers_[i].viewLoaded == static_cast<int>(*index))
+                    mainBuffers_[i].viewLoaded == static_cast<int>(*index) &&
+                    (!custom || mainBuffers_[i].customRootLoaded == customRoot))
                     found = i;
             }
 
@@ -160,14 +236,33 @@ namespace monopoly::boarddisplay
                 return mainBuffers_[*found].surface;
             }
 
-            const auto source = boardBitmapId(
-                MainBoardBitmapBaseTag, *cityValue, *index);
-            const auto compiled = compileInto(
-                mainBuffers_[oldestIndex].surface, source, playback);
+            std::expected<void, std::string> compiled;
+            if (custom)
+            {
+                if (validatedCustomRoot_ != customRoot)
+                {
+                    const auto validated = validateCustomBoardSet(customRoot, playback);
+                    if (!validated) return std::unexpected(validated.error());
+                    validatedCustomRoot_ = customRoot;
+                }
+                const auto sourceImage = loadCustomBoardBitmap(*index, customRoot, playback);
+                if (!sourceImage) return std::unexpected(sourceImage.error());
+                compiled = compileImageInto(
+                    mainBuffers_[oldestIndex].surface, *sourceImage, playback);
+            }
+            else
+            {
+                const auto source = boardBitmapId(
+                    MainBoardBitmapBaseTag, *cityValue, *index);
+                compiled = compileInto(
+                    mainBuffers_[oldestIndex].surface, source, playback);
+            }
             if (!compiled) return std::unexpected(compiled.error());
             mainBuffers_[oldestIndex].cityLoaded = city;
             mainBuffers_[oldestIndex].viewLoaded = static_cast<int>(*index);
             mainBuffers_[oldestIndex].timeLoaded = tick;
+            mainBuffers_[oldestIndex].customRootLoaded = custom
+                ? customRoot : std::filesystem::path{};
             currentMainBuffer_ = oldestIndex;
             return mainBuffers_[oldestIndex].surface;
         }
@@ -175,8 +270,10 @@ namespace monopoly::boarddisplay
         if (view == display::Screen2D::Portfolio ||
             view == display::Screen2D::Trade)
         {
+            // Legacy custom boards replace the full-size Main camera set only.
+            // Trade/Portfolio continue to use the stock classic-small board.
             const auto source = boardBitmapId(
-                TradeBoardBitmapBaseTag, *cityValue, *index);
+                TradeBoardBitmapBaseTag, cityValue.value_or(0U), *index);
             const auto compiled = compileInto(tradeSurface_, source, playback);
             if (!compiled) return std::unexpected(compiled.error());
             return tradeSurface_;
@@ -201,16 +298,36 @@ namespace monopoly::boarddisplay
             currentView_ = display::Screen2D::Invalid;
             currentCity_.reset();
             currentCamera_.reset();
+            currentCustomRoot_.clear();
             return {};
         }
 
-        const auto cityValue = cityIndex(inputs.city);
-        if (!cityValue) return std::unexpected(cityValue.error());
+        const bool custom = inputs.city == -1;
+        if (custom)
+        {
+            if (inputs.customRoot.empty() || !inputs.customRoot.is_absolute())
+                return std::unexpected("custom UDBoard backdrop requires an absolute asset root");
+            if (inputs.view == display::Screen2D::Main &&
+                validatedCustomRoot_ != inputs.customRoot)
+            {
+                const auto validated = validateCustomBoardSet(inputs.customRoot, playback);
+                if (!validated) return std::unexpected(validated.error());
+                validatedCustomRoot_ = inputs.customRoot;
+            }
+        }
+        else
+        {
+            const auto cityValue = cityIndex(inputs.city);
+            if (!cityValue) return std::unexpected(cityValue.error());
+        }
+        const auto requestedCustomRoot = custom
+            ? inputs.customRoot : std::filesystem::path{};
 
         if (activeBackdrop_ != data::EmptyDataId &&
             currentView_ == inputs.view &&
             currentCity_ == inputs.city &&
-            currentCamera_ == inputs.camera)
+            currentCamera_ == inputs.camera &&
+            currentCustomRoot_ == requestedCustomRoot)
             return {};
 
         const std::size_t required =
@@ -222,7 +339,8 @@ namespace monopoly::boarddisplay
         const auto surfaces = ensureSurfaces(playback);
         if (!surfaces) return surfaces;
         const auto selected = selectBackdrop(
-            inputs.view, inputs.city, inputs.camera, inputs.tick, playback);
+            inputs.view, inputs.city, inputs.camera, inputs.tick,
+            requestedCustomRoot, playback);
         if (!selected) return std::unexpected(selected.error());
 
         const auto [x, y] = backdropPosition(inputs.view);
@@ -237,6 +355,7 @@ namespace monopoly::boarddisplay
         currentView_ = inputs.view;
         currentCity_ = inputs.city;
         currentCamera_ = inputs.camera;
+        currentCustomRoot_ = requestedCustomRoot;
         return {};
     }
 
@@ -249,6 +368,8 @@ namespace monopoly::boarddisplay
         currentView_ = display::Screen2D::Invalid;
         currentCity_.reset();
         currentCamera_.reset();
+        currentCustomRoot_.clear();
+        validatedCustomRoot_.clear();
         surfacesReady_ = false;
     }
 }

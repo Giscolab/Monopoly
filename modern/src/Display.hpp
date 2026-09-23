@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include "World3DProjection.hpp"
 #include "PieceCamera.hpp"
@@ -103,6 +104,9 @@ namespace monopoly::display
         std::uint64_t bssmCameraRequestTick = 0;
         int city = 0;
         int system = 13; // NOTW_MONA_US
+        // Source DISPLAY_state.customBoardPath: validated asset directory used
+        // whenever city == -1. Empty for every stock board.
+        std::filesystem::path customBoardPath;
         bool game3DOn = true;
         bool board3DOn = false;
         bool viewportBackgroundFillOn = false;

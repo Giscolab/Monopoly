@@ -638,6 +638,16 @@ au shader texture actuel. Les DAT/HMD retail exacts restent absents, donc les
 fixtures synthetiques prouvent les contrats source mais pas un contenu retail
 indisponible.
 
+## Validation du checkpoint du 23 septembre 2026
+
+Le chemin **UDOpts Load Board / custom board** est maintenant porte de bout en bout sans supprimer les gardes du binaire original : le bouton UDPSEL ouvre `custbrds`, l inventaire est limite et page par cinq, le DWORD de securite du `.brd` est compare au `Version` REG_BINARY de l editeur installe, puis le board valide bascule `city=-1` vers son repertoire d assets. En Europe, la devise custom revient au defaut de la langue (`iLangId - 2`) comme dans `UDOpts.cpp`, au lieu de reutiliser la ville selectionnee avant Load Board.
+
+Le rendu 2D accepte maintenant le sentinel custom dans `BoardBackdropPlayback` : les 39 BMP `2DBoards` sont prevalides avant publication, les buffers Main sont caches par `(customRoot,camera)`, et Trade/Portfolio conservent le petit board stock comme le code retail. Le chemin 3D conserve le `customRoot` deja transporte par `TextureCatalog`/`SequencePlayback`. Les changements de root invalident bien le cache et les chemins invalides echouent avant mutation visible.
+
+Deux suites dediees verrouillent le runtime et le playback du dialogue custom (geometrie retail, tri, pagination, validation ownership, surfaces texte, transitions Stop/Start et atomicite). La fixture `UserInterfaceRouting` a aussi ete corrigee pour cliquer le centre des onglets : les rectangles File/Option se chevauchent volontairement sur leur bord et `left+1` testait en realite File. Enfin, `MonopolyStatsDeedBarPlaybackTests` recupere la dependance SDL3_ttf qui manquait a son target CMake.
+
+Validation locale MSVC/Windows de ce checkpoint : reconstruction complete `Debug` de `modern/build` reussie, puis **118/118 suites CTest passees**, zero echec. Cette preuve utilise les fixtures disponibles; elle ne remplace pas un essai avec un vrai Board Editor installe, son registre `Version` et un pack `custbrds` retail reel.
+
 ## Prochaines priorites
 
 1. Qualifier **GIS-8 dans l application reelle** avec les DAT/HMD retail, deux processus puis deux machines et des peripheriques audio physiques : capture GSM/PCM, DAT1/DATN, playback, arrivee tardive, locks et deconnexion. Le transport loopback et les chemins audio SDL dummy sont verifies separement; ils ne remplacent pas cette preuve integree.
@@ -647,4 +657,4 @@ L audit **GIS-10** est termine : les types HMD consommes par les callers actifs
 sont deja portes. N ajouter un autre decodeur qu avec une nouvelle preuve de
 caller ou de contenu; reset/joint MIMe et primitives inactives restent exclus.
 
-Les anciens blocages transverses **FontRuntime/GRAFIX texte** sont maintenant engages et valides sur les surfaces WIP de `UDStats`, `UDChat`, `UDPsel`, `UDOpts` et IBar. Les prochains chantiers restent les surfaces UI non encore couvertes et les dependances de `UDOpts` (Credits visuel, Quick/Full Help, custom-board externe) avec leurs owners respectifs. Le `rightpanel` Future/Immunity est deja implemente.
+Les anciens blocages transverses **FontRuntime/GRAFIX texte** sont maintenant engages et valides sur les surfaces WIP de `UDStats`, `UDChat`, `UDPsel`, `UDOpts` et IBar. Les prochains chantiers restent les surfaces UI non encore couvertes et les dependances de `UDOpts` (Credits visuel, Quick/Full Help) avec leurs owners respectifs. Le chemin custom-board externe n est plus un blocage logique; sa qualification avec Board Editor et assets retail reels reste a faire. Le `rightpanel` Future/Immunity est deja implemente.

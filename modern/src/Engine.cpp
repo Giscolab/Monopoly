@@ -37,6 +37,7 @@
 #include "TradeActionButtonPlayback.hpp"
 #include "OptionsFilePlayback.hpp"
 #include "OptionsSavePlayback.hpp"
+#include "OptionsCustomBoardPlayback.hpp"
 #include "OptionsNavigationPlayback.hpp"
 #include "StatsPlayback.hpp"
 #include "ChatRecipientPlayback.hpp"
@@ -134,6 +135,7 @@ namespace monopoly::engine
         tradeui::ActionButtonPlayback tradeActionButtonPlayback;
         optionsui::FilePlayback optionsFilePlayback;
         optionsui::SavePlayback optionsSavePlayback;
+        optionsui::CustomBoardPlayback optionsCustomBoardPlayback;
         ibar::EscapeConfirmationPlayback escapeConfirmationPlayback;
         optionsui::NavigationPlayback optionsNavigationPlayback;
         statsui::Playback statsPlayback;
@@ -278,13 +280,16 @@ namespace monopoly::engine
             const auto resources = session.resources();
             if (!resources)
                 return std::unexpected("board playback requires a resource snapshot");
-            const auto mesh = resources->context().board == data::BoardEdition::Usa
-                ? data::usaBoardMeshForCity(state.city)
-                : data::BoardMeshKind::ClassicMedium;
+            const auto mesh = state.city == -1
+                ? data::BoardMeshKind::CityMedium
+                : (resources->context().board == data::BoardEdition::Usa
+                    ? data::usaBoardMeshForCity(state.city)
+                    : data::BoardMeshKind::ClassicMedium);
             // Refresh BEFORE comparing DataId: e.g. USA city 1 -> 2 shares the
             // city mesh but must publish new immutable CPU/GPU texture assets.
             const auto textures = session.configureBoardTextures(
-                mesh, data::TextureResolution::Pixels128, state.city, state.system);
+                mesh, data::TextureResolution::Pixels128, state.city, state.system,
+                state.customBoardPath);
             if (!textures) return textures;
             const auto desired = data::boardMeshDataId(mesh);
             if (activeBoardSequence == desired) return {};
@@ -1463,6 +1468,12 @@ namespace monopoly::engine
             if (!optionsSaveSync)
                 return SDL_SetError("Options Load/Save playback: %s",
                     optionsSaveSync.error().c_str());
+            const auto optionsCustomBoardSync = optionsCustomBoardPlayback.sync(
+                userinterface::optionsCustomBoardState(),
+                displayState.desired2DView, fontPlayback(), *session);
+            if (!optionsCustomBoardSync)
+                return SDL_SetError("Options custom-board playback: %s",
+                    optionsCustomBoardSync.error().c_str());
             const auto escapeSync = escapeConfirmationPlayback.sync(
                 ibar::stateReadOnly(), isUsaBoardEdition(), *session);
             if (!escapeSync)
@@ -1865,7 +1876,8 @@ namespace monopoly::engine
                     buildingSync.error().c_str());
             const boarddisplay::BoardBackdropInputs backdropInputs{
                 displayState.desired2DView, displayState.game3DOn, displayState.city,
-                displayState.desiredBoardCamera, static_cast<std::uint32_t>(tick)};
+                displayState.desiredBoardCamera, static_cast<std::uint32_t>(tick),
+                displayState.customBoardPath};
             const auto boardBackdropSync = boardBackdropPlayback.sync(
                 backdropInputs, *session);
             if (!boardBackdropSync)
@@ -1961,6 +1973,7 @@ namespace monopoly::engine
         tradeActionButtonPlayback.reset();
         optionsFilePlayback.reset();
         optionsSavePlayback.reset();
+        optionsCustomBoardPlayback.reset();
         escapeConfirmationPlayback.reset();
         optionsNavigationPlayback.reset();
         statsPlayback.reset();

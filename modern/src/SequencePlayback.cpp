@@ -5,14 +5,14 @@ namespace monopoly::engine
 {
     std::expected<void, std::string> SequencePlayback::configureBoardTextures(
         data::BoardMeshKind mesh, data::TextureResolution resolution,
-        int city, int currency)
+        int city, int currency, const std::filesystem::path& customRoot)
     {
         const auto resources = meshes_.resources();
         if (!resources)
             return std::unexpected("board textures require a resource snapshot");
         const auto context = resources->context();
         const BoardTextureSelection selection{
-            mesh, resolution, context.board, context.language, city, currency};
+            mesh, resolution, context.board, context.language, city, currency, customRoot};
         if (boardTextureSelection_ == selection) return {};
 
         const auto recipe = context.board == data::BoardEdition::Usa
@@ -20,7 +20,7 @@ namespace monopoly::engine
             : data::buildEuropeanTextureRecipe(mesh, resolution);
         if (!recipe) return std::unexpected(std::string(recipe.error().detail));
         const auto images = data::loadBoardTextureImages(resources->paths(), *recipe,
-            {context.board, context.language, city, currency});
+            {context.board, context.language, city, currency, customRoot});
         if (!images) return std::unexpected(images.error());
         const auto replaced = meshes_.replaceTextureImages(recipe->meshDataId, *images);
         if (!replaced) return std::unexpected(replaced.error().detail);

@@ -6,6 +6,7 @@
 #include "RuntimeBitmapSurface.hpp"
 #include "TextureCatalog.hpp"
 
+#include <filesystem>
 #include <tuple>
 
 namespace monopoly::engine
@@ -49,7 +50,7 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
         [[nodiscard]] std::expected<void, std::string> configureBoardTextures(
             data::BoardMeshKind mesh, data::TextureResolution resolution,
-            int city, int currency);
+            int city, int currency, const std::filesystem::path& customRoot = {});
         sequence::SequenceCommandQueue& commands() noexcept { return commands_; }
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }
         SequenceWorld3DSlot& world() noexcept { return world_; }
@@ -64,7 +65,8 @@ namespace monopoly::engine
 
         data::MeshRuntimeCache meshes_;
         using BoardTextureSelection = std::tuple<data::BoardMeshKind,
-            data::TextureResolution, data::BoardEdition, data::LanguageId, int, int>;
+            data::TextureResolution, data::BoardEdition, data::LanguageId, int, int,
+            std::filesystem::path>;
         std::optional<BoardTextureSelection> boardTextureSelection_;
         data::RuntimeBitmapStore runtimeBitmaps_;
         sequence::SequenceRuntime runtime_;

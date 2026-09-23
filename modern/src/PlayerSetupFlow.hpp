@@ -78,6 +78,7 @@ namespace monopoly::ui::playersetup
         AIHard,
 
         CityClassic,
+        CityLoadBoard,
         CityLeft,
         CityRight,
         CountryLeft,
@@ -126,6 +127,7 @@ namespace monopoly::ui::playersetup
         RemoveLocalPlayer,
         StartGame,
         CommitCity,
+        RequestCustomBoard,
         AcceptStandardRules,
         AcceptCustomRules,
         RestoreStandardRules,

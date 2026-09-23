@@ -178,16 +178,18 @@ namespace monopoly::ui::playersetup
 
         constexpr std::array<
             ButtonRect,
-            4
+            5
         > CityButtons{{
-            { Button::CityClassic, { 73, 214, 293, 276 } },
-            { Button::CityLeft,    { 320, 408, 343, 421 } },
+            { Button::CityClassic,   { 73, 214, 293, 276 } },
+            { Button::CityLoadBoard, { 507, 214, 727, 276 } },
+            { Button::CityLeft,      { 320, 408, 343, 421 } },
             { Button::CityRight,   { 458, 408, 481, 421 } },
             { Button::CityNext,    { 341, 434, 468, 470 } }
         }};
 
-        constexpr std::array<ButtonRect, 6> EuropeCityButtons{{
+        constexpr std::array<ButtonRect, 7> EuropeCityButtons{{
             { Button::CityClassic,   { 73, 214, 293, 276 } },
+            { Button::CityLoadBoard, { 507, 214, 727, 276 } },
             { Button::CountryLeft,   { 145, 442, 168, 455 } },
             { Button::CountryRight,  { 281, 442, 305, 455 } },
             { Button::CurrencyLeft,  { 485, 442, 508, 455 } },
@@ -1257,6 +1259,10 @@ namespace monopoly::ui::playersetup
             {
                 switch (button)
                 {
+                    case Button::CityLoadBoard:
+                        command.type = CommandType::RequestCustomBoard;
+                        return command;
+
                     case Button::CountryLeft:
                         state.citySelected = state.citySelected > 0
                             ? state.citySelected - 1 : EuropeCountryCount - 1;
@@ -1300,6 +1306,10 @@ namespace monopoly::ui::playersetup
 
             switch (button)
             {
+                case Button::CityLoadBoard:
+                    command.type = CommandType::RequestCustomBoard;
+                    return command;
+
                 case Button::CityLeft:
                     state.citySelected = state.citySelected > 0
                         ? state.citySelected - 1 : UsaCityCount - 1;

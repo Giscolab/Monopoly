@@ -33,6 +33,7 @@ namespace monopoly::playerselection
         ui::playersetup::Rect restoreRuleRect{}, shortRuleRect{};
         PlayerSelectionHistory history;
         bool loadRequested{};
+        bool customBoardRequested{};
         ui::playersetup::Button pressedButton{ui::playersetup::Button::None};
         std::uint64_t pressSerial{};
 
@@ -728,6 +729,15 @@ namespace monopoly::playerselection
                     globalState.playerInfo.citySelected = command.city;
                     display::state().city = command.city;
                     display::state().system = command.system;
+                    display::state().customBoardPath.clear();
+                    break;
+                }
+
+
+                case ui::playersetup::
+                    CommandType::RequestCustomBoard:
+                {
+                    customBoardRequested = true;
                     break;
                 }
 
@@ -921,6 +931,7 @@ namespace monopoly::playerselection
         playbackAttached = playbackReady = false;
         ruleHits.clear();
         loadRequested = false;
+        customBoardRequested = false;
         pressedButton = ui::playersetup::Button::None;
         pressSerial = 0;
         ui::playersetupsound::resetPlayback(setupSoundState);
@@ -958,6 +969,8 @@ namespace monopoly::playerselection
         globalState = {};
         playbackAttached = playbackReady = false;
         ruleHits.clear();
+        loadRequested = false;
+        customBoardRequested = false;
 
         setupFlowState = {};
         ui::playersetupsound::resetPlayback(setupSoundState);
@@ -1186,6 +1199,46 @@ namespace monopoly::playerselection
         const bool result = loadRequested;
         loadRequested = false;
         return result;
+    }
+
+    bool consumeCustomBoardRequest() noexcept
+    {
+        const bool result = customBoardRequested;
+        customBoardRequested = false;
+        return result;
+    }
+
+    std::expected<void, std::string> commitCustomBoard(std::filesystem::path assetRoot)
+    {
+        if (!assetRoot.is_absolute())
+            return std::unexpected("custom board asset root must be absolute");
+
+        setupFlowState.citySelected = -1;
+        setupFlowState.currencySelectionIndex = 0;
+        globalState.playerInfo.citySelected = -1;
+
+        auto& displayState = display::state();
+        displayState.city = -1;
+        displayState.customBoardPath = std::move(assetRoot);
+        if (setupFlowState.boardEdition == data::BoardEdition::Europe)
+        {
+            // Legacy UDOpts forces a custom board back to the installed
+            // language's default currency (iLangId - 2), not the country
+            // that happened to be selected when Load Board was pressed.
+            const int language = static_cast<int>(setupFlowState.language);
+            displayState.system = language >= 2 && language <= 10
+                ? language - 2 : 0;
+        }
+        else
+        {
+            displayState.system = ui::playersetup::MonetarySystemUs;
+        }
+
+        ui::playersetup::requestPhase(setupFlowState,
+            userinterface::ruleStateReadOnly(),
+            ui::playersetup::Phase::StandardOrCustomRules);
+        applyFlowPhaseToDisplay();
+        return {};
     }
 
     void setPlaybackState(bool ready, std::span<const RuleHit> hits,

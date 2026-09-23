@@ -65,6 +65,9 @@ namespace monopoly::playerselection
         ui::playersetup::Rect restore, ui::playersetup::Rect shortGame);
     [[nodiscard]] std::expected<void, std::string> configureHistory(std::filesystem::path path);
     [[nodiscard]] bool consumeLoadRequest() noexcept;
+    [[nodiscard]] bool consumeCustomBoardRequest() noexcept;
+    [[nodiscard]] std::expected<void, std::string> commitCustomBoard(
+        std::filesystem::path assetRoot);
     void recordGameStarted();
 
     void processMessage(const actions::Message& message);

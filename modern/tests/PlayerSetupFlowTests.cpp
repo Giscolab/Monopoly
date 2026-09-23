@@ -601,6 +601,10 @@ namespace
             buttonAt(Phase::SelectCity, 292, 275) == Button::CityClassic &&
             buttonAt(Phase::SelectCity, 293, 275) == Button::None,
             "SelectCity Classic rectangle is exact");
+        expect(buttonAt(Phase::SelectCity, 507, 214) == Button::CityLoadBoard &&
+            buttonAt(Phase::SelectCity, 726, 275) == Button::CityLoadBoard &&
+            buttonAt(Phase::SelectCity, 727, 275) == Button::None,
+            "SelectCity Load Board rectangle is exact");
         expect(buttonAt(Phase::SelectCity, 320, 408) == Button::CityLeft &&
             buttonAt(Phase::SelectCity, 342, 420) == Button::CityLeft,
             "SelectCity Left rectangle is exact");
@@ -622,6 +626,11 @@ namespace
         expect(clickButton(state, uiState, Button::CityRight).type == CommandType::None &&
             state.citySelected == 0,
             "SelectCity Right wraps city 10 to city 0");
+
+        const auto loadBoard = clickButton(state, uiState, Button::CityLoadBoard);
+        expect(loadBoard.type == CommandType::RequestCustomBoard &&
+            state.phase == Phase::SelectCity,
+            "SelectCity Load Board requests the custom dialog without advancing phase");
 
         state.citySelected = 7;
         const auto classic = clickButton(state, uiState, Button::CityClassic);
@@ -645,6 +654,9 @@ namespace
         using namespace monopoly::ui::playersetup;
 
         const auto europe = data::BoardEdition::Europe;
+        expect(buttonAt(Phase::SelectCity, 507, 214, europe) == Button::CityLoadBoard &&
+            buttonAt(Phase::SelectCity, 726, 275, europe) == Button::CityLoadBoard,
+            "Europe SelectCity shares the retail Load Board rectangle");
         expect(buttonAt(Phase::SelectCity, 145, 442, europe) == Button::CountryLeft &&
             buttonAt(Phase::SelectCity, 167, 454, europe) == Button::CountryLeft &&
             buttonAt(Phase::SelectCity, 281, 442, europe) == Button::CountryRight &&
@@ -662,6 +674,10 @@ namespace
         state.boardEdition = europe;
         state.language = data::LanguageId::French;
         requestPhase(state, uiState, Phase::SelectCity);
+        const auto loadBoard = clickButton(state, uiState, Button::CityLoadBoard);
+        expect(loadBoard.type == CommandType::RequestCustomBoard &&
+            state.phase == Phase::SelectCity,
+            "Europe Load Board requests custom dialog without advancing phase");
         expect(state.citySelected == 1 && state.currencySelectionIndex == 0 &&
             state.currencySelection == std::array<int, 3>{1, 1, MonetarySystemEuro},
             "Europe SelectCity defaults country and currency from installed French language");

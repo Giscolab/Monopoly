@@ -134,6 +134,9 @@ struct SyntheticSequenceResources
                 items[0x00C6] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDStats calculator background/textbox and idle function/number buttons.
                 items[0x006A] = {LegacyDataType::Chunky, bitmapSequence};
+                // UDOpts custom-board file rows: normal and selected states.
+                items[0x006B] = {LegacyDataType::Chunky, bitmapSequence};
+                items[0x006C] = {LegacyDataType::Chunky, bitmapSequence};
                 for (std::uint32_t tag = 0x006DU; tag <= 0x007CU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 for (std::uint32_t tag = 0x007DU; tag <= 0x0090U; ++tag)
@@ -342,6 +345,9 @@ struct SyntheticSequenceResources
                 items[0x0249U] = {LegacyDataType::Chunky, staticTradeIcon};
                 for (const auto tag : {0x0250U, 0x024BU, 0x0235U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};
+                // UDOpts Load Board titles for USA and European resource sets.
+                items[0x01C3U] = {LegacyDataType::Chunky, staticTradeIcon};
+                items[0x034DU] = {LegacyDataType::Chunky, staticTradeIcon};
                 // UDOpts supported On/Off controls: selected/unselected assets shared by priority.
                 for (const auto tag : {0x026BU, 0x026CU, 0x0272U, 0x0273U})
                     items[tag] = {LegacyDataType::Chunky, finiteButton};

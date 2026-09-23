@@ -446,6 +446,11 @@ namespace monopoly::chat
 namespace monopoly::playerselection
 {
     bool consumeLoadRequest() noexcept { return false; }
+    bool consumeCustomBoardRequest() noexcept { return false; }
+    std::expected<void, std::string> commitCustomBoard(std::filesystem::path)
+    {
+        return {};
+    }
     void recordGameStarted() {}
     void processMessage(const actions::Message&)
     {
@@ -634,7 +639,8 @@ namespace
         expect(userinterface::beginOptionsFromIBar(), "music rollback fixture opens options");
         const auto clickRect = [](optionsui::Rect rect) {
             uimsg::Message click; click.type = uimsg::Type::MouseLeftDown;
-            click.numberA = rect.left + 1; click.numberB = rect.top + 1;
+            click.numberA = (rect.left + rect.right) / 2;
+            click.numberB = (rect.top + rect.bottom) / 2;
             return userinterface::processUIMessage(click);
         };
         expect(clickRect(optionsui::menuButtonRect(optionsui::MenuButton::Option)) &&

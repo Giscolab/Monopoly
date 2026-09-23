@@ -789,6 +789,8 @@ target_sources(
     src/OptionsFilePlayback.cpp
     src/OptionsSaveRuntime.cpp
     src/OptionsSavePlayback.cpp
+    src/OptionsCustomBoardRuntime.cpp
+    src/OptionsCustomBoardPlayback.cpp
     src/OptionsNavigationPlayback.cpp
     src/OptionsOptionPlayback.cpp
     src/OptionsTogglePlayback.cpp
@@ -834,6 +836,28 @@ if(BUILD_TESTING)
     add_test(
         NAME Monopoly.OptionsSaveRuntime
         COMMAND MonopolyOptionsSaveRuntimeTests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyOptionsCustomBoardRuntimeTests
+        tests/OptionsCustomBoardRuntimeTests.cpp
+        src/OptionsCustomBoardRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyOptionsCustomBoardRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(WIN32)
+        target_link_libraries(MonopolyOptionsCustomBoardRuntimeTests PRIVATE Advapi32)
+    endif()
+    if(MSVC)
+        target_compile_options(
+            MonopolyOptionsCustomBoardRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(
+        NAME Monopoly.OptionsCustomBoardRuntime
+        COMMAND MonopolyOptionsCustomBoardRuntimeTests)
 endif()
 
 if(BUILD_TESTING)
@@ -893,6 +917,7 @@ if(BUILD_TESTING)
         src/TradeUI.cpp
         src/OptionsUI.cpp
         src/OptionsSaveRuntime.cpp
+        src/OptionsCustomBoardRuntime.cpp
         src/FontRuntime.cpp
         src/IBarLayout.cpp
         src/StatsUI.cpp
@@ -916,6 +941,9 @@ if(BUILD_TESTING)
         SDL3_ttf::SDL3_ttf
         MonopolyDataCore
     )
+    if(WIN32)
+        target_link_libraries(MonopolyUserInterfaceRoutingTests PRIVATE Advapi32)
+    endif()
 
     if(MSVC)
         target_compile_options(
@@ -1455,7 +1483,7 @@ target_sources(
 )
 
 if(WIN32)
-    target_link_libraries(MonopolyModern PRIVATE ws2_32)
+    target_link_libraries(MonopolyModern PRIVATE ws2_32 Advapi32)
 endif()
 
 if(BUILD_TESTING)
@@ -3186,6 +3214,8 @@ if(BUILD_TESTING)
         src/ChatTextPlayback.cpp src/ChatRuntime.cpp src/FontRuntime.cpp)
     add_executable(MonopolyOptionsVisualPlaybackTests tests/OptionsVisualPlaybackTests.cpp
         src/OptionsVisualPlayback.cpp src/OptionsHelpRuntime.cpp src/OptionsUI.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyOptionsCustomBoardPlaybackTests tests/OptionsCustomBoardPlaybackTests.cpp
+        src/OptionsCustomBoardPlayback.cpp src/OptionsCustomBoardRuntime.cpp src/FontRuntime.cpp)
     add_executable(MonopolyPlayerSelectionPlaybackTests tests/PlayerSelectionPlaybackTests.cpp
         src/PlayerSelectionPlayback.cpp src/PlayerSelectionHistory.cpp
         src/PlayerSetupFlow.cpp src/RuleOptions.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
@@ -3196,8 +3226,8 @@ if(BUILD_TESTING)
     add_executable(MonopolyStatsAccountRuntimeTests tests/StatsAccountRuntimeTests.cpp
         src/RuleCards.cpp src/CardDeckRuntime.cpp src/RuleEconomy.cpp src/RuleLifecycle.cpp
         src/PhaseStack.cpp src/Messaging.cpp src/BoardRules.cpp src/RuleOptions.cpp)
-    foreach(UI_TEST IN ITEMS ChatTextPlayback OptionsVisualPlayback PlayerSelectionPlayback
-            StatsTextPlayback StatsAccountRuntime)
+    foreach(UI_TEST IN ITEMS ChatTextPlayback OptionsVisualPlayback OptionsCustomBoardPlayback
+            PlayerSelectionPlayback StatsTextPlayback StatsAccountRuntime)
         target_include_directories(Monopoly${UI_TEST}Tests PRIVATE src tests)
         target_link_libraries(Monopoly${UI_TEST}Tests PRIVATE
             MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
@@ -3207,5 +3237,8 @@ if(BUILD_TESTING)
         add_test(NAME Monopoly.${UI_TEST} COMMAND Monopoly${UI_TEST}Tests)
         set_tests_properties(Monopoly.${UI_TEST} PROPERTIES TIMEOUT 60)
     endforeach()
-    target_link_libraries(MonopolyStatsDeedBarPlaybackTests PRIVATE SDL3::SDL3)
+    if(WIN32)
+        target_link_libraries(MonopolyOptionsCustomBoardPlaybackTests PRIVATE Advapi32)
+    endif()
+    target_link_libraries(MonopolyStatsDeedBarPlaybackTests PRIVATE SDL3::SDL3 SDL3_ttf::SDL3_ttf)
 endif()

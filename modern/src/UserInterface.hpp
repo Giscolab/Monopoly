@@ -11,6 +11,7 @@
 #include "TradeUI.hpp"
 #include "OptionsUI.hpp"
 #include "OptionsSaveRuntime.hpp"
+#include "OptionsCustomBoardRuntime.hpp"
 #include "StatsUI.hpp"
 #include "StatsCalculatorUI.hpp"
 #include "StatsFutureImmunityUI.hpp"
@@ -33,6 +34,8 @@ namespace monopoly::userinterface
     [[nodiscard]] rules::PlayerNumber chatSenderPlayer() noexcept;
     optionsui::SaveRuntimeState& optionsSaveState() noexcept;
     const optionsui::SaveRuntimeState& optionsSaveStateReadOnly() noexcept;
+    optionsui::CustomBoardState& optionsCustomBoardState() noexcept;
+    const optionsui::CustomBoardState& optionsCustomBoardStateReadOnly() noexcept;
     statsui::State& statsState() noexcept;
     const statsui::State& statsStateReadOnly() noexcept;
     statsui::CalculatorUIState& statsCalculatorState() noexcept;
