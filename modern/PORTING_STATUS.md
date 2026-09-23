@@ -309,9 +309,9 @@ de `UDOpts` a maintenant un owner runtime reel. Token Voices possede desormais s
 | `Source/artlib/L_Chunk.*` | `LegacyChunkReader`, `openLegacyChunkReader` | `PORTED_COMPLETE` | lecteur consomme : header 24-bit + ID 8-bit, descend/ascend/seek/map/read, limite 8 niveaux | `LegacyDataArchive`, futur `L_Seqncr` | Contrat read-only et ownership `ReadFromDataID` portes sans bitfield ABI et testes sur fixtures, y compris le franchissement historique des siblings ID 0/128 lors d'une recherche precise. La validation d'un CNK retail reste bloquee separement; l'editeur/writer non consomme n'est pas dans ce perimetre. |
 | `Source/artlib/L_Grafix.*`, `L_Rend2D.*`, `L_Sprite.*` | `Display`, `SequenceBitmapRenderData`, `SequenceWorld2DSlot`, `World2DRenderer` | `PORTED_PARTIAL` | composition 2D, clipping, priorites, surfaces | SDL_GPU, assets, transformation 800x600 | Les feuilles bitmap de sequence ont un chemin actif jusqu'au quad SDL_GPU : ordre depth-first/priorite, cache RGBA8, alpha source, viewport/scissor letterbox et readback D3D12 sont testes. Les sprites UI generiques, fonts, surfaces/blits hors sequence et clipping fin restent a construire. |
 | `Source/artlib/L_Rend3D.*` | `GPUFrame`, `SequenceWorld3DSlot`, `World3DGPUScene`, `World3DProjection`, `World3DRenderer` | `PORTED_PARTIAL` | slot World3D 1, viewport, camera/projection, bounds/culling, draw indexed et meshes animes | SDL_GPU, `SequenceRenderData`, PC3D moderne | Le chemin sequence -> slot 1 -> scene GPU -> renderer -> GPUFrame est actif. Bounds, projection ecran, culling, textures HMD et vertex buffers MIMe par node sont testes sur D3D12 reel. Camera 3D/FOV/SetCamera sont raccordes. La visibility 3D historique est maintenant auditee : `SequenceMoved()` retourne toujours TRUE pour un mesh (commentaire source inclus), donc le culling moderne reste strictement renderer-only et ne pilote pas `scrollingWorld`. Restent certains contrats de scene et primitives HMD non consommees. |
-| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData`, `SequenceBitmapRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice, feuilles 2D/3D/audio | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot`, `SequenceWorld2DSlot` | Grouping/indirect/tweeker, feuilles mesh 3D, feuilles bitmap 2D, records Sound WAV et records camera 3D sont executes; Start/Stop/SetEndingAction, MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont raccordes. `GetInfo` expose le sous-ensemble effectivement lu par Monopoly (clock/endTime/matrice monde 3D) avec la recherche `FindNextSequence`, et `GetChildMeshWorldMatrix` parcourt uniquement le sous-arbre du premier root selectionne. ForceRedraw est porte avec son cycle transitoire de redraw et la reevaluation cible/ancetres. StartXY/StartMoved transportent maintenant leur transform initial dans la commande Start elle-meme : plusieurs racines partageant le meme DataId et la meme priorite conservent donc des positions independantes comme LE_SEQNCR_StartXY, au lieu qu un MoveMatching ulterieur deplace tous les doublons. Restent surtout labels generiques, model, callbacks et chains selon callers reels. |
+| `Source/artlib/L_Seqncr.*` | `LegacySequence`, `SequenceClock`, `SequenceChildSchedule`, `SequenceProgram`, `SequenceRuntime`, `SequenceCommandQueue`, `SequenceTransforms`, `SequenceRenderData`, `SequenceBitmapRenderData` | `PORTED_PARTIAL` | records, arbre runtime, lifecycle, commandes actives, transformations/tweekers, mesh choice, feuilles 2D/3D/audio | `LegacyChunkReader`, DATA, `MeshRuntime`, `SequenceWorld3DSlot`, `SequenceWorld2DSlot` | Grouping/indirect/tweeker, feuilles mesh 3D, feuilles bitmap 2D, records Sound WAV et records camera 3D sont executes; Start/Stop/SetEndingAction, MoveTheWorks/MoveXY/MoveRySTxz et SetCamera sont raccordes. `GetInfo` expose le sous-ensemble effectivement lu par Monopoly (clock/endTime/matrice monde 3D) avec la recherche `FindNextSequence`, et `GetChildMeshWorldMatrix` parcourt uniquement le sous-arbre du premier root selectionne. ForceRedraw est porte avec son cycle transitoire de redraw et la reevaluation cible/ancetres. StartXY/StartMoved transportent maintenant leur transform initial dans la commande Start elle-meme : plusieurs racines partageant le meme DataId et la meme priorite conservent donc des positions independantes comme LE_SEQNCR_StartXY, au lieu qu un MoveMatching ulterieur deplace tous les doublons. Restent surtout le raccord video/preloader vers `VideoRuntime`, puis labels generiques, model, callbacks et chains selon callers reels. |
 | `Source/artlib/L_Fonts.*`, `L_Print.*` | `FontRuntime`, SDL3_ttf | `PORTED_PARTIAL` | Arial, mesure largeur/hauteur, rendu texte, taille, poids/styles et 10 slots de reglages | SDL3_ttf, font systeme/fichier explicite, LANG, futurs overlays 2D | `FontRuntime` porte maintenant le sous-contrat source utile : resolution explicite de `Arial.ttf`, mesure UTF-8 avec le `+1` de largeur retail, rasterisation non antialiasée `TTF_RenderText_Solid` vers RGBA8, taille, poids traduit en regular/bold, italic/underline/strikeout et 10 snapshots de reglages. `Engine::fontPlayback` recherche Arial d abord pres de l executable puis dans `%WINDIR%/Fonts` sous Windows sans imposer ce fallback aux autres plateformes. `AuctionTextPlayback` est maintenant le premier ecran complet hors dialogue Load/Save a consommer ce backend : current-bid, noms, mises et cash passent par des surfaces runtime. `MoneyFormat` fournit en plus le formateur monetaire source-backed reutilisable par les prochains ecrans. `FontRuntime::wrap` reproduit maintenant le coeur de `UDChat.cpp::CHAT_WordWrap` avec mesure du font courant, preference des espaces, hard-break UTF-8 quand un mot ne tient pas et marqueur `_` non cassable; `TradePanelTextPlayback` en est le premier consommateur. Les slots partages 0/7/8/9 sont derives du baseline retail (Arial 12/700) dans `Engine::fontPlayback`. `UDTrade` consomme maintenant le backend pour leftpanel, NameA/B, les quatre cash boxes et `rightpanel` Future/Immunity via le slot 7, et l IBar pour noms/cash des score boxes. Le panneau contrat ajoute le texte localise, la liste selectionnable et Okay; `TradeContractTextPlaybackTests` valide maintenant la surface 200x225 a (600,0), la priorite 148, le highlight bleu retail, les revisions bitmap sans Stop/Start, le basculement Future/Immunity, l expansion mode 3, le retrait et les echecs transactionnels. `FontRuntime` est maintenant aussi consomme par les surfaces WIP `UDStats`, `UDChat`, `UDPsel`, `UDOpts` et `IBarRuntimeTextPlayback`; les tests cibles valident le rendu glyphes/metriques et les wrappers Chat/UDPsel separes. Restent les surfaces UI encore non portees et les differences fines de metriques GDI/FreeType. |
-| `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer` partiel | `REPLACED_PORTABLE` | input clavier/souris | SDL3, `LogicalViewport` | Souris reconvertie vers 800x600 et bandes noires rejetees; rendu du pointeur et certains types d'evenements restent partiels. |
+| `Source/artlib/L_Keybrd.*`, `L_Mouse.*` | traduction SDL dans `Application`, `MousePointer`, `MousePointerPlayback` | `REPLACED_PORTABLE` | input clavier/souris, pointeur ArtLib, curseur texte Chat | SDL3, `LogicalViewport`, `SequencePlayback` | Souris reconvertie vers 800x600 et bandes noires rejetees. `TAB_pointer` DAT_MAIN est maintenant rendu dans Overlay2D a la priorite retail `0xFFFF`, suit les coordonnees logiques par Move sans redemarrage, disparait quand la souris est desactivee et laisse un fallback natif tant que la ressource n'est pas prete. Le champ d'edition Chat bascule sur un I-beam natif et restaure le pointeur de jeu selon le drag/clic retail. Restent seulement les types d'evenements legacy non encore requis par les callers modernes. |
 | `Source/artlib/L_Sound.*`, `L_Midi.*` | `AudioRuntime`, `UDSoundRuntime`, `VoiceChatRuntime`, `VoiceChatPacket`, feuilles Sound de `SequenceRuntime`, `Engine` | `PORTED_PARTIAL` | WAV DAT, playback SDL3, gain, stop, boucle, lifecycle des sons de sequence/SFX Monopoly et protocole de sessions voice-chat | `LegacyDataArchive`, `LegacySequence`, SDL3 audio, Messaging | `AudioRuntime` lit directement les RIFF/WAVE DAT via `SDL_LoadWAV_IO`; les records Sound de `L_Seqncr` sont executes. `UDSoundRuntime` reutilise ce backend pour Warning/Click/Cash, musique m1..m5, Credits et voix de pions/Pennybags. Le sous-contrat ArtLib voice-chat est maintenant engage : framing `CHAT/fmt/dims/volm/DATN/DAT1/POSN/STOP`, validation en deux passes, limite retail de 10 sessions receveuses, sourceId et dequeue prioritaire pendant les locks de jeu. `VoiceChatAudioRuntime` ajoute maintenant le chemin PCM portable : capture par `SDL_AUDIO_DEVICE_DEFAULT_RECORDING` avec conversion SDL vers 11025 Hz/8 bits/mono, seuil de silence retail 0.05, silence max 6 s, herald 20 ticks, collecte post-silence 120 ticks, emission CHAT/DAT1/DATN/STOP, reception PCM par source et cut/flush sur DAT1. `VoiceChatPacket` encode aussi les chunks sortants et impose la limite UNS16/64K du callback retail. Le codec GSM 6.10 est maintenant branche sur `libgsm` avec `GSM_OPT_WAV49`; les valeurs Microsoft du format 11025 Hz sont reproduites (`nAvgBytesPerSec=2239`, `nBlockAlign=65`, 320 samples/block), les deux frames WAV49 32+33 octets sont encodees et les blocs entrants 65 octets sont decodes en PCM 8 bits avant SDL3. La dependance est epinglee au commit `98f1708fb5e06a0dfebd58a3b40d610823db9715` et conserve sa notice Degener/Bormann. L owner reseau vocal TCP est maintenant implemente et peut activer la capture; sa qualification reste ouverte. Restent MIDI, attributs audio avances et quelques commentaires Pennybags. |
 | `Source/artlib/L_Video.*` | `VideoRuntime` | `PORTED_PARTIAL` | contrat AVI consomme par le sequenceur : metadata `avih`, status current/desired/total frames, loop/end sentinel, cut-to-frame et alternatives de saut | futur decoder video portable, SequencePlayback | La famille est engagee sans porter VFW/ICM/DirectDraw : `VideoRuntime` parse le conteneur RIFF AVI de facon borne/LE, valide `avih` (frame duration/count/dimensions), porte le status historique, le calcul frame<-temps, `StopVideo`, `CutVideoToFrame`, loop-at-end et les alternatives DecisionFrame/JumpToFrame. Le decodage pixels/audio et le raccordement des opcodes video de `L_Seqncr` restent a faire avant lecture effective des opening movies. |
 
@@ -510,16 +510,16 @@ Les effets son/callbacks et les objets sequence non encore consommes restent
 explicitement partiels. La visibility 3D a ete auditee : le renderer original
 renvoie toujours TRUE a `SequenceMoved`, donc aucun feedback de culling n est ajoute.
 
-### Validation courante au 16 septembre 2026
+### Validation historique au 16 septembre 2026
 
 Apres le raccord final du lot `UDOpts` Load/Save, la cible **Debug `MonopolyModern` compile PASS** avec MSVC/Visual Studio 18 2026 et SDL 3.4.14. La nouvelle cible `MonopolyOptionsSaveRuntimeTests` compile egalement PASS.
 
-Le CTest cible `Monopoly.OptionsSaveRuntime` est **1/1 PASS**. La campagne globale courante est **106/106 PASS, 0 echec**, executee le 16 septembre 2026 apres le raccord des cinq slots, de la persistance `.msv/.sgd`, du playback du dialogue et des corrections de pending-save. Elle remplace comme preuve courante l ancien snapshot 103/103.
+Le CTest cible `Monopoly.OptionsSaveRuntime` est **1/1 PASS**. La campagne globale de ce snapshot est **106/106 PASS, 0 echec**, executee le 16 septembre 2026 apres le raccord des cinq slots, de la persistance `.msv/.sgd`, du playback du dialogue et des corrections de pending-save. Elle remplace, pour ce snapshot historique, l ancien resultat 103/103.
 
 Les lots `VoiceChatAudioRuntime`, `AuctionTextPlayback`/`MoneyFormat`, les surfaces texte Trade/IBar et `FontRuntime::wrap`, ainsi que le correctif du generateur de progression ont
-ete codes **apres** cette campagne. Conformement a la consigne courante, aucune
-compilation ni aucun test n'est attribue a ces changements; 106/106 reste donc
-la derniere preuve globale, pas une validation du HEAD suivant.
+ete codes **apres** cette campagne. Conformement a la consigne alors en vigueur, aucune
+compilation ni aucun test n'etait attribue a ces changements; 106/106 reste donc
+la preuve propre au snapshot du 16 septembre, et non une validation du HEAD actuel.
 
 La premiere tentative de build parallele de cette campagne a rencontre une contention MSVC `C1041` sur le PDB parce qu une execution precedente et une relance se chevauchaient. Apres arret de ce doublon, le build mono-job a termine normalement; ce point est un artefact d orchestration locale et non un echec du code du port.
 
@@ -638,23 +638,70 @@ au shader texture actuel. Les DAT/HMD retail exacts restent absents, donc les
 fixtures synthetiques prouvent les contrats source mais pas un contenu retail
 indisponible.
 
-## Validation du checkpoint du 23 septembre 2026
+## Mise a jour et validation du checkpoint du 23 septembre 2026
 
-Le chemin **UDOpts Load Board / custom board** est maintenant porte de bout en bout sans supprimer les gardes du binaire original : le bouton UDPSEL ouvre `custbrds`, l inventaire est limite et page par cinq, le DWORD de securite du `.brd` est compare au `Version` REG_BINARY de l editeur installe, puis le board valide bascule `city=-1` vers son repertoire d assets. En Europe, la devise custom revient au defaut de la langue (`iLangId - 2`) comme dans `UDOpts.cpp`, au lieu de reutiliser la ville selectionnee avant Load Board.
+Depuis le checkpoint du 20 septembre, le travail a porte principalement sur la
+fermeture des chemins UI visibles et sur l engagement des dernieres familles
+legacy encore non demarrees. `833f414` valide le runtime texte partage;
+`4ab3ecd` ferme le chemin **UDOpts Load Board / custom board** de bout en bout :
+inventaire `custbrds`, pagination, verification du DWORD de securite de
+l editeur, `city=-1`, `customRoot` 2D/3D et invalidation transactionnelle des
+caches. Les 39 BMP `2DBoards` sont prevalides avant publication; Trade et
+Portfolio conservent le petit board stock comme le retail.
 
-Le rendu 2D accepte maintenant le sentinel custom dans `BoardBackdropPlayback` : les 39 BMP `2DBoards` sont prevalides avant publication, les buffers Main sont caches par `(customRoot,camera)`, et Trade/Portfolio conservent le petit board stock comme le code retail. Le chemin 3D conserve le `customRoot` deja transporte par `TextureCatalog`/`SequencePlayback`. Les changements de root invalident bien le cache et les chemins invalides echouent avant mutation visible.
+Le texte runtime a ensuite ete consolide sur plusieurs ecrans : `357a9d4`
+valide le panneau Trade Future/Immunity; `f485145` ajoute le panneau texte
+Future/Immunity de `UDStats`; `fbf3098` porte le texte du floater Deed et
+`24fa571` les valeurs numeriques des barres Deed. `09658b8` raccorde aussi le
+pointeur `TAB_pointer` a Overlay2D et le curseur I-beam du champ Chat, avec
+fallback natif et transitions transactionnelles.
 
-Deux suites dediees verrouillent le runtime et le playback du dialogue custom (geometrie retail, tri, pagination, validation ownership, surfaces texte, transitions Stop/Start et atomicite). La fixture `UserInterfaceRouting` a aussi ete corrigee pour cliquer le centre des onglets : les rectangles File/Option se chevauchent volontairement sur leur bord et `left+1` testait en realite File. Enfin, `MonopolyStatsDeedBarPlaybackTests` recupere la dependance SDL3_ttf qui manquait a son target CMake.
+Enfin, `a797312` engage les trois dernieres familles de la matrice :
+`L_voice.cpp` via `VoiceChatLegacyContract`, `Debugart.cpp` via
+`DebugDialogs` et `L_Video.*` via `VideoRuntime`. Le dernier lot ne pretend
+pas fermer ces familles : la voix conserve des qualifications device/reseau,
+`ErrorExit` reste sans caller actif, et la video n a encore ni decodeur
+pixels/audio ni raccordement aux opcodes video du sequenceur.
 
-Validation locale MSVC/Windows du checkpoint custom-board puis du lot Trade contract text : reconstruction complete `Debug` de `modern/build` reussie, puis **119/119 suites CTest passees**, zero echec. Cette preuve utilise les fixtures disponibles; elle ne remplace pas un essai avec un vrai Board Editor installe, son registre `Version`, un pack `custbrds` retail reel ni la qualification visuelle du rightpanel avec les DAT retail.
+La preuve executable courante est maintenant **126/126 suites CTest passees,
+zero echec** sur Windows/MSVC Debug apres le lot `a797312`. Elle remplace le
+checkpoint intermediaire 119/119 comme preuve du HEAD actuel. Les controles
+Git de fin de lot sont propres et `Source/` n a pas ete modifie.
 
-## Prochaines priorites
+Etat structurel courant : **41/41 familles engagees = 100 %**, **63 % d indice
+automatique**, soit 18 entrees completes/remplacees, 50 partielles et
+0 non demarree. Ces nombres ne signifient pas que le portage global est termine :
+le dernier audit fonctionnel global reste le snapshot historique **75 % du
+14 septembre** tant qu un nouvel audit fonctionnel du HEAD n a pas ete mene.
 
-1. Qualifier **GIS-8 dans l application reelle** avec les DAT/HMD retail, deux processus puis deux machines et des peripheriques audio physiques : capture GSM/PCM, DAT1/DATN, playback, arrivee tardive, locks et deconnexion. Le transport loopback et les chemins audio SDL dummy sont verifies separement; ils ne remplacent pas cette preuve integree.
-2. Qualifier visuellement les substitutions **GIS-9** sur les assets retail : changement USA ville 1 -> 2 sans changement de DataId, Europe langue/plateau/devise et maintien des UV. Le raccord `TextureCatalog -> ResourcePaths/BMP -> mesh` est implemente et ses contrats CPU sont testes.
+Les DAT/HMD retail exacts restent absents de cette preuve. Elle ne remplace donc
+ni une partie complete avec contenu retail, ni la qualification visuelle des
+plateaux/menus, ni un essai voice-chat entre machines avec peripheriques audio
+physiques, ni un essai custom-board avec un vrai Board Editor et ses assets.
 
-L audit **GIS-10** est termine : les types HMD consommes par les callers actifs
-sont deja portes. N ajouter un autre decodeur qu avec une nouvelle preuve de
-caller ou de contenu; reset/joint MIMe et primitives inactives restent exclus.
+## Prochaines priorites requalifiees
 
-Les anciens blocages transverses **FontRuntime/GRAFIX texte** sont maintenant engages et valides sur les surfaces WIP de `UDStats`, `UDChat`, `UDPsel`, `UDOpts` et IBar. Les prochains chantiers restent les surfaces UI non encore couvertes et les dependances de `UDOpts` (Credits visuel, Quick/Full Help) avec leurs owners respectifs. Le chemin custom-board externe n est plus un blocage logique; sa qualification avec Board Editor et assets retail reels reste a faire. Le `rightpanel` Future/Immunity est deja implemente.
+1. **Recalculer l audit fonctionnel global du HEAD.** L engagement des familles
+   est termine; le prochain indicateur utile est maintenant l inventaire des
+   50 entrees `PORTED_PARTIAL` classees par impact sur un parcours de partie
+   reel. Ne pas extrapoler le 75 % historique ni le 63 % structurel.
+2. **Fermer d abord les manques visibles sur le parcours jouable**, en suivant
+   cet audit : surfaces 2D/GRAFIX encore partielles, popup calculateur
+   `UDStats`, datasets Bank externes/Account History lorsqu ils ont un owner
+   moderne, puis les phases `UDPsel` encore non auditees. Les chemins
+   `UDOpts` Credits, Quick Help, Full Help et custom-board sont maintenant
+   implementes; ils passent de priorites de portage a priorites de qualification.
+3. **Completer le chemin video ArtLib** si la parite retail des opening movies
+   reste dans la cible : raccorder `L_Seqncr` a `VideoRuntime`, decoder et
+   presenter les frames/audio, puis valider timing, loop, cut et alternatives.
+   Le parseur AVI/status seul ne constitue pas une lecture video effective.
+4. **Conserver GIS-8 et GIS-9 comme chantiers de qualification integree** :
+   GIS-8 avec deux processus puis deux machines et audio physique; GIS-9 avec
+   assets retail pour les changements USA/Europe, devise/langue et maintien des
+   UV. Le custom-board rejoint ce lot de qualification avec Board Editor reel.
+   **GIS-10 reste clos** tant qu aucun nouveau caller ou contenu HMD ne prouve
+   qu un type supplementaire doit etre decode.
+
+Les travaux `LEGACY_UNUSED` et les primitives HMD sans caller restent hors
+priorite. Les differences fines GDI/FreeType ne doivent etre traitees qu apres
+les ecarts fonctionnels et visuels reproductibles.
