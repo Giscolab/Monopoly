@@ -50,6 +50,7 @@
 #include "StatsPlayerCashPlayback.hpp"
 #include "StatsPlayerAuxPlayback.hpp"
 #include "StatsFutureImmunityPlayback.hpp"
+#include "StatsFutureImmunityTextPlayback.hpp"
 #include "StatsDeedPlayback.hpp"
 #include "StatsDeedFloaterPlayback.hpp"
 #include "StatsDeedBarPlayback.hpp"
@@ -149,6 +150,7 @@ namespace monopoly::engine
         statsui::PlayerCashPlayback statsPlayerCashPlayback;
         statsui::PlayerAuxPlayback statsPlayerAuxPlayback;
         statsui::FutureImmunityPlayback statsFutureImmunityPlayback;
+        statsui::FutureImmunityTextPlayback statsFutureImmunityTextPlayback;
         statsui::DeedPlayback statsDeedPlayback;
         statsui::DeedFloaterPlayback statsDeedFloaterPlayback;
         statsui::DeedBarPlayback statsDeedBarPlayback;
@@ -1660,6 +1662,14 @@ namespace monopoly::engine
             if (!statsFutureImmunitySync)
                 return SDL_SetError("UDStats Future/Immunity playback: %s",
                     statsFutureImmunitySync.error().c_str());
+            const auto statsFutureImmunityTextSync =
+                statsFutureImmunityTextPlayback.sync(
+                    userinterface::statsFutureImmunityStateReadOnly(), ruleState,
+                    displayState.desired2DView, displayState.city,
+                    fontPlayback(), *session);
+            if (!statsFutureImmunityTextSync)
+                return SDL_SetError("UDStats Future/Immunity text playback: %s",
+                    statsFutureImmunityTextSync.error().c_str());
             const auto statsDeedSync = statsDeedPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
@@ -1987,6 +1997,7 @@ namespace monopoly::engine
         statsPlayerCashPlayback.reset();
         statsPlayerAuxPlayback.reset();
         statsFutureImmunityPlayback.reset();
+        statsFutureImmunityTextPlayback.reset();
         statsDeedPlayback.reset();
         statsDeedFloaterPlayback.reset();
         statsDeedBarPlayback.reset();
