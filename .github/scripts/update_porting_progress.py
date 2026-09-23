@@ -1,157 +1,156 @@
 from __future__ import annotations
 
 import argparse
-import re
-from collections import Counter
+import html
 from pathlib import Path
 
-STATUSES = {
-    "PORTED_COMPLETE",
-    "REPLACED_PORTABLE",
-    "PORTED_PARTIAL",
-    "NOT_STARTED",
-    "BLOCKED_MISSING_DATA",
-    "MISSING_TOOLING",
-    "LEGACY_UNUSED",
-}
-ACTIVE = (
-    "PORTED_COMPLETE",
-    "REPLACED_PORTABLE",
-    "PORTED_PARTIAL",
-    "NOT_STARTED",
-)
-FAMILY_SECTIONS = {"Jeu Monopoly", "Services ArtLib consommes"}
+from porting_metrics import Metrics, format_percent, load_metrics
 
 
-def parse_status(path: Path) -> tuple[Counter[str], Counter[str], str]:
-    counts: Counter[str] = Counter()
-    family_counts: Counter[str] = Counter()
-    section = ""
-    text = path.read_text(encoding="utf-8-sig")
-    for line in text.splitlines():
-        if line.startswith("## "):
-            section = line[3:].strip()
-            continue
-        cells = line.split("|")
-        if not line.startswith("|") or len(cells) < 5:
-            continue
-        status = cells[3].strip().strip("`")
-        if status not in STATUSES:
-            continue
-        counts[status] += 1
-        if section in FAMILY_SECTIONS:
-            family_counts[status] += 1
-    return counts, family_counts, text
-
-
-def functional_estimate(text: str) -> float:
-    # This percentage is manually audited. Accept both an undated marker and
-    # dated audit snapshots; never silently turn a wording change into 0%.
-    matches = list(re.finditer(
-        r"Progression fonctionnelle estim(?:ee|\u00e9e)"
-        r"(?:\s+au\s+[^:\r\n]+)?\s*:\s*"
-        r"(?:environ\s*)?([0-9]+(?:[.,][0-9]+)?)\s*%",
-        text,
-        flags=re.IGNORECASE,
-    ))
-    if not matches:
-        raise ValueError(
-            "PORTING_STATUS.md has no audited functional estimate; "
-            "refusing to render a misleading 0%"
-        )
-    return float(matches[-1].group(1).replace(",", "."))
-
-
-def calculate_index(counts: Counter[str]) -> tuple[int, int, int]:
-    active = sum(counts[status] for status in ACTIVE)
-    done = counts["PORTED_COMPLETE"] + counts["REPLACED_PORTABLE"]
-    index = (
-        (done * 100 + counts["PORTED_PARTIAL"] * 50) // active
-        if active
-        else 0
+def metric_rows(metrics: Metrics) -> list[tuple[str, float, str, str]]:
+    tests_value = metrics.ctest_percent if metrics.ctest_percent is not None else 0.0
+    tests_detail = (
+        f"{metrics.ctest_passed}/{metrics.ctest_total} suites documentees"
+        if metrics.ctest_total
+        else "aucune preuve CTest courante documentee"
     )
-    return index, active, done
+    return [
+        (
+            "Dernier audit fonctionnel",
+            metrics.functional_percent,
+            f"snapshot {metrics.functional_label}",
+            "#2da44e",
+        ),
+        (
+            "Familles engagees",
+            metrics.family_percent,
+            f"{metrics.family_engaged}/{metrics.family_active} familles actives",
+            "#0969da",
+        ),
+        (
+            "Indice automatique",
+            float(metrics.mechanical_index),
+            f"{metrics.done} closes + {metrics.partial} partielles / {metrics.active} actives",
+            "#8250df",
+        ),
+        (
+            "Entrees closes",
+            metrics.closed_percent,
+            f"{metrics.done}/{metrics.active} completes ou remplacees",
+            "#bf8700",
+        ),
+        (
+            "Tests documentes",
+            tests_value,
+            tests_detail,
+            "#1f883d",
+        ),
+    ]
 
 
-def calculate_family_engagement(counts: Counter[str]) -> tuple[float, int, int]:
-    active = sum(counts[status] for status in ACTIVE)
-    engaged = active - counts["NOT_STARTED"]
-    percent = (engaged * 100.0 / active) if active else 0.0
-    return percent, active, engaged
+def render_svg(metrics: Metrics) -> str:
+    width = 760
+    height = 274
+    label_x = 18
+    bar_x = 260
+    bar_width = 390
+    percent_x = 738
+    top = 48
+    row_height = 40
 
-
-def format_percent(value: float) -> str:
-    rounded = round(value, 1)
-    if rounded.is_integer():
-        return f"{int(rounded)}%"
-    return f"{rounded:.1f}%"
-
-
-def render_svg(functional: float, families: float, index: int) -> str:
-    width = 600
-    metrics = (
-        ("Dernier audit fonctionnel", functional, "#2da44e"),
-        ("Familles engagees", families, "#0969da"),
-        ("Indice mecanique", float(index), "#8250df"),
-    )
     rows: list[str] = []
-    for row, (label, value, colour) in enumerate(metrics):
+    for row, (label, value, detail, colour) in enumerate(metric_rows(metrics)):
         value = max(0.0, min(value, 100.0))
-        y = 12 + row * 42
-        filled = round(width * value / 100.0)
+        y = top + row * row_height
+        fill_width = round(bar_width * value / 100.0)
         percent = format_percent(value)
-        rows.append(
-            f'  <text x="10" y="{y + 12}" font-family="Arial, sans-serif" '
-            f'font-size="13" font-weight="700" fill="#24292f">{label}</text>'
-        )
-        rows.append(
-            f'  <text x="610" y="{y + 12}" text-anchor="end" font-family="Arial, sans-serif" '
-            f'font-size="13" font-weight="700" fill="#24292f">{percent}</text>'
-        )
-        rows.append(
-            f'  <rect x="10" y="{y + 18}" width="600" height="14" rx="7" fill="#d0d7de"/>'
-        )
-        rows.append(
-            f'  <rect x="10" y="{y + 18}" width="{filled}" height="14" rx="7" fill="{colour}"/>'
+        rows.extend(
+            [
+                (
+                    f'  <text x="{label_x}" y="{y + 12}" '
+                    'font-family="Arial, sans-serif" font-size="13" '
+                    f'font-weight="700" fill="#24292f">{html.escape(label)}</text>'
+                ),
+                (
+                    f'  <text x="{label_x}" y="{y + 27}" '
+                    'font-family="Arial, sans-serif" font-size="10.5" '
+                    f'fill="#57606a">{html.escape(detail)}</text>'
+                ),
+                (
+                    f'  <rect x="{bar_x}" y="{y + 8}" width="{bar_width}" '
+                    'height="16" rx="8" fill="#d0d7de"/>'
+                ),
+                (
+                    f'  <rect x="{bar_x}" y="{y + 8}" width="{fill_width}" '
+                    f'height="16" rx="8" fill="{colour}"/>'
+                ),
+                (
+                    f'  <text x="{percent_x}" y="{y + 21}" text-anchor="end" '
+                    'font-family="Arial, sans-serif" font-size="13" '
+                    f'font-weight="700" fill="#24292f">{percent}</text>'
+                ),
+            ]
         )
 
-    aria = (
-        f"Last audited functional {format_percent(functional)}, "
-        f"families engaged {format_percent(families)}, mechanical {index}%"
+    footer = (
+        f"{metrics.partial} PARTIAL  |  {metrics.not_started} NOT_STARTED  |  "
+        f"{metrics.counts['BLOCKED_MISSING_DATA']} BLOCKED_DATA  |  "
+        f"{metrics.counts['MISSING_TOOLING']} MISSING_TOOLING  |  "
+        f"{metrics.counts['LEGACY_UNUSED']} LEGACY_UNUSED"
     )
+    aria = (
+        f"Functional audit {format_percent(metrics.functional_percent)}, "
+        f"families engaged {format_percent(metrics.family_percent)}, "
+        f"mechanical index {metrics.mechanical_index} percent, "
+        f"closed entries {format_percent(metrics.closed_percent)}"
+    )
+    if metrics.ctest_percent is not None:
+        aria += f", documented tests {format_percent(metrics.ctest_percent)}"
+
     body = "\n".join(rows)
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="620" height="140" viewBox="0 0 620 140" role="img" aria-label="{aria}">
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(aria)}">
   <title>Monopoly modern porting progress</title>
+  <rect width="{width}" height="{height}" rx="12" fill="#f6f8fa"/>
+  <text x="18" y="25" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#24292f">Monopoly modern - tableau de bord du portage</text>
+  <text x="738" y="25" text-anchor="end" font-family="Arial, sans-serif" font-size="10.5" fill="#57606a">mesures automatiques + dernier audit manuel</text>
 {body}
+  <line x1="18" y1="250" x2="742" y2="250" stroke="#d8dee4"/>
+  <text x="18" y="267" font-family="Arial, sans-serif" font-size="10.5" fill="#57606a">{html.escape(footer)}</text>
 </svg>
 """
 
 
-def write_summary(
-    path: Path,
-    counts: Counter[str],
-    functional: float,
-    families: float,
-    family_active: int,
-    family_engaged: int,
-    index: int,
-    active: int,
-    done: int,
-) -> None:
+def write_summary(path: Path, metrics: Metrics) -> None:
     with path.open("a", encoding="utf-8") as stream:
         stream.write("## Porting progress\n")
-        stream.write(f"- **Last audited functional estimate**: {format_percent(functional)}\n")
         stream.write(
-            f"- **Families engaged**: {format_percent(families)} "
-            f"({family_engaged} / {family_active})\n"
+            f"- **Last audited functional estimate**: "
+            f"{format_percent(metrics.functional_percent)} "
+            f"({metrics.functional_label})\n"
         )
-        stream.write(f"- **Mechanical index**: {index}%\n")
-        stream.write(f"- **Complete / replacements**: {done} / {active}\n")
-        stream.write(f"- **Partial**: {counts['PORTED_PARTIAL']}\n")
-        stream.write(f"- **Not started**: {counts['NOT_STARTED']}\n\n")
         stream.write(
-            "> The functional value is the latest explicitly audited estimate read from PORTING_STATUS; family engagement and the "
-            "mechanical index are calculated automatically from matrix statuses.\n"
+            f"- **Families engaged**: {format_percent(metrics.family_percent)} "
+            f"({metrics.family_engaged} / {metrics.family_active})\n"
+        )
+        stream.write(f"- **Mechanical index**: {metrics.mechanical_index}%\n")
+        stream.write(
+            f"- **Closed entries**: {format_percent(metrics.closed_percent)} "
+            f"({metrics.done} / {metrics.active})\n"
+        )
+        stream.write(f"- **Partial entries**: {metrics.partial}\n")
+        stream.write(f"- **Not started**: {metrics.not_started}\n")
+        if metrics.ctest_total:
+            stream.write(
+                f"- **Documented CTest proof**: "
+                f"{metrics.ctest_passed}/{metrics.ctest_total} "
+                f"({format_percent(metrics.ctest_percent or 0.0)})\n"
+            )
+        stream.write("\n")
+        stream.write(
+            "> Functional progress is manual/audited. Family engagement, "
+            "mechanical index and closed-entry ratio are calculated from the "
+            "matrix. The CTest ratio is the latest current proof explicitly "
+            "documented in PORTING_STATUS; it is not a fidelity score.\n\n"
         )
 
 
@@ -162,35 +161,29 @@ def main() -> int:
     parser.add_argument("--summary", type=Path)
     args = parser.parse_args()
 
-    counts, family_counts, text = parse_status(args.status_file)
-    functional = functional_estimate(text)
-    index, active, done = calculate_index(counts)
-    families, family_active, family_engaged = calculate_family_engagement(
-        family_counts
-    )
+    _rows, _text, metrics = load_metrics(args.status_file)
 
     args.svg_file.parent.mkdir(parents=True, exist_ok=True)
     args.svg_file.write_text(
-        render_svg(functional, families, index), encoding="utf-8", newline="\r\n"
+        render_svg(metrics), encoding="utf-8", newline="\r\n"
     )
     if args.summary is not None:
-        write_summary(
-            args.summary,
-            counts,
-            functional,
-            families,
-            family_active,
-            family_engaged,
-            index,
-            active,
-            done,
-        )
+        write_summary(args.summary, metrics)
 
+    tests = (
+        f"{metrics.ctest_passed}/{metrics.ctest_total}"
+        if metrics.ctest_total
+        else "n/a"
+    )
     print(
-        f"FUNCTIONAL={format_percent(functional)} "
-        f"FAMILIES={format_percent(families)} ({family_engaged}/{family_active}) "
-        f"INDEX={index}% ACTIVE={active} DONE={done} "
-        f"PARTIAL={counts['PORTED_PARTIAL']} NOT_STARTED={counts['NOT_STARTED']}"
+        f"FUNCTIONAL={format_percent(metrics.functional_percent)} "
+        f"FAMILIES={format_percent(metrics.family_percent)} "
+        f"({metrics.family_engaged}/{metrics.family_active}) "
+        f"INDEX={metrics.mechanical_index}% "
+        f"CLOSED={format_percent(metrics.closed_percent)} "
+        f"({metrics.done}/{metrics.active}) "
+        f"PARTIAL={metrics.partial} NOT_STARTED={metrics.not_started} "
+        f"CTEST={tests}"
     )
     return 0
 

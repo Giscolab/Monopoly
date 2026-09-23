@@ -1,4 +1,4 @@
-name: Update Progress Stats
+name: Porting Audit and Validation
 
 on:
   push:
@@ -7,39 +7,124 @@ on:
     paths:
       - 'modern/**'
       - '!modern/porting-progress.svg'
-      - '.github/scripts/update_porting_progress.py'
+      - '!modern/PORTING_AUDIT.md'
+      - '.github/scripts/**'
       - '.github/workflows/main.yml'
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight
-  workflow_dispatch:  # Manual trigger
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: porting-audit-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  calculate-progress:
+  audit:
+    name: Structural audit
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
 
-      - name: Calculate project progress
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Protect legacy and generated files
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.sha }}"
+          if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
+            exit 0
+          fi
+          changed="$(git diff --name-only "$before" "$after")"
+          forbidden="$(printf '%s\n' "$changed" | grep -E '^(Source/|modern/(porting-progress\.svg|PORTING_AUDIT\.md)$)' || true)"
+          if [[ -n "$forbidden" ]]; then
+            echo "Forbidden manual changes detected:"
+            printf '%s\n' "$forbidden"
+            exit 1
+          fi
+
+      - name: Test porting audit tools
+        run: python .github/scripts/test_porting_tools.py
+
+      - name: Generate structural audit
         run: >-
-          python3 .github/scripts/update_porting_progress.py
+          python .github/scripts/porting_audit.py
+          modern/PORTING_STATUS.md
+          modern
+          --strict
+          --report modern/PORTING_AUDIT.md
+          --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate enriched progress dashboard
+        run: >-
+          python .github/scripts/update_porting_progress.py
           modern/PORTING_STATUS.md
           modern/porting-progress.svg
           --summary "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit progress bar when changed
+      - name: Check generated diff
+        run: git diff --check
+
+      - name: Commit generated audit artifacts when changed
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- modern/porting-progress.svg; then
-            echo "Progress bar is already current."
+          if git diff --quiet -- modern/PORTING_AUDIT.md modern/porting-progress.svg; then
+            echo "Generated audit artifacts are already current."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add modern/porting-progress.svg
-          git commit -m "Update porting progress bar"
+          git add modern/PORTING_AUDIT.md modern/porting-progress.svg
+          git commit -m "Update automated porting audit"
           git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  windows-validation:
+    name: Windows build and CTest
+    needs: audit
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure Debug build
+        shell: pwsh
+        run: cmake -S modern -B modern/build-ci -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=ON
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build modern/build-ci --config Debug --parallel 2
+
+      - name: Run complete CTest suite
+        shell: pwsh
+        run: ctest --test-dir modern/build-ci -C Debug --output-on-failure
+
+      - name: Publish validation summary
+        if: success()
+        shell: pwsh
+        run: |
+          "## Windows validation" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- CMake configure: PASS" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- Debug build: PASS" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- Complete CTest suite: PASS" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Upload CTest log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-failure-log
+          path: modern/build-ci/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
