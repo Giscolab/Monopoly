@@ -537,8 +537,11 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/AudioRuntime.cpp
+    src/DebugDialogs.cpp
     src/Gsm610Codec.cpp
     src/VoiceChatAudioRuntime.cpp
+    src/VoiceChatLegacyContract.cpp
+    src/VideoRuntime.cpp
     src/MoneyFormat.cpp
     src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
@@ -1673,6 +1676,38 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME Monopoly.VoiceChatAudioRuntime COMMAND MonopolyVoiceChatAudioRuntimeTests)
     set_tests_properties(Monopoly.VoiceChatAudioRuntime PROPERTIES TIMEOUT 30)
+
+    add_executable(MonopolyVoiceChatLegacyContractTests
+        tests/VoiceChatLegacyContractTests.cpp
+        src/VoiceChatLegacyContract.cpp)
+    target_include_directories(MonopolyVoiceChatLegacyContractTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(MonopolyVoiceChatLegacyContractTests PRIVATE SDL3::SDL3)
+    if(MSVC)
+        target_compile_options(MonopolyVoiceChatLegacyContractTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.VoiceChatLegacyContract COMMAND MonopolyVoiceChatLegacyContractTests)
+
+    add_executable(MonopolyDebugDialogsTests
+        tests/DebugDialogsTests.cpp
+        src/DebugDialogs.cpp)
+    target_include_directories(MonopolyDebugDialogsTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(MonopolyDebugDialogsTests PRIVATE SDL3::SDL3)
+    if(MSVC)
+        target_compile_options(MonopolyDebugDialogsTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.DebugDialogs COMMAND MonopolyDebugDialogsTests)
+
+    add_executable(MonopolyVideoRuntimeTests
+        tests/VideoRuntimeTests.cpp
+        src/VideoRuntime.cpp)
+    target_include_directories(MonopolyVideoRuntimeTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(MonopolyVideoRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.VideoRuntime COMMAND MonopolyVideoRuntimeTests)
 endif()
 
 target_sources(

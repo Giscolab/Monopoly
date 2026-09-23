@@ -1,6 +1,7 @@
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
 #include "VoiceChatAudioRuntime.hpp"
+#include "VoiceChatLegacyContract.hpp"
 #include "VoiceChatRuntime.hpp"
 #include "Messaging.hpp"
 #include "FontRuntime.hpp"
@@ -919,12 +920,9 @@ namespace monopoly::engine
 
         const auto& voiceOptions =
             userinterface::ruleStateReadOnly().options.voiceChat;
-        voicechat::AudioRuntime::Settings settings{};
-        if (voiceOptions.compressorName == L"GSM 6.10")
-            settings.codec = voicechat::AudioRuntime::Codec::Gsm610;
-        else if (voiceOptions.compressorName == L"No Compression")
-            settings.codec = voicechat::AudioRuntime::Codec::Pcm;
-        else
+        const auto settings =
+            voicechat::legacy::captureSettings(voiceOptions);
+        if (!settings)
             return false;
 
         auto* output = audioPlayback();
@@ -943,7 +941,7 @@ namespace monopoly::engine
             return false;
         }
 
-        const auto started = voiceChatAudioRuntime->startCapture(settings);
+        const auto started = voiceChatAudioRuntime->startCapture(*settings);
         if (!started)
         {
             std::cerr << "Voice chat capture unavailable: "
