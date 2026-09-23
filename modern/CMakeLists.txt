@@ -564,7 +564,34 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/MousePointer.cpp
+    src/MousePointerPlayback.cpp
 )
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyMousePointerPlaybackTests
+        tests/MousePointerPlaybackTests.cpp
+        src/MousePointer.cpp
+        src/MousePointerPlayback.cpp
+    )
+    target_include_directories(
+        MonopolyMousePointerPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyMousePointerPlaybackTests PRIVATE MonopolyDataCore SDL3::SDL3
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyMousePointerPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.MousePointerPlayback
+        COMMAND MonopolyMousePointerPlaybackTests
+    )
+endif()
 
 target_sources(
     MonopolyModern

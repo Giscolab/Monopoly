@@ -74,6 +74,8 @@
 #include "StatsTextPlayback.hpp"
 #include "PlayerSelection.hpp"
 #include "PlayerSelectionPlayback.hpp"
+#include "MousePointer.hpp"
+#include "MousePointerPlayback.hpp"
 #include "RuleCards.hpp"
 #include "IBarBackdropPlayback.hpp"
 #include "EscapeConfirmationPlayback.hpp"
@@ -179,6 +181,9 @@ namespace monopoly::engine
         optionsui::VisualPlayback optionsVisualPlayback;
         statsui::TextPlayback statsTextPlayback;
         playerselection::PlayerSelectionPlayback playerSelectionPlayback;
+        mouse::Playback mousePointerPlayback;
+        mouse::NativeCursor nativeMouseCursor;
+        bool mousePointerErrorReported{};
         std::optional<statsui::AccountRuntime> statsAccountRuntime;
         bool diceQueueLockHeld{};
         std::optional<pieces::PieceIdleTransitionPlan> pendingPieceIdleTransition;
@@ -1908,6 +1913,31 @@ namespace monopoly::engine
             if (!ownershipSync)
                 return SDL_SetError("Board ownership playback: %s",
                     ownershipSync.error().c_str());
+
+            // L_Mouse/L_Seqncr used a top-level mouse grouping sequence that
+            // followed the logical 800x600 pointer and temporarily yielded to
+            // the native I-beam over the UDChat edit field.
+            const auto pointerSync = mousePointerPlayback.sync(
+                mouse::stateReadOnly(), *session);
+            if (!pointerSync)
+            {
+                if (!mousePointerErrorReported)
+                    std::cerr << "Mouse pointer DAT playback unavailable: "
+                              << pointerSync.error() << '\n';
+                mousePointerErrorReported = true;
+            }
+            else
+            {
+                mousePointerErrorReported = false;
+            }
+            const auto nativeKind = (!pointerSync && mousePointerPlayback.visible())
+                ? mouse::NativeCursorKind::Hidden
+                : mouse::nativeCursorKind(
+                    mouse::stateReadOnly(), mousePointerPlayback.visible());
+            if (!nativeMouseCursor.sync(nativeKind))
+                return SDL_SetError("Mouse cursor synchronization failed: %s",
+                    SDL_GetError());
+
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             if (!audioDisabled)
@@ -2028,6 +2058,9 @@ namespace monopoly::engine
         optionsVisualPlayback.reset();
         statsTextPlayback.reset();
         playerSelectionPlayback.reset();
+        mousePointerPlayback.reset();
+        nativeMouseCursor.reset();
+        mousePointerErrorReported = false;
         display::cancelDiceCameraOverride();
         pendingPieceIdleTransition.reset();
         pieceIdleQueueLockHeld = false;

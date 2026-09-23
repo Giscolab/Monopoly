@@ -167,6 +167,9 @@ struct SyntheticSequenceResources
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0321] = {LegacyDataType::Chunky, bitmapSequence};
                 items[0x0322] = {LegacyDataType::Chunky, bitmapSequence};
+                // DISPLAY_initialize() installs DAT_MAIN/TAB_pointer (0x0323)
+                // as the looping ArtLib mouse child under priority 0xFFFF.
+                items[0x0323] = {LegacyDataType::Chunky, bitmapSequence};
                 // UDChat recipient colour buttons, All and selected focus overlays.
                 for (std::uint32_t tag = 0x00A8U; tag <= 0x00AEU; ++tag)
                     items[tag] = {LegacyDataType::Chunky, bitmapSequence};

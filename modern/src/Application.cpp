@@ -4,6 +4,8 @@
 #include "Game.hpp"
 #include "LogicalViewport.hpp"
 #include "Messaging.hpp"
+#include "MousePointer.hpp"
+#include "ChatRuntime.hpp"
 #include "TcpMessageTransport.hpp"
 #include "UIMessages.hpp"
 
@@ -75,8 +77,14 @@ namespace
     {
         const auto point = mouseToLogical(window, x, y);
 
+        if (type == monopoly::uimsg::Type::MouseLeftDown)
+            monopoly::mouse::setLeftDown(true);
+        else if (type == monopoly::uimsg::Type::MouseLeftUp)
+            monopoly::mouse::setLeftDown(false);
+
         if (!point.has_value())
         {
+            monopoly::mouse::updatePosition(-1, -1, false);
             // Un mouvement dans une bande noire doit retirer les hovers.
             // Les clics hors de la surface historique sont simplement ignores.
             if (type == monopoly::uimsg::Type::MouseMoved)
@@ -88,6 +96,9 @@ namespace
 
             return;
         }
+
+        monopoly::mouse::updatePosition(
+            static_cast<int>(point->x), static_cast<int>(point->y), true);
 
         int width = 0;
         int height = 0;
@@ -335,6 +346,9 @@ namespace monopoly
                 {
                     if (game::updateCycle())
                     {
+                        // UDChat switches from the ArtLib TAB_pointer to the
+                        // native I-beam only after its input state is updated.
+                        mouse::updateChatCursor(chat::stateReadOnly());
                         if (!engine::runCyclicFunctions())
                         {
                             std::cerr
