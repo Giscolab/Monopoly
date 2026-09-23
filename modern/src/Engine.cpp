@@ -53,6 +53,7 @@
 #include "StatsFutureImmunityTextPlayback.hpp"
 #include "StatsDeedPlayback.hpp"
 #include "StatsDeedFloaterPlayback.hpp"
+#include "StatsDeedFloaterTextPlayback.hpp"
 #include "StatsDeedBarPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
@@ -155,6 +156,7 @@ namespace monopoly::engine
         statsui::FutureImmunityTextPlayback statsFutureImmunityTextPlayback;
         statsui::DeedPlayback statsDeedPlayback;
         statsui::DeedFloaterPlayback statsDeedFloaterPlayback;
+        statsui::DeedFloaterTextPlayback statsDeedFloaterTextPlayback;
         statsui::DeedBarPlayback statsDeedBarPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
@@ -1687,6 +1689,13 @@ namespace monopoly::engine
             if (!statsDeedFloaterSync)
                 return SDL_SetError("UDStats Deed floater playback: %s",
                     statsDeedFloaterSync.error().c_str());
+            const auto statsDeedFloaterTextSync = statsDeedFloaterTextPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                displayState.system, displayState.desired2DView,
+                fontPlayback(), *session);
+            if (!statsDeedFloaterTextSync)
+                return SDL_SetError("UDStats Deed floater text playback: %s",
+                    statsDeedFloaterTextSync.error().c_str());
             const auto statsDeedBarSync = statsDeedBarPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
@@ -2030,6 +2039,7 @@ namespace monopoly::engine
         statsFutureImmunityTextPlayback.reset();
         statsDeedPlayback.reset();
         statsDeedFloaterPlayback.reset();
+        statsDeedFloaterTextPlayback.reset();
         statsDeedBarPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();

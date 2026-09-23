@@ -837,6 +837,7 @@ target_sources(
     src/StatsFutureImmunityTextPlayback.cpp
     src/StatsDeedPlayback.cpp
     src/StatsDeedFloaterPlayback.cpp
+    src/StatsDeedFloaterTextPlayback.cpp
     src/StatsDeedBarPlayback.cpp
 )
 
@@ -1147,6 +1148,37 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsDeedFloaterPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsDeedFloaterPlayback COMMAND MonopolyStatsDeedFloaterPlaybackTests)
+endif()
+
+# UDStats.cpp Deed floater GRAFIX/FONTS details at priority 601
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsDeedFloaterTextPlaybackTests
+        tests/StatsDeedFloaterTextPlaybackTests.cpp
+        src/StatsDeedFloaterTextPlayback.cpp
+        src/StatsDeedPlayback.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
+        src/IBarLayout.cpp
+        src/MoneyFormat.cpp
+        src/FontRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyStatsDeedFloaterTextPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyStatsDeedFloaterTextPlaybackTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyStatsDeedFloaterTextPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(
+        NAME Monopoly.StatsDeedFloaterTextPlayback
+        COMMAND MonopolyStatsDeedFloaterTextPlaybackTests)
 endif()
 
 # UDStats.cpp Deed owner-colour bars for Owner sort
