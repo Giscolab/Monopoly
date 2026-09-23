@@ -55,6 +55,7 @@
 #include "StatsDeedFloaterPlayback.hpp"
 #include "StatsDeedFloaterTextPlayback.hpp"
 #include "StatsDeedBarPlayback.hpp"
+#include "StatsDeedValueTextPlayback.hpp"
 #include "OptionsOptionPlayback.hpp"
 #include "OptionsTogglePlayback.hpp"
 #include "OptionsHelpPlayback.hpp"
@@ -158,6 +159,7 @@ namespace monopoly::engine
         statsui::DeedFloaterPlayback statsDeedFloaterPlayback;
         statsui::DeedFloaterTextPlayback statsDeedFloaterTextPlayback;
         statsui::DeedBarPlayback statsDeedBarPlayback;
+        statsui::DeedValueTextPlayback statsDeedValueTextPlayback;
         optionsui::OptionPlayback optionsOptionPlayback;
         optionsui::TogglePlayback optionsTogglePlayback;
         optionsui::HelpPlayback optionsHelpPlayback;
@@ -1702,6 +1704,13 @@ namespace monopoly::engine
             if (!statsDeedBarSync)
                 return SDL_SetError("UDStats Deed owner-bar playback: %s",
                     statsDeedBarSync.error().c_str());
+            const auto statsDeedValueTextSync = statsDeedValueTextPlayback.sync(
+                userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
+                displayState.system, displayState.desired2DView,
+                fontPlayback(), *session);
+            if (!statsDeedValueTextSync)
+                return SDL_SetError("UDStats Deed value-text playback: %s",
+                    statsDeedValueTextSync.error().c_str());
             if (statsAccountRuntime)
             {
                 const auto statsTextSync = statsTextPlayback.sync(
@@ -2041,6 +2050,7 @@ namespace monopoly::engine
         statsDeedFloaterPlayback.reset();
         statsDeedFloaterTextPlayback.reset();
         statsDeedBarPlayback.reset();
+        statsDeedValueTextPlayback.reset();
         optionsOptionPlayback.reset();
         optionsTogglePlayback.reset();
         optionsHelpPlayback.reset();

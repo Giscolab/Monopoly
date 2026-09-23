@@ -839,6 +839,7 @@ target_sources(
     src/StatsDeedFloaterPlayback.cpp
     src/StatsDeedFloaterTextPlayback.cpp
     src/StatsDeedBarPlayback.cpp
+    src/StatsDeedValueTextPlayback.cpp
 )
 
 if(BUILD_TESTING)
@@ -1199,6 +1200,35 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyStatsDeedBarPlaybackTests PRIVATE /W4 /permissive-)
     endif()
     add_test(NAME Monopoly.StatsDeedBarPlayback COMMAND MonopolyStatsDeedBarPlaybackTests)
+endif()
+
+# UDStats.cpp numeric value text over TAB_dvaldisp for Deed sorts 0/2/3
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsDeedValueTextPlaybackTests
+        tests/StatsDeedValueTextPlaybackTests.cpp
+        src/StatsDeedValueTextPlayback.cpp
+        src/StatsDeedPlayback.cpp
+        src/IBarLayout.cpp
+        src/MoneyFormat.cpp
+        src/FontRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyStatsDeedValueTextPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyStatsDeedValueTextPlaybackTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyStatsDeedValueTextPlaybackTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(
+        NAME Monopoly.StatsDeedValueTextPlayback
+        COMMAND MonopolyStatsDeedValueTextPlaybackTests)
 endif()
 
 # UDStats.cpp Future/Immunity popup GRAFIX/FONTS text overlay
