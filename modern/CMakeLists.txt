@@ -1288,6 +1288,36 @@ if(BUILD_TESTING)
     )
 endif()
 
+# UDTrade.cpp Future/Immunity rightpanel GRAFIX/FONTS runtime surface
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyTradeContractTextPlaybackTests
+        tests/TradeContractTextPlaybackTests.cpp
+        src/TradeContractTextPlayback.cpp
+        src/FontRuntime.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyTradeContractTextPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyTradeContractTextPlaybackTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyTradeContractTextPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.TradeContractTextPlayback
+        COMMAND MonopolyTradeContractTextPlaybackTests
+    )
+    set_tests_properties(Monopoly.TradeContractTextPlayback PROPERTIES TIMEOUT 60)
+endif()
+
 # UDTrade.cpp autonomous backdrop, colour rails and contract buttons
 if(BUILD_TESTING)
     add_executable(
