@@ -1,4 +1,4 @@
-# Audit automatique du portage
+# Audit automatique du portage {#porting_audit}
 
 > Genere mecaniquement depuis `PORTING_STATUS.md`, `modern/src`, `modern/tests` et `modern/CMakeLists.txt`. Ce rapport detecte les derives structurelles; il ne certifie **pas** la parite semantique avec le jeu de 1999.
 
