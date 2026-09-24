@@ -132,6 +132,7 @@ namespace monopoly::video
         status_.ended = false;
         loopAtEnd_ = loopAtEnd;
         alternatives_.clear();
+        pendingJump_.reset();
         return {};
     }
 
@@ -143,6 +144,7 @@ namespace monopoly::video
         status_.desiredFrame = -1;
         loopAtEnd_ = false;
         alternatives_.clear();
+        pendingJump_.reset();
     }
 
     std::expected<Status, std::string> Runtime::feedToFrame(
@@ -173,18 +175,28 @@ namespace monopoly::video
 
         const auto begin =
             std::max(status_.currentFrame + 1, 0);
-        for (auto it = alternatives_.lower_bound(begin);
-             it != alternatives_.end() &&
-             it->first <= desiredFrame; ++it)
+        const auto decision = alternatives_.lower_bound(begin);
+        if (decision != alternatives_.end() &&
+            decision->first <= desiredFrame)
         {
-            if (!it->second.takeJump ||
-                it->second.jumpToFrame < 0)
-                continue;
-            if (!validFrame(status_, it->second.jumpToFrame))
-                return std::unexpected(
-                    "video alternative jump target is out of range");
-            status_.currentFrame = it->second.jumpToFrame;
-            status_.desiredFrame = it->second.jumpToFrame;
+            pendingJump_ = JumpEvent{
+                decision->first,
+                decision->second.jumpToFrame,
+                decision->second.takeJump};
+
+            if (decision->second.takeJump)
+            {
+                if (!validFrame(status_, decision->second.jumpToFrame))
+                    return std::unexpected(
+                        "video alternative jump target is out of range");
+                status_.currentFrame = decision->second.jumpToFrame;
+                status_.desiredFrame = decision->second.jumpToFrame;
+                return status_;
+            }
+
+            // The retail player always shows the decision frame before
+            // continuing on the normal path and emits UIMSG_VIDEO_JUMP there.
+            status_.currentFrame = decision->first;
             return status_;
         }
 
@@ -234,8 +246,12 @@ namespace monopoly::video
         if (!validFrame(status_, decisionFrame))
             return std::unexpected(
                 "video alternative decision frame is out of range");
-        if (jumpToFrame >= 0 &&
-            !validFrame(status_, jumpToFrame))
+        if (jumpToFrame < 0)
+        {
+            alternatives_.erase(decisionFrame);
+            return {};
+        }
+        if (!validFrame(status_, jumpToFrame))
             return std::unexpected(
                 "video alternative jump frame is out of range");
 
@@ -259,5 +275,12 @@ namespace monopoly::video
     void Runtime::forgetAlternatives() noexcept
     {
         alternatives_.clear();
+    }
+
+    std::optional<JumpEvent> Runtime::takeJumpEvent() noexcept
+    {
+        auto result = pendingJump_;
+        pendingJump_.reset();
+        return result;
     }
 }

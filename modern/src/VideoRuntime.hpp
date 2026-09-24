@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -25,6 +26,14 @@ namespace monopoly::video
         std::int32_t numberOfFrames{};
         bool ended{};
         friend bool operator==(const Status&, const Status&) = default;
+    };
+
+    struct JumpEvent
+    {
+        std::int32_t decisionFrame{-1};
+        std::int32_t jumpToFrame{-1};
+        bool alternativeTaken{};
+        friend bool operator==(const JumpEvent&, const JumpEvent&) = default;
     };
 
     [[nodiscard]] std::expected<AviMetadata, std::string>
@@ -58,6 +67,8 @@ namespace monopoly::video
 
         void forgetAlternatives() noexcept;
 
+        [[nodiscard]] std::optional<JumpEvent> takeJumpEvent() noexcept;
+
         [[nodiscard]] const Status& status() const noexcept
         {
             return status_;
@@ -84,5 +95,6 @@ namespace monopoly::video
         Status status_{};
         bool loopAtEnd_{};
         std::map<std::int32_t, Alternative> alternatives_;
+        std::optional<JumpEvent> pendingJump_;
     };
 }
