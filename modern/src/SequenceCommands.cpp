@@ -97,6 +97,7 @@ namespace monopoly::sequence
 
     std::expected<int, CommandQueueError> SequenceCommandQueue::execute()
     {
+        cycleEvents_.clear();
         cycleError_.reset();
         if (nestingLevel_ == std::numeric_limits<int>::min())
             return std::unexpected(CommandQueueError::NestingOverflow);
@@ -107,6 +108,8 @@ namespace monopoly::sequence
             // single-tasking Monopoly build. Preserve the current parent time.
             drain();
             const auto updated = runtime_.update(parentClock_);
+            const auto events = runtime_.events();
+            cycleEvents_.assign(events.begin(), events.end());
             cycleError_ = updated ? std::nullopt : std::optional<RuntimeError>(updated.error());
         }
         return nestingLevel_;
@@ -167,16 +170,27 @@ namespace monopoly::sequence
                         SequenceCommandKind::SetCamera, {}, 1U, {}});
                 }
             }, std::move(command));
+
+            if (!outcomes_.empty() &&
+                outcomes_.back().kind != SequenceCommandKind::SetCamera &&
+                !outcomes_.back().error)
+            {
+                const auto events = runtime_.events();
+                outcomes_.back().events.assign(events.begin(), events.end());
+            }
         }
     }
 
     std::expected<void, RuntimeError> SequenceCommandQueue::updateCycle(std::int32_t parentClock)
     {
         outcomes_.clear();
+        cycleEvents_.clear();
         cycleError_.reset();
         parentClock_ = parentClock;
         if (nestingLevel_ <= 0) drain();
         auto updated = runtime_.update(parentClock);
+        const auto events = runtime_.events();
+        cycleEvents_.assign(events.begin(), events.end());
         if (!updated) cycleError_ = updated.error();
         return updated;
     }

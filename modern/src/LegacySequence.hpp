@@ -129,6 +129,8 @@ namespace monopoly::data
     };
     struct Sequence3DMeshChoiceAttribute
     { ChunkInfo chunk; std::int16_t meshIndexA{}, meshIndexB{}; float meshProportion{}; };
+    struct SequenceLabelAttribute
+    { ChunkInfo chunk; std::uint8_t labelNumber{}; };
     struct SequenceCameraFieldOfViewAttribute
     { ChunkInfo chunk; float fieldOfView{}; };
     struct SequenceUnsupportedAttribute { ChunkInfo chunk; };
@@ -142,6 +144,7 @@ namespace monopoly::data
         Sequence3DMatrixAttribute,
         Sequence3DOriginScaleRotateOffsetAttribute,
         Sequence3DMeshChoiceAttribute,
+        SequenceLabelAttribute,
         SequenceCameraFieldOfViewAttribute,
         SequenceUnsupportedAttribute>;
 

@@ -82,6 +82,9 @@ namespace monopoly::sequence
         data::DataId dataId{};
         std::size_t offset{};
         std::uint16_t priority{};
+        std::uint8_t label{};
+        std::uint8_t sequenceType{};
+        std::uint8_t endingAction{};
         std::int32_t clock{};
     };
     struct SequenceMeshChoice3D
@@ -109,6 +112,7 @@ namespace monopoly::sequence
         data::DataId dataId{};
         std::size_t offset{};
         std::uint16_t priority{};
+        std::uint8_t label{};
         std::int32_t clock{};
         std::int32_t endTime{};
         std::uint8_t timeMultiple{};
@@ -264,6 +268,9 @@ namespace monopoly::sequence
         std::size_t births_{};
         std::int32_t parentClock_{};
         bool clockStarted_{};
-        std::array<SequenceNodeId, 256> cameraLabelOwners_{};
+        // Mirrors the single legacy LE_SEQNCR_LabelArray shared by
+        // cameras and explicitly labelled sequences. The newest owner wins;
+        // deleting it does not restore an older overlapping owner.
+        std::array<SequenceNodeId, 256> labelOwners_{};
     };
 }

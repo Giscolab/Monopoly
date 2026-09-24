@@ -21,6 +21,16 @@ namespace monopoly::uimsg
         MouseMiddleUp,
         MouseRightDown,
         MouseRightUp,
+        ButtonPressed,
+        ButtonReleased,
+        ButtonRollEnter,
+        ButtonRollExit,
+        ButtonTrack,
+        ButtonOnOff,
+        SequenceStarted,
+        SequenceReachedEnd,
+        SequenceDeleted,
+        VideoJump,
         Quit
     };
 

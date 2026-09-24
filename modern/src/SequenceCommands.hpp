@@ -83,6 +83,7 @@ namespace monopoly::sequence
         std::optional<SequenceNodeId> startedNode;
         std::size_t matched{};
         std::optional<RuntimeError> error;
+        std::vector<SequenceEvent> events;
     };
 
     // Owner-thread FIFO matching Monopoly's non-immediate ArtLib configuration.
@@ -122,6 +123,8 @@ namespace monopoly::sequence
         [[nodiscard]] int nestingLevel() const noexcept { return nestingLevel_; }
         [[nodiscard]] std::span<const SequenceCommandOutcome> outcomes() const noexcept
         { return outcomes_; }
+        [[nodiscard]] std::span<const SequenceEvent> cycleEvents() const noexcept
+        { return cycleEvents_; }
         [[nodiscard]] const std::optional<RuntimeError>& lastCycleError() const noexcept
         { return cycleError_; }
 
@@ -132,6 +135,7 @@ namespace monopoly::sequence
         SequenceRuntime& runtime_;
         std::deque<SequenceCommand> pending_;
         std::vector<SequenceCommandOutcome> outcomes_;
+        std::vector<SequenceEvent> cycleEvents_;
         std::optional<RuntimeError> cycleError_;
         std::array<std::optional<SetCameraCommand>, MonopolyRenderSlotCount> cameraStates_{};
         int nestingLevel_{};

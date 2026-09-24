@@ -177,6 +177,7 @@ namespace monopoly::engine
         boarddisplay::BoardLightingController boardLightingController;
         pieces::TokenPoseTracker lightingTokenPoseTracker;
         std::uint64_t lastBoardLightingTick{};
+        std::uint64_t sequenceUIUpdateCount{};
         dice::Playback dicePlayback;
         dice::TwoDPlayback dice2DPlayback;
         ibar::BackdropPlayback iBarBackdropPlayback;
@@ -872,6 +873,59 @@ namespace monopoly::engine
             }
             return {};
         }
+
+        void queueSequenceLifecycleEvent(
+            const sequence::SequenceEvent& event,
+            std::int64_t updateCount) noexcept
+        {
+            if (event.label == 0)
+                return;
+
+            uimsg::Message message{};
+            switch (event.kind)
+            {
+            case sequence::SequenceEventKind::Created:
+                message.type = uimsg::Type::SequenceStarted;
+                message.numberD = event.sequenceType;
+                break;
+            case sequence::SequenceEventKind::ReachedEnd:
+                message.type = uimsg::Type::SequenceReachedEnd;
+                message.numberD = event.endingAction;
+                break;
+            case sequence::SequenceEventKind::Destroyed:
+                message.type = uimsg::Type::SequenceDeleted;
+                message.numberD = event.sequenceType;
+                break;
+            default:
+                return;
+            }
+
+            message.numberA = static_cast<std::int64_t>(event.dataId);
+            message.numberB = event.priority;
+            message.numberC = event.label;
+            message.numberE = updateCount;
+            (void)uimsg::send(message);
+        }
+
+        void publishSequenceLifecycleEvents(
+            SequencePlayback& session) noexcept
+        {
+            if (sequenceUIUpdateCount <
+                static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()))
+                ++sequenceUIUpdateCount;
+            const auto updateCount = static_cast<std::int64_t>(
+                std::min<std::uint64_t>(
+                    sequenceUIUpdateCount,
+                    static_cast<std::uint64_t>(
+                        std::numeric_limits<std::int64_t>::max())));
+
+            for (const auto& outcome : session.commands().outcomes())
+                for (const auto& event : outcome.events)
+                    queueSequenceLifecycleEvent(event, updateCount);
+            for (const auto& event : session.commands().cycleEvents())
+                queueSequenceLifecycleEvent(event, updateCount);
+        }
     }
 
     SequencePlayback* sequencePlayback()
@@ -879,7 +933,10 @@ namespace monopoly::engine
         if (!gpuDevice) return nullptr;
         if (!playback)
             if (auto resources = startup::resources())
+            {
                 playback = std::make_unique<SequencePlayback>(std::move(resources));
+                sequenceUIUpdateCount = 0;
+            }
         return playback.get();
     }
 
@@ -1956,6 +2013,7 @@ namespace monopoly::engine
 
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
+            publishSequenceLifecycleEvents(*session);
             if (!audioDisabled)
             {
                 const auto audioSync = syncSequenceAudio(*session);

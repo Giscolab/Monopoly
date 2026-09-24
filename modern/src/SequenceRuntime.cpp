@@ -48,6 +48,24 @@ namespace monopoly::sequence
             return result;
         }
 
+        std::uint8_t initialSequenceLabel(
+            const data::LegacySequenceRecord& record,
+            const data::LegacySequenceAttributes& attributes) noexcept
+        {
+            std::uint8_t result{};
+            for (const auto& attribute : attributes.values)
+                if (const auto* label =
+                    std::get_if<data::SequenceLabelAttribute>(&attribute))
+                    result = label->labelNumber;
+
+            // LI_SEQNCR_StartUpSequence processes private chunks first, then
+            // overwrites that value with the camera's built-in label.
+            if (const auto* camera =
+                std::get_if<data::SequenceCameraData>(&record.data))
+                result = camera->cameraLabel;
+            return result;
+        }
+
         float initialCameraFieldOfView(const data::LegacySequenceRecord& record,
             const data::LegacySequenceAttributes& attributes,
             std::uint8_t dimensionality) noexcept
@@ -334,6 +352,7 @@ namespace monopoly::sequence
         SequenceTransform worldTransform;
         SequenceMeshChoice3D meshChoice{};
         float cameraFieldOfView{};
+        std::uint8_t labelNumber{};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -346,7 +365,9 @@ namespace monopoly::sequence
     {
         const auto& def = node.definition();
         events_.push_back({kind, node.id, node.parent ? node.parent->id : 0,
-            def.dataId, def.record.chunk.headerOffset, node.priority, node.clock.clock()});
+            def.dataId, def.record.chunk.headerOffset, node.priority,
+            node.labelNumber, def.record.chunk.id, node.clock.endingAction(),
+            node.clock.clock()});
     }
     void SequenceRuntime::insert(Nodes& siblings, std::unique_ptr<Node> node)
     {
@@ -387,9 +408,9 @@ namespace monopoly::sequence
         node->meshChoice = initialMeshChoice(def.attributes, initial.dimensionality);
         node->cameraFieldOfView = initialCameraFieldOfView(
             def.record, def.attributes, initial.dimensionality);
-        if (const auto* camera = std::get_if<data::SequenceCameraData>(&def.record.data);
-            camera && camera->cameraLabel != 0)
-            cameraLabelOwners_[camera->cameraLabel] = node->id;
+        node->labelNumber = initialSequenceLabel(def.record, def.attributes);
+        if (node->labelNumber != 0)
+            labelOwners_[node->labelNumber] = node->id;
         ++liveNodes_; ++births_;
         emit(SequenceEventKind::Created, *node);
         return node;
@@ -416,11 +437,9 @@ namespace monopoly::sequence
     void SequenceRuntime::destroy(std::unique_ptr<Node>& node)
     {
         destroyChildren(*node);
-        if (const auto* camera = std::get_if<data::SequenceCameraData>(
-                &node->definition().record.data);
-            camera && camera->cameraLabel != 0 &&
-            cameraLabelOwners_[camera->cameraLabel] == node->id)
-            cameraLabelOwners_[camera->cameraLabel] = 0;
+        if (node->labelNumber != 0 &&
+            labelOwners_[node->labelNumber] == node->id)
+            labelOwners_[node->labelNumber] = 0;
         emit(SequenceEventKind::Destroyed, *node);
         --liveNodes_;
         node.reset();
@@ -791,7 +810,8 @@ namespace monopoly::sequence
         if (!node) return std::nullopt;
         SequenceNodeView view{node->id, node->parent ? node->parent->id : 0,
             node->definition().dataId, node->definition().record.chunk.headerOffset, node->priority,
-            node->clock.clock(), node->clock.endTime(), node->clock.timeMultiple(), node->clock.paused(),
+            node->labelNumber, node->clock.clock(), node->clock.endTime(),
+            node->clock.timeMultiple(), node->clock.paused(),
             node->needsRedraw, node->dimensionality, node->definition().contentsDataId, node->explicitlyPositioned,
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
@@ -924,7 +944,7 @@ namespace monopoly::sequence
         std::uint8_t label) const
     {
         if (label == 0) return std::nullopt;
-        const auto owner = cameraLabelOwners_[label];
+        const auto owner = labelOwners_[label];
         const auto* node = owner != 0 ? find(owner) : nullptr;
         if (!node || node->definition().record.chunk.id != 7 ||
             node->dimensionality != 3 ||
@@ -932,7 +952,7 @@ namespace monopoly::sequence
             return std::nullopt;
         const auto& camera = std::get<data::SequenceCameraData>(
             node->definition().record.data);
-        return SequenceCamera3DView{node->id, camera.cameraLabel, node->priority,
+        return SequenceCamera3DView{node->id, node->labelNumber, node->priority,
             node->clock.clock(), std::get<Matrix3D>(node->worldTransform),
             node->cameraFieldOfView, camera.nearClipPlaneDistance,
             camera.farClipPlaneDistance};

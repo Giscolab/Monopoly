@@ -104,6 +104,7 @@ namespace monopoly::data
             case 134: required = 64; break;
             case 135: required = 48; break;
             case 139: required = 8; break;
+            case 140: required = 1; break;
             case 144: required = 4; break;
             default:
                 result.values.push_back(SequenceUnsupportedAttribute{*part});
@@ -173,6 +174,10 @@ namespace monopoly::data
             case 139:
                 result.values.push_back(Sequence3DMeshChoiceAttribute{*part,
                     readI16(*bytes, 0), readI16(*bytes, 2), readF32(*bytes, 4)});
+                break;
+            case 140:
+                result.values.push_back(SequenceLabelAttribute{
+                    *part, std::to_integer<std::uint8_t>((*bytes)[0])});
                 break;
             case 144:
                 result.values.push_back(SequenceCameraFieldOfViewAttribute{*part,
