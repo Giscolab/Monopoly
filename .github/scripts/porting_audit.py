@@ -218,7 +218,7 @@ def markdown_report(rows: list[StatusRow], metrics: Metrics, audit: Audit) -> st
     )
 
     out: list[str] = [
-        "# Audit automatique du portage",
+        "# Audit automatique du portage {#porting_audit}",
         "",
         "> Genere mecaniquement depuis `PORTING_STATUS.md`, `modern/src`, "
         "`modern/tests` et `modern/CMakeLists.txt`. Ce rapport detecte les "

@@ -35,7 +35,8 @@ GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
 HTML_COLORSTYLE        = LIGHT
-HTML_EXTRA_STYLESHEET  = doxygen-awesome-css/doxygen-awesome.css
+HTML_EXTRA_STYLESHEET  = doxygen-awesome-css/doxygen-awesome.css \
+                         docs/monopoly-docs.css
 HTML_EXTRA_FILES       = modern/porting-progress.svg
 
 HAVE_DOT               = YES

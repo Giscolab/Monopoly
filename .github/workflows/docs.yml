@@ -10,6 +10,7 @@ on:
       - 'modern/PORTING_AUDIT.md'
       - 'modern/porting-progress.svg'
       - 'docs/**'
+      - '.github/scripts/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -44,6 +45,14 @@ jobs:
           git clone --depth 1 --branch v2.4.2 \
             https://github.com/jothepro/doxygen-awesome-css.git \
             doxygen-awesome-css
+
+      - name: Refresh generated documentation inputs
+        run: |
+          python .github/scripts/porting_audit.py \
+            modern/PORTING_STATUS.md modern --strict \
+            --report modern/PORTING_AUDIT.md
+          python .github/scripts/update_porting_progress.py \
+            modern/PORTING_STATUS.md modern/porting-progress.svg
 
       - name: Generate documentation
         run: doxygen docs/Doxyfile
