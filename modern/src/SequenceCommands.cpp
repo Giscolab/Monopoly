@@ -129,7 +129,7 @@ namespace monopoly::sequence
                 {
                     const auto result = runtime_.start(
                         std::move(value.program), value.priority, value.options,
-                        std::move(value.initialTransform));
+                        std::move(value.initialTransform), value.labelOverride);
                     outcomes_.push_back(SequenceCommandOutcome{SequenceCommandKind::Start,
                         result ? std::optional<SequenceNodeId>(*result) : std::nullopt,
                         result ? 1U : 0U, result ? std::nullopt : std::optional<RuntimeError>(result.error())});

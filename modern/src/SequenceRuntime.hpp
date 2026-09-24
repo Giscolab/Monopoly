@@ -185,7 +185,8 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<SequenceNodeId, RuntimeError> start(
             std::shared_ptr<const SequenceProgram> program,
             std::uint16_t priority = 0, ClockStartOptions options = {},
-            std::optional<SequenceTransform> initialTransform = std::nullopt);
+            std::optional<SequenceTransform> initialTransform = std::nullopt,
+            std::uint8_t labelOverride = 0);
         [[nodiscard]] std::expected<void, RuntimeError> update(std::int32_t parentClock);
         [[nodiscard]] std::expected<void, RuntimeError> stop(SequenceNodeId node);
         void stopAll();
@@ -243,7 +244,8 @@ namespace monopoly::sequence
         [[nodiscard]] Node* find(SequenceNodeId id) const;
         [[nodiscard]] std::expected<std::unique_ptr<Node>, RuntimeError> create(
             std::shared_ptr<const SequenceProgram> program, std::size_t description,
-            Node* parent, std::uint16_t priority, ClockStartOptions options);
+            Node* parent, std::uint16_t priority, ClockStartOptions options,
+            std::uint8_t labelOverride = 0);
         void insert(Nodes& siblings, std::unique_ptr<Node> node);
         void emit(SequenceEventKind kind, const Node& node);
         void destroyChildren(Node& node);

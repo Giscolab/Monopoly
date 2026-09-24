@@ -378,7 +378,8 @@ namespace monopoly::sequence
     }
     std::expected<std::unique_ptr<SequenceRuntime::Node>, RuntimeError>
     SequenceRuntime::create(std::shared_ptr<const SequenceProgram> program,
-        std::size_t description, Node* parent, std::uint16_t priority, ClockStartOptions options)
+        std::size_t description, Node* parent, std::uint16_t priority,
+        ClockStartOptions options, std::uint8_t labelOverride)
     {
         const auto& def = program->descriptions()[description];
         const auto id = def.dataId;
@@ -409,6 +410,8 @@ namespace monopoly::sequence
         node->cameraFieldOfView = initialCameraFieldOfView(
             def.record, def.attributes, initial.dimensionality);
         node->labelNumber = initialSequenceLabel(def.record, def.attributes);
+        if (labelOverride != 0)
+            node->labelNumber = labelOverride;
         if (node->labelNumber != 0)
             labelOwners_[node->labelNumber] = node->id;
         ++liveNodes_; ++births_;
@@ -417,12 +420,14 @@ namespace monopoly::sequence
     }
     std::expected<SequenceNodeId, RuntimeError> SequenceRuntime::start(
         std::shared_ptr<const SequenceProgram> program, std::uint16_t priority,
-        ClockStartOptions options, std::optional<SequenceTransform> initialTransform)
+        ClockStartOptions options, std::optional<SequenceTransform> initialTransform,
+        std::uint8_t labelOverride)
     {
         events_.clear(); births_ = 0;
         if (!program || program->descriptions().empty())
             return std::unexpected(error(RuntimeErrorCode::DataFailure, 0, 0, "no sequence program"));
-        auto node = create(std::move(program), 0, nullptr, priority, options);
+        auto node = create(
+            std::move(program), 0, nullptr, priority, options, labelOverride);
         if (!node) return std::unexpected(node.error());
         if (initialTransform) move(**node, *initialTransform);
         const auto id = (*node)->id;

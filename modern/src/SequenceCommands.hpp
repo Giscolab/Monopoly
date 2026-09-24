@@ -24,6 +24,7 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         ClockStartOptions options{};
         std::optional<SequenceTransform> initialTransform;
+        std::uint8_t labelOverride{};
     };
     struct StopSequenceCommand
     {

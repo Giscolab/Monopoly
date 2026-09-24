@@ -44,11 +44,12 @@ namespace monopoly::engine
     }
 
     std::expected<void, std::string> SequencePlayback::start(
-        data::DataId id, std::uint16_t priority)
+        data::DataId id, std::uint16_t priority, std::uint8_t labelOverride)
     {
         auto program = loadProgram(id);
         if (!program) return std::unexpected(program.error());
-        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{*program, priority});
+        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, {}, std::nullopt, labelOverride});
         if (!queued)
             return std::unexpected("sequence command queue capacity exceeded");
         return {};
@@ -56,14 +57,16 @@ namespace monopoly::engine
 
     std::expected<void, std::string> SequencePlayback::startXY(
         data::DataId id, std::uint16_t priority,
-        std::int32_t x, std::int32_t y, bool dropFrames)
+        std::int32_t x, std::int32_t y, bool dropFrames,
+        std::uint8_t labelOverride)
     {
         auto program = loadProgram(id);
         if (!program) return std::unexpected(program.error());
         sequence::ClockStartOptions options{};
         options.dropFrames = dropFrames;
         const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
-            *program, priority, options, sequence::moveXYTransform(x, y)});
+            *program, priority, options, sequence::moveXYTransform(x, y),
+            labelOverride});
         if (!queued) return std::unexpected("sequence command queue capacity exceeded");
         return {};
     }

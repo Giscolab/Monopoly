@@ -18,10 +18,12 @@ namespace monopoly::engine
             : meshes_(std::move(resources)), commands_(runtime_) {}
 
         [[nodiscard]] std::expected<void, std::string> start(
-            data::DataId id, std::uint16_t priority = 0);
+            data::DataId id, std::uint16_t priority = 0,
+            std::uint8_t labelOverride = 0);
         [[nodiscard]] std::expected<void, std::string> startXY(
             data::DataId id, std::uint16_t priority,
-            std::int32_t x, std::int32_t y, bool dropFrames = false);
+            std::int32_t x, std::int32_t y, bool dropFrames = false,
+            std::uint8_t labelOverride = 0);
         [[nodiscard]] std::expected<void, std::string> transitionXY(
             std::optional<data::DataId> previousId, data::DataId id,
             std::uint16_t priority, std::int32_t x, std::int32_t y,
