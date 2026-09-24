@@ -1078,6 +1078,33 @@ if(BUILD_TESTING)
     add_test(NAME Monopoly.StatsCalculatorPlayback COMMAND MonopolyStatsCalculatorPlaybackTests)
 endif()
 
+# UDStats.cpp calculator property-picker popup background and deed grid
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyStatsCalculatorDeedPickerPlaybackTests
+        tests/StatsCalculatorDeedPickerPlaybackTests.cpp
+        src/StatsCalculatorDeedPickerPlayback.cpp
+        src/IBarLayout.cpp
+    )
+    target_include_directories(
+        MonopolyStatsCalculatorDeedPickerPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyStatsCalculatorDeedPickerPlaybackTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyStatsCalculatorDeedPickerPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.StatsCalculatorDeedPickerPlayback
+        COMMAND MonopolyStatsCalculatorDeedPickerPlaybackTests
+    )
+endif()
+
 # UDStats.cpp autonomous Player boxes and owned deed overlays
 if(BUILD_TESTING)
     add_executable(

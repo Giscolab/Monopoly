@@ -1,5 +1,6 @@
 #include "StatsCalculatorDeedPickerPlayback.hpp"
 #include "StatsDeedFloaterPlayback.hpp"
+#include "RuntimeBitmapSurface.hpp"
 
 #include <algorithm>
 
@@ -64,8 +65,12 @@ namespace monopoly::statsui
         display::Screen2D desiredView,
         engine::SequencePlayback& playback)
     {
+        const bool desiredBackground =
+            desiredView == display::Screen2D::Portfolio &&
+            ui.picker == CalculatorPicker::Deed;
         auto desired = desiredPicker(ui, city, desiredView);
-        if (desired == current_) return {};
+        if (desired == current_ && desiredBackground == backgroundVisible_)
+            return {};
 
         std::vector<Published> removed;
         std::vector<Published> added;
@@ -88,12 +93,47 @@ namespace monopoly::statsui
             programs.push_back(std::move(*loaded));
         }
 
-        const std::size_t required = removed.size() + added.size();
+        const std::size_t backgroundCommands =
+            desiredBackground == backgroundVisible_ ? 0U : 1U;
+        const std::size_t required =
+            removed.size() + added.size() + backgroundCommands;
         if (required > sequence::SequenceCommandQueue::Capacity -
                 playback.commands().pendingCount())
         {
             return std::unexpected(
                 "sequence command queue cannot fit calculator deed picker transition");
+        }
+
+        std::shared_ptr<const sequence::SequenceProgram> backgroundProgram;
+        if (desiredBackground && !backgroundVisible_)
+        {
+            if (!background_)
+            {
+                const auto created = playback.runtimeBitmaps().create(
+                    CalculatorDeedPickerBackgroundWidth,
+                    CalculatorDeedPickerBackgroundHeight,
+                    false);
+                if (!created)
+                    return std::unexpected(created.error());
+                background_ = *created;
+            }
+
+            const auto raw = sequence::SequenceProgram::rawBitmap(
+                *background_, data::LegacyDataType::Native);
+            if (!raw)
+                return std::unexpected(raw.error().detail);
+            backgroundProgram = *raw;
+
+            if (!playback.commands().enqueue(
+                    sequence::StartSequenceCommand{
+                        backgroundProgram,
+                        CalculatorDeedPickerPriority,
+                        {},
+                        sequence::moveXYTransform(
+                            CalculatorDeedPickerBackgroundX,
+                            CalculatorDeedPickerBackgroundY)}))
+                return std::unexpected(
+                    "validated calculator deed picker background start rejected");
         }
 
         for (const auto& object : removed)
@@ -115,7 +155,18 @@ namespace monopoly::statsui
                     "validated calculator deed picker start rejected");
         }
 
+        if (!desiredBackground && backgroundVisible_)
+        {
+            if (!background_ ||
+                !playback.commands().enqueue(
+                    sequence::StopSequenceCommand{
+                        *background_, CalculatorDeedPickerPriority, false}))
+                return std::unexpected(
+                    "validated calculator deed picker background stop rejected");
+        }
+
         current_ = std::move(desired);
+        backgroundVisible_ = desiredBackground;
         return {};
     }
 }
