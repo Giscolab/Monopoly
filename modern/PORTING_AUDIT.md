@@ -8,11 +8,11 @@
 |---|---:|---|
 | Audit fonctionnel | 75% | Snapshot manuel : 14 septembre |
 | Familles engagees | 40/40 (100%) | Familles legacy actives avec un equivalent moderne engage |
-| Indice automatique | 65% | Complet/remplace=100, partiel=50, non demarre=0 |
-| Entrees actives closes | 21/67 (31.3%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
-| Entrees actives partielles | 46/67 | Travail connu restant |
+| Indice automatique | 66% | Complet/remplace=100, partiel=50, non demarre=0 |
+| Entrees actives closes | 22/67 (32.8%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
+| Entrees actives partielles | 45/67 | Travail connu restant |
 | Non demarrees | 0 | Entrees actives sans equivalent moderne significatif |
-| Preuve CTest documentee | 126/126 (100%) | Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |
+| Preuve CTest documentee | 127/127 (100%) | Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |
 
 ## Controles automatiques
 
@@ -30,7 +30,6 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | 4 | gameplay/runtime central | `Source/monopoly/Main.cpp` | 265 |
 | 4 | gameplay/runtime central | `Source/monopoly/Rule.cpp` | 269 |
 | 4 | gameplay/runtime central | `Source/monopoly/Userifce.cpp` | 280 |
-| 4 | gameplay/runtime central | `Source/monopoly/UDAuct.cpp` | 281 |
 | 4 | gameplay/runtime central | `Source/monopoly/UDPsel.cpp` | 286 |
 | 4 | gameplay/runtime central | `Source/monopoly/UDChat.cpp` | 291 |
 | 3 | parcours visible joueur | `Source/monopoly/trade.cpp` | 270 |
@@ -47,8 +46,9 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 310 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Seqncr.*` | 312 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 315 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Video.*` | 316 |
 
-<details><summary>Les 46 entrees PARTIAL</summary>
+<details><summary>Les 45 entrees PARTIAL</summary>
 
 | Section | Ligne legacy | Ligne matrice |
 |---|---|---:|
@@ -63,7 +63,6 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | Jeu Monopoly | `Source/monopoly/Lang.cpp` | 275 |
 | Jeu Monopoly | `Source/monopoly/display.cpp` | 279 |
 | Jeu Monopoly | `Source/monopoly/Userifce.cpp` | 280 |
-| Jeu Monopoly | `Source/monopoly/UDAuct.cpp` | 281 |
 | Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | 282 |
 | Jeu Monopoly | `Source/monopoly/UDIBar.cpp` | 283 |
 | Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | 284 |
