@@ -25,6 +25,14 @@ Les trois barres ont volontairement des sens différents :
 
 Ainsi, l'indice mécanique peut rester stable pendant qu'une grosse famille déjà `PORTED_PARTIAL` progresse fortement ; les trois barres évitent de confondre cette mesure avec la progression fonctionnelle globale.
 
+## 📚 Documentation technique
+
+![Documentation](https://github.com/Giscolab/Monopoly/actions/workflows/docs.yml/badge.svg)
+
+La documentation Doxygen du portage moderne est publiée automatiquement sur
+[GitHub Pages](https://giscolab.github.io/Monopoly/). Elle couvre l'API de
+`modern/src/`, le suivi de portage et l'audit structurel, avec le thème
+Doxygen Awesome.
 
 ## Sources et crédits
 

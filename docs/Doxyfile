@@ -1,0 +1,48 @@
+PROJECT_NAME           = "Monopoly — Portage moderne"
+PROJECT_BRIEF          = "Portage moderne C/C++23 du Monopoly de 1999"
+PROJECT_NUMBER         = "0.1.0"
+
+OUTPUT_DIRECTORY       = modern/build-docs
+CREATE_SUBDIRS         = NO
+
+INPUT                  = modern/src \
+                         docs/mainpage.md \
+                         modern/PORTING_STATUS.md \
+                         modern/PORTING_AUDIT.md
+RECURSIVE              = YES
+FILE_PATTERNS          = *.cpp *.hpp *.md
+EXCLUDE_PATTERNS       = */build/* */build-*/* */_deps/*
+
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+JAVADOC_AUTOBRIEF     = YES
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_FROM_PATH        = modern/src
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+HTML_OUTPUT            = html
+HTML_TIMESTAMP         = NO
+
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_EXTRA_STYLESHEET  = doxygen-awesome-css/doxygen-awesome.css
+HTML_EXTRA_FILES       = modern/porting-progress.svg
+
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CLASS_DIAGRAMS         = YES
+
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_AS_ERROR          = NO

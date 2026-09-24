@@ -1,0 +1,70 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'modern/src/**'
+      - 'modern/PORTING_STATUS.md'
+      - 'modern/PORTING_AUDIT.md'
+      - 'modern/porting-progress.svg'
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Doxygen site
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install Doxygen and Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      - name: Fetch Doxygen Awesome 2.4.2
+        run: |
+          git clone --depth 1 --branch v2.4.2 \
+            https://github.com/jothepro/doxygen-awesome-css.git \
+            doxygen-awesome-css
+
+      - name: Generate documentation
+        run: doxygen docs/Doxyfile
+
+      - name: Verify generated site
+        run: test -f modern/build-docs/html/index.html
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: modern/build-docs/html
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy documentation
+        id: deployment
+        uses: actions/deploy-pages@v4
