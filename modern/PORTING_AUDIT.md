@@ -8,9 +8,9 @@
 |---|---:|---|
 | Audit fonctionnel | 75% | Snapshot manuel : 14 septembre |
 | Familles engagees | 40/40 (100%) | Familles legacy actives avec un equivalent moderne engage |
-| Indice automatique | 66% | Complet/remplace=100, partiel=50, non demarre=0 |
-| Entrees actives closes | 22/67 (32.8%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
-| Entrees actives partielles | 45/67 | Travail connu restant |
+| Indice automatique | 67% | Complet/remplace=100, partiel=50, non demarre=0 |
+| Entrees actives closes | 23/67 (34.3%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
+| Entrees actives partielles | 44/67 | Travail connu restant |
 | Non demarrees | 0 | Entrees actives sans equivalent moderne significatif |
 | Preuve CTest documentee | 127/127 (100%) | Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |
 
@@ -48,7 +48,7 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 315 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Video.*` | 316 |
 
-<details><summary>Les 45 entrees PARTIAL</summary>
+<details><summary>Les 44 entrees PARTIAL</summary>
 
 | Section | Ligne legacy | Ligne matrice |
 |---|---|---:|
@@ -74,7 +74,6 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | Jeu Monopoly | `Source/monopoly/UDChat.cpp` | 291 |
 | Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | 296 |
 | Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | 297 |
-| Jeu Monopoly | `Source/monopoly/Debugart.cpp` | 299 |
 | Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | 307 |
 | Services ArtLib consommes | `Source/artlib/L_Data.*` | 308 |
 | Services ArtLib consommes | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 310 |
