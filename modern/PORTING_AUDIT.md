@@ -7,10 +7,10 @@
 | Metrique | Valeur courante | Signification |
 |---|---:|---|
 | Audit fonctionnel | 75% | Snapshot manuel : 14 septembre |
-| Familles engagees | 41/41 (100%) | Familles legacy actives avec un equivalent moderne engage |
-| Indice automatique | 63% | Complet/remplace=100, partiel=50, non demarre=0 |
-| Entrees actives closes | 18/68 (26.5%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
-| Entrees actives partielles | 50/68 | Travail connu restant |
+| Familles engagees | 40/40 (100%) | Familles legacy actives avec un equivalent moderne engage |
+| Indice automatique | 65% | Complet/remplace=100, partiel=50, non demarre=0 |
+| Entrees actives closes | 21/67 (31.3%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
+| Entrees actives partielles | 46/67 | Travail connu restant |
 | Non demarrees | 0 | Entrees actives sans equivalent moderne significatif |
 | Preuve CTest documentee | 126/126 (100%) | Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |
 
@@ -29,7 +29,6 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 |---:|---|---|---:|
 | 4 | gameplay/runtime central | `Source/monopoly/Main.cpp` | 265 |
 | 4 | gameplay/runtime central | `Source/monopoly/Rule.cpp` | 269 |
-| 4 | gameplay/runtime central | `Source/monopoly/Tickler.cpp` | 277 |
 | 4 | gameplay/runtime central | `Source/monopoly/Userifce.cpp` | 280 |
 | 4 | gameplay/runtime central | `Source/monopoly/UDAuct.cpp` | 281 |
 | 4 | gameplay/runtime central | `Source/monopoly/UDPsel.cpp` | 286 |
@@ -47,24 +46,21 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Data.*` | 308 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 310 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Seqncr.*` | 312 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 315 |
 
-<details><summary>Les 50 entrees PARTIAL</summary>
+<details><summary>Les 46 entrees PARTIAL</summary>
 
 | Section | Ligne legacy | Ligne matrice |
 |---|---|---:|
 | Jeu Monopoly | `Source/monopoly/Main.cpp` | 265 |
 | Jeu Monopoly | `Source/monopoly/GameInc.cpp/.h` | 266 |
-| Jeu Monopoly | `Source/monopoly/Mdef.cpp` | 267 |
 | Jeu Monopoly | `Source/monopoly/Mess.cpp` | 268 |
 | Jeu Monopoly | `Source/monopoly/Rule.cpp` | 269 |
 | Jeu Monopoly | `Source/monopoly/trade.cpp` | 270 |
 | Jeu Monopoly | `Source/monopoly/Ai.cpp` | 271 |
-| Jeu Monopoly | `Source/monopoly/Ai_load.cpp` | 272 |
 | Jeu Monopoly | `Source/monopoly/Ai_trade.cpp` | 273 |
 | Jeu Monopoly | `Source/monopoly/Ai_util.cpp` | 274 |
 | Jeu Monopoly | `Source/monopoly/Lang.cpp` | 275 |
-| Jeu Monopoly | `Source/monopoly/Tickler.cpp` | 277 |
-| Jeu Monopoly | `Source/monopoly/L_voice.cpp` | 278 |
 | Jeu Monopoly | `Source/monopoly/display.cpp` | 279 |
 | Jeu Monopoly | `Source/monopoly/Userifce.cpp` | 280 |
 | Jeu Monopoly | `Source/monopoly/UDAuct.cpp` | 281 |
