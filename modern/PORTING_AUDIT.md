@@ -101,7 +101,7 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 ## Signaux informatifs
 
 - Marqueurs source/tests (`TODO`, `FIXME`, `XXX`, `TBD`) : **0**.
-- Fichiers source modernes `.cpp` dont le nom n est pas cite litteralement dans PORTING_STATUS : **195**. Ce signal reste informatif car un helper peut legitimement etre couvert par une ligne de famille.
+- Fichiers source modernes `.cpp` dont le nom n est pas cite litteralement dans PORTING_STATUS : **196**. Ce signal reste informatif car un helper peut legitimement etre couvert par une ligne de famille.
 - Premiers noms non cites : `AICounterTradeRuntime.cpp`, `AIDecisionUtility.cpp`, `AIMessageIngress.cpp`, `AIProfile.cpp`, `AIProfileRuntime.cpp`, `AISaveState.cpp`, `AITradeIngress.cpp`, `AITradeSendRuntime.cpp`, `AITradeUtility.cpp`, `AIUtility.cpp`, `Application.cpp`, `AuctionPennyBagsPlayback.cpp`, `AuctionPlayback.cpp`, `AuctionUI.cpp`, `AudioRuntime.cpp`, `BitmapRuntime.cpp`, `BoardBackdropPlayback.cpp`, `BoardCameraController.cpp`, `BoardGeometry.cpp`, `BoardLightingController.cpp`, `BoardOwnershipHighlight.cpp`, `BoardRules.cpp`, `BoardTextureRuntime.cpp`, `CardDeckRuntime.cpp`, `CardDecks.cpp`
 
 ## Limites d interpretation
