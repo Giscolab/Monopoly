@@ -542,6 +542,7 @@ target_sources(
     src/VoiceChatAudioRuntime.cpp
     src/VoiceChatLegacyContract.cpp
     src/VideoRuntime.cpp
+    src/SequenceVideoRuntime.cpp
     src/MoneyFormat.cpp
     src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
