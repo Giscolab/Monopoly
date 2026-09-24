@@ -9,8 +9,8 @@
 | Audit fonctionnel | 75% | Snapshot manuel : 14 septembre |
 | Familles engagees | 40/40 (100%) | Familles legacy actives avec un equivalent moderne engage |
 | Indice automatique | 67% | Complet/remplace=100, partiel=50, non demarre=0 |
-| Entrees actives closes | 23/67 (34.3%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
-| Entrees actives partielles | 44/67 | Travail connu restant |
+| Entrees actives closes | 24/67 (35.8%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
+| Entrees actives partielles | 43/67 | Travail connu restant |
 | Non demarrees | 0 | Entrees actives sans equivalent moderne significatif |
 | Preuve CTest documentee | 127/127 (100%) | Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |
 
@@ -27,7 +27,6 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 
 | Poids | Zone | Ligne legacy | Ligne matrice |
 |---:|---|---|---:|
-| 4 | gameplay/runtime central | `Source/monopoly/Main.cpp` | 265 |
 | 4 | gameplay/runtime central | `Source/monopoly/Rule.cpp` | 269 |
 | 4 | gameplay/runtime central | `Source/monopoly/Userifce.cpp` | 280 |
 | 4 | gameplay/runtime central | `Source/monopoly/UDPsel.cpp` | 286 |
@@ -47,12 +46,12 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Seqncr.*` | 312 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 315 |
 | 2 | infrastructure ArtLib active | `Source/artlib/L_Video.*` | 316 |
+| 2 | infrastructure ArtLib active | `Commandes 'L_Seqncr` | 344 |
 
-<details><summary>Les 44 entrees PARTIAL</summary>
+<details><summary>Les 43 entrees PARTIAL</summary>
 
 | Section | Ligne legacy | Ligne matrice |
 |---|---|---:|
-| Jeu Monopoly | `Source/monopoly/Main.cpp` | 265 |
 | Jeu Monopoly | `Source/monopoly/GameInc.cpp/.h` | 266 |
 | Jeu Monopoly | `Source/monopoly/Mess.cpp` | 268 |
 | Jeu Monopoly | `Source/monopoly/Rule.cpp` | 269 |
