@@ -66,6 +66,26 @@ namespace monopoly::sequence
             return result;
         }
 
+        std::string videoFileName(
+            const data::LegacySequenceAttributes& attributes)
+        {
+            for (const auto& attribute : attributes.values)
+                if (const auto* file =
+                    std::get_if<data::SequenceFileName5Attribute>(&attribute))
+                    return file->fileName;
+            return {};
+        }
+
+        std::optional<data::Sequence2DBoundingBoxAttribute> videoBoundingBox(
+            const data::LegacySequenceAttributes& attributes)
+        {
+            for (const auto& attribute : attributes.values)
+                if (const auto* box =
+                    std::get_if<data::Sequence2DBoundingBoxAttribute>(&attribute))
+                    return *box;
+            return std::nullopt;
+        }
+
         float initialCameraFieldOfView(const data::LegacySequenceRecord& record,
             const data::LegacySequenceAttributes& attributes,
             std::uint8_t dimensionality) noexcept
@@ -258,11 +278,11 @@ namespace monopoly::sequence
                 currentId, currentOffset, record.error()));
             if (record->chunk.id != 1 && record->chunk.id != 2 &&
                 record->chunk.id != 3 && record->chunk.id != 5 &&
-                record->chunk.id != 7 && record->chunk.id != 9 &&
-                record->chunk.id != 10)
+                record->chunk.id != 6 && record->chunk.id != 7 &&
+                record->chunk.id != 9 && record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect, 2D bitmap, sound, camera, 3D mesh and tweeker records only"));
+                    "runtime currently executes grouping, indirect, 2D bitmap, sound, video intent, camera, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -892,6 +912,34 @@ namespace monopoly::sequence
                     std::holds_alternative<data::SequenceSoundData>(definition.record.data))
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(), node->clock.endingAction()});
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
+        return result;
+    }
+
+    std::vector<SequenceVideoInstanceView> SequenceRuntime::videoInstances() const
+    {
+        std::vector<SequenceVideoInstanceView> result;
+        const auto visit = [&](const auto& self, const Nodes& nodes) -> void {
+            for (const auto& node : nodes)
+            {
+                const auto& definition = node->definition();
+                if (std::holds_alternative<data::SequenceVideoData>(
+                        definition.record.data) &&
+                    node->dimensionality == 2 &&
+                    std::holds_alternative<Matrix2D>(node->worldTransform))
+                {
+                    result.push_back({
+                        node->id,
+                        node->priority,
+                        node->clock.clock(),
+                        std::get<data::SequenceVideoData>(definition.record.data),
+                        videoFileName(definition.attributes),
+                        videoBoundingBox(definition.attributes),
+                        std::get<Matrix2D>(node->worldTransform)});
+                }
                 self(self, node->children);
             }
         };

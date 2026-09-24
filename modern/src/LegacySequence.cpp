@@ -49,6 +49,7 @@ namespace monopoly::data
             case 3: return 16; // Bitmap
             case 4: return 24; // Model (geometry, texture table, joints)
             case 5: return 16; // Sound
+            case 6: return 22; // Video: header + ten one-byte playback fields
             case 7: return 21; // Camera: header + near/far + packed label
             case 9: return 16; // Mesh
             case 10: return 13; // Tweeker (common header + interpolation ID)
@@ -93,6 +94,38 @@ namespace monopoly::data
                 return std::unexpected(SequenceError{SequenceErrorCode::AttributeLimitExceeded,
                     part->headerOffset, "sequence attribute count exceeds configured limit", {}});
 
+            // FILE_NAME_5 is a variable-length external filename used by
+            // video sequences. Keep it as an owned byte-preserving string; path
+            // resolution remains the responsibility of ResourcePaths.
+            if (part->id == 24)
+            {
+                if (part->dataSize > 4096)
+                    return std::unexpected(SequenceError{
+                        SequenceErrorCode::AttributeLimitExceeded,
+                        part->dataOffset,
+                        "sequence external filename exceeds 4096 bytes", {}});
+                const auto bytes = candidate.map(part->dataSize);
+                if (!bytes || bytes->size() != part->dataSize)
+                    return std::unexpected(SequenceError{
+                        SequenceErrorCode::ChunkFailure,
+                        part->dataOffset,
+                        "cannot map sequence external filename",
+                        bytes ? std::optional<ChunkError>{}
+                              : std::optional<ChunkError>{bytes.error()}});
+                std::string fileName;
+                fileName.reserve(bytes->size());
+                for (const auto byte : *bytes)
+                {
+                    const auto value = std::to_integer<std::uint8_t>(byte);
+                    if (value == 0) break;
+                    fileName.push_back(static_cast<char>(value));
+                }
+                result.values.push_back(
+                    SequenceFileName5Attribute{*part, std::move(fileName)});
+                (void)candidate.ascend();
+                continue;
+            }
+
             std::size_t required{};
             switch (part->id)
             {
@@ -103,6 +136,7 @@ namespace monopoly::data
             case 133: required = 12; break;
             case 134: required = 64; break;
             case 135: required = 48; break;
+            case 136: required = 16; break;
             case 139: required = 8; break;
             case 140: required = 1; break;
             case 144: required = 4; break;
@@ -170,6 +204,13 @@ namespace monopoly::data
                     readF32(*bytes, 12), readF32(*bytes, 16), readF32(*bytes, 20),
                     readF32(*bytes, 24), readF32(*bytes, 28), readF32(*bytes, 32),
                     readF32(*bytes, 36), readF32(*bytes, 40), readF32(*bytes, 44)});
+                break;
+            case 136:
+                result.values.push_back(Sequence2DBoundingBoxAttribute{*part,
+                    static_cast<std::int32_t>(readU32(*bytes, 0)),
+                    static_cast<std::int32_t>(readU32(*bytes, 4)),
+                    static_cast<std::int32_t>(readU32(*bytes, 8)),
+                    static_cast<std::int32_t>(readU32(*bytes, 12))});
                 break;
             case 139:
                 result.values.push_back(Sequence3DMeshChoiceAttribute{*part,
@@ -279,6 +320,22 @@ namespace monopoly::data
             break;
         case 5:
             record.data = SequenceSoundData{ readU32(*mapped, 12) };
+            break;
+        case 6:
+            record.data = SequenceVideoData{
+                std::to_integer<std::uint8_t>((*mapped)[12]) != 0,
+                std::to_integer<std::uint8_t>((*mapped)[13]) != 0,
+                std::to_integer<std::uint8_t>((*mapped)[14]),
+                std::to_integer<std::uint8_t>((*mapped)[15]) != 0,
+                std::to_integer<std::uint8_t>((*mapped)[16]) != 0,
+                std::to_integer<std::uint8_t>((*mapped)[17]) != 0,
+                std::to_integer<std::uint8_t>((*mapped)[18]) != 0,
+                static_cast<std::int8_t>(
+                    std::to_integer<std::uint8_t>((*mapped)[19])),
+                static_cast<std::int8_t>(
+                    std::to_integer<std::uint8_t>((*mapped)[20])),
+                static_cast<std::int8_t>(
+                    std::to_integer<std::uint8_t>((*mapped)[21]))};
             break;
         case 7:
             record.data = SequenceCameraData{readF32(*mapped, 12),

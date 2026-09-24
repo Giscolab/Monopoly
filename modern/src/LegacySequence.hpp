@@ -74,6 +74,19 @@ namespace monopoly::data
         DataId jointPositionsDataId{};
     };
     struct SequenceSoundData { DataId soundDataId{}; };
+    struct SequenceVideoData
+    {
+        bool drawSolid{};
+        bool flipVertically{};
+        std::uint8_t alphaLevel{};
+        bool enableVideo{};
+        bool enableAudio{};
+        bool drawDirectlyToScreen{};
+        bool doubleAlternateLines{};
+        std::int8_t saturation{};
+        std::int8_t brightness{};
+        std::int8_t contrast{};
+    };
     struct SequenceCameraData
     {
         float nearClipPlaneDistance{1.0F};
@@ -89,6 +102,7 @@ namespace monopoly::data
         SequenceBitmapData,
         SequenceModelData,
         SequenceSoundData,
+        SequenceVideoData,
         SequenceCameraData,
         SequenceMeshData,
         SequenceTweekerData>;
@@ -127,12 +141,22 @@ namespace monopoly::data
         float roll{}, pitch{}, yaw{};
         float scaleX{}, scaleY{}, scaleZ{};
     };
+    struct Sequence2DBoundingBoxAttribute
+    {
+        ChunkInfo chunk;
+        std::int32_t left{}, top{}, right{}, bottom{};
+    };
     struct Sequence3DMeshChoiceAttribute
     { ChunkInfo chunk; std::int16_t meshIndexA{}, meshIndexB{}; float meshProportion{}; };
     struct SequenceLabelAttribute
     { ChunkInfo chunk; std::uint8_t labelNumber{}; };
     struct SequenceCameraFieldOfViewAttribute
     { ChunkInfo chunk; float fieldOfView{}; };
+    struct SequenceFileName5Attribute
+    {
+        ChunkInfo chunk;
+        std::string fileName;
+    };
     struct SequenceUnsupportedAttribute { ChunkInfo chunk; };
 
     using LegacySequenceAttribute = std::variant<
@@ -143,9 +167,11 @@ namespace monopoly::data
         Sequence3DOffsetAttribute,
         Sequence3DMatrixAttribute,
         Sequence3DOriginScaleRotateOffsetAttribute,
+        Sequence2DBoundingBoxAttribute,
         Sequence3DMeshChoiceAttribute,
         SequenceLabelAttribute,
         SequenceCameraFieldOfViewAttribute,
+        SequenceFileName5Attribute,
         SequenceUnsupportedAttribute>;
 
     struct LegacySequenceAttributes

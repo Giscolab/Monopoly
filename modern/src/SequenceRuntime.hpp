@@ -154,6 +154,16 @@ namespace monopoly::sequence
         std::int32_t clock{};
         std::uint8_t endingAction{};
     };
+    struct SequenceVideoInstanceView
+    {
+        SequenceNodeId node{};
+        std::uint16_t priority{};
+        std::int32_t clock{};
+        data::SequenceVideoData video{};
+        std::string fileName;
+        std::optional<data::Sequence2DBoundingBoxAttribute> boundingBox;
+        Matrix2D worldTransform{};
+    };
     struct SequenceMeshInstanceView
     {
         SequenceNodeId node{};
@@ -223,6 +233,7 @@ namespace monopoly::sequence
         // Active 2D bitmap leaves in runtime traversal order.
         [[nodiscard]] std::vector<SequenceBitmapInstanceView> bitmapInstances() const;
         [[nodiscard]] std::vector<SequenceSoundInstanceView> soundInstances() const;
+        [[nodiscard]] std::vector<SequenceVideoInstanceView> videoInstances() const;
         [[nodiscard]] std::vector<SequenceMeshInstanceView> meshInstances() const;
         // Active 3D camera sequences with raw ArtLib FOV semantics. Projection
         // interpretation remains the renderer's responsibility.
