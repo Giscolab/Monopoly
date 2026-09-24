@@ -31,6 +31,9 @@ int main()
                 ok.negativeText == "Cancel",
             "OK/Cancel exposes the retail labels");
 
+        require(debugui::ErrorExitStatus == 20,
+            "ErrorExit preserves the retail process exit status 20");
+
         const auto noDefault =
             debugui::questionPlan(debugui::Question::YesNo, false);
         require(noDefault.positiveText == "Yes" &&

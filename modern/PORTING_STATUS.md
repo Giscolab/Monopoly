@@ -175,9 +175,9 @@ egalement des snapshots historiques.
 | File MESS / sessions voice-chat | `3609b32`, `4ffbc1c` | Dequeue prioritaire du voice-chat pendant un game-queue lock, parseur ArtLib `CHAT/fmt/dims/volm/DATN/DAT1/POSN/STOP` et jusqu'a 10 sessions de reception par source. Capture, codec GSM 6.10 et lecture audio restent hors de ce lot. |
 
 Indicateurs structurels recalcules sur la matrice actuelle : **40/40 familles
-engagees = 100 %** (les 7 familles `LEGACY_UNUSED` sont exclues) et **66 %
-d'indice automatique** sur 67 entrees actives : 22 completes/remplacees,
-45 partielles et 0 non demarree. L'ancienne estimation globale de 75 % du
+engagees = 100 %** (les 7 familles `LEGACY_UNUSED` sont exclues) et **67 %
+d'indice automatique** sur 67 entrees actives : 23 completes/remplacees,
+44 partielles et 0 non demarree. L'ancienne estimation globale de 75 % du
 14 septembre est conservee uniquement comme snapshot historique; elle n'est
 pas reutilisee comme estimation courante sans nouvel audit fonctionnel global.
 Le premier indicateur du SVG est donc explicitement le **dernier audit
@@ -296,7 +296,7 @@ de `UDOpts` a maintenant un owner runtime reel. Token Voices possede desormais s
 | `Source/monopoly/UDPenny.cpp` | `UDPennyVoice`, `TokenVoiceCatalog`, `PennybagsCatalog`, `UserInterface`, `Engine`, `UDSoundRuntime` | `PORTED_PARTIAL` | reactions vocales achat/enchere/GoToJail et selecteur pur des reactions de case | GameState, BoardRules, Token Voices, Host Comments/Pennybags | `UDPennyVoice` porte les branches retail deterministes : achat, enchere, GoToJail, GO, Free Parking, taxes, prison, proprietes libres/propres/hypothequees, railroads/utilities, maisons/hotel et seuils loyer/fortune. Les hooks runtime exacts sont actifs pour achat accepte, enchere acceptee et GoToJail; les reactions Token Voice de fin de mouvement sont maintenant raccordees au terme reel de `PieceMovePlayback`, avec `JustReadACardHack`, `AI_Get_Total_Worth`/`AI_Rent_If_Stepped_On` equivalents modernes et reset du garde apres landing. Host Comments/Pennybags est maintenant raccorde pour achat humain/monopole, prompt Buy-or-Auction, GoToJail humain et reactions de landing Chance/Community Chest/Free Parking/GO/taxes/Just Visiting. UDPENNY_PassedGo est aussi reproduit au moment exact ou un segment termine sur GO avant de poursuivre, sans doublonner le cas ou GO est la destination finale. Les annonces vocales des proprietes sont maintenant raccordees avant la reaction de landing : USA utilise DAT_LANGDIALOG avec WAV_s_010000 + square + city*41; Europe utilise DAT_BOARD avec WAV_s_010201 + propconv[square] + city*28. Le son est lance en Skip puis watch/queue-lock comme le retail, afin que la reaction suivante attende sa fin. Les custom boards Europe city=-1 restent volontairement muets tant que iLangId n a pas de proprietaire moderne. La lecture vocale des cartes est maintenant raccordee au demarrage reel de l animation DeckOut : le build USA utilise le mapping retail contigu WAV_pb186 + index 0..31 dans DAT_LANGDIALOG. Le mapping Europe 0..31 est maintenant porte depuis `UDPENNY_GetCorrectCardWav`: Chance conserve tables monnaie/pays, variantes Euro/default et cas irreguliers 1/7; Community Chest conserve les variantes monetaire 01..04/06..16 et la carte pays partagee 05. `Display::State.system` est l owner monetaire moderne et les custom boards city=-1 retombent sur la langue active comme le `iLangId-2` retail. `UDPENNY_NextPlayer` est maintenant raccorde sur `NotifyStartTurn` : prompt Pennybags generique a 7 % sinon ligne du pion, voix `Intro` au premier mouvement, puis pour une IA tirage 1/8 avec `StartSide4Only` sur les cases 31..39 ou `StartTurnGeneric`; la consommation de `rand()` conserve le short-circuit retail et le prompt hote est watch/queue-locke avant la voix du pion. `UDPENNY_AnnounceRoll` est aussi raccorde au signal existant `DicePlayback::announceRoll` a elapsed 91, mappe les totaux 2..12 vers `PB_SayDiceRoll_2..12` et reste muet quand Token Animations est OFF. Restent les commentaires Pennybags des autres ecrans et les chemins audio/custom-board qui dependent encore d owners ou de donnees non portes. |
 | `Source/monopoly/UDUtils.cpp` | `UDUtils`, `ResourcePaths`, `ResourceContext`, `TextureCatalog` | `PORTED_PARTIAL` | chemins, INI, choix HMD, substitutions de textures | filesystem, DATA, assets | Resolver portable raccorde au startup DATA selon edition/langue, racines explicites et casse ASCII des chemins legacy. Recettes stock ville/langue/plateau/devise raccordees aux chemins BMP et au mesh via BoardTextureRuntime; custom externe reste differe. INI/CD et recherche par basename remplaces. |
 | `Source/monopoly/Unility.cpp` | Aucun requis dans la cible livree | `LEGACY_UNUSED` | conversions Unicode/locale historiques | aucun | `TheGame.dsp` lie le fichier, mais ses deux seuls callers sont inactifs : `Userifce.cpp` sous `#if 0`, `Main.cpp` sous `#if FOREMAILVERSION` avec `FOREMAILVERSION 0` dans `GameInc.h`. Les conversions modernes utilisent SDL/std::wstring/UTF-16 sans ces wrappers C locale. |
-| `Source/monopoly/Debugart.cpp` | `DebugDialogs` | `PORTED_PARTIAL` | `DisplayMessage`, `RetryMessage`, `OKCancelMessage`, `YesNoMessage` | SDL3 native message boxes | La famille est engagee avec un service portable synchrone base sur `SDL_ShowSimpleMessageBox`/`SDL_ShowMessageBox`. Les labels, retours booleens, bouton par defaut et Escape reproduisent les quatre contrats Win32 actifs de `Debugart.cpp` sans dependance `MessageBox`. `ErrorExit` n est pas branche dans le runtime moderne : aucun caller actif n a ete trouve dans le source Monopoly, et l arret brutal reste volontairement hors de ce premier lot. |
+| `Source/monopoly/Debugart.cpp` | `DebugDialogs` | `PORTED_COMPLETE` | `DisplayMessage`, `RetryMessage`, `OKCancelMessage`, `YesNoMessage`, `ErrorExit` | SDL3 native message boxes | Audit du 24/09 : les cinq exports sont maintenant portes. Les quatre dialogues synchrones utilisent `SDL_ShowSimpleMessageBox`/`SDL_ShowMessageBox` avec labels, retours, bouton par defaut et Escape conformes au contrat Win32. `errorExit` reproduit aussi le titre retail puis termine le processus avec le code **20** apres tentative d affichage. Aucun caller direct `Debugart` n est requis dans le runtime moderne : les anciens macros/erreurs de sous-systemes remplaces passent par leurs erreurs typees/logging, mais le contrat legacy reste disponible sans dependance `MessageBox`. |
 
 ## Services ArtLib consommes
 
@@ -658,19 +658,21 @@ fallback natif et transitions transactionnelles.
 
 Enfin, `a797312` engage les trois dernieres familles de la matrice :
 `L_voice.cpp` via `VoiceChatLegacyContract`, `Debugart.cpp` via
-`DebugDialogs` et `L_Video.*` via `VideoRuntime`. Le dernier lot ne pretend
-pas fermer ces familles : la voix conserve des qualifications device/reseau,
-`ErrorExit` reste sans caller actif, et la video n a encore ni decodeur
-pixels/audio ni raccordement aux opcodes video du sequenceur.
+`DebugDialogs` et `L_Video.*` via `VideoRuntime`. Ce lot etait initialement
+un engagement seulement; l audit du 24/09 ferme depuis `L_voice.cpp` comme
+remplacement portable et `Debugart.cpp` comme port complet. La video reste
+partielle : elle n a encore ni decodeur pixels/audio ni raccordement aux
+opcodes video du sequenceur.
 
 La preuve executable courante est maintenant **127/127 suites CTest passees,
-zero echec** sur Windows/MSVC Debug apres reconfiguration CMake et ajout de la
-suite `Monopoly.AuctionTextPlayback`; le run complet dure 27,82 s. Cette preuve
-remplace le checkpoint 126/126. Les changements de cette passe ne touchent pas
-`Source/` et le nouvel executable de test a ete compile avant la campagne globale.
+zero echec** sur Windows/MSVC Debug apres les passes Auction et Debugart; le
+run complet le plus recent dure **27,15 s**. Cette preuve remplace le checkpoint
+126/126. Les changements de ces passes ne touchent pas `Source/`; les cibles
+`Monopoly.AuctionTextPlayback` et `Monopoly.DebugDialogs` ont aussi passe leurs
+tests cibles avant les campagnes globales.
 
-Etat structurel courant : **40/40 familles engagees = 100 %**, **66 % d indice
-automatique**, soit 22 entrees completes/remplacees, 45 partielles et
+Etat structurel courant : **40/40 familles engagees = 100 %**, **67 % d indice
+automatique**, soit 23 entrees completes/remplacees, 44 partielles et
 0 non demarree. Ces nombres ne signifient pas que le portage global est termine :
 le dernier audit fonctionnel global reste le snapshot historique **75 % du
 14 septembre** tant qu un nouvel audit fonctionnel du HEAD n a pas ete mene.
@@ -740,12 +742,25 @@ La matrice atteint donc **22 completes/remplacees, 45 partielles sur
 totalement closes**. Le prochain recalcul fonctionnel global reste volontairement
 separe de ces indicateurs mecaniques.
 
+## Audit fonctionnel du 24 septembre 2026 - passe 3
+
+`Debugart.cpp` est maintenant ferme : `DebugDialogs` expose les quatre boites
+synchrones et le contrat fatal `ErrorExit`, qui tente le meme message puis
+termine avec le code 20. Le test de contrat valide aussi cette constante et la
+cible `Monopoly.DebugDialogs` passe apres recompilation. Aucun caller direct
+legacy n est requis pour rendre ce service disponible aux chemins modernes.
+
+La matrice courante passe a **23 completes/remplacees, 44 partielles sur
+67 actives**, soit **67 % d indice automatique** et **34,3 % d entrees actives
+totalement closes**. Le score fonctionnel manuel reste separe tant que l audit
+de parcours n est pas termine.
+
 ## Prochaines priorites requalifiees
 
 1. **Recalculer l audit fonctionnel global du HEAD.** L engagement des familles
    est termine; le prochain indicateur utile est maintenant l inventaire des
-   45 entrees `PORTED_PARTIAL` classees par impact sur un parcours de partie
-   reel. Ne pas extrapoler le 75 % historique ni le 66 % structurel.
+   44 entrees `PORTED_PARTIAL` classees par impact sur un parcours de partie
+   reel. Ne pas extrapoler le 75 % historique ni le 67 % structurel.
 2. **Fermer d abord les manques visibles sur le parcours jouable**, en suivant
    cet audit : surfaces 2D/GRAFIX encore partielles, popup calculateur
    `UDStats`, datasets Bank externes/Account History lorsqu ils ont un owner

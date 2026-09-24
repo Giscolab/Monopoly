@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <cstdlib>
 
 namespace monopoly::debugui
 {
@@ -129,5 +130,16 @@ namespace monopoly::debugui
             title, message,
             questionPlan(Question::YesNo, defaultYes),
             window);
+    }
+
+    [[noreturn]] void errorExit(
+        std::string_view message,
+        SDL_Window* window)
+    {
+        (void)displayMessage(
+            "Something went wrong!  Error Exit Message:",
+            message,
+            window);
+        std::exit(ErrorExitStatus);
     }
 }

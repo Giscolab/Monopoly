@@ -8,6 +8,8 @@ struct SDL_Window;
 
 namespace monopoly::debugui
 {
+    inline constexpr int ErrorExitStatus = 20;
+
     enum class Question
     {
         RetryCancel,
@@ -47,5 +49,9 @@ namespace monopoly::debugui
         std::string_view title,
         std::string_view message,
         bool defaultYes,
+        SDL_Window* window = nullptr);
+
+    [[noreturn]] void errorExit(
+        std::string_view message,
         SDL_Window* window = nullptr);
 }
