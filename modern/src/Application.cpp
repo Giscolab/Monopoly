@@ -272,6 +272,28 @@ namespace monopoly
                     }
                     else if (
                         event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                        event.button.button == SDL_BUTTON_MIDDLE)
+                    {
+                        sendMouseMessage(
+                            window,
+                            uimsg::Type::MouseMiddleDown,
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
+                    else if (
+                        event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                        event.button.button == SDL_BUTTON_MIDDLE)
+                    {
+                        sendMouseMessage(
+                            window,
+                            uimsg::Type::MouseMiddleUp,
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
+                    else if (
+                        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                         event.button.button == SDL_BUTTON_RIGHT)
                     {
                         sendMouseMessage(

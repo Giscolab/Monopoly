@@ -17,6 +17,8 @@ namespace monopoly::uimsg
         MouseMoved,
         MouseLeftDown,
         MouseLeftUp,
+        MouseMiddleDown,
+        MouseMiddleUp,
         MouseRightDown,
         MouseRightUp,
         Quit
@@ -42,6 +44,9 @@ namespace monopoly::uimsg
 
     bool send(const Message& message);
     bool receive(Message& message);
+    bool wait(Message& message);
+    void flushEvents();
+    [[nodiscard]] int percentageFull();
 
     // Retire les expirations deja en file lors de l'arret d'un timer de jeu.
     // Les autres timers et entrees conservent strictement leur ordre FIFO.
