@@ -1597,6 +1597,37 @@ if(BUILD_TESTING)
     )
 endif()
 
+# UDAuct.cpp runtime GRAFIX/FONTS surfaces
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyAuctionTextPlaybackTests
+        tests/AuctionTextPlaybackTests.cpp
+        src/AuctionTextPlayback.cpp
+        src/AuctionUI.cpp
+        src/IBarLayout.cpp
+        src/MoneyFormat.cpp
+        src/FontRuntime.cpp
+    )
+    target_include_directories(
+        MonopolyAuctionTextPlaybackTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(
+        MonopolyAuctionTextPlaybackTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyAuctionTextPlaybackTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.AuctionTextPlayback
+        COMMAND MonopolyAuctionTextPlaybackTests
+    )
+endif()
+
 # UDAuct.cpp Pennybags graphic state machine / deferred roll-call
 if(BUILD_TESTING)
     add_executable(
