@@ -43,6 +43,8 @@ namespace
     bool mouseActive = false;
     bool slotsActive = false;
     bool expectResourcesDuringCleanup = false;
+    std::size_t processedUIMessages = 0;
+    std::uint64_t displayTicks = 0;
 
     void expect(bool condition, std::string_view description)
     {
@@ -207,6 +209,8 @@ namespace
         injectedFailure = Failure::None;
         expectResourcesDuringCleanup = false;
         messagingActive = displayActive = mouseActive = slotsActive = false;
+        processedUIMessages = 0;
+        displayTicks = 0;
         expect(uimsg::initialize() && timers::initialize(),
             "real UI queue and timer service initialize");
     }
@@ -222,6 +226,52 @@ namespace
         expect(uimsg::size() == 0,
             "game timers produce no new events after shutdown or rollback");
         expectResourcesDuringCleanup = false;
+    }
+
+    void testUpdateCycleContract(const Fixture& fixture)
+    {
+        prepare();
+        if (!setPaths(fixture.root)) return;
+        expect(game::startup(),
+            "Game startup succeeds for update-cycle contract");
+        if (!startup::resources()) return;
+
+        // Isolate Main.cpp/Game.cpp scheduling from periodic timer messages.
+        expect(timers::configure(0, 0, 0, false, 0) &&
+               timers::configure(1, 0, 0, false, 0),
+            "update-cycle fixture disables periodic UI timer traffic");
+        uimsg::Message drained{};
+        while (uimsg::receive(drained)) {}
+
+        for (int index = 0; index < 60; ++index)
+            expect(uimsg::send({uimsg::Type::KeyboardPressed, index}),
+                "update-cycle fixture queues important UI message");
+
+        processedUIMessages = 0;
+        expect(game::updateCycle() &&
+               processedUIMessages == 49 &&
+               uimsg::size() == 11,
+            "GameUpdateCycle preserves the retail 50-counter cap of 49 dequeues");
+
+        timers::advanceTicks(5);
+        expect(game::updateCycle() &&
+               processedUIMessages == 60 &&
+               uimsg::size() == 0 &&
+               displayTicks == 5,
+            "GameUpdateCycle drains the remainder and forwards elapsed display ticks");
+
+        processedUIMessages = 0;
+        expect(uimsg::send({uimsg::Type::Quit}) &&
+               uimsg::send({uimsg::Type::KeyboardPressed, 999}),
+            "quit fixture queues termination before trailing input");
+        expect(!game::updateCycle() &&
+               processedUIMessages == 1 &&
+               uimsg::size() == 1,
+            "ProcessUIMessage false stops the GameUpdateCycle immediately");
+
+        while (uimsg::receive(drained)) {}
+        game::shutdown();
+        expectStopped();
     }
 
     void testSuccessAndShutdown(const Fixture& fixture)
@@ -397,7 +447,7 @@ namespace monopoly::display
         expect(screen == Screen2D::PlayerSelect,
             "extended startup chooses source-defined player selection backdrop");
     }
-    void tickActions(std::uint64_t) {}
+    void tickActions(std::uint64_t ticks) { displayTicks += ticks; }
 }
 
 namespace monopoly::rules
@@ -420,7 +470,11 @@ namespace monopoly::userinterface
 {
     void resetRuleProjection() {}
     void resetTimeStep() {}
-    bool processUIMessage(const uimsg::Message&) { return true; }
+    bool processUIMessage(const uimsg::Message& message)
+    {
+        ++processedUIMessages;
+        return message.type != uimsg::Type::Quit;
+    }
 }
 
 namespace monopoly::playerselection
@@ -440,6 +494,7 @@ int main()
         if (fixture.ready)
         {
             testSuccessAndShutdown(fixture);
+            testUpdateCycleContract(fixture);
             testRollbackAndRetry(fixture, Failure::Messaging);
             testRollbackAndRetry(fixture, Failure::Display);
             testRollbackAndRetry(fixture, Failure::Rules);

@@ -176,8 +176,8 @@ egalement des snapshots historiques.
 
 Indicateurs structurels recalcules sur la matrice actuelle : **40/40 familles
 engagees = 100 %** (les 7 familles `LEGACY_UNUSED` sont exclues) et **67 %
-d'indice automatique** sur 67 entrees actives : 23 completes/remplacees,
-44 partielles et 0 non demarree. L'ancienne estimation globale de 75 % du
+d'indice automatique** sur 67 entrees actives : 24 completes/remplacees,
+43 partielles et 0 non demarree. L'ancienne estimation globale de 75 % du
 14 septembre est conservee uniquement comme snapshot historique; elle n'est
 pas reutilisee comme estimation courante sans nouvel audit fonctionnel global.
 Le premier indicateur du SVG est donc explicitement le **dernier audit
@@ -262,7 +262,7 @@ de `UDOpts` a maintenant un owner runtime reel. Token Voices possede desormais s
 
 | Original | Equivalent moderne | Statut | Symboles originaux importants | Dependances | Travail restant / blocage |
 |---|---|---|---|---|---|
-| `Source/monopoly/Main.cpp` | `Application`, `Engine`, `Game`, `RenderSlots`, `Timers`, `GPUFrame` | `PORTED_PARTIAL` | `GameInitialise`, `InitRenderSlots`, `ProcessUIMessage`, `GameShutdown`, `GameUpdateCycle` | SDL3, SDL_GPU, DISPLAY, UI messages | Lifecycle DATA/LANG et timers raccorde. World3D 1 et Overlay2D alimentent maintenant des renderers SDL_GPU reels jusqu au swapchain/offscreen, avec readbacks D3D12; le renderer UI generique et le parcours interactif retail restent incomplets. |
+| `Source/monopoly/Main.cpp` | `Application`, `Engine`, `Game`, `RenderSlots`, `Timers`, `GPUFrame`, `UserInterface` | `REPLACED_PORTABLE` | `GameStartup`, `InitRenderSlots`, `ProcessUIMessage`, `GameShutdown`, `GameUpdateCycle` / `GameLoop` | SDL3, SDL_GPU, DISPLAY, UI messages | Audit du 24/09 : le contrat de Main est remplace sans omission connue. `Game::startup` conserve GenerateINI -> slots -> mouse -> timer secondaire -> extended init; `RenderSlots` verrouille les slots 0/1/2/3, le set sequence 2|1|3 et le repere souris sur 2. `Application` porte la boucle SDL et la terminaison; `Game::updateCycle` conserve la limite retail `LimitCount=50` (49 dequeues maximum par cycle) puis transmet le delta de ticks a DISPLAY; `Game::shutdown` respecte l ordre display/resources. `ResourceLifecycleTests` verrouille maintenant startup/rollback/shutdown, cap de messages, ticks et arret immediat quand `ProcessUIMessage` renvoie false. Le vieux pointeur texte cree dans Main est remplace par le `TAB_pointer` reel installe par DISPLAY/MousePointer, comme l ancien `DeleteOtherMouseSequences`; le background runtime de sample etait deja commente. Les incompletudes UI/render des sous-systemes restent suivies dans leurs propres lignes, pas dans Main. |
 | `Source/monopoly/GameInc.cpp/.h` | `DataBanks`, `ResourceContext`, `ExtendedInitialization`, CMake et includes modernes explicites | `PORTED_PARTIAL` | PCH historique, `DAT_*`, `MAIN_GAME_TIMER`, switches de build | Tous les sous-systemes | Audit du 24/09 : `GameInc.cpp` est uniquement le constructeur du PCH. Les groupes DAT 2/3/5/6/7/8/9/10 sont verrouilles par `LegacyGroupId`, et `MAIN_GAME_TIMER=0` avec speed/restart/message retail est porte dans `ExtendedInitialization`. Les switches morts Email/Hotseat/Hotkeys sont hors cible, mais `USE_OPENING_MOVIES=1` a encore un effet fonctionnel non restitue : le startup moderne entre directement en PlayerSelect tant que le chemin video ArtLib n est pas raccorde. La ligne reste donc partielle pour cette dependance explicite, pas pour le concept de PCH. |
 | `Source/monopoly/Mdef.cpp` | `DataBanks::LanguageId`, `ResourceContext`, resultats d initialisation modernes | `REPLACED_PORTABLE` | `MDEF_CurrentLanguage`, langues 0..10, `MDEF_CompleteInitializationSuccessful` | LANG, ResourceRuntime | Audit du 24/09 : `Mdef.cpp` ne contient que deux globals et son header les identifiants de langue, switches de build, longueur de chemin et resolution de tick. Les valeurs de langue 1..10 sont verrouillees par `LanguageId`/`LegacyDataContractTests`; le langage courant appartient au `ResourceContext`. `MDEF_CompleteInitializationSuccessful`, `MDEF_TICK_RESOLUTION`, `MDEF_MAX_PATH_LENGTH` et le define de version n ont pas de caller runtime actif exigeant un global equivalent; le succes d initialisation est porte par les retours types des owners modernes. |
 | `Source/monopoly/Mess.cpp` | `Messaging` | `PORTED_PARTIAL` | `MESS_InitializeSystem`, `MESS_SendAction`, `MESS_ReceiveActionMessage`, modes serveur/reseau | RULE, UI, Transport/TcpMessageTransport | File locale fonctionnelle avec la capacite retail exacte; owner optionnel TCP IPv4 moderne pour GIS-8, sans DirectPlay. `receiveVoiceChatOnly` reproduit maintenant `MESS_ReceiveVoiceChatMessageOnly` en extrayant ACTION/NOTIFY_VOICE_CHAT depuis le milieu de la file sans consommer les messages de jeu precedents. Le transport distant vocal est implemente dans TcpMessageTransport (hote et clients spectateurs); l attribution des joueurs et le lobby restent a porter. Qualification reseau/audio non executee. |
@@ -665,14 +665,15 @@ partielle : elle n a encore ni decodeur pixels/audio ni raccordement aux
 opcodes video du sequenceur.
 
 La preuve executable courante est maintenant **127/127 suites CTest passees,
-zero echec** sur Windows/MSVC Debug apres les passes Auction et Debugart; le
-run complet le plus recent dure **27,15 s**. Cette preuve remplace le checkpoint
-126/126. Les changements de ces passes ne touchent pas `Source/`; les cibles
-`Monopoly.AuctionTextPlayback` et `Monopoly.DebugDialogs` ont aussi passe leurs
-tests cibles avant les campagnes globales.
+zero echec** sur Windows/MSVC Debug apres les passes Auction, Debugart et Main;
+le run complet le plus recent dure **27,71 s**. Cette preuve remplace le
+checkpoint 126/126. Les changements de ces passes ne touchent pas `Source/`;
+les cibles `Monopoly.AuctionTextPlayback`, `Monopoly.DebugDialogs` et
+`Monopoly.ResourceLifecycle` ont aussi passe leurs tests cibles avant les
+campagnes globales.
 
 Etat structurel courant : **40/40 familles engagees = 100 %**, **67 % d indice
-automatique**, soit 23 entrees completes/remplacees, 44 partielles et
+automatique**, soit 24 entrees completes/remplacees, 43 partielles et
 0 non demarree. Ces nombres ne signifient pas que le portage global est termine :
 le dernier audit fonctionnel global reste le snapshot historique **75 % du
 14 septembre** tant qu un nouvel audit fonctionnel du HEAD n a pas ete mene.
@@ -755,11 +756,30 @@ La matrice courante passe a **23 completes/remplacees, 44 partielles sur
 totalement closes**. Le score fonctionnel manuel reste separe tant que l audit
 de parcours n est pas termine.
 
+## Audit fonctionnel du 24 septembre 2026 - passe 4
+
+`Main.cpp` passe en `REPLACED_PORTABLE`. La relecture montre que ses
+responsabilites sont desormais reparties proprement entre `Application`,
+`Game`, `RenderSlots`, `UserInterface` et les owners GPU/audio. Le vieux
+pointeur runtime "Mouse" et le background de sample ne constituent pas des
+assets de jeu manquants : DISPLAY remplacait deja le pointeur par `TAB_pointer`
+et la creation du background etait commentee.
+
+`ResourceLifecycleTests` couvre maintenant aussi le contrat de boucle : le
+compteur retail `LimitCount=50` autorise exactement 49 messages par cycle, le
+reste est conserve FIFO, le delta de ticks est transmis a DISPLAY et un retour
+false de `ProcessUIMessage` stoppe immediatement le cycle. Le test cible passe
+sur Windows/MSVC Debug.
+
+La matrice courante atteint **24 completes/remplacees, 43 partielles sur
+67 actives**, soit **67 % d indice automatique** et **35,8 % d entrees actives
+totalement closes**.
+
 ## Prochaines priorites requalifiees
 
 1. **Recalculer l audit fonctionnel global du HEAD.** L engagement des familles
    est termine; le prochain indicateur utile est maintenant l inventaire des
-   44 entrees `PORTED_PARTIAL` classees par impact sur un parcours de partie
+   43 entrees `PORTED_PARTIAL` classees par impact sur un parcours de partie
    reel. Ne pas extrapoler le 75 % historique ni le 67 % structurel.
 2. **Fermer d abord les manques visibles sur le parcours jouable**, en suivant
    cet audit : surfaces 2D/GRAFIX encore partielles, popup calculateur
