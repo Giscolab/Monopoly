@@ -22,6 +22,7 @@
 #include "RuleBuildings.hpp"
 #include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
+#include "SequenceVideoRuntime.hpp"
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
 #include "PieceRuntime.hpp"
@@ -111,6 +112,7 @@ namespace monopoly::engine
         SDL_GPUDevice* gpuDevice = nullptr;
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
+        video::SequenceRuntimeBridge sequenceVideoRuntime;
         std::unique_ptr<audio::Runtime> audioRuntime;
         std::unique_ptr<voicechat::AudioRuntime> voiceChatAudioRuntime;
         bool voiceChatNetworkActive{};
@@ -2014,6 +2016,25 @@ namespace monopoly::engine
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             publishSequenceLifecycleEvents(*session);
+
+            const auto videoResources = session->resources();
+            if (!videoResources)
+                return SDL_SetError("Sequence video runtime has no resource snapshot");
+            const auto videoSync = sequenceVideoRuntime.sync(
+                session->runtime(), *videoResources);
+            if (!videoSync)
+                return SDL_SetError(
+                    "Sequence video runtime: %s", videoSync.error().c_str());
+            for (const auto& notice : *videoSync)
+            {
+                uimsg::Message message{};
+                message.type = uimsg::Type::VideoJump;
+                message.numberA = notice.event.decisionFrame;
+                message.numberB = notice.event.jumpToFrame;
+                message.numberC = notice.event.alternativeTaken ? 1 : 0;
+                (void)uimsg::send(message);
+            }
+
             if (!audioDisabled)
             {
                 const auto audioSync = syncSequenceAudio(*session);
@@ -2160,6 +2181,7 @@ namespace monopoly::engine
         audioDisabled = false;
         fontRuntime.reset();
         fontDisabled = false;
+        sequenceVideoRuntime.reset();
         playback.reset();
         activeBoardSequence.reset();
         activeWorldCamera.reset();
