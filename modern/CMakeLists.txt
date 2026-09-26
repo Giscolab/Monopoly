@@ -243,6 +243,7 @@ add_library(
     src/World3DProjection.cpp
     src/SequenceWorld3DSlot.cpp
     src/LanguageResources.cpp
+    src/LegacyTextFormat.cpp
     src/ResourcePaths.cpp
     src/ResourceRuntime.cpp
     src/LegacyManifest.cpp
@@ -3525,4 +3526,27 @@ if(BUILD_TESTING)
         target_link_libraries(MonopolyOptionsCustomBoardPlaybackTests PRIVATE Advapi32)
     endif()
     target_link_libraries(MonopolyStatsDeedBarPlaybackTests PRIVATE SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(
+        MonopolyLegacyTextFormatTests
+        tests/LegacyTextFormatTests.cpp
+    )
+    target_include_directories(
+        MonopolyLegacyTextFormatTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(
+        MonopolyLegacyTextFormatTests PRIVATE MonopolyDataCore
+    )
+    if(MSVC)
+        target_compile_options(
+            MonopolyLegacyTextFormatTests PRIVATE /W4 /permissive-
+        )
+    endif()
+    add_test(
+        NAME Monopoly.LegacyTextFormat
+        COMMAND MonopolyLegacyTextFormatTests
+    )
 endif()
