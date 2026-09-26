@@ -22,6 +22,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 |---|---|---|
 | C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; aucun build/test de cette extension. Voir [usage](NETWORK_GAME.md). |
 | C02 | FullHelp portable raccordé : conversion HLP → HTML asynchrone puis ouverture navigateur. | Exporteur externe `winhlp` requis ; conversion réelle, sujets/images et plateformes à qualifier. Voir [aide complète](FULL_HELP.md). |
+| C03 | Actes Europe dynamiques : porter UDPENNY_CreateDeed et raccorder les 28 rectos/28 versos aux consommateurs. | Userifce.cpp les régénère au démarrage et au chargement selon langue, plateau et devise ; les propriétaires modernes utilisent encore les ressources statiques. Chemin Europe distinct de D01. |
 | D01 | Six références Europe d’historique absentes du corpus livré ; aucune valeur inventée. | Les appels sont dans les branches Europe de `UDIBar.cpp`, désactivées par `USA_VERSION=1` dans le build source livré. Les définitions/données Europe restent nécessaires pour cette édition ; l’achat utilise déjà LANG 3178. |
 
 QuickHelp n’est plus bloqué par les accents hors Windows : son décodage CP1252 vers UTF-8 est explicite et testé. Les fichiers fournis sont compatibles avec ce choix ; leur contenu ne permet pas de distinguer CP1252 de Latin-1 pour les octets qu’ils emploient.
@@ -57,6 +58,8 @@ La reproduction binaire exacte de DMAKE99 est un outil de reconstruction optionn
 ## Lot de code suivant la référence
 
 Sessions réseau C01, aide C02, attente des actions IA avant trade (A02), tailles de fonts normalisées à 96 DPI (A04), cache DAT LRU global (A05) et préchargement des ressources de séquence (A06) sont implémentés dans les commits `ce78e39` à `ccf5f28`. Les autres comparaisons A01–A07 restent ouvertes : ces corrections ciblées ne prouvent pas leur clôture exhaustive.
+
+Les onze branches `assistant/*` sont intégrées (dix têtes distinctes). Elles ajoutent la durée WAV, le backend de surfaces GRAFIX partagé, le blending des ombres et des contrats de tests. Leurs conclusions utiles sont reprises dans la matrice ; les anciennes réserves déjà résolues ne sont pas réintroduites. La génération des actes Europe reste explicitement ouverte en C03.
 
 **Lot non compilé et non testé**, conformément à la consigne courante. La référence ci-dessous précède ces modifications ; elle ne les qualifie pas. Les commits de ce lot évitent le déclenchement CI, sans désactiver les workflows du dépôt.
 
