@@ -150,6 +150,12 @@ namespace monopoly::data
     { ChunkInfo chunk; std::int16_t meshIndexA{}, meshIndexB{}; float meshProportion{}; };
     struct SequenceLabelAttribute
     { ChunkInfo chunk; std::uint8_t labelNumber{}; };
+    struct SequenceSoundPitchAttribute
+    { ChunkInfo chunk; std::uint16_t pitch{}; };
+    struct SequenceSoundVolumeAttribute
+    { ChunkInfo chunk; std::uint8_t volume{100}; };
+    struct SequenceSoundPanningAttribute
+    { ChunkInfo chunk; std::int8_t panning{}; };
     struct SequenceCameraFieldOfViewAttribute
     { ChunkInfo chunk; float fieldOfView{}; };
     struct SequenceFileName5Attribute
@@ -170,6 +176,9 @@ namespace monopoly::data
         Sequence2DBoundingBoxAttribute,
         Sequence3DMeshChoiceAttribute,
         SequenceLabelAttribute,
+        SequenceSoundPitchAttribute,
+        SequenceSoundVolumeAttribute,
+        SequenceSoundPanningAttribute,
         SequenceCameraFieldOfViewAttribute,
         SequenceFileName5Attribute,
         SequenceUnsupportedAttribute>;
