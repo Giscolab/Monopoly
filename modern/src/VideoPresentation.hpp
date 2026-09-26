@@ -48,6 +48,8 @@ namespace monopoly::video
         [[nodiscard]] std::expected<void, std::string> seek(
             std::uint64_t timestampMicroseconds, std::uint64_t sequenceMicroseconds);
         [[nodiscard]] std::expected<void, std::string> setGain(float gain);
+        [[nodiscard]] std::expected<void, std::string> setPitch(
+            std::uint32_t hertz, std::uint32_t originalHertz);
         [[nodiscard]] bool videoDrained() const;
         void stop() noexcept;
     private:

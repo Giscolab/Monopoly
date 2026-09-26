@@ -1,4 +1,5 @@
 #include "VideoPresentation.hpp"
+#include "AudioRuntime.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -87,6 +88,7 @@ namespace monopoly::video
         std::uint64_t tailMedia{};
         std::uint64_t lastElapsed{};
         float gain{1.0F};
+        float frequencyRatio{1.0F};
         ~Impl() { if (stream) SDL_DestroyAudioStream(stream); }
         void clearAudio()
         {
@@ -140,6 +142,18 @@ namespace monopoly::video
         return {};
     }
 
+    std::expected<void, std::string> Presentation::setPitch(
+        std::uint32_t hertz, std::uint32_t originalHertz)
+    {
+        impl_->frequencyRatio = audio::legacyPitchFrequencyRatio(
+            hertz, originalHertz);
+        if (impl_->stream &&
+            !SDL_SetAudioStreamFrequencyRatio(
+                impl_->stream, impl_->frequencyRatio))
+            return std::unexpected(sdlError("set video audio pitch"));
+        return {};
+    }
+
     std::expected<PresentationClock, std::string> Presentation::pump(
         std::uint64_t sequenceTime, bool paused)
     {
@@ -170,6 +184,9 @@ namespace monopoly::video
             if (!state.stream) return std::unexpected(sdlError("open video audio stream"));
             if (!SDL_SetAudioStreamGain(state.stream, state.gain))
                 return std::unexpected(sdlError("set initial video audio gain"));
+            if (!SDL_SetAudioStreamFrequencyRatio(
+                    state.stream, state.frequencyRatio))
+                return std::unexpected(sdlError("set initial video audio pitch"));
         }
         int queued = SDL_GetAudioStreamQueued(state.stream);
         if (queued < 0) return std::unexpected(sdlError("query video audio queue"));

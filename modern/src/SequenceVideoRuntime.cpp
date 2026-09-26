@@ -353,6 +353,12 @@ namespace monopoly::video
             const auto gain = entry.presentation->setGain(
                 static_cast<float>(intent.volume) / 100.0F);
             if (!gain) return std::unexpected(gain.error());
+            if (intent.pitch != 0U && metadata.audioSampleRate == 0U)
+                return std::unexpected(
+                    "video audio source sample rate is unavailable for legacy pitch");
+            const auto pitch = entry.presentation->setPitch(
+                intent.pitch, metadata.audioSampleRate);
+            if (!pitch) return std::unexpected(pitch.error());
             const auto clock = entry.presentation->pump(
                 *sequenceTime, paused || entry.runtime.status().ended);
             if (!clock) return std::unexpected(clock.error());

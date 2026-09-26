@@ -32,6 +32,7 @@ namespace monopoly::video
         std::uint32_t frameRateDenominator{1};
         std::uint64_t durationMicroseconds{};
         bool hasAudio{};
+        std::uint32_t audioSampleRate{};
         std::string videoCodec;
         std::string audioCodec;
     };

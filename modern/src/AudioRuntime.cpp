@@ -120,27 +120,6 @@ namespace monopoly::audio
                 std::numeric_limits<std::uint32_t>::max()));
     }
 
-    float legacyPitchFrequencyRatio(
-        std::uint32_t requestedHertz,
-        std::uint32_t originalHertz) noexcept
-    {
-        if (originalHertz == 0U || requestedHertz == 0U)
-            return 1.0F;
-
-        constexpr std::uint32_t DirectSoundMinimumHertz = 100U;
-        constexpr std::uint32_t DirectSoundMaximumHertz = 100'000U;
-        constexpr float SdlMinimumRatio = 0.01F;
-        constexpr float SdlMaximumRatio = 100.0F;
-
-        const auto effectiveHertz = std::clamp(
-            requestedHertz,
-            DirectSoundMinimumHertz,
-            DirectSoundMaximumHertz);
-        const float ratio = static_cast<float>(effectiveHertz) /
-            static_cast<float>(originalHertz);
-        return std::clamp(ratio, SdlMinimumRatio, SdlMaximumRatio);
-    }
-
     Runtime::Runtime(
         std::shared_ptr<const data::ResourceSnapshot> resources)
         : resources_(std::move(resources))

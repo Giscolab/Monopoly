@@ -64,6 +64,7 @@ void testSilentPresentation(const test::VideoDecoderFixture& movie,bool expected
 void testAudioClockAndAbsentAudio(const test::VideoDecoderFixture& movie,const test::VideoDecoderFixture& silent) {
     video::Presentation presentation;
     checked(presentation.setGain(0.35F));
+    checked(presentation.setPitch(96'000U, 48'000U));
     require(!presentation.setGain(std::numeric_limits<float>::infinity()),
         "video presentation rejects non-finite sequence gain");
     checked(presentation.open(silent.file(),true,decoderOptions()));
@@ -79,9 +80,10 @@ void testAudioClockAndAbsentAudio(const test::VideoDecoderFixture& movie,const t
     until([&]{pump();return clock.consumedAudioBytes>0;},"SDL dummy device consumes decoded PCM");
     require(clock.elapsedMicroseconds>0,"audio clock advances while sequence time remains exactly zero");
     checked(presentation.setGain(0.20F));
+    checked(presentation.setPitch(48'000U, 48'000U));
     pump();
     require(clock.consumedAudioBytes>0,
-        "live video audio stream accepts sequence gain changes without resetting playback");
+        "live video audio stream accepts sequence gain and pitch changes without resetting playback");
     pump(true); const auto paused=clock.elapsedMicroseconds;
     std::this_thread::sleep_for(50ms); pump(true);
     require(clock.elapsedMicroseconds==paused,"pause freezes the presented media clock");
@@ -105,6 +107,7 @@ void installFiniteVideo(SyntheticSequenceResources& resources,const test::VideoD
     append({0x81000005U});bytes.push_back(std::byte{2}); // Dimensionality2.
     append({0x8C000005U});bytes.push_back(std::byte{53}); // HIT_BOX_LABEL, source private chunk140.
     append({0x88000014U,0,0,32,24}); // Intrinsic-size destination rectangle.
+    append({0x8D000006U});bytes.push_back(std::byte{0x80});bytes.push_back(std::byte{0xBB}); // SET_SOUND_PITCH, 48000 Hz.
     append({0x1800000EU}); // FILE_NAME_5, ten bytes including terminating NUL.
     for(const char value:std::string("movie.avi")) bytes.push_back(static_cast<std::byte>(value));
     bytes.push_back(std::byte{0});
@@ -136,8 +139,10 @@ void testFiniteAudioSequenceLifecycle(const test::VideoDecoderFixture& movie) {
     checked(playback.start(id,9));checked(playback.update(0));
     const auto roots=playback.runtime().matching(id,9);require(roots.size()==1,"finite video has one live root");
     const auto node=roots.front();std::int32_t tick=600;
-    require(playback.runtime().inspect(node)->label==53 && playback.runtime().inspect(node)->priority==9,
-        "CNK private label53 is distinct from the caller-assigned sequence priority9");
+    require(playback.runtime().inspect(node)->label==53 &&
+        playback.runtime().inspect(node)->priority==9 &&
+        playback.runtime().inspect(node)->pitch==48'000U,
+        "CNK label, caller priority and legacy video pitch reach the live runtime node");
     std::vector<sequence::SequenceEvent> events;
     const auto update=[&] {
         checked(playback.update(tick));const auto cycle=playback.commands().cycleEvents();

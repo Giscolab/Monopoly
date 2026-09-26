@@ -22,9 +22,18 @@ namespace monopoly::audio
     // Zero restores the original recording rate; DirectSound 7 clamps
     // explicit frequencies to 100..100000 Hz. SDL additionally constrains
     // its stream ratio to 0.01..100.
-    [[nodiscard]] float legacyPitchFrequencyRatio(
+    [[nodiscard]] constexpr float legacyPitchFrequencyRatio(
         std::uint32_t requestedHertz,
-        std::uint32_t originalHertz) noexcept;
+        std::uint32_t originalHertz) noexcept
+    {
+        if (originalHertz == 0U || requestedHertz == 0U)
+            return 1.0F;
+        const auto effectiveHertz = requestedHertz < 100U ? 100U :
+            requestedHertz > 100'000U ? 100'000U : requestedHertz;
+        const float ratio = static_cast<float>(effectiveHertz) /
+            static_cast<float>(originalHertz);
+        return ratio < 0.01F ? 0.01F : ratio > 100.0F ? 100.0F : ratio;
+    }
 
     enum class PlaybackDomain : std::uint8_t
     {

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -31,7 +32,9 @@ namespace monopoly::test
     class VideoDecoderFixture final
     {
     public:
-        explicit VideoDecoderFixture(bool withAudio = true)
+        explicit VideoDecoderFixture(
+            bool withAudio = true,
+            std::uint32_t audioSampleRate = 48'000U)
         {
             directory_ = std::filesystem::temp_directory_path() /
                 ("Monopoly video fixture " + std::to_string(SDL_GetTicksNS()));
@@ -43,7 +46,8 @@ namespace monopoly::test
                 std::vector<std::string> args{ffmpegExecutable(), "-nostdin", "-hide_banner", "-v", "error",
                     "-f", "lavfi", "-i",
                     "color=c=red:s=32x24:r=10:d=2,drawbox=x=0:y=0:w=iw:h=ih:color=blue:t=fill:enable='gte(t,1)'"};
-                if (withAudio) args.insert(args.end(), {"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2"});
+                if (withAudio) args.insert(args.end(), {"-f", "lavfi", "-i",
+                    "sine=frequency=440:sample_rate=" + std::to_string(audioSampleRate) + ":duration=2"});
                 args.insert(args.end(), {"-threads", "1", "-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p"});
                 if (withAudio) args.insert(args.end(), {"-c:a", "pcm_s16le", "-ac", "2"});
                 else args.push_back("-an");

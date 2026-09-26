@@ -94,9 +94,10 @@ namespace
         });
         const auto finished = decoder.snapshot();
         require(finished.metadata && finished.metadata->videoCodec == "mpeg4" &&
-            finished.metadata->hasAudio && finished.metadata->frameRateNumerator == 10 &&
+            finished.metadata->hasAudio && finished.metadata->audioSampleRate == 48'000U &&
+            finished.metadata->frameRateNumerator == 10 &&
             finished.metadata->frameRateDenominator == 1 && finished.metadata->durationMicroseconds == 2000000,
-            "Real FFprobe metadata describes MPEG-4 AVI and audio");
+            "Real FFprobe metadata describes MPEG-4 AVI and native audio rate");
         require(frames == 20 && pcmBytes == 2 * 48000 * 4 && heardAudio,
             "Decoded all twenty compressed frames and two seconds of audible PCM");
         require(finished.videoEnded && finished.audioEnded, "Both stream EOF states are explicit");
@@ -105,6 +106,26 @@ namespace
         until(decoder, [&](const video::DecoderSnapshot&) { return decoder.snapshot().queuedVideoFrames != 0; });
         require(decoder.popVideo()->timestampMicroseconds == 0, "Restart returns the first frame timestamp");
         std::cout << "[PASS] compressed MPEG-4 AVI pixels, real PCM, timestamps, EOF and restart\n";
+    }
+
+    void nativeAudioRateSurvivesDecodeNormalization()
+    {
+        test::VideoDecoderFixture nativeRateMovie(true, 22'050U);
+        video::Decoder decoder;
+        require(decoder.open(nativeRateMovie.file(), options()).has_value(),
+            "Open movie with non-48k native audio");
+        until(decoder, [](const video::DecoderSnapshot& state)
+        {
+            return state.metadata.has_value() && state.queuedAudioChunks != 0;
+        });
+        const auto snapshot = decoder.snapshot();
+        const auto pcm = decoder.popAudio();
+        require(snapshot.metadata && snapshot.metadata->hasAudio &&
+            snapshot.metadata->audioSampleRate == 22'050U,
+            "FFprobe preserves the movie's native audio sample rate");
+        require(pcm && video::DecodedAudioChunk::sampleRate == 48'000U,
+            "decoder PCM remains normalized to 48k independently of native pitch metadata");
+        decoder.stop();
     }
 
     void backpressureSeekAndStop(const std::filesystem::path& file)
@@ -201,6 +222,8 @@ int main()
     {
         monopoly::test::VideoDecoderFixture fixture;
         compressedVideoAndAudio(fixture.file());
+        nativeAudioRateSurvivesDecodeNormalization();
+        std::cout << "[PASS] native movie audio rate survives 48k decode normalization\n";
         backpressureSeekAndStop(fixture.file());
         errorsAndStreamSelection(fixture.file());
         return 0;

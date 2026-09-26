@@ -75,7 +75,7 @@ namespace monopoly::video
             struct Stream
             {
                 std::string kind, codec, average, rate;
-                std::uint32_t width{}, height{};
+                std::uint32_t width{}, height{}, sampleRate{};
                 double duration{};
             } stream;
             bool inStream = false;
@@ -105,6 +105,7 @@ namespace monopoly::video
                     else if (stream.kind == "audio" && !result.hasAudio)
                     {
                         result.hasAudio = true;
+                        result.audioSampleRate = stream.sampleRate;
                         result.audioCodec = stream.codec;
                     }
                     inStream = false;
@@ -124,6 +125,7 @@ namespace monopoly::video
                 else if (key == "height") number(value, stream.height);
                 else if (key == "avg_frame_rate") stream.average = value;
                 else if (key == "r_frame_rate") stream.rate = value;
+                else if (key == "sample_rate") number(value, stream.sampleRate);
                 else if (key == "duration") number(value, stream.duration);
             }
             if (result.videoCodec.empty() || result.width == 0 || result.height == 0)
@@ -300,7 +302,7 @@ namespace monopoly::video
             Child child;
             const auto started = child.start({options.ffprobe, "-v", "error",
                 "-protocol_whitelist", "file,pipe", "-show_entries",
-                "stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,duration:format=duration",
+                "stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,sample_rate,duration:format=duration",
                 "-of", "default=noprint_wrappers=0", utf8Path(file)});
             if (!started) return std::unexpected(started.error());
             const auto deadline = Clock::now() + std::chrono::milliseconds(options.probeTimeoutMilliseconds);
