@@ -302,4 +302,13 @@ namespace monopoly::data
         const DataBankRegistry& registry,
         DataId indexTableId,
         std::uint32_t indexValue);
+
+    // Compatibility form of LE_DATA_GetIndexedItemId. The original returns
+    // LE_DATA_EmptyItem for a non-index item or an absent logical key.
+    // I/O, archive and corruption failures remain typed errors.
+    [[nodiscard]] std::expected<DataId, DataError>
+    lookupIndexedDataIdLegacy(
+        const DataBankRegistry& registry,
+        DataId indexTableId,
+        std::uint32_t indexValue);
 }
