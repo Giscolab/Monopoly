@@ -86,6 +86,7 @@ namespace monopoly::video
         std::uint64_t tailSequence{};
         std::uint64_t tailMedia{};
         std::uint64_t lastElapsed{};
+        float gain{1.0F};
         ~Impl() { if (stream) SDL_DestroyAudioStream(stream); }
         void clearAudio()
         {
@@ -128,6 +129,17 @@ namespace monopoly::video
         impl_->nextFrame.reset();
         return {};
     }
+    std::expected<void, std::string> Presentation::setGain(float gain)
+    {
+        if (!std::isfinite(gain))
+            return std::unexpected("video audio gain is not finite");
+        impl_->gain = std::clamp(gain, 0.0F, 1.0F);
+        if (impl_->stream &&
+            !SDL_SetAudioStreamGain(impl_->stream, impl_->gain))
+            return std::unexpected(sdlError("set video audio gain"));
+        return {};
+    }
+
     std::expected<PresentationClock, std::string> Presentation::pump(
         std::uint64_t sequenceTime, bool paused)
     {
@@ -156,6 +168,8 @@ namespace monopoly::video
             state.stream = SDL_OpenAudioDeviceStream(
                 SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
             if (!state.stream) return std::unexpected(sdlError("open video audio stream"));
+            if (!SDL_SetAudioStreamGain(state.stream, state.gain))
+                return std::unexpected(sdlError("set initial video audio gain"));
         }
         int queued = SDL_GetAudioStreamQueued(state.stream);
         if (queued < 0) return std::unexpected(sdlError("query video audio queue"));
