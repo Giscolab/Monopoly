@@ -844,6 +844,52 @@ namespace
             "parsed but unexecuted attributes are refused instead of silently ignored");
     }
 
+    void testIsSequenceFinishedContract()
+    {
+        Fixture fixture;
+        const std::array items{
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 8, 2, 0, true)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 8, 1, 0, true)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 8, 3, 0, true)}
+        };
+        DataBankRegistry registry;
+        (void)archive(fixture.root / "finished.dat", items, registry);
+
+        SequenceRuntime runtime;
+        expect(runtime.isSequenceFinished(packDataId(2, 99), 10),
+            "IsSequenceFinished returns true when no matching sequence exists");
+
+        const auto hold = runtime.start(program(registry, 0), 10);
+        const auto stop = runtime.start(program(registry, 1), 11);
+        const auto loop = runtime.start(program(registry, 2), 12);
+        expect(hold && stop && loop,
+            "finished-state fixtures start");
+        if (!hold || !stop || !loop) return;
+
+        expect(!runtime.isSequenceFinished(packDataId(2, 0), 10) &&
+            !runtime.isSequenceFinished(packDataId(2, 1), 11) &&
+            !runtime.isSequenceFinished(packDataId(2, 2), 12),
+            "active sequences before end time are unfinished");
+
+        expect(runtime.update(0).has_value() &&
+            runtime.update(8).has_value(),
+            "finished-state fixtures reach authored end time");
+        expect(runtime.isSequenceFinished(packDataId(2, 0), 10) &&
+            runtime.inspect(*hold) &&
+            runtime.inspect(*hold)->clock == runtime.inspect(*hold)->endTime,
+            "StayAtEnd is finished while its runtime node remains alive");
+        expect(runtime.isSequenceFinished(packDataId(2, 1), 11) &&
+            !runtime.inspect(*stop),
+            "Stop is finished after its runtime node disappears");
+        expect(!runtime.isSequenceFinished(packDataId(2, 2), 12) &&
+            runtime.inspect(*loop) &&
+            runtime.inspect(*loop)->clock == 0,
+            "LoopToBeginning remains unfinished after crossing its end");
+    }
+
     void testSequenceVolumeContract()
     {
         Fixture fixture;
@@ -1076,6 +1122,7 @@ int main()
         testGetChildMeshWorldMatrixContract();
         testForceRedrawRuntimeContract();
         testCommandsAndFailureLimits();
+        testIsSequenceFinishedContract();
         testSequenceVolumeContract();
         testProgramCyclesDepthAndAttributes();
         testRawUapStartContract();
