@@ -187,6 +187,55 @@ namespace
         require(take(font.renderClipped("Ag", 0, {image.width, 0, 4, 4}),
             "clip outside rendered extent").pixels.empty(),
             "fully out-of-bounds clipping produces an empty surface");
+
+        data::LegacyBitmapRGBA8 destination{
+            image.width, image.height,
+            std::vector<std::uint8_t>(
+                static_cast<std::size_t>(image.width) * image.height * 4U, 0U)};
+        checked(font.blitText(destination, "Ag", -1, -1, 0x80563412u),
+            "blit text with negative legacy offsets");
+        for (std::uint32_t y = 0; y < destination.height; ++y)
+        {
+            for (std::uint32_t x = 0; x < destination.width; ++x)
+            {
+                const auto destinationOffset =
+                    (static_cast<std::size_t>(y) * destination.width + x) * 4U;
+                if (x + 1U < image.width && y + 1U < image.height)
+                {
+                    const auto sourceOffset =
+                        (static_cast<std::size_t>(y + 1U) * image.width +
+                            x + 1U) * 4U;
+                    require(std::equal(
+                        destination.pixels.begin() +
+                            static_cast<std::ptrdiff_t>(destinationOffset),
+                        destination.pixels.begin() +
+                            static_cast<std::ptrdiff_t>(destinationOffset + 4U),
+                        image.pixels.begin() +
+                            static_cast<std::ptrdiff_t>(sourceOffset)),
+                        "negative offsets clip to the exact rendered source pixels");
+                }
+                else
+                {
+                    require(std::all_of(
+                        destination.pixels.begin() +
+                            static_cast<std::ptrdiff_t>(destinationOffset),
+                        destination.pixels.begin() +
+                            static_cast<std::ptrdiff_t>(destinationOffset + 4U),
+                        [](std::uint8_t value) { return value == 0; }),
+                        "text blit never writes beyond the clipped destination extent");
+                }
+            }
+        }
+        const auto beforeOutside = destination.pixels;
+        checked(font.blitText(destination, "Ag",
+            static_cast<int>(destination.width) + 10,
+            static_cast<int>(destination.height) + 10, 0x80563412u),
+            "ignore fully outside text blit");
+        require(destination.pixels == beforeOutside,
+            "fully outside text leaves the destination bitmap untouched");
+        data::LegacyBitmapRGBA8 invalidDestination{8, 8, {}};
+        require(!font.blitText(invalidDestination, "Ag", 0, 0, 0x80563412u),
+            "invalid destination storage is rejected before writing pixels");
     }
 
     void testLegacyWrap(const std::filesystem::path& path)
