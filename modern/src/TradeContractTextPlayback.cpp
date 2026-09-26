@@ -29,56 +29,14 @@ namespace monopoly::tradeui
         constexpr std::uint32_t SelectedTextColour = 0x00FFFFFFU;
         constexpr std::uint32_t SelectedColour = 0x00B40000U; // COLORREF: (0,0,180).
 
-        template<class Character>
-        [[nodiscard]] std::string toUtf8(std::basic_string_view<Character> text)
-        {
-            std::string output;
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                auto cp = static_cast<std::uint32_t>(text[index]);
-                if constexpr (sizeof(Character) == 2)
-                {
-                    if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1 < text.size())
-                    {
-                        const auto low = static_cast<std::uint32_t>(text[index + 1]);
-                        if (low >= 0xDC00U && low <= 0xDFFFU)
-                        {
-                            cp = 0x10000U + ((cp - 0xD800U) << 10U) + low - 0xDC00U;
-                            ++index;
-                        }
-                    }
-                }
-                if ((cp >= 0xD800U && cp <= 0xDFFFU) || cp > 0x10FFFFU)
-                    cp = 0xFFFDU;
-                if (cp <= 0x7FU) output.push_back(static_cast<char>(cp));
-                else if (cp <= 0x7FFU)
-                {
-                    output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else if (cp <= 0xFFFFU)
-                {
-                    output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else
-                {
-                    output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-            }
-            return output;
-        }
-
         [[nodiscard]] std::expected<std::string, std::string> messageText(
             const data::LanguageCatalog& catalog, std::uint32_t id)
         {
             const auto text = catalog.message(id);
             if (!text) return std::unexpected(text.error().detail);
-            return toUtf8(std::u16string_view(**text));
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(**text));
+            if (!encoded) return std::unexpected(encoded.error().detail);
+            return *encoded;
         }
 
         [[nodiscard]] std::expected<std::string, std::string> propertyName(
@@ -111,7 +69,9 @@ namespace monopoly::tradeui
                 if (!text) return std::unexpected(text.error().detail);
                 if (!*text) return std::unexpected("Trade base property name is missing from LANG");
             }
-            return toUtf8(std::u16string_view(***text));
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(***text));
+            if (!encoded) return std::unexpected(encoded.error().detail);
+            return *encoded;
         }
 
         [[nodiscard]] std::expected<std::string, std::string> confirmationText(
@@ -134,8 +94,12 @@ namespace monopoly::tradeui
                 case 'P': case 'p': output += name; break;
                 case 'Q': case 'q':
                     if (amount >= 0 && amount < rules::MaxPlayers)
-                        output += toUtf8(std::wstring_view(
+                    {
+                        const auto encoded = fonts::transcodeUtf8(std::wstring_view(
                             gameState.players[static_cast<std::size_t>(amount)].name));
+                        if (!encoded) return std::unexpected(encoded.error().detail);
+                        output += *encoded;
+                    }
                     else
                     {
                         const auto playerText = messageText(catalog,
@@ -259,7 +223,11 @@ namespace monopoly::tradeui
             const auto player = state.contractDialogSide ? state.playerA : state.playerB;
             if (player >= gameState.numberOfPlayers || player >= rules::MaxPlayers)
                 return std::unexpected("Trade contract recipient is out of range");
-            playerName = toUtf8(std::wstring_view(gameState.players[player].name));
+            const auto encodedPlayerName = fonts::transcodeUtf8(
+                std::wstring_view(gameState.players[player].name));
+            if (!encodedPlayerName)
+                return std::unexpected(encodedPlayerName.error().detail);
+            playerName = *encodedPlayerName;
             if (mode == 3)
             {
                 prompt = confirmationText(*prompt, state.contractAmount, player,
