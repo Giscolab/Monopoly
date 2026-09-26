@@ -164,12 +164,10 @@ namespace monopoly::tradeui
                 auto image = blankCashImage();
                 const auto metrics = fontRuntime->measure(*text);
                 if (!metrics) return std::unexpected(metrics.error().detail);
-                const auto rendered = fontRuntime->render(*text, White);
-                if (!rendered) return std::unexpected(rendered.error().detail);
                 const int x = (static_cast<int>(CashWidth) - metrics->width) / 2;
-                const auto blitted = data::blitStraightRGBA8(
-                    image, *rendered, x, 0, data::BitmapBlitMode::SourceOver);
-                if (!blitted) return std::unexpected(blitted.error());
+                const auto blitted = fontRuntime->blitText(
+                    image, *text, x, 0, White);
+                if (!blitted) return std::unexpected(blitted.error().detail);
                 const auto updated = playback.runtimeBitmaps().update(
                     *textSurfaces_[index], std::move(image));
                 if (!updated) return std::unexpected(updated.error());
