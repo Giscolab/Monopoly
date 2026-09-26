@@ -1,6 +1,7 @@
 #include "StatsTextPlayback.hpp"
 
 #include "AIUtility.hpp"
+#include "FontRuntime.hpp"
 #include "MoneyFormat.hpp"
 #include "RuntimeBitmapSurface.hpp"
 #include "StatsDeedPlayback.hpp"
@@ -18,30 +19,18 @@ namespace monopoly::statsui
 {
     namespace
     {
-        template<class C> std::string utf8(std::basic_string_view<C> value)
+        std::string utf8(std::u16string_view value)
         {
-            std::string result;
-            for (std::size_t i = 0; i < value.size(); ++i)
-            {
-                auto c = static_cast<std::uint32_t>(value[i]);
-                if constexpr (sizeof(C) == 2)
-                    if (c >= 0xD800 && c <= 0xDBFF && i + 1 < value.size())
-                    {
-                        const auto low = static_cast<std::uint32_t>(value[i + 1]);
-                        if (low >= 0xDC00 && low <= 0xDFFF)
-                        { c = 0x10000 + ((c - 0xD800) << 10) + low - 0xDC00; ++i; }
-                    }
-                if (c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;
-                if (c < 0x80) result += static_cast<char>(c);
-                else if (c < 0x800)
-                { result += static_cast<char>(0xC0 | (c >> 6)); result += static_cast<char>(0x80 | (c & 63)); }
-                else if (c < 0x10000)
-                { result += static_cast<char>(0xE0 | (c >> 12)); result += static_cast<char>(0x80 | ((c >> 6) & 63)); result += static_cast<char>(0x80 | (c & 63)); }
-                else
-                { result += static_cast<char>(0xF0 | (c >> 18)); result += static_cast<char>(0x80 | ((c >> 12) & 63)); result += static_cast<char>(0x80 | ((c >> 6) & 63)); result += static_cast<char>(0x80 | (c & 63)); }
-            }
-            return result;
+            const auto encoded = fonts::transcodeUtf8(value);
+            return encoded ? *encoded : std::string{"\xEF\xBF\xBD"};
         }
+
+        std::string utf8(std::wstring_view value)
+        {
+            const auto encoded = fonts::transcodeUtf8(value);
+            return encoded ? *encoded : std::string{"\xEF\xBF\xBD"};
+        }
+
         std::string playerName(const rules::GameState& game, rules::PlayerNumber player)
         {
             return player < game.numberOfPlayers && player < rules::MaxPlayers ?
@@ -369,7 +358,11 @@ namespace monopoly::statsui
                 if (!metrics) return std::unexpected(metrics.error().detail);
                 if (!line.empty())
                 {
-                    const auto raster = font.render(line, run.colour);
+                    const auto raster = font.renderClipped(
+                        line, run.colour,
+                        {0, 0, static_cast<std::uint32_t>(run.width),
+                            static_cast<std::uint32_t>(
+                                std::max(0, run.height - y))});
                     if (!raster) return std::unexpected(raster.error().detail);
                     int x{};
                     if (run.alignment == TextAlignment::Center && !(lines.size() > 1 && run.wrappedX >= 0))
