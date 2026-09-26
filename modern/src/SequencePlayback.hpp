@@ -9,6 +9,7 @@
 #include <array>
 #include <vector>
 #include <filesystem>
+#include <map>
 #include <tuple>
 
 namespace monopoly::engine
@@ -73,6 +74,11 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> configureBoardTextures(
             data::BoardMeshKind mesh, data::TextureResolution resolution,
             int city, int currency, const std::filesystem::path& customRoot = {});
+        [[nodiscard]] std::expected<data::DataId, std::string> createVideoObject(
+            std::string fileName, data::SequenceVideoData options,
+            data::Sequence2DBoundingBoxAttribute bounds,
+            bool binkDoubleSize = false);
+        [[nodiscard]] bool freeRuntimeSequence(data::DataId id) noexcept;
         sequence::SequenceCommandQueue& commands() noexcept { return commands_; }
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }
         SequenceWorld3DSlot& world() noexcept { return world_; }
@@ -89,8 +95,12 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<std::shared_ptr<const sequence::SequenceProgram>, std::string>
             loadProgram(data::DataId id);
     private:
+        static constexpr std::uint16_t RuntimeVideoGroup = 0xFFFCU;
         std::array<data::DataId, 56> europeanDeeds_{};
         std::vector<data::DataId> retiredDeeds_;
+        std::map<data::DataId, std::shared_ptr<const sequence::SequenceProgram>>
+            runtimePrograms_;
+        data::DataTag nextRuntimeVideoTag_{1};
 
         data::MeshRuntimeCache meshes_;
         using BoardTextureSelection = std::tuple<data::BoardMeshKind,

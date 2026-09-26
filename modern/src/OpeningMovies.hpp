@@ -46,6 +46,7 @@ namespace monopoly::openingmovies
         std::uint64_t trademarkStarted_{};
         sequence::SequenceNodeId trademark_{};
         sequence::SequenceNodeId movie_{};
+        data::DataId movieDataId_{data::EmptyDataId};
         std::size_t nextMovie_{};
         bool use3DBoard_{};
         bool selectionRequested_{};

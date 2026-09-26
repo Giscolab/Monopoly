@@ -15,8 +15,6 @@ namespace monopoly::openingmovies
             data::LegacyGroupId::LanguageGraphics, 0x0004);
         constexpr std::uint16_t MoviePriority = 1100;
         constexpr std::array MovieNames{"HLogo", "ALogo", "MIntro"};
-        // Runtime program identity only; never a fabricated archive asset.
-        constexpr std::uint16_t RuntimeMovieGroup = 0xFFFDU;
 
         std::optional<std::string> resolveMovie(const data::ResourcePaths& paths,
             std::string_view base, bool use3DBoard)
@@ -40,7 +38,10 @@ namespace monopoly::openingmovies
             (void)playback.runtime().stop(trademark_);
         if (movie_ && playback.runtime().inspect(movie_))
             (void)playback.runtime().stop(movie_);
+        if (movieDataId_ != data::EmptyDataId)
+            (void)playback.freeRuntimeSequence(movieDataId_);
         trademark_ = movie_ = 0;
+        movieDataId_ = data::EmptyDataId;
     }
 
     void Controller::reset(engine::SequencePlayback& playback)
@@ -127,20 +128,28 @@ namespace monopoly::openingmovies
         options.alphaLevel = 255;
         options.enableVideo = options.enableAudio = true;
         options.drawDirectlyToScreen = true;
-        auto program = sequence::SequenceProgram::runtimeVideo(
-            data::packDataId(RuntimeMovieGroup, static_cast<data::DataTag>(nextMovie_ + 1)),
+        auto runtimeId = playback.createVideoObject(
             *file, options, bounds, bink);
+        if (!runtimeId)
+        {
+            decoderFailed(runtimeId.error(), playback);
+            return;
+        }
+        auto program = playback.loadProgram(*runtimeId);
         if (!program)
         {
-            decoderFailed(program.error().detail, playback);
+            (void)playback.freeRuntimeSequence(*runtimeId);
+            decoderFailed(program.error(), playback);
             return;
         }
         auto node = playback.runtime().start(*program, MoviePriority);
         if (!node)
         {
+            (void)playback.freeRuntimeSequence(*runtimeId);
             decoderFailed(node.error().detail, playback);
             return;
         }
+        movieDataId_ = *runtimeId;
         movie_ = *node;
         movieFile_ = std::move(*file);
         ++nextMovie_;
@@ -173,7 +182,10 @@ namespace monopoly::openingmovies
             }
             if (!ended) return;
             if (live) (void)playback.runtime().stop(movie_);
+            if (movieDataId_ != data::EmptyDataId)
+                (void)playback.freeRuntimeSequence(movieDataId_);
             movie_ = 0;
+            movieDataId_ = data::EmptyDataId;
         }
         startNextMovie(playback);
     }

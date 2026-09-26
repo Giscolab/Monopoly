@@ -28,6 +28,35 @@ namespace monopoly::engine
         return europeanDeeds_[static_cast<std::size_t>(property + (front ? 0 : 28))];
     }
 
+    std::expected<data::DataId, std::string> SequencePlayback::createVideoObject(
+        std::string fileName, data::SequenceVideoData options,
+        data::Sequence2DBoundingBoxAttribute bounds,
+        bool binkDoubleSize)
+    {
+        for (std::uint32_t attempt = 0; attempt < 0xFFFFU; ++attempt)
+        {
+            if (nextRuntimeVideoTag_ == 0)
+                nextRuntimeVideoTag_ = 1;
+            const auto id = data::packDataId(
+                RuntimeVideoGroup, nextRuntimeVideoTag_++);
+            if (runtimePrograms_.contains(id))
+                continue;
+
+            auto program = sequence::SequenceProgram::runtimeVideo(
+                id, std::move(fileName), options, bounds, binkDoubleSize);
+            if (!program)
+                return std::unexpected(program.error().detail);
+            runtimePrograms_.emplace(id, *program);
+            return id;
+        }
+        return std::unexpected("runtime video DataID space exhausted");
+    }
+
+    bool SequencePlayback::freeRuntimeSequence(data::DataId id) noexcept
+    {
+        return runtimePrograms_.erase(id) != 0;
+    }
+
     std::expected<void, std::string> SequencePlayback::configureBoardTextures(
         data::BoardMeshKind mesh, data::TextureResolution resolution,
         int city, int currency, const std::filesystem::path& customRoot)
@@ -56,6 +85,9 @@ namespace monopoly::engine
     std::expected<std::shared_ptr<const sequence::SequenceProgram>, std::string>
     SequencePlayback::loadProgram(data::DataId id)
     {
+        if (const auto found = runtimePrograms_.find(id);
+            found != runtimePrograms_.end())
+            return found->second;
         if (runtimeBitmaps_.contains(id))
         {
             auto program = sequence::SequenceProgram::rawBitmap(
