@@ -40,6 +40,11 @@ namespace monopoly::sequence
     // matrix, which resets the target rather than applying a zero delta.
     [[nodiscard]] SequenceTransform moveXYTransform(
         std::int32_t x, std::int32_t y) noexcept;
+    // LE_SEQNCR_StartCXYSR/MoveXYSR: rotate, then uniform scale, then
+    // translate using ArtLib's row-vector matrix convention.
+    [[nodiscard]] Matrix2D moveXYSRTransform(
+        std::int32_t x, std::int32_t y,
+        float scale, float rotate) noexcept;
     [[nodiscard]] Matrix3D moveRySTxzTransform(
         float yaw, float scale, float x, float z) noexcept;
 
