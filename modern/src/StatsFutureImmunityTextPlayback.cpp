@@ -23,68 +23,14 @@ namespace monopoly::statsui
         constexpr std::uint32_t SquareNameBase = 1001;
         constexpr std::uint32_t TextColour = 0x00FAFAFAU;
 
-        template<class Character>
-        [[nodiscard]] std::string toUtf8(
-            std::basic_string_view<Character> text)
-        {
-            std::string output;
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                auto cp = static_cast<std::uint32_t>(text[index]);
-                if constexpr (sizeof(Character) == 2)
-                {
-                    if (cp >= 0xD800U && cp <= 0xDBFFU &&
-                        index + 1 < text.size())
-                    {
-                        const auto low =
-                            static_cast<std::uint32_t>(text[index + 1]);
-                        if (low >= 0xDC00U && low <= 0xDFFFU)
-                        {
-                            cp = 0x10000U + ((cp - 0xD800U) << 10U) +
-                                low - 0xDC00U;
-                            ++index;
-                        }
-                    }
-                }
-                if ((cp >= 0xD800U && cp <= 0xDFFFU) ||
-                    cp > 0x10FFFFU) cp = 0xFFFDU;
-                if (cp <= 0x7FU) output.push_back(static_cast<char>(cp));
-                else if (cp <= 0x7FFU)
-                {
-                    output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                    output.push_back(
-                        static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else if (cp <= 0xFFFFU)
-                {
-                    output.push_back(
-                        static_cast<char>(0xE0U | (cp >> 12U)));
-                    output.push_back(
-                        static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(
-                        static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else
-                {
-                    output.push_back(
-                        static_cast<char>(0xF0U | (cp >> 18U)));
-                    output.push_back(
-                        static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                    output.push_back(
-                        static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(
-                        static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-            }
-            return output;
-        }
-
         [[nodiscard]] std::expected<std::string, std::string> messageText(
             const data::LanguageCatalog& catalog, std::uint32_t id)
         {
             const auto text = catalog.message(id);
             if (!text) return std::unexpected(text.error().detail);
-            return toUtf8(std::u16string_view(**text));
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(**text));
+            if (!encoded) return std::unexpected(encoded.error().detail);
+            return *encoded;
         }
 
         [[nodiscard]] std::string expandPlayer(
@@ -130,7 +76,9 @@ namespace monopoly::statsui
                     return std::unexpected(
                         "Future/Immunity base square name is missing from LANG");
             }
-            return toUtf8(std::u16string_view(***text));
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(***text));
+            if (!encoded) return std::unexpected(encoded.error().detail);
+            return *encoded;
         }
 
         [[nodiscard]] std::expected<void, std::string> print(
@@ -159,16 +107,14 @@ namespace monopoly::statsui
             data::LegacyBitmapRGBA8& image, fonts::Runtime& font,
             std::string_view text, int x, int y, int width, int height)
         {
-            data::LegacyBitmapRGBA8 clip{
-                static_cast<std::uint32_t>(width),
-                static_cast<std::uint32_t>(height), {}};
-            clip.pixels.assign(
-                static_cast<std::size_t>(width) *
-                static_cast<std::size_t>(height) * 4U, 0);
-            if (auto result = print(clip, font, text, 0, 0); !result)
-                return result;
+            if (width <= 0 || height <= 0 || text.empty()) return {};
+            const auto rendered = font.renderClipped(
+                text, TextColour,
+                {0, 0, static_cast<std::uint32_t>(width),
+                    static_cast<std::uint32_t>(height)});
+            if (!rendered) return std::unexpected(rendered.error().detail);
             return data::blitStraightRGBA8(
-                image, clip, x, y,
+                image, *rendered, x, y,
                 data::BitmapBlitMode::SourceOver);
         }
 
@@ -229,9 +175,10 @@ namespace monopoly::statsui
         const auto hits = messageText(catalog, HitsRemainingMessageId);
         if (!hits) return std::unexpected(hits.error());
 
-        const auto playerName = toUtf8(std::wstring_view(
+        const auto playerName = fonts::transcodeUtf8(std::wstring_view(
             gameState.players[state.player].name));
-        const auto title = expandPlayer(*titlePattern, playerName);
+        if (!playerName) return std::unexpected(playerName.error().detail);
+        const auto title = expandPlayer(*titlePattern, *playerName);
 
         std::array<std::string, 10> names{};
         std::array<std::string, 10> hitCounts{};
