@@ -190,46 +190,6 @@ namespace monopoly::optionsui
             }
         }
 
-        [[nodiscard]] std::string toUtf8(std::u16string_view text)
-        {
-            std::string output;
-            output.reserve(text.size());
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                std::uint32_t cp = static_cast<std::uint16_t>(text[index]);
-                if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1 < text.size())
-                {
-                    const auto low = static_cast<std::uint16_t>(text[index + 1]);
-                    if (low >= 0xDC00U && low <= 0xDFFFU)
-                    {
-                        cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
-                        ++index;
-                    }
-                }
-                if (cp <= 0x7FU)
-                    output.push_back(static_cast<char>(cp));
-                else if (cp <= 0x7FFU)
-                {
-                    output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else if (cp <= 0xFFFFU)
-                {
-                    output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else
-                {
-                    output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-            }
-            return output;
-        }
-
         [[nodiscard]] std::optional<std::pair<int, int>> textMetrics(
             std::uint32_t messageId, fonts::Runtime* fontRuntime,
             const std::shared_ptr<const data::ResourceSnapshot>& resources)
@@ -240,7 +200,7 @@ namespace monopoly::optionsui
             if (!language || !language->catalog) return std::nullopt;
             const auto text = language->catalog->message(messageId);
             if (!text) return std::nullopt;
-            const auto measured = fontRuntime->measure(toUtf8(**text));
+            const auto measured = fontRuntime->measure(std::u16string_view(**text));
             if (!measured) return std::nullopt;
             return std::pair<int, int>{measured->width, measured->height};
         }
@@ -250,7 +210,7 @@ namespace monopoly::optionsui
         {
             if (text.size() + 1U >= DescriptionUnits) return false;
             if (!fontRuntime || !fontRuntime->ready()) return true;
-            const auto measured = fontRuntime->measure(toUtf8(text));
+            const auto measured = fontRuntime->measure(std::u16string_view(text));
             return !measured || measured->width < MaximumDescriptionWidth;
         }
 

@@ -33,6 +33,85 @@ namespace monopoly::fonts
             return result;
         }
 
+        [[nodiscard]] std::expected<std::string, Error> utf16ToUtf8(
+            std::u16string_view text, const std::filesystem::path& fontPath)
+        {
+            std::string result;
+            result.reserve(text.size() * 3U);
+            const auto append = [&](std::uint32_t codePoint)
+            {
+                if (codePoint <= 0x7FU)
+                    result.push_back(static_cast<char>(codePoint));
+                else if (codePoint <= 0x7FFU)
+                {
+                    result.push_back(static_cast<char>(0xC0U | (codePoint >> 6U)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+                else if (codePoint <= 0xFFFFU)
+                {
+                    result.push_back(static_cast<char>(0xE0U | (codePoint >> 12U)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+                else
+                {
+                    result.push_back(static_cast<char>(0xF0U | (codePoint >> 18U)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 12U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+            };
+
+            for (std::size_t index = 0; index < text.size(); ++index)
+            {
+                const auto value = static_cast<std::uint32_t>(text[index]);
+                if (value >= 0xD800U && value <= 0xDBFFU)
+                {
+                    if (index + 1 >= text.size())
+                        return std::unexpected(makeError(ErrorCode::InvalidTextEncoding,
+                            fontPath, "truncated UTF-16 surrogate pair"));
+                    const auto low = static_cast<std::uint32_t>(text[++index]);
+                    if (low < 0xDC00U || low > 0xDFFFU)
+                        return std::unexpected(makeError(ErrorCode::InvalidTextEncoding,
+                            fontPath, "invalid UTF-16 surrogate pair"));
+                    append(0x10000U + ((value - 0xD800U) << 10U) + (low - 0xDC00U));
+                    continue;
+                }
+                if (value >= 0xDC00U && value <= 0xDFFFU)
+                    return std::unexpected(makeError(ErrorCode::InvalidTextEncoding,
+                        fontPath, "isolated UTF-16 low surrogate"));
+                append(value);
+            }
+            return result;
+        }
+
+        [[nodiscard]] data::LegacyBitmapRGBA8 clipBitmap(
+            const data::LegacyBitmapRGBA8& source, ClipRect clip)
+        {
+            data::LegacyBitmapRGBA8 result;
+            if (clip.x >= source.width || clip.y >= source.height ||
+                clip.width == 0 || clip.height == 0)
+                return result;
+
+            result.width = std::min(clip.width, source.width - clip.x);
+            result.height = std::min(clip.height, source.height - clip.y);
+            result.pixels.resize(static_cast<std::size_t>(result.width) *
+                result.height * 4U);
+
+            const auto sourceStride = static_cast<std::size_t>(source.width) * 4U;
+            const auto destinationStride = static_cast<std::size_t>(result.width) * 4U;
+            for (std::uint32_t y = 0; y < result.height; ++y)
+            {
+                const auto sourceOffset =
+                    (static_cast<std::size_t>(clip.y + y) * sourceStride) +
+                    (static_cast<std::size_t>(clip.x) * 4U);
+                std::memcpy(result.pixels.data() +
+                    static_cast<std::size_t>(y) * destinationStride,
+                    source.pixels.data() + sourceOffset, destinationStride);
+            }
+            return result;
+        }
+
         [[nodiscard]] bool sameAsciiName(std::u8string_view left,
             std::u8string_view right) noexcept
         {
@@ -46,6 +125,61 @@ namespace monopoly::fonts
                 if (a != b) return false;
             }
             return true;
+        }
+    }
+
+    std::expected<std::string, Error> transcodeUtf8(std::u16string_view text)
+    {
+        return utf16ToUtf8(text, {});
+    }
+
+    std::expected<std::string, Error> transcodeUtf8(std::wstring_view text)
+    {
+        if constexpr (sizeof(wchar_t) == 2)
+        {
+            std::u16string utf16;
+            utf16.reserve(text.size());
+            for (const auto value : text)
+                utf16.push_back(static_cast<char16_t>(value));
+            return transcodeUtf8(utf16);
+        }
+        else
+        {
+            std::string result;
+            result.reserve(text.size() * 4U);
+            const auto append = [&](std::uint32_t codePoint)
+            {
+                if (codePoint <= 0x7FU)
+                    result.push_back(static_cast<char>(codePoint));
+                else if (codePoint <= 0x7FFU)
+                {
+                    result.push_back(static_cast<char>(0xC0U | (codePoint >> 6U)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+                else if (codePoint <= 0xFFFFU)
+                {
+                    result.push_back(static_cast<char>(0xE0U | (codePoint >> 12U)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+                else
+                {
+                    result.push_back(static_cast<char>(0xF0U | (codePoint >> 18U)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 12U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+            };
+            for (const auto value : text)
+            {
+                const auto codePoint = static_cast<std::uint32_t>(value);
+                if (codePoint > 0x10FFFFU ||
+                    (codePoint >= 0xD800U && codePoint <= 0xDFFFU))
+                    return std::unexpected(makeError(ErrorCode::InvalidTextEncoding, {},
+                        "invalid wide-character Unicode code point"));
+                append(codePoint);
+            }
+            return result;
         }
     }
 
@@ -227,6 +361,13 @@ namespace monopoly::fonts
         return Metrics{width, height};
     }
 
+    std::expected<Metrics, Error> Runtime::measure(std::u16string_view utf16) const
+    {
+        const auto utf8 = utf16ToUtf8(utf16, settings_.fontPath);
+        if (!utf8) return std::unexpected(utf8.error());
+        return measure(*utf8);
+    }
+
     std::expected<std::vector<std::string>, Error> Runtime::wrap(
         std::string_view utf8, int width) const
     {
@@ -372,6 +513,30 @@ namespace monopoly::fonts
         }
         SDL_DestroySurface(converted);
         return result;
+    }
+
+    std::expected<data::LegacyBitmapRGBA8, Error> Runtime::render(
+        std::u16string_view utf16, std::uint32_t colorRef) const
+    {
+        const auto utf8 = utf16ToUtf8(utf16, settings_.fontPath);
+        if (!utf8) return std::unexpected(utf8.error());
+        return render(*utf8, colorRef);
+    }
+
+    std::expected<data::LegacyBitmapRGBA8, Error> Runtime::renderClipped(
+        std::string_view utf8, std::uint32_t colorRef, ClipRect clip) const
+    {
+        const auto image = render(utf8, colorRef);
+        if (!image) return std::unexpected(image.error());
+        return clipBitmap(*image, clip);
+    }
+
+    std::expected<data::LegacyBitmapRGBA8, Error> Runtime::renderClipped(
+        std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip) const
+    {
+        const auto image = render(utf16, colorRef);
+        if (!image) return std::unexpected(image.error());
+        return clipBitmap(*image, clip);
     }
 
     std::expected<std::filesystem::path, Error>

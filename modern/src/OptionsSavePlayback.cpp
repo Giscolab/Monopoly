@@ -33,45 +33,6 @@ namespace monopoly::optionsui
             return data::packDataId(data::LegacyGroupId::LanguageGraphics, tag);
         }
 
-        [[nodiscard]] std::string toUtf8(std::u16string_view text)
-        {
-            std::string output;
-            output.reserve(text.size());
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                std::uint32_t cp = static_cast<std::uint16_t>(text[index]);
-                if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1U < text.size())
-                {
-                    const auto low = static_cast<std::uint16_t>(text[index + 1U]);
-                    if (low >= 0xDC00U && low <= 0xDFFFU)
-                    {
-                        cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
-                        ++index;
-                    }
-                }
-                if (cp <= 0x7FU) output.push_back(static_cast<char>(cp));
-                else if (cp <= 0x7FFU)
-                {
-                    output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else if (cp <= 0xFFFFU)
-                {
-                    output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else
-                {
-                    output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-            }
-            return output;
-        }
-
         [[nodiscard]] data::LegacyBitmapRGBA8 blankImage(
             std::uint32_t width, std::uint32_t height)
         {
@@ -100,7 +61,14 @@ namespace monopoly::optionsui
         {
             auto result = blankImage(width, height);
             if (text.empty()) return result;
-            const auto rendered = fontRuntime.render(toUtf8(text), 0x00FFFFFFU);
+            if (x < 0 || y < 0 ||
+                static_cast<std::uint32_t>(x) >= width ||
+                static_cast<std::uint32_t>(y) >= height)
+                return result;
+            const auto rendered = fontRuntime.renderClipped(
+                text, 0x00FFFFFFU,
+                {0, 0, width - static_cast<std::uint32_t>(x),
+                    height - static_cast<std::uint32_t>(y)});
             if (!rendered) return std::unexpected(rendered.error().detail);
             const auto blitted = data::blitStraightRGBA8(
                 result, *rendered, x, y, data::BitmapBlitMode::SourceOver);
@@ -141,7 +109,7 @@ namespace monopoly::optionsui
         {
             const auto text = languageText(playback, OkayTextId);
             if (!text) return std::unexpected(text.error());
-            const auto rendered = fontRuntime.render(toUtf8(*text), 0x00FFFFFFU);
+            const auto rendered = fontRuntime.render(std::u16string_view(*text), 0x00FFFFFFU);
             if (!rendered) return std::unexpected(rendered.error().detail);
             const auto created = playback.runtimeBitmaps().create(
                 rendered->width, rendered->height, true);
@@ -155,7 +123,7 @@ namespace monopoly::optionsui
         {
             const auto text = languageText(playback, CancelTextId);
             if (!text) return std::unexpected(text.error());
-            const auto rendered = fontRuntime.render(toUtf8(*text), 0x00FFFFFFU);
+            const auto rendered = fontRuntime.render(std::u16string_view(*text), 0x00FFFFFFU);
             if (!rendered) return std::unexpected(rendered.error().detail);
             const auto created = playback.runtimeBitmaps().create(
                 rendered->width, rendered->height, true);
