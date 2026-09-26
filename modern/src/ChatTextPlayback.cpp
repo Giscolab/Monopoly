@@ -10,6 +10,7 @@
 #include <utility>
 #include <iterator>
 #include <variant>
+#include <vector>
 
 namespace monopoly::chat
 {
@@ -434,6 +435,7 @@ namespace monopoly::chat
         }
         if (commands > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
             return std::unexpected("sequence command queue cannot fit UDChat text transition");
+        std::vector<data::DataId> retiredSurfaces;
         for (std::size_t i = 0; i < surfaces_.size(); ++i)
         {
             auto& surface = surfaces_[i];
@@ -462,11 +464,21 @@ namespace monopoly::chat
                         return std::unexpected("validated UDChat text start rejected");
                 }
             }
-            if (replace && surface.id) (void)playback.runtimeBitmaps().remove(*surface.id);
+            if (replace && surface.id)
+                retiredSurfaces.push_back(*surface.id);
             if (wanted[i])
                 surface = Surface{id, static_cast<std::uint32_t>(widths[i]), static_cast<std::uint32_t>(heights[i]), xs[i], ys[i], true};
             else surface.visible = false;
         }
+
+        if (!retiredSurfaces.empty())
+        {
+            const auto processed = playback.processUserCommands();
+            if (!processed) return processed;
+            for (const auto id : retiredSurfaces)
+                (void)playback.runtimeBitmaps().remove(id);
+        }
+
         if (state.boxActive) contentKey_ = std::move(key);
         return {};
     }

@@ -329,26 +329,49 @@ namespace monopoly::engine
         return {};
     }
 
-    std::expected<void, std::string> SequencePlayback::update(std::int32_t tick)
+    std::expected<void, std::string> SequencePlayback::publishRuntimeViews()
     {
-        const auto updated = commands_.updateCycle(tick);
-        if (!updated) { world_.clear(); world2D_.clear(); return std::unexpected(updated.error().detail); }
         for (const auto& outcome : commands_.outcomes())
             if (outcome.error)
-            { world_.clear(); world2D_.clear(); return std::unexpected(outcome.error->detail); }
+            {
+                world_.clear();
+                world2D_.clear();
+                return std::unexpected(outcome.error->detail);
+            }
+
         auto items = sequence::collectSequenceMeshRenderData(runtime_, meshes_);
         if (!items)
-        { world_.clear(); world2D_.clear(); return std::unexpected(items.error().cause.detail); }
+        {
+            world_.clear();
+            world2D_.clear();
+            return std::unexpected(items.error().cause.detail);
+        }
+
         const auto bitmapItems = sequence::collectSequenceBitmapRenderData(
             runtime_, meshes_.resources(), &runtimeBitmaps_);
         if (!bitmapItems)
-        { world_.clear(); world2D_.clear(); return std::unexpected(bitmapItems.error().detail); }
+        {
+            world_.clear();
+            world2D_.clear();
+            return std::unexpected(bitmapItems.error().detail);
+        }
+
         const auto bitmapPublished = world2D_.sync(*bitmapItems, bitmaps_);
         if (!bitmapPublished)
-        { world_.clear(); world2D_.clear(); return std::unexpected(bitmapPublished.error()); }
+        {
+            world_.clear();
+            world2D_.clear();
+            return std::unexpected(bitmapPublished.error());
+        }
+
         const auto published = world_.sync(*items);
         if (!published)
-        { world_.clear(); world2D_.clear(); return std::unexpected("duplicate sequence render node"); }
+        {
+            world_.clear();
+            world2D_.clear();
+            return std::unexpected("duplicate sequence render node");
+        }
+
         // Keep the old immutable surfaces until consumers have stopped them.
         std::erase_if(retiredDeeds_, [&](data::DataId id)
         {
@@ -359,5 +382,29 @@ namespace monopoly::engine
             return true;
         });
         return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::processUserCommands()
+    {
+        const auto updated = commands_.processUserCommands();
+        if (!updated)
+        {
+            world_.clear();
+            world2D_.clear();
+            return std::unexpected(updated.error().detail);
+        }
+        return publishRuntimeViews();
+    }
+
+    std::expected<void, std::string> SequencePlayback::update(std::int32_t tick)
+    {
+        const auto updated = commands_.updateCycle(tick);
+        if (!updated)
+        {
+            world_.clear();
+            world2D_.clear();
+            return std::unexpected(updated.error().detail);
+        }
+        return publishRuntimeViews();
     }
 }

@@ -70,6 +70,7 @@ namespace monopoly::engine
             const World3DCamera& camera);
         [[nodiscard]] std::expected<void, std::string> setCameraNumber(
             std::uint8_t cameraNumber);
+        [[nodiscard]] std::expected<void, std::string> processUserCommands();
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
         [[nodiscard]] std::expected<void, std::string> configureBoardTextures(
             data::BoardMeshKind mesh, data::TextureResolution resolution,
@@ -107,6 +108,7 @@ namespace monopoly::engine
             data::TextureResolution, data::BoardEdition, data::LanguageId, int, int,
             std::filesystem::path>;
         std::optional<BoardTextureSelection> boardTextureSelection_;
+        [[nodiscard]] std::expected<void, std::string> publishRuntimeViews();
         data::RuntimeBitmapStore runtimeBitmaps_;
         sequence::SequenceRuntime runtime_;
         sequence::SequenceCommandQueue commands_;

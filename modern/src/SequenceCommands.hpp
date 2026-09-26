@@ -127,6 +127,7 @@ namespace monopoly::sequence
         // Exactly zero drains immediately by running a zero-time update cycle.
         // Like the source, unmatched extra Execute calls make the level negative.
         [[nodiscard]] std::expected<int, CommandQueueError> execute();
+        [[nodiscard]] std::expected<void, RuntimeError> processUserCommands();
         [[nodiscard]] std::expected<void, RuntimeError> updateCycle(std::int32_t parentClock);
 
         [[nodiscard]] std::size_t pendingCount() const noexcept { return pending_.size(); }

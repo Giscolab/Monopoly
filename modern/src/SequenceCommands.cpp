@@ -121,6 +121,16 @@ namespace monopoly::sequence
         return nestingLevel_;
     }
 
+    std::expected<void, RuntimeError>
+    SequenceCommandQueue::processUserCommands()
+    {
+        // Monopoly is built with CE_ARTLIB_EnableMultitasking == 0, where
+        // LE_SEQNCR_ProcessUserCommands() is LE_SEQNCR_DoUpdateCycle(0).
+        // Preserve the modern absolute parent clock while forcing the queued
+        // command cycle immediately.
+        return updateCycle(parentClock_);
+    }
+
     void SequenceCommandQueue::drain()
     {
         outcomes_.clear();
