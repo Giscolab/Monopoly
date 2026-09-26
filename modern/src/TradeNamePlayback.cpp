@@ -88,12 +88,9 @@ namespace monopoly::tradeui
                 auto image = blankImage();
                 if (!text.empty())
                 {
-                    const auto rendered = fontRuntime->render(text, NameColour);
-                    if (!rendered) return std::unexpected(rendered.error().detail);
-                    const auto blitted = data::blitStraightRGBA8(
-                        image, *rendered, 8, 9,
-                        data::BitmapBlitMode::SourceOver);
-                    if (!blitted) return std::unexpected(blitted.error());
+                    const auto blitted = fontRuntime->blitText(
+                        image, text, 8, 9, NameColour);
+                    if (!blitted) return std::unexpected(blitted.error().detail);
                 }
                 const auto updated = playback.runtimeBitmaps().update(
                     *surfaces_[side], std::move(image));
