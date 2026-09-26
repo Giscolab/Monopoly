@@ -571,15 +571,14 @@ namespace monopoly::rules::lifecycle
         // ====================================================
         // ActionDisconnectedPlayer() original.
         //
-        // Le runtime moderne n'a pas encore de NetworkAddress.
-        // Toutes les actions MESS actuelles sont locales :
-        // cela correspond au chemin NS_LOCAL du source.
+        // Connection owners replace the original NetworkAddress records.
         // ====================================================
 
         if (
             message.numberA < 0 ||
             message.numberA >=
-                state.numberOfPlayers)
+                state.numberOfPlayers ||
+            (message.sourceId != 0 && message.fromPlayer != message.numberA))
         {
             wrongPlayer(
                 state,
@@ -595,6 +594,8 @@ namespace monopoly::rules::lifecycle
                 message.numberA
             );
 
+
+        messaging::setPlayerOwner(player, 0);
 
         actionCompleted(
             message,

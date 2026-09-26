@@ -4,6 +4,8 @@
 #include "VoiceChatLegacyContract.hpp"
 #include "VoiceChatRuntime.hpp"
 #include "Messaging.hpp"
+#include "RulesEngine.hpp"
+#include "OptionsHelpRuntime.hpp"
 #include "FontRuntime.hpp"
 #include "UDSoundRuntime.hpp"
 #include "UDPennyVoice.hpp"
@@ -949,6 +951,149 @@ namespace monopoly::engine
 
     namespace
     {
+        void resetPresentationOwners()
+        {
+            pieceMovePlayback = {};
+            pieceJailPlayback = {};
+            pieceIdlePlayback = {};
+            pieceIdleDisplay.reset();
+            pieceBuildingDisplay.reset();
+            pieceShadowDisplay.reset();
+            auctionPlayback.reset();
+            auctionTextPlayback.reset();
+            auctionPennyBagsPlayback.reset();
+            tradeBackdropPlayback.reset();
+            tradeTokenPlayback.reset();
+            tradeActionButtonPlayback.reset();
+            optionsFilePlayback.reset();
+            optionsSavePlayback.reset();
+            optionsCustomBoardPlayback.reset();
+            escapeConfirmationPlayback.reset();
+            optionsNavigationPlayback.reset();
+            statsPlayback.reset();
+            chatRecipientPlayback.reset();
+            chatOptionPlayback.reset();
+            chatFluffPlayback.reset();
+            statsBankPlayback.reset();
+            statsCalculatorPlayback.reset();
+            statsCalculatorDeedPickerPlayback.reset();
+            statsPlayerPlayback.reset();
+            statsPlayerCashPlayback.reset();
+            statsPlayerAuxPlayback.reset();
+            statsFutureImmunityPlayback.reset();
+            statsFutureImmunityTextPlayback.reset();
+            statsDeedPlayback.reset();
+            statsDeedFloaterPlayback.reset();
+            statsDeedFloaterTextPlayback.reset();
+            statsDeedBarPlayback.reset();
+            statsDeedValueTextPlayback.reset();
+            optionsOptionPlayback.reset();
+            optionsTogglePlayback.reset();
+            optionsHelpPlayback.reset();
+            tradePropertyPlayback.reset();
+            tradeOfferIconPlayback.reset();
+            tradeCashTextPlayback.reset();
+            tradeNamePlayback.reset();
+            tradePanelTextPlayback.reset();
+            tradeCashDialogPlayback.reset();
+            tradeContractDialogPlayback.reset();
+            tradeContractTextPlayback.reset();
+            boardBackdropPlayback.reset();
+            ownershipHighlightPlayback.reset();
+            boardLightingController.reset();
+            lightingTokenPoseTracker = {};
+            lastBoardLightingTick = 0;
+            if (diceQueueLockHeld) userinterface::unlockGameQueue();
+            diceQueueLockHeld = false;
+            dicePlayback.reset();
+            dice2DPlayback.reset();
+            iBarBackdropPlayback.reset();
+            iBarScoreTextPlayback.reset();
+            iBarRuntimeTextPlayback.reset();
+            chatTextPlayback.reset();
+            optionsVisualPlayback.reset();
+            statsTextPlayback.reset();
+            playerSelectionPlayback.reset();
+            mousePointerPlayback.reset();
+            nativeMouseCursor.reset();
+            mousePointerErrorReported = false;
+            display::cancelDiceCameraOverride();
+            pendingPieceIdleTransition.reset();
+            pieceIdleQueueLockHeld = false;
+            activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
+            pendingPieceMoveSpecial.reset();
+            pieceMoveQueueLockHeld = false;
+            victoryQueueLockReleased = false;
+            activePieceMoveToken.reset();
+            if (tokenVoiceQueueLockHeld) userinterface::unlockGameQueue();
+            tokenVoiceQueueLockHeld = false;
+            activeSequenceSounds.clear();
+            activeBoardSequence.reset();
+            activeWorldCamera.reset();
+            sequenceUIUpdateCount = 0;
+        }
+
+        bool returnToLocalPlayerSelection()
+        {
+            // No old sequence callback or command may cross the new-game
+            // boundary. Resources and render devices remain owned by Engine.
+            if (playback)
+            {
+                openingMovies.reset(*playback);
+                (void)sequenceVideoRuntime.reset(*playback);
+            }
+            openingVideoCleanupPending = false;
+            resetPresentationOwners();
+            sequenceVideoRuntime.reset();
+            playback.reset();
+            if (audioRuntime) audioRuntime->stopAll();
+            monopolySoundRuntime.reset(audioRuntime.get());
+            stopVoiceChat();
+            if (voiceChatAudioRuntime) voiceChatAudioRuntime->closeAllReceivers();
+            voiceChatNetworkActive = voiceChatStartPending = false;
+
+            std::vector<uimsg::Message> retained;
+            uimsg::Message queued;
+            while (uimsg::receive(queued))
+            {
+                switch (queued.type)
+                {
+                case uimsg::Type::SequenceStarted:
+                case uimsg::Type::SequenceReachedEnd:
+                case uimsg::Type::SequenceDeleted:
+                case uimsg::Type::VideoJump:
+                case uimsg::Type::ButtonPressed:
+                case uimsg::Type::ButtonReleased:
+                case uimsg::Type::ButtonRollEnter:
+                case uimsg::Type::ButtonRollExit:
+                case uimsg::Type::ButtonTrack:
+                case uimsg::Type::ButtonOnOff:
+                    break;
+                default: retained.push_back(std::move(queued)); break;
+                }
+            }
+            for (const auto& message : retained) (void)uimsg::send(message);
+            userinterface::resetTimeStep();
+            userinterface::resetRuleProjection();
+            runtime::state().gameInProgress = false;
+            runtime::state().gamePaused = false;
+            display::setTokenAnimationStackActive(false);
+            display::state().mouseLeftPressed = false;
+            display::state().mouseRightPressed = false;
+            display::state().manualMouseCamLock = false;
+            display::state().manualCameraRequested = false;
+            display::state().bssmCameraState = 0;
+            display::state().demoModeDesired = false;
+            display::state().currentBoardCamera.reset();
+            display::state().worldCamera = display::initialBoardCamera();
+            if (!playerselection::initialize() || !rules::initialize()) return false;
+            display::setBackdrop(display::Screen2D::PlayerSelect);
+            playerselection::switchPhase(display::PlayerSetupPhase::LocalOrNetwork);
+            mouse::setEnabled(true);
+            display::showAll2();
+            return true;
+        }
+
         void applyOpeningMovieState()
         {
             if (const auto error = openingMovies.takeError(); !error.empty())
@@ -1453,6 +1598,14 @@ namespace monopoly::engine
         timers::pump();
 
         messaging::pumpNetwork();
+        if (messaging::consumeHostDisconnected())
+        {
+            // Source MESS_StopAllNetworking: return to a fresh local game,
+            // never promote a disconnected client into the old game's bank.
+            if (!returnToLocalPlayerSelection()) return false;
+        }
+        if (auto help = optionsui::pollFullHelp(); !help)
+            std::cerr << "Full help: " << help.error() << '\n';
         // MESS owns connectivity; closing the final connection tears down both
         // capture and playback, including sources that never sent STOP.
         if (!messaging::networkMode() && (voiceChatNetworkActive ||
@@ -2172,6 +2325,7 @@ namespace monopoly::engine
 
     void shutdown()
     {
+        optionsui::cancelFullHelp();
         if (playback)
         {
             openingMovies.reset(*playback);
@@ -2180,81 +2334,7 @@ namespace monopoly::engine
         openingVideoCleanupPending = false;
         rules::cards::setBankPayoutObserver(nullptr);
         statsAccountRuntime.reset();
-        pieceMovePlayback = {};
-        pieceJailPlayback = {};
-        pieceIdlePlayback = {};
-        pieceIdleDisplay.reset();
-        pieceBuildingDisplay.reset();
-        pieceShadowDisplay.reset();
-        auctionPlayback.reset();
-        auctionTextPlayback.reset();
-        auctionPennyBagsPlayback.reset();
-        tradeBackdropPlayback.reset();
-        tradeTokenPlayback.reset();
-        tradeActionButtonPlayback.reset();
-        optionsFilePlayback.reset();
-        optionsSavePlayback.reset();
-        optionsCustomBoardPlayback.reset();
-        escapeConfirmationPlayback.reset();
-        optionsNavigationPlayback.reset();
-        statsPlayback.reset();
-        chatRecipientPlayback.reset();
-        chatOptionPlayback.reset();
-        chatFluffPlayback.reset();
-        statsBankPlayback.reset();
-        statsCalculatorPlayback.reset();
-        statsCalculatorDeedPickerPlayback.reset();
-        statsPlayerPlayback.reset();
-        statsPlayerCashPlayback.reset();
-        statsPlayerAuxPlayback.reset();
-        statsFutureImmunityPlayback.reset();
-        statsFutureImmunityTextPlayback.reset();
-        statsDeedPlayback.reset();
-        statsDeedFloaterPlayback.reset();
-        statsDeedFloaterTextPlayback.reset();
-        statsDeedBarPlayback.reset();
-        statsDeedValueTextPlayback.reset();
-        optionsOptionPlayback.reset();
-        optionsTogglePlayback.reset();
-        optionsHelpPlayback.reset();
-        tradePropertyPlayback.reset();
-        tradeOfferIconPlayback.reset();
-        tradeCashTextPlayback.reset();
-        tradeNamePlayback.reset();
-        tradePanelTextPlayback.reset();
-        tradeCashDialogPlayback.reset();
-        tradeContractDialogPlayback.reset();
-        tradeContractTextPlayback.reset();
-        boardBackdropPlayback.reset();
-        ownershipHighlightPlayback.reset();
-        boardLightingController.reset();
-        lightingTokenPoseTracker = {};
-        lastBoardLightingTick = 0;
-        if (diceQueueLockHeld) userinterface::unlockGameQueue();
-        diceQueueLockHeld = false;
-        dicePlayback.reset();
-        dice2DPlayback.reset();
-        iBarBackdropPlayback.reset();
-        iBarScoreTextPlayback.reset();
-        iBarRuntimeTextPlayback.reset();
-        chatTextPlayback.reset();
-        optionsVisualPlayback.reset();
-        statsTextPlayback.reset();
-        playerSelectionPlayback.reset();
-        mousePointerPlayback.reset();
-        nativeMouseCursor.reset();
-        mousePointerErrorReported = false;
-        display::cancelDiceCameraOverride();
-        pendingPieceIdleTransition.reset();
-        pieceIdleQueueLockHeld = false;
-        activePieceMoveSpecial = pieces::PieceMoveSpecial::None;
-        pendingPieceMoveSpecial.reset();
-        pieceMoveQueueLockHeld = false;
-        victoryQueueLockReleased = false;
-        activePieceMoveToken.reset();
-        if (tokenVoiceQueueLockHeld) userinterface::unlockGameQueue();
-        tokenVoiceQueueLockHeld = false;
-        activeSequenceSounds.clear();
+        resetPresentationOwners();
         voicechat::setReceiveEventSink(nullptr);
         if (voiceChatAudioRuntime)
             voiceChatAudioRuntime->closeAllReceivers();

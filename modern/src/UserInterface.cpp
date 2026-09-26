@@ -576,6 +576,13 @@ namespace monopoly::userinterface
             return;
         }
 
+        if (message.action == actions::Type::NotifyActionCompleted &&
+            message.numberA == static_cast<std::int64_t>(actions::Type::NewGame) && message.numberB != 0)
+        {
+            firstNumberOfPlayersNotification = true;
+            playerselection::state().firstTimeInitializationDone = false;
+        }
+
         // UDIBar.cpp resets the board demo idle timer on every delivered RULE message.
         display::noteBoardActivity();
         if (auto* accounts = engine::statsAccounts())
@@ -642,6 +649,7 @@ namespace monopoly::userinterface
         {
             std::uint8_t cause{};
             const bool resynced = applyClientResyncBlob(uiRuleState, message.binaryDataA, &cause);
+            if (resynced) messaging::noteClientResynchronized();
             if (resynced && cause == 2)
             {
                 playerselection::recordGameStarted();
@@ -1112,9 +1120,9 @@ namespace monopoly::userinterface
                 );
 
 
-            const bool initializeProjection =
-                count == 0 ||
-                firstNumberOfPlayersNotification;
+            const bool initializeProjection = firstNumberOfPlayersNotification ||
+                (count == 0 && (uiRuleState.numberOfPlayers != 0 ||
+                    !playerselection::stateReadOnly().firstTimeInitializationDone || message.numberB == 1));
 
 
             if (initializeProjection)

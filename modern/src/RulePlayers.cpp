@@ -223,6 +223,7 @@ namespace monopoly::rules::players
                 static_cast<std::uint8_t>(
                     message.numberB
                 );
+            messaging::setPlayerOwner(player, message.sourceId);
 
 
             messaging::sendAction(
@@ -269,9 +270,15 @@ namespace monopoly::rules::players
             );
 
 
-        // Dans le runtime actuel toutes les adresses MESS
-        // sont locales. La partie NS_LOCAL de l'autorisation
-        // originale est donc satisfaite.
+        // Source Rule.cpp: a remote human may rename/remove only itself;
+        // takeover of an AI follows the phase/option checks below.
+        if (message.sourceId != 0 &&
+            state.players[playerToReplace].aiPlayerLevel == 0 &&
+            message.fromPlayer != playerToReplace)
+        {
+            notYourPlayer(playerToReplace, requestedName);
+            return;
+        }
 
 
         // ====================================================
@@ -340,6 +347,8 @@ namespace monopoly::rules::players
             ] = {};
 
 
+            messaging::setPlayerOwner(playerToReplace, messaging::playerOwner(lastPlayer));
+            messaging::setPlayerOwner(lastPlayer, 0);
             --state.numberOfPlayers;
 
 
@@ -458,6 +467,7 @@ namespace monopoly::rules::players
             );
 
 
+        messaging::setPlayerOwner(playerToReplace, message.sourceId);
         // Token et couleur restent ceux du slot original.
 
 

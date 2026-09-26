@@ -211,6 +211,8 @@ namespace monopoly::messaging
             std::uint32_t id{};
             bool connecting{};
             bool ready{};
+            bool gameplay{};
+            bool admitted{};
             bool dead{};
             bool readClosed{};
             Bytes input;
@@ -225,7 +227,7 @@ namespace monopoly::messaging
         class TcpTransport final : public Transport
         {
         public:
-            explicit TcpTransport(bool host) : host_(host) {}
+            explicit TcpTransport(bool host, TcpSessionMode mode) : host_(host), mode_(mode) {}
             ~TcpTransport() override
             {
                 for (auto& peer : peers_) closeSocket(peer.socket);
@@ -277,15 +279,64 @@ namespace monopoly::messaging
                     Peer peer;
                     peer.socket = socket;
                     peer.connecting = connecting;
-                    enqueue(peer, frame(Kind::Hello, Bytes(4, 0)));
+                    Bytes hello(4, 0);
+                    if (mode_ == TcpSessionMode::Gameplay) put(hello, 1, 4);
+                    enqueue(peer, frame(Kind::Hello, hello));
                     peers_.push_back(std::move(peer));
                 }
                 return true;
             }
 
             bool server() const noexcept override { return host_; }
+            bool gameplayEnabled() const noexcept override { return mode_ == TcpSessionMode::Gameplay; }
+            std::uint32_t localSourceId() const noexcept override { return localSourceId_; }
+            void setPlayerOwner(rules::PlayerNumber player, std::uint32_t source) noexcept override
+            {
+                if (host_ && player < rules::MaxPlayers) owners_[player] = source;
+            }
+            bool sourceConnected(std::uint32_t source) const noexcept override
+            {
+                if (host_ && source == 0) return true;
+                return std::any_of(peers_.begin(), peers_.end(), [&](const Peer& peer) {
+                    return peer.ready && !peer.dead && (host_ ? peer.id == source : source == 0);
+                });
+            }
+            bool admitSource(std::uint32_t source) override
+            {
+                if (!host_) return false;
+                for (auto& peer : peers_)
+                    if (peer.id == source && peer.ready && !peer.dead)
+                    {
+                        peer.admitted = true;
+                        return true;
+                    }
+                return false;
+            }
+            bool receiveDisconnectedSource(std::uint32_t& source) override
+            {
+                if (disconnected_.empty()) return false;
+                source = disconnected_.front();
+                disconnected_.pop_front();
+                return true;
+            }
+            bool sendToSource(const actions::Message& message, std::uint32_t source) override
+            {
+                if (!host_ || !validNotification(message)) return false;
+                const auto bytes = encode(message);
+                if (bytes.empty()) return false;
+                for (auto& peer : peers_)
+                    if (peer.id == source && peer.ready && peer.admitted && !peer.dead)
+                    {
+                        if (!peer.gameplay && message.toPlayer != rules::AllPlayers) return false;
+                        if (enqueue(peer, bytes)) return true;
+                        drop(peer, "TCP peer outgoing queue exceeded its bound");
+                        return false;
+                    }
+                return false;
+            }
             bool active() const noexcept override
             {
+                if (host_ && gameplayEnabled() && listener_ != InvalidSocket) return true;
                 return std::any_of(peers_.begin(), peers_.end(),
                     [](const Peer& peer) { return peer.ready && !peer.dead; });
             }
@@ -311,10 +362,11 @@ namespace monopoly::messaging
                 // Evicting the final slow peer during a RULE batch must not
                 // reject subsequent local bank notifications before next pump.
                 if (!active()) return host_;
-                if (!host_ && !validVoice(message)) return false;
-                if (host_ && (message.fromPlayer != rules::BankPlayer ||
-                    message.toPlayer != rules::AllPlayers ||
-                    static_cast<unsigned>(message.action) < 80u)) return false;
+                if (!host_ && !(gameplayEnabled() ? validGameplayAction(message) : validVoice(message))) return false;
+                if (host_ && !validNotification(message)) return false;
+                // Spectator is not a unique connection. Explicit recipients
+                // use sendToSource instead of leaking a private notification.
+                if (host_ && message.toPlayer == rules::SpectatorPlayer) return false;
                 const Bytes bytes = encode(message);
                 if (bytes.empty())
                 {
@@ -326,7 +378,10 @@ namespace monopoly::messaging
                 bool sent = false;
                 for (auto& peer : peers_)
                 {
-                    if (!peer.ready || peer.dead) continue;
+                    if (!peer.ready || peer.dead || (host_ && !peer.admitted)) continue;
+                    if (host_ && !peer.gameplay && message.toPlayer != rules::AllPlayers) continue;
+                    if (host_ && message.toPlayer < rules::MaxPlayers &&
+                        owners_[message.toPlayer] != peer.id) continue;
                     if (!enqueue(peer, bytes))
                         drop(peer, "TCP peer outgoing queue exceeded its bound");
                     else sent = true;
@@ -363,7 +418,8 @@ namespace monopoly::messaging
                     // A synthetic STOP carries the authenticated source of a
                     // departed peer through the same RULE echo path as audio.
                     // Keep the dead peer until there is room for that cleanup.
-                    if (peer.dead && host_ && peer.ready && incoming_.size() < MessageQueueCapacity)
+                    if (peer.dead && host_ && peer.ready && incoming_.size() < MessageQueueCapacity &&
+                        disconnected_.size() < MessageQueueCapacity)
                     {
                         actions::Message stop;
                         stop.action = actions::Type::VoiceChat;
@@ -373,6 +429,9 @@ namespace monopoly::messaging
                         stop.sourceId = peer.id;
                         (void)voicechat::packet::makeStopPacket(stop.binaryDataA);
                         incoming_.push_back(std::move(stop));
+                        // Only this socket owner can report a departed source.
+                        // MESS expands the identity to all of its player slots.
+                        disconnected_.push_back(peer.id);
                         peer.ready = false;
                     }
                 }
@@ -391,7 +450,11 @@ namespace monopoly::messaging
                 peer.dead = true;
                 fail(reason);
                 // A disconnected client must not replay old buffered actions.
-                if (!host_) incoming_.clear();
+                if (!host_)
+                {
+                    incoming_.clear();
+                    localSourceId_ = 0;
+                }
             }
             bool enqueue(Peer& peer, const Bytes& bytes)
             {
@@ -413,18 +476,62 @@ namespace monopoly::messaging
                     voicechat::packet::parse(message.binaryDataA, 0) == voicechat::packet::ParseStatus::Ok;
             }
 
+            bool validNotification(const actions::Message& message) const
+            {
+                const auto action = static_cast<unsigned>(message.action);
+                if (message.fromPlayer != rules::BankPlayer || action < 80u || action > 136u)
+                    return false;
+                if (!gameplayEnabled()) return message.toPlayer == rules::AllPlayers;
+                return message.toPlayer == rules::AllPlayers ||
+                    message.toPlayer == rules::SpectatorPlayer || message.toPlayer < rules::MaxPlayers;
+            }
+
+            bool validGameplayAction(const actions::Message& message) const
+            {
+                if (message.toPlayer != rules::BankPlayer ||
+                    (message.fromPlayer >= rules::MaxPlayers &&
+                     message.fromPlayer != rules::SpectatorPlayer)) return false;
+                const auto action = static_cast<unsigned>(message.action);
+                // Rule.h calls movement/landing internal; never admit bank
+                // operations or manufactured disconnect/tick/seed messages.
+                if (message.action == actions::Type::DisconnectedPlayer)
+                    return message.fromPlayer < rules::MaxPlayers &&
+                        message.numberA == message.fromPlayer;
+                if (action == 0 || action > 50 || action == 2 ||
+                    action == 3 || action == 12 || (action >= 19 && action <= 22))
+                    return false;
+                if (message.fromPlayer == rules::SpectatorPlayer &&
+                    message.action != actions::Type::NamePlayer &&
+                    message.action != actions::Type::ResyncClient &&
+                    message.action != actions::Type::TextChat &&
+                    message.action != actions::Type::VoiceChat) return false;
+                if (message.action == actions::Type::VoiceChat)
+                    return (message.numberA == rules::AllPlayers ||
+                        (message.numberA >= 0 && message.numberA < rules::MaxPlayers)) &&
+                        message.numberB == 0 && message.numberC == 0 &&
+                        message.numberD == 0 && message.numberE == 0 &&
+                        message.stringA[0] == 0 && message.binaryData.empty() &&
+                        voicechat::packet::parse(message.binaryDataA, 0) == voicechat::packet::ParseStatus::Ok;
+                return true; // Identity/ownership and phase validation belong to MESS/RULE.
+            }
+
             bool consume(Peer& peer, Kind kind, std::span<const std::uint8_t> body)
             {
                 if (!peer.ready)
                 {
-                    if (kind != Kind::Hello || body.size() != 4) return false;
+                    if (kind != Kind::Hello || (body.size() != 4 && body.size() != 8)) return false;
                     Reader reader{body};
                     const auto id = static_cast<std::uint32_t>(reader.get(4));
+                    const auto capability = body.size() == 8 ? reader.get(4) : 0;
+                    if (capability > 1) return false;
                     if (host_)
                     {
-                        if (id != 0) return false;
+                        if (id != 0 || (capability == 1 && !gameplayEnabled())) return false;
+                        peer.gameplay = capability == 1;
+                        peer.admitted = !gameplayEnabled();
                         Bytes welcome;
                         put(welcome, peer.id, 4);
+                        if (body.size() == 8) put(welcome, capability, 4);
                         if (!enqueue(peer, frame(Kind::Hello, welcome))) return false;
                         // Admission causes one explicit resync to all peers.
                         // Existing microphones restart and announce CHAT again.
@@ -438,8 +545,10 @@ namespace monopoly::messaging
                     }
                     else
                     {
-                        if (id == 0) return false;
+                        if (id == 0 || (capability == 1) != gameplayEnabled()) return false;
                         peer.id = id;
+                        peer.gameplay = capability == 1;
+                        localSourceId_ = id;
                     }
                     peer.ready = true;
                     return true;
@@ -450,17 +559,12 @@ namespace monopoly::messaging
                 if (!decode(body, message)) return false;
                 if (host_)
                 {
-                    // Spectator admission grants voice only. Never expose the
-                    // local-only ownership assumptions in RulePlayers remotely.
-                    if (!validVoice(message)) return false;
+                    if (!(peer.gameplay ? validGameplayAction(message) : validVoice(message))) return false;
                     message.sourceId = peer.id;
                 }
                 else
                 {
-                    const auto action = static_cast<unsigned>(message.action);
-                    if (message.fromPlayer != rules::BankPlayer ||
-                        message.toPlayer != rules::AllPlayers || action < 80u || action > 136u)
-                        return false;
+                    if (!validNotification(message)) return false;
                     if (message.action == actions::Type::NotifyVoiceChat &&
                         (message.numberD < 0 || message.numberD > std::numeric_limits<std::uint32_t>::max() ||
                          voicechat::packet::parse(message.binaryDataA, 0) != voicechat::packet::ParseStatus::Ok))
@@ -552,6 +656,11 @@ namespace monopoly::messaging
                     const auto kind = static_cast<Kind>(header.get(2));
                     const auto size = static_cast<std::size_t>(header.get(4));
                     if (size > MaxBody) { drop(peer, "TCP frame exceeds size limit"); return; }
+                    // Admission occurs at MESS's empty-queue boundary. Keep
+                    // commands in this bounded per-peer buffer until then;
+                    // other peers can still make progress during this pump.
+                    if (host_ && gameplayEnabled() && peer.ready &&
+                        !peer.admitted && kind == Kind::Action) break;
                     if (peer.input.size() - consumed - HeaderSize < size) break;
                     if (!consume(peer, kind, input.subspan(consumed + HeaderSize, size)))
                     { drop(peer, "TCP frame rejected"); return; }
@@ -559,11 +668,15 @@ namespace monopoly::messaging
                     consumed += HeaderSize + size;
                 }
                 peer.input.erase(peer.input.begin(), peer.input.begin() + consumed);
-                if (peer.readClosed && (peer.input.empty() || consumed == 0))
+                if (peer.readClosed && (peer.input.empty() ||
+                    ((!host_ || !gameplayEnabled() || peer.admitted) && consumed == 0)))
                     drop(peer, "TCP peer disconnected");
             }
 
             bool host_{};
+            TcpSessionMode mode_{TcpSessionMode::VoiceSpectators};
+            std::uint32_t localSourceId_{};
+            std::array<std::uint32_t, rules::MaxPlayers> owners_{};
 #ifdef _WIN32
             bool winsock_{};
 #endif
@@ -571,14 +684,15 @@ namespace monopoly::messaging
             std::uint32_t nextId_{1};
             std::vector<Peer> peers_;
             std::deque<actions::Message> incoming_;
+            std::deque<std::uint32_t> disconnected_;
             std::string error_;
         };
     }
 
     std::expected<std::unique_ptr<Transport>, std::string> openTcpTransport(
-        bool host, std::string_view address, std::uint16_t port)
+        bool host, std::string_view address, std::uint16_t port, TcpSessionMode mode)
     {
-        auto transport = std::make_unique<TcpTransport>(host);
+        auto transport = std::make_unique<TcpTransport>(host, mode);
         if (!transport->open(address, port))
             return std::unexpected(std::string(transport->error()));
         return std::unique_ptr<Transport>(std::move(transport));

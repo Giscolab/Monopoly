@@ -1,4 +1,5 @@
 #include "RulesEngine.hpp"
+#include "Messaging.hpp"
 #include "BoardRules.hpp"
 #include "PhaseStack.hpp"
 #include "RuleStartupActions.hpp"
@@ -40,6 +41,7 @@ namespace monopoly::rules
         // CurrentRulesState entièrement à zéro.
 
         currentRulesState = {};
+        messaging::resetPlayerOwners();
 
         currentRulesState.currentPlayer = NobodyPlayer;
         currentRulesState.numberOfPlayers = 0;
@@ -213,6 +215,8 @@ namespace monopoly::rules
 
     void process(const actions::Message& message)
     {
+        // Source Rule.cpp: ownership is checked at dispatch, before activity.
+        if (!messaging::authenticSender(currentRulesState, message)) return;
         // RULE_ProcessRules() original :
         // toute action issue d'un slot joueur remet à zéro
         // son compteur d'inactivité.

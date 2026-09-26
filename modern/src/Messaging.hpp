@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <functional>
 #include <string_view>
 
 namespace monopoly::messaging
@@ -21,6 +22,18 @@ namespace monopoly::messaging
     // client is never a RULE server, even before/after its connection is live.
     bool startNetwork(std::unique_ptr<Transport> transport);
     void pumpNetwork();
+    void stopNetwork();
+    void setNetworkStarter(std::function<bool()> starter);
+    [[nodiscard]] bool startConfiguredNetwork();
+    [[nodiscard]] bool gameplayNetwork();
+    [[nodiscard]] bool gameplayReady();
+    void noteClientResynchronized();
+    [[nodiscard]] bool consumeHostDisconnected();
+    void resetPlayerOwners();
+    void setPlayerOwner(rules::PlayerNumber player, std::uint32_t source);
+    [[nodiscard]] std::uint32_t playerOwner(rules::PlayerNumber player);
+    [[nodiscard]] bool authenticSender(const rules::GameState& state,
+        const actions::Message& message);
     [[nodiscard]] std::string_view networkError();
 
     bool sendAction(const actions::Message& message);

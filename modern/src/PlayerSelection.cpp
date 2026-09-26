@@ -6,6 +6,8 @@
 #include "ExtendedInitialization.hpp"
 #include "IBar.hpp"
 #include "Messaging.hpp"
+#include "ChatRuntime.hpp"
+#include "RulesEngine.hpp"
 #include "LocalPlayers.hpp"
 #include "PlayerSetupFlow.hpp"
 #include "PlayerSetupSound.hpp"
@@ -33,6 +35,8 @@ namespace monopoly::playerselection
         ui::playersetup::Rect restoreRuleRect{}, shortRuleRect{};
         PlayerSelectionHistory history;
         bool loadRequested{};
+        bool networkPending{};
+        bool localPending{};
         bool customBoardRequested{};
         ui::playersetup::Button pressedButton{ui::playersetup::Button::None};
         std::uint64_t pressSerial{};
@@ -931,6 +935,8 @@ namespace monopoly::playerselection
         playbackAttached = playbackInteractable = false;
         ruleHits.clear();
         loadRequested = false;
+        networkPending = false;
+        localPending = false;
         customBoardRequested = false;
         pressedButton = ui::playersetup::Button::None;
         pressSerial = 0;
@@ -1041,6 +1047,20 @@ namespace monopoly::playerselection
 
     void update()
     {
+        if (networkPending)
+        {
+            if (messaging::gameplayReady())
+            {
+                networkPending = false;
+                if (!chat::stateReadOnly().boxActive) chat::toggle();
+                switchPhase(display::PlayerSetupPhase::SelectPlayer);
+            }
+            else if (!messaging::gameplayNetwork())
+            {
+                networkPending = false;
+                switchPhase(display::PlayerSetupPhase::LocalOrNetwork);
+            }
+        }
         display::State& displayState =
             display::state();
 
@@ -1343,6 +1363,13 @@ namespace monopoly::playerselection
                             rules::MaxPlayers)
                     );
 
+                // Source UDPsel ignores repeated counts unless a fresh game
+                // explicitly requests setup reset. A joining peer's resync is
+                // not a new game for the already present machines.
+                if (globalState.firstTimeInitializationDone && !localPending &&
+                    message.numberB == 0 && globalState.numberOfPlayers == count)
+                    break;
+
                 globalState.numberOfPlayers =
                     static_cast<std::uint8_t>(count);
 
@@ -1405,6 +1432,11 @@ namespace monopoly::playerselection
                     globalState.forcedRefresh = true;
                 }
 
+                if (localPending && count == 0)
+                {
+                    localPending = false;
+                    switchPhase(display::PlayerSetupPhase::SelectPlayer);
+                }
                 break;
             }
 
@@ -1568,18 +1600,20 @@ namespace monopoly::playerselection
                         284
                     ))
                 {
-                    switchPhase(
-                        display::PlayerSetupPhase::
-                            SelectPlayer
-                    );
+                    networkPending = false;
+                    messaging::stopNetwork();
+                    if (chat::stateReadOnly().boxActive) chat::toggle();
+                    ui::localplayers::reset();
+                    globalState.firstTimeInitializationDone = false;
+                    localPending = rules::initialize();
+                    if (!localPending) engine::playWarningSound();
 
 
                     return;
                 }
 
 
-                // Network game :
-                // DirectPlay n'est pas encore porté.
+                // Native transport: remain here until connection/admission succeeds.
                 if (
                     pointInside(
                         x,
@@ -1590,10 +1624,9 @@ namespace monopoly::playerselection
                         356
                     ))
                 {
-                    switchPhase(
-                        display::PlayerSetupPhase::
-                            LocalOrNetwork
-                    );
+                    if (chat::stateReadOnly().boxActive) chat::toggle();
+                    networkPending = messaging::startConfiguredNetwork();
+                    if (!networkPending) engine::playWarningSound();
 
                     return;
                 }

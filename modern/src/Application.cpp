@@ -138,6 +138,7 @@ namespace monopoly
 
         bool networkRequested = false;
         bool networkHost = false;
+        bool gameplayRequested = false;
         std::string networkAddress;
         std::uint16_t networkPort = 0;
         if (argc > 1)
@@ -146,10 +147,12 @@ namespace monopoly
             const auto usage = []
             {
                 std::cerr << "Usage: MonopolyModern [--voice-host IPv4:port | "
-                    "--voice-connect IPv4:port]\n"
-                    "TCP clients are voice spectators; remote player admission is not implemented.\n";
+                    "--voice-connect IPv4:port | --network-host IPv4:port | "
+                    "--network-connect IPv4:port]\n"
+                    "Network menu without arguments hosts on 0.0.0.0:28799.\n";
             };
-            if (argc != 3 || (mode != "--voice-host" && mode != "--voice-connect"))
+            if (argc != 3 || (mode != "--voice-host" && mode != "--voice-connect" &&
+                mode != "--network-host" && mode != "--network-connect"))
             {
                 usage();
                 return 1;
@@ -171,7 +174,8 @@ namespace monopoly
                 return 1;
             }
             networkRequested = true;
-            networkHost = mode == "--voice-host";
+            gameplayRequested = mode == "--network-host" || mode == "--network-connect";
+            networkHost = mode == "--voice-host" || mode == "--network-host";
             networkAddress = endpoint.substr(0, colon);
             networkPort = static_cast<std::uint16_t>(port);
         }
@@ -220,10 +224,27 @@ namespace monopoly
         {
             bool finished = false;
 
+            // A native Modern session replaces the old DirectPlay selector.
+            // Command-line endpoints configure joining; the menu defaults to hosting.
+            messaging::setNetworkStarter([host = networkRequested ? networkHost : true,
+                address = networkRequested ? networkAddress : std::string("0.0.0.0"),
+                port = networkRequested ? networkPort : std::uint16_t{28799}]()
+            {
+                auto transport = messaging::openTcpTransport(host, address, port,
+                    messaging::TcpSessionMode::Gameplay);
+                if (!transport)
+                {
+                    std::cerr << "Game network startup failed: " << transport.error() << '\n';
+                    return false;
+                }
+                return messaging::startNetwork(std::move(*transport));
+            });
             if (networkRequested)
             {
                 auto transport = messaging::openTcpTransport(
-                    networkHost, networkAddress, networkPort);
+                    networkHost, networkAddress, networkPort,
+                    gameplayRequested ? messaging::TcpSessionMode::Gameplay :
+                        messaging::TcpSessionMode::VoiceSpectators);
                 if (!transport)
                 {
                     std::cerr << "Voice network startup failed: " << transport.error() << '\n';

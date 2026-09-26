@@ -62,6 +62,7 @@ namespace monopoly::rules::startingorder
 
             std::array<PlayerState, MaxPlayers>
                 originalPlayers{};
+            std::array<std::uint32_t, MaxPlayers> originalOwners{};
 
 
             for (PlayerNumber playerNo = 0;
@@ -127,6 +128,7 @@ namespace monopoly::rules::startingorder
             {
                 originalPlayers[playerNo] =
                     state.players[playerNo];
+                originalOwners[playerNo] = messaging::playerOwner(playerNo);
             }
 
 
@@ -140,14 +142,12 @@ namespace monopoly::rules::startingorder
                             playerNo
                         ].player
                     ];
+                messaging::setPlayerOwner(playerNo,
+                    originalOwners[newPlayerOrder[playerNo].player]);
             }
 
 
-            // MESS_AssociatePlayerWithAddress() sera ajouté
-            // avec le transport réseau.
-            //
-            // L'ordre logique des PlayerState est déjà celui
-            // du source original.
+            // Player records and their connection owners move together.
 
             notifyPlayerOrder(state);
         }

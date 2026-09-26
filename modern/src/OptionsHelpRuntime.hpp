@@ -2,6 +2,8 @@
 #include "OptionsUI.hpp"
 #include "ResourceRuntime.hpp"
 #include <expected>
+#include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
 namespace monopoly::optionsui
@@ -14,6 +16,22 @@ namespace monopoly::optionsui
         std::string_view bytes);
     [[nodiscard]] std::expected<void, std::string> openQuickHelp(
         State& state, const data::ResourceSnapshot& resources);
+    struct FullHelpOptions
+    {
+        // An executable path, never a shell command. Empty uses MONOPOLY_WINHLP
+        // when defined, otherwise the winhlp executable available on PATH.
+        std::string exporterExecutable;
+        std::uint32_t timeoutMilliseconds{30000};
+        std::uintmax_t maximumHtmlBytes{32 * 1024 * 1024};
+    };
+
+    // Starts a nonblocking HLP -> self-contained HTML export in the user's
+    // preference directory. Original resources are opened read-only.
     [[nodiscard]] std::expected<void, std::string> openFullHelp(
-        const data::ResourceSnapshot& resources);
+        const data::ResourceSnapshot& resources, const FullHelpOptions& options = {});
+    // Called on the application thread: false = idle/pending, true = a completed
+    // document was handed to the default browser. Errors are consumed once.
+    [[nodiscard]] std::expected<bool, std::string> pollFullHelp();
+    [[nodiscard]] bool fullHelpPending() noexcept;
+    void cancelFullHelp() noexcept;
 }

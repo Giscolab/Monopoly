@@ -565,6 +565,7 @@ namespace monopoly::rules::save
         // ----------------------------------------------------
         // Tous les joueurs deviennent locaux.
         // ----------------------------------------------------
+        messaging::resetPlayerOwners();
 
         bool humanFound = false;
 

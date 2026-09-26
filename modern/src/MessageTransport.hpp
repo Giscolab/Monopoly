@@ -22,5 +22,14 @@ namespace monopoly::messaging
         [[nodiscard]] virtual bool active() const noexcept = 0;
         [[nodiscard]] virtual std::size_t queued() const noexcept = 0;
         [[nodiscard]] virtual std::string_view error() const noexcept = 0;
+        // Optional gameplay extension. MESS owns and validates slot ownership;
+        // this table is its transport routing projection, never client input.
+        virtual void setPlayerOwner(rules::PlayerNumber, std::uint32_t) noexcept {}
+        virtual bool admitSource(std::uint32_t) { return true; }
+        virtual bool sendToSource(const actions::Message&, std::uint32_t) { return false; }
+        virtual bool receiveDisconnectedSource(std::uint32_t&) { return false; }
+        [[nodiscard]] virtual bool sourceConnected(std::uint32_t) const noexcept { return false; }
+        [[nodiscard]] virtual std::uint32_t localSourceId() const noexcept { return 0; }
+        [[nodiscard]] virtual bool gameplayEnabled() const noexcept { return false; }
     };
 }

@@ -10,6 +10,7 @@
 #include "ExtendedInitialization.hpp"
 #include "IBar.hpp"
 #include "LocalPlayers.hpp"
+#include "PlayerSelection.hpp"
 #include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
 #include "OptionsSaveRuntime.hpp"
@@ -419,6 +420,8 @@ namespace monopoly::auctionui
 
 namespace monopoly::messaging
 {
+    void noteClientResynchronized() {}
+
     bool serverMode() { return routingServerMode; }
     bool networkMode()
     {
@@ -482,6 +485,9 @@ namespace monopoly::chat
 
 namespace monopoly::playerselection
 {
+    State routingPlayerSelectionState{};
+    State& state() { return routingPlayerSelectionState; }
+    const State& stateReadOnly() { return routingPlayerSelectionState; }
     bool consumeLoadRequest() noexcept { return false; }
     bool consumeCustomBoardRequest() noexcept { return false; }
     std::expected<void, std::string> commitCustomBoard(std::filesystem::path)

@@ -49,6 +49,7 @@ namespace monopoly::rules::coreactions
             PlayerNumber savedCount)
         {
             state = GameState{};
+            if (!preservePlayers) messaging::resetPlayerOwners();
 
             resetTransientSubsystems();
 
