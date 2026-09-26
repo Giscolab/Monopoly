@@ -6,11 +6,191 @@
 #include <array>
 #include <bit>
 #include <limits>
+#include <list>
 #include <sstream>
 #include <utility>
 
 namespace monopoly::data
 {
+    namespace detail
+    {
+        class RawDataPool;
+
+        // The public shared pointer aliases this lease. Its final release is
+        // observable, unlike polling use_count(), so release-to-zero refreshes
+        // recency exactly as L_Data's reference-counted unused-item LRU does.
+        struct RawDataLease
+        {
+            SharedDataBytes data;
+            std::shared_ptr<RawDataPool> pool;
+            std::uint64_t identity{};
+            ~RawDataLease();
+        };
+
+        class RawDataPool final : public std::enable_shared_from_this<RawDataPool>
+        {
+            struct Entry
+            {
+                SharedDataBytes data;
+                std::weak_ptr<const DataBytes> lease;
+                bool cached{true};
+                std::uint64_t identity{};
+            };
+
+            using Entries = std::list<Entry>;
+
+        public:
+            SharedDataBytes acquire(const std::weak_ptr<const DataBytes>& cached)
+            {
+                const std::scoped_lock lock(mutex_);
+                const auto data = cached.lock();
+                if (!data) return {};
+                const auto item = find(data.get());
+                if (item == entries_.end() || !item->cached) return {};
+                entries_.splice(entries_.begin(), entries_, item);
+                if (auto lease = item->lease.lock()) return lease;
+                return makeLease(*item);
+            }
+
+            void reserve(std::size_t size)
+            {
+                const std::scoped_lock lock(mutex_);
+                // L_Data ignores failure to free enough space and attempts
+                // allocation anyway. Leases and individual large valid items
+                // may exceed this soft threshold; neither is invalidated.
+                auto item = entries_.end();
+                while (residentBytes_ + reservedBytes_ + size > LegacyRawDataCacheBudget &&
+                    item != entries_.begin())
+                {
+                    --item;
+                    if (!item->lease.expired()) continue;
+                    residentBytes_ -= item->data->size();
+                    item = entries_.erase(item);
+                }
+                reservedBytes_ += size;
+            }
+
+            void cancelReservation(std::size_t size) noexcept
+            {
+                const std::scoped_lock lock(mutex_);
+                reservedBytes_ -= size;
+            }
+
+            SharedDataBytes publish(SharedDataBytes data, std::size_t reserved)
+            {
+                const std::scoped_lock lock(mutex_);
+                entries_.push_front({std::move(data), {}, true, ++lastIdentity_});
+                SharedDataBytes lease;
+                try { lease = makeLease(entries_.front()); }
+                catch (...) { entries_.pop_front(); throw; }
+                residentBytes_ += entries_.front().data->size();
+                reservedBytes_ -= reserved;
+                return lease;
+            }
+
+            bool remove(const std::weak_ptr<const DataBytes>& cached) noexcept
+            {
+                const std::scoped_lock lock(mutex_);
+                const auto data = cached.lock();
+                if (!data) return false;
+                const auto item = find(data.get());
+                if (item == entries_.end() || !item->cached) return false;
+                item->cached = false;
+                if (item->lease.expired()) erase(item);
+                return true;
+            }
+
+            void released(std::uint64_t identity) noexcept
+            {
+                const std::scoped_lock lock(mutex_);
+                const auto item = std::find_if(entries_.begin(), entries_.end(),
+                    [identity](const Entry& entry) { return entry.identity == identity; });
+                if (item == entries_.end()) return;
+                // A concurrent cache hit can already have published a new
+                // lease while the old lease destructor awaited this mutex.
+                if (!item->lease.expired()) return;
+                if (!item->cached) erase(item);
+                else entries_.splice(entries_.begin(), entries_, item);
+            }
+
+            RawDataCacheStats stats() const noexcept
+            {
+                const std::scoped_lock lock(mutex_);
+                RawDataCacheStats result{residentBytes_, reservedBytes_};
+                for (const auto& item : entries_)
+                {
+                    result.cachedItems += item.cached;
+                    result.leasedItems += !item.lease.expired();
+                }
+                return result;
+            }
+
+        private:
+            Entries::iterator find(const DataBytes* data) noexcept
+            {
+                return std::find_if(entries_.begin(), entries_.end(),
+                    [data](const Entry& item) { return item.data.get() == data; });
+            }
+
+            SharedDataBytes makeLease(Entry& item)
+            {
+                auto holder = std::make_shared<RawDataLease>();
+                holder->data = item.data;
+                holder->pool = shared_from_this();
+                holder->identity = item.identity;
+                SharedDataBytes lease(holder, item.data.get());
+                item.lease = lease;
+                return lease;
+            }
+
+            void erase(Entries::iterator item) noexcept
+            {
+                residentBytes_ -= item->data->size();
+                entries_.erase(item);
+            }
+
+            mutable std::mutex mutex_;
+            Entries entries_; // Most recently accessed/released at the front.
+            std::size_t residentBytes_{};
+            std::size_t reservedBytes_{};
+            std::uint64_t lastIdentity_{};
+        };
+
+        RawDataLease::~RawDataLease()
+        {
+            data.reset();
+            if (pool) pool->released(identity);
+        }
+
+        const std::shared_ptr<RawDataPool>& rawDataPool()
+        {
+            // Leases retain the pool through static shutdown as well. The
+            // pool never holds a strong lease, so this does not form a cycle.
+            static const auto pool = std::make_shared<RawDataPool>();
+            return pool;
+        }
+
+        class RawDataReservation final
+        {
+        public:
+            RawDataReservation(std::shared_ptr<RawDataPool> pool, std::size_t size)
+                : pool_(std::move(pool)), size_(size) { pool_->reserve(size_); }
+            ~RawDataReservation() { if (size_) pool_->cancelReservation(size_); }
+            RawDataReservation(const RawDataReservation&) = delete;
+            RawDataReservation& operator=(const RawDataReservation&) = delete;
+            SharedDataBytes publish(SharedDataBytes data)
+            {
+                auto result = pool_->publish(std::move(data), size_);
+                size_ = 0;
+                return result;
+            }
+        private:
+            std::shared_ptr<RawDataPool> pool_;
+            std::size_t size_{};
+        };
+
+    }
+
     namespace
     {
         constexpr std::array<char, 7> ArtechSignature
@@ -72,6 +252,10 @@ namespace monopoly::data
         }
     }
 
+    RawDataCacheStats rawDataCacheStats() noexcept
+    {
+        return detail::rawDataPool()->stats();
+    }
 
     std::string_view legacyDataTypeName(LegacyDataType type) noexcept
     {
@@ -182,6 +366,7 @@ namespace monopoly::data
 
         auto archive = std::shared_ptr<LegacyDataArchive>(
             new LegacyDataArchive());
+        archive->rawDataPool_ = detail::rawDataPool();
 
         archive->path_ = path;
         archive->group_ = group;
@@ -411,6 +596,7 @@ namespace monopoly::data
     void LegacyDataArchive::close() noexcept
     {
         std::scoped_lock lock(mutex_);
+        for (auto& item : cache_) rawDataPool_->remove(item);
         cache_.clear();
 
         if (stream_.is_open())
@@ -498,9 +684,9 @@ namespace monopoly::data
                 tag));
         }
 
-        if (cache_[tag])
+        if (auto cached = rawDataPool_->acquire(cache_[tag]))
         {
-            return cache_[tag];
+            return cached;
         }
 
         const auto& item = items_[tag];
@@ -514,6 +700,7 @@ namespace monopoly::data
                 tag));
         }
 
+        detail::RawDataReservation reservation(rawDataPool_, item.uncompressedSize);
         auto compressed = std::vector<Bytef>(item.compressedSize);
         stream_.clear();
         stream_.seekg(
@@ -567,7 +754,7 @@ namespace monopoly::data
         }
 
         cache_[tag] = output;
-        return cache_[tag];
+        return reservation.publish(std::move(output));
     }
 
 
@@ -593,7 +780,7 @@ namespace monopoly::data
                 tag));
         }
 
-        const bool wasCached = static_cast<bool>(cache_[tag]);
+        const bool wasCached = rawDataPool_->remove(cache_[tag]);
         cache_[tag].reset();
         return wasCached;
     }
@@ -605,6 +792,7 @@ namespace monopoly::data
 
         for (auto& item : cache_)
         {
+            rawDataPool_->remove(item);
             item.reset();
         }
     }
@@ -616,9 +804,9 @@ namespace monopoly::data
         return static_cast<std::size_t>(std::count_if(
             cache_.begin(),
             cache_.end(),
-            [](const SharedDataBytes& item)
+            [](const std::weak_ptr<const DataBytes>& item)
             {
-                return static_cast<bool>(item);
+                return !item.expired();
             }));
     }
 

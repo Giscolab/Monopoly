@@ -18,6 +18,7 @@
 
 namespace monopoly::data
 {
+    namespace detail { class RawDataPool; }
     // Ordre et valeurs de LE_DATA_DataType dans Source/artlib/L_Data.h.
     enum class LegacyDataType : std::uint8_t
     {
@@ -149,6 +150,20 @@ namespace monopoly::data
     using DataBytes = std::vector<std::byte>;
     using SharedDataBytes = std::shared_ptr<const DataBytes>;
 
+    // C_ArtLib.h:470 / L_Data.cpp:943: global soft eviction threshold.
+    // The source's 18 MiB value was a heap reservation, not a cache limit.
+    inline constexpr std::size_t LegacyRawDataCacheBudget = 30U * 1024U * 1024U;
+
+    struct RawDataCacheStats
+    {
+        std::size_t residentBytes{}; // Includes externally leased, unloaded data.
+        std::size_t reservedBytes{}; // Concurrent loads not yet published.
+        std::size_t cachedItems{};
+        std::size_t leasedItems{};
+    };
+
+    [[nodiscard]] RawDataCacheStats rawDataCacheStats() noexcept;
+
 
     class LegacyDataArchive final
     {
@@ -215,7 +230,8 @@ namespace monopoly::data
         std::uint32_t maximumUncompressedItemSize_{};
         bool open_{};
         std::vector<ArchiveItemMetadata> items_;
-        std::vector<SharedDataBytes> cache_;
+        std::vector<std::weak_ptr<const DataBytes>> cache_;
+        std::shared_ptr<detail::RawDataPool> rawDataPool_;
     };
 
 
