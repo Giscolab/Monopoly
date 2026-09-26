@@ -1,4 +1,5 @@
 #include "FontRuntime.hpp"
+#include "RuntimeBitmapSurface.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -537,6 +538,57 @@ namespace monopoly::fonts
         const auto image = render(utf16, colorRef);
         if (!image) return std::unexpected(image.error());
         return clipBitmap(*image, clip);
+    }
+
+    std::expected<void, Error> Runtime::blitText(
+        data::LegacyBitmapRGBA8& destination, std::string_view utf8,
+        int x, int y, std::uint32_t colorRef) const
+    {
+        if (utf8.empty()) return {};
+        const auto rendered = render(utf8, colorRef);
+        if (!rendered) return std::unexpected(rendered.error());
+        if (destination.width == 0 || destination.height == 0 ||
+            rendered->width == 0 || rendered->height == 0)
+            return {};
+
+        const std::int64_t sourceX64 = x < 0 ? -static_cast<std::int64_t>(x) : 0;
+        const std::int64_t sourceY64 = y < 0 ? -static_cast<std::int64_t>(y) : 0;
+        if (sourceX64 >= rendered->width || sourceY64 >= rendered->height)
+            return {};
+
+        const auto destinationX = static_cast<std::uint32_t>(std::max(x, 0));
+        const auto destinationY = static_cast<std::uint32_t>(std::max(y, 0));
+        if (destinationX >= destination.width || destinationY >= destination.height)
+            return {};
+
+        const auto sourceX = static_cast<std::uint32_t>(sourceX64);
+        const auto sourceY = static_cast<std::uint32_t>(sourceY64);
+        const ClipRect clip{
+            sourceX,
+            sourceY,
+            std::min(rendered->width - sourceX, destination.width - destinationX),
+            std::min(rendered->height - sourceY, destination.height - destinationY)
+        };
+        auto clipped = clipBitmap(*rendered, clip);
+        if (clipped.width == 0 || clipped.height == 0) return {};
+
+        const auto blitted = data::blitStraightRGBA8(
+            destination, clipped,
+            static_cast<int>(destinationX), static_cast<int>(destinationY),
+            data::BitmapBlitMode::SourceOver);
+        if (!blitted)
+            return std::unexpected(makeError(ErrorCode::SurfaceConversionFailed,
+                settings_.fontPath, blitted.error()));
+        return {};
+    }
+
+    std::expected<void, Error> Runtime::blitText(
+        data::LegacyBitmapRGBA8& destination, std::u16string_view utf16,
+        int x, int y, std::uint32_t colorRef) const
+    {
+        const auto utf8 = utf16ToUtf8(utf16, settings_.fontPath);
+        if (!utf8) return std::unexpected(utf8.error());
+        return blitText(destination, *utf8, x, y, colorRef);
     }
 
     std::expected<std::filesystem::path, Error>
