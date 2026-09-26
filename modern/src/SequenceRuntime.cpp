@@ -141,11 +141,12 @@ namespace monopoly::sequence
         std::string videoFileName(
             const data::LegacySequenceAttributes& attributes)
         {
+            std::string result;
             for (const auto& attribute : attributes.values)
                 if (const auto* file =
-                    std::get_if<data::SequenceFileName5Attribute>(&attribute))
-                    return file->fileName;
-            return {};
+                    std::get_if<data::SequenceFileNameAttribute>(&attribute))
+                    result = file->fileName;
+            return result;
         }
 
         std::optional<data::Sequence2DBoundingBoxAttribute> boundingBox2D(
@@ -425,7 +426,8 @@ namespace monopoly::sequence
         data::LegacySequenceAttributes attributes;
         attributes.values.push_back(data::SequenceDimensionalityAttribute{{}, 2});
         attributes.values.push_back(bounds);
-        attributes.values.push_back(data::SequenceFileName5Attribute{{}, std::move(fileName)});
+        attributes.values.push_back(
+            data::SequenceFileNameAttribute{{}, 1, std::move(fileName)});
         program->descriptions_.push_back({id, std::move(record),
             std::move(*children), std::move(attributes), std::nullopt, {}, binkDoubleSize});
         return std::shared_ptr<const SequenceProgram>(std::move(program));

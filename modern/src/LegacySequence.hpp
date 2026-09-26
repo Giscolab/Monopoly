@@ -168,9 +168,10 @@ namespace monopoly::data
     { ChunkInfo chunk; std::int8_t panning{}; };
     struct SequenceCameraFieldOfViewAttribute
     { ChunkInfo chunk; float fieldOfView{}; };
-    struct SequenceFileName5Attribute
+    struct SequenceFileNameAttribute
     {
         ChunkInfo chunk;
+        std::uint8_t index{};
         std::string fileName;
     };
     struct SequenceUnsupportedAttribute { ChunkInfo chunk; };
@@ -192,7 +193,7 @@ namespace monopoly::data
         SequenceSoundVolumeAttribute,
         SequenceSoundPanningAttribute,
         SequenceCameraFieldOfViewAttribute,
-        SequenceFileName5Attribute,
+        SequenceFileNameAttribute,
         SequenceUnsupportedAttribute>;
 
     struct LegacySequenceAttributes

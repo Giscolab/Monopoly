@@ -102,10 +102,9 @@ namespace monopoly::data
                 return std::unexpected(SequenceError{SequenceErrorCode::AttributeLimitExceeded,
                     part->headerOffset, "sequence attribute count exceeds configured limit", {}});
 
-            // FILE_NAME_5 is a variable-length external filename used by
-            // video sequences. Keep it as an owned byte-preserving string; path
-            // resolution remains the responsibility of ResourcePaths.
-            if (part->id == 24)
+            // FILE_NAME_1..5 are variable-length external filenames.
+            // ArtLib accepts all five and keeps the last one encountered.
+            if (part->id >= 20 && part->id <= 24)
             {
                 if (part->dataSize > 4096)
                     return std::unexpected(SequenceError{
@@ -129,7 +128,10 @@ namespace monopoly::data
                     fileName.push_back(static_cast<char>(value));
                 }
                 result.values.push_back(
-                    SequenceFileName5Attribute{*part, std::move(fileName)});
+                    SequenceFileNameAttribute{
+                        *part,
+                        static_cast<std::uint8_t>(part->id - 19),
+                        std::move(fileName)});
                 (void)candidate.ascend();
                 continue;
             }
