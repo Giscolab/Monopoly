@@ -235,6 +235,17 @@ namespace monopoly::engine
     }
 
 
+    std::expected<void, std::string> SequencePlayback::forceRedraw(
+        data::DataId id, std::uint16_t priority)
+    {
+        const auto queued = commands_.enqueue(
+            sequence::ForceRedrawSequenceCommand{id, priority, false});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue rejected redraw");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::startMoved(
         data::DataId id, std::uint16_t priority,
         sequence::SequenceTransform transform)

@@ -431,7 +431,10 @@ namespace monopoly::chat
             transition[i] = surface.visible != wanted[i] || (wanted[i] &&
                 (surface.x != xs[i] || surface.y != ys[i] || surface.width != static_cast<std::uint32_t>(widths[i]) ||
                  surface.height != static_cast<std::uint32_t>(heights[i])));
-            if (transition[i]) commands += (surface.visible ? 1 : 0) + (wanted[i] ? 1 : 0);
+            if (transition[i])
+                commands += (surface.visible ? 1 : 0) + (wanted[i] ? 1 : 0);
+            else if (wanted[i] && redraw && surface.visible)
+                ++commands;
         }
         if (commands > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
             return std::unexpected("sequence command queue cannot fit UDChat text transition");
@@ -449,7 +452,16 @@ namespace monopoly::chat
                 id = *created;
             }
             if (wanted[i] && redraw)
-                if (auto updated = playback.runtimeBitmaps().update(*id, std::move(images[i])); !updated) return updated;
+            {
+                if (auto updated = playback.runtimeBitmaps().update(
+                        *id, std::move(images[i])); !updated)
+                    return updated;
+                if (!transition[i] && surface.visible)
+                {
+                    const auto forced = playback.forceRedraw(*id, Priorities[i]);
+                    if (!forced) return forced;
+                }
+            }
             if (transition[i])
             {
                 if (surface.visible)
