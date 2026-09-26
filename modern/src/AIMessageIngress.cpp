@@ -49,6 +49,29 @@ namespace monopoly::ai
         rules::PlayerNumber purchasingPlayer = rules::NobodyPlayer;
         rules::board::SquareType purchasingProperty = rules::board::SquareType::Count;
 
+        [[nodiscard]] int pendingActionsForPlayer(rules::PlayerNumber player) noexcept
+        {
+            if (player >= rules::MaxPlayers) return 0;
+            // Ai.cpp uses num_actions != 0 for trade acceptance/counter preflight.
+            // Modern action owners keep separate flags, including a queued
+            // economic control action. Count their busy states for that predicate;
+            // this is not an attempt to reconstruct the retail message counter.
+            return static_cast<int>(economicRuntime.hasPendingControlAction[player]) +
+                economicRuntime.controlRequestInFlight[player] +
+                economicRuntime.actionInFlight[player] +
+                economicRuntime.controlReleaseInFlight[player] +
+                jailDecisionInFlight[player] + taxDecisionInFlight[player] +
+                buyDecisionInFlight[player] +
+                (auctionBidInFlight && auctionBiddingPlayer == player) +
+                housingAuctionRequestInFlight[player] + buildingPlacementInFlight[player] +
+                debtActionInFlight[player] + freeUnmortgageInFlight[player] +
+                freeUnmortgageDoneInFlight[player] + turnActionInFlight[player] +
+                configurationAcceptInFlight[player] + cardSeenInFlight[player] +
+                ((tradeIngress.pendingTradeAcceptPlayers & (1u << player)) != 0) +
+                (tradeIngress.counterRuntime.player == player &&
+                 tradeIngress.counterRuntime.sending.state != trade::SendingTradeState::Nothing);
+        }
+
         void clearPlayerTransientState(
             rules::PlayerNumber player) noexcept
         {
@@ -1571,6 +1594,16 @@ namespace monopoly::ai
                     !profileRuntime.playerLoaded[player])
                     continue;
 
+                // Ai.cpp:3095-3108 waits for every outstanding action of an
+                // involved player. Uninvolved AIs may still accept immediately.
+                if (trade::playerInvolvedInTrade(tradeIngress.currentTrade[player]) &&
+                    pendingActionsForPlayer(player) != 0)
+                {
+                    if ((tradeIngress.pendingTradeAcceptPlayers & playerBit) == 0)
+                        tradeIngress.deferredAcceptancePlayers |= playerBit;
+                    return;
+                }
+
                 const auto config = makeAcceptanceConfig(player, context);
                 const auto decision = trade::evaluateCurrentTradeAcceptance(
                     state, player, config, tradeIngress);
@@ -1612,7 +1645,7 @@ namespace monopoly::ai
                     state, player, true,
                     tradeIngress.counterSessions[player].timesCounteredTrade == 0
                         ? retailCounterRoll() : 0.0,
-                    0, auctionOn,
+                    pendingActionsForPlayer(player), auctionOn,
                     preflight, balance, tradeIngress);
                 if (!counter.acted())
                     (void)sendTradeAcceptance(player, false, 0);
@@ -1623,16 +1656,27 @@ namespace monopoly::ai
         void maybeRestartDeferredAcceptance(
             const actions::Message& message) noexcept
         {
+            const auto restart = [](rules::PlayerNumber player)
+            {
+                const auto bit = 1u << player;
+                if ((tradeIngress.deferredAcceptancePlayers & bit) == 0 ||
+                    pendingActionsForPlayer(player) != 0)
+                    return;
+                if (messaging::sendAction(
+                        actions::Type::RestartPhase, player, rules::BankPlayer))
+                    tradeIngress.deferredAcceptancePlayers &= ~bit;
+            };
+            // Retry a full outbound queue without losing the deferred request.
+            if (message.action == actions::Type::Tick)
+            {
+                for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                    restart(player);
+                return;
+            }
             if (message.action != actions::Type::NotifyActionCompleted ||
                 message.numberC < 0 || message.numberC >= rules::MaxPlayers)
                 return;
-            const auto player = static_cast<rules::PlayerNumber>(message.numberC);
-            const auto bit = 1u << player;
-            if ((tradeIngress.deferredAcceptancePlayers & bit) == 0)
-                return;
-            tradeIngress.deferredAcceptancePlayers &= ~bit;
-            (void)messaging::sendAction(
-                actions::Type::RestartPhase, player, rules::BankPlayer);
+            restart(static_cast<rules::PlayerNumber>(message.numberC));
         }
 
         void maybeCounterTrade(
@@ -1658,7 +1702,7 @@ namespace monopoly::ai
 
             // With tradeAccept=false the retail probability roll is not read.
             const auto result = trade::counterProposeCurrentTrade(
-                state, player, false, 0.0, 0, auctionOn,
+                state, player, false, 0.0, pendingActionsForPlayer(player), auctionOn,
                 preflight, balance, tradeIngress);
             if (!result.acted())
             {
@@ -1719,7 +1763,6 @@ namespace monopoly::ai
         processTradeAttitudeMessage(state, message);
         (void)trade::processTradeRuleMessage(
             state, message, tradeIngress);
-        maybeRestartDeferredAcceptance(message);
         maybeChooseTradeAcceptance(state, message);
         maybeCounterTrade(state, message);
         processEconomicRuntimeMessage(state, message);
@@ -1731,6 +1774,9 @@ namespace monopoly::ai
         processTaxDecisionMessage(state, message);
         processJailDecisionMessage(state, message);
         processTurnPromptMessage(state, message);
+        // Completion handlers above must release their action flags before a
+        // deferred trade decision is allowed to restart the current phase.
+        maybeRestartDeferredAcceptance(message);
         maybeProposeAutonomousTrade(state, message);
         maybeSpendAutonomousAssets(state, message);
     }
