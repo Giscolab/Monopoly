@@ -5,6 +5,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleEconomy.hpp"
 #include "RuleSynchronization.hpp"
 
@@ -84,31 +85,7 @@ namespace monopoly::rules::trade
             const GameState& state,
             const actions::Message& message)
         {
-            completed(message, false);
-
-            if (message.fromPlayer == BankPlayer)
-            {
-                return;
-            }
-
-            const PlayerNumber destination =
-                message.fromPlayer < MaxPlayers
-                    ? message.fromPlayer
-                    : AllPlayers;
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                destination,
-                legacy_text::ErrorWrongPhase,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                static_cast<std::int64_t>(
-                    phases::current(state).phase
-                )
-            );
+            rejections::wrongPhase(state, message);
         }
 
 
@@ -116,31 +93,7 @@ namespace monopoly::rules::trade
             const GameState& state,
             const actions::Message& message)
         {
-            completed(message, false);
-
-            if (message.fromPlayer == BankPlayer)
-            {
-                return;
-            }
-
-            const PlayerNumber destination =
-                message.fromPlayer < MaxPlayers
-                    ? message.fromPlayer
-                    : AllPlayers;
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                destination,
-                legacy_text::ErrorWrongPlayer,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                static_cast<std::int64_t>(
-                    phases::current(state).phase
-                )
-            );
+            rejections::wrongPlayer(state, message);
         }
 
 

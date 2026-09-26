@@ -173,10 +173,22 @@ namespace
             "victory loop starts first stack item again after wrap");
 
         expect(playback.update(200).has_value(), "looped first segment enters runtime");
+        step = controller.tick(true, playback);
+        expect(step && !step->looped && step->active,
+            "unfinished victory segment does not repeat its lap event");
+        expect(playback.update(300).has_value(), "second lap reaches its final segment");
+        step = controller.tick(true, playback);
+        expect(step && step->looped && step->active &&
+            step->camera == BoardCameraView::FifteenTiles02 && controller.stackIndex() == 0,
+            "second victory lap emits a fresh loop event for the repeated WonGame request");
+        expect(playback.update(300).has_value(), "second lap final segment enters runtime");
         step = controller.tick(false, playback);
-        expect(step && step->completed && !controller.active(),
-            "board disappearance terminates even an otherwise infinite victory loop");
-        expect(playback.update(200).has_value(), "victory abort stop drains cleanly");
+        expect(step && step->completed && !step->looped && !controller.active(),
+            "board disappearance ends victory without emitting another lap event");
+        expect(playback.update(300).has_value(), "victory abort stop drains cleanly");
+        step = controller.tick(true, playback);
+        expect(step && !step->looped && !step->active && !step->completed,
+            "restoring the board cannot restart the ended victory loop");
     }
 
     void testPassedGoSignal()

@@ -4,6 +4,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleBuildings.hpp"
 #include "RuleEconomy.hpp"
 #include "RuleSynchronization.hpp"
@@ -493,10 +494,7 @@ namespace monopoly::rules::auction
             ).phase !=
                 GamePhase::Auction)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -510,10 +508,7 @@ namespace monopoly::rules::auction
             player >=
                 state.numberOfPlayers)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -531,10 +526,7 @@ namespace monopoly::rules::auction
                 (1u << player)
             ) == 0)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -589,10 +581,7 @@ namespace monopoly::rules::auction
                 GamePhase::
                     HousingShortageQuestion)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -650,10 +639,7 @@ namespace monopoly::rules::auction
                 (1u << player)
             ) == 0)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }

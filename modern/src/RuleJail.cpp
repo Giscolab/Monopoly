@@ -4,6 +4,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleEconomy.hpp"
 
 namespace monopoly::rules::jail
@@ -50,11 +51,7 @@ namespace monopoly::rules::jail
             phases::current(state).phase !=
             GamePhase::JailRollOrPayOrCardDecision)
         {
-            actionCompleted(
-                message,
-                false,
-                0
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -66,11 +63,7 @@ namespace monopoly::rules::jail
             state.currentPlayer >=
                 state.numberOfPlayers)
         {
-            actionCompleted(
-                message,
-                false,
-                0
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }

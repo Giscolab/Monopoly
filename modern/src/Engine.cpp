@@ -803,12 +803,15 @@ namespace monopoly::engine
             }
 
             if (step->looped &&
-                activePieceMoveSpecial == pieces::PieceMoveSpecial::OffBoardVictory &&
-                pieceMoveQueueLockHeld && !victoryQueueLockReleased)
+                activePieceMoveSpecial == pieces::PieceMoveSpecial::OffBoardVictory)
             {
-                userinterface::unlockGameQueue();
-                pieceMoveQueueLockHeld = false;
-                victoryQueueLockReleased = true;
+                if (pieceMoveQueueLockHeld && !victoryQueueLockReleased)
+                {
+                    userinterface::unlockGameQueue();
+                    pieceMoveQueueLockHeld = false;
+                    victoryQueueLockReleased = true;
+                }
+                // UDPieces repeats WonGame at each lap; only the queue release is one-shot.
                 if (activePieceMoveToken)
                 {
                     const auto voice = playPieceTokenVoice(*activePieceMoveToken,

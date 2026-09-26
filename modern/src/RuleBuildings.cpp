@@ -3,6 +3,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleEconomy.hpp"
 #include "RuleResync.hpp"
 #include "RuleSynchronization.hpp"
@@ -759,10 +760,7 @@ namespace monopoly::rules::buildings
             message.numberA >
                 BoardwalkSquare)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -788,10 +786,7 @@ namespace monopoly::rules::buildings
         {
             if (!quickBuyAllowed(phase))
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
 
                 return;
             }
@@ -804,10 +799,7 @@ namespace monopoly::rules::buildings
                 phase !=
                     GamePhase::PlaceBuilding)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
 
                 return;
             }
@@ -821,10 +813,7 @@ namespace monopoly::rules::buildings
                         state
                     ).fromPlayer)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPlayer(state, message);
 
                 return;
             }
@@ -838,10 +827,7 @@ namespace monopoly::rules::buildings
                         state
                     ).fromPlayer)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPlayer(state, message);
 
                 return;
             }
@@ -1059,10 +1045,7 @@ namespace monopoly::rules::buildings
             message.numberA >
                 BoardwalkSquare)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1091,10 +1074,7 @@ namespace monopoly::rules::buildings
                     phaseBefore
                 ))
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
 
                 return;
             }
@@ -1107,10 +1087,7 @@ namespace monopoly::rules::buildings
                 phaseBefore !=
                     GamePhase::DecomposeHotel)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
 
                 return;
             }
@@ -1122,10 +1099,7 @@ namespace monopoly::rules::buildings
                     state
                 ).fromPlayer)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPlayer(state, message);
 
                 return;
             }
@@ -1388,10 +1362,7 @@ namespace monopoly::rules::buildings
             ).phase !=
                 GamePhase::DecomposeHotel)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1403,10 +1374,7 @@ namespace monopoly::rules::buildings
                 state
             ).fromPlayer)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -1461,10 +1429,7 @@ namespace monopoly::rules::buildings
             }
             else
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
             }
 
 
@@ -1481,10 +1446,7 @@ namespace monopoly::rules::buildings
             ].currentSquare >=
                 OffBoardSquare)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -1521,10 +1483,7 @@ namespace monopoly::rules::buildings
 
         if (!allowed)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1559,10 +1518,7 @@ namespace monopoly::rules::buildings
             ).phase !=
                 GamePhase::BuySellMortgage)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1574,10 +1530,7 @@ namespace monopoly::rules::buildings
                 state
             ).fromPlayer)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }

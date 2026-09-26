@@ -4,6 +4,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleLifecycle.hpp"
 #include "RuleResync.hpp"
 
@@ -1516,10 +1517,7 @@ namespace monopoly::rules::economy
             phases::current(state).phase !=
             GamePhase::AuctionOrBuyDecision)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1529,10 +1527,7 @@ namespace monopoly::rules::economy
             message.fromPlayer !=
             state.currentPlayer)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -1631,10 +1626,7 @@ namespace monopoly::rules::economy
         if (player !=
             state.currentPlayer)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -1644,10 +1636,7 @@ namespace monopoly::rules::economy
             phases::current(state).phase !=
             GamePhase::FlatOrFractionTaxDecision)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1774,24 +1763,7 @@ namespace monopoly::rules::economy
             message.fromPlayer !=
             phases::current(state).toPlayer)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                AllPlayers,
-                legacy_text::ErrorWrongPlayer,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                static_cast<std::int64_t>(
-                    phases::current(state).phase
-                )
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }
@@ -1801,24 +1773,7 @@ namespace monopoly::rules::economy
             phases::current(state).phase !=
             GamePhase::FreeUnmortgage)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                AllPlayers,
-                legacy_text::ErrorWrongPhase,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                static_cast<std::int64_t>(
-                    phases::current(state).phase
-                )
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -1884,10 +1839,7 @@ namespace monopoly::rules::economy
             if (!quickMortgagePhaseAllowed(
                     phase))
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
 
                 return;
             }
@@ -1900,10 +1852,7 @@ namespace monopoly::rules::economy
                 phase !=
                     GamePhase::FreeUnmortgage)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPhase(state, message);
 
                 return;
             }
@@ -1917,10 +1866,7 @@ namespace monopoly::rules::economy
                         state
                     ).fromPlayer)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPlayer(state, message);
 
                 return;
             }
@@ -1934,10 +1880,7 @@ namespace monopoly::rules::economy
                         state
                     ).toPlayer)
             {
-                notifyActionCompleted(
-                    message,
-                    false
-                );
+                rejections::wrongPlayer(state, message);
 
                 return;
             }
@@ -2334,10 +2277,7 @@ namespace monopoly::rules::economy
             phases::current(state).phase !=
             GamePhase::CollectingPayment)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -2349,10 +2289,7 @@ namespace monopoly::rules::economy
                 state
             ).fromPlayer)
         {
-            notifyActionCompleted(
-                message,
-                false
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }

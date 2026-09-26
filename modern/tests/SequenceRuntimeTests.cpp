@@ -438,6 +438,111 @@ namespace
         expect(!lifecycleMessage(unlabeled, 1121), "unlabeled lifecycle events remain private");
     }
 
+    void testTweekerProportionLifetime()
+    {
+        Fixture fixture;
+        const auto timedTweeker = [](std::uint8_t interpolation, std::int32_t start,
+            std::int32_t end, std::uint8_t action, std::uint8_t priority,
+            const DataBytes& keys)
+        {
+            DataBytes payload;
+            word(payload, (static_cast<std::uint32_t>(priority) << 24U) |
+                static_cast<std::uint32_t>(start));
+            word(payload, 0x4100'0000U | static_cast<std::uint32_t>(end)); // 1 tick, drop frames.
+            word(payload, action);
+            payload.push_back(static_cast<std::byte>(interpolation));
+            append(payload, keys);
+            return chunk(10, payload);
+        };
+        const auto xPosition = [](const SequenceRuntime& runtime, SequenceNodeId root)
+        {
+            return std::get<Matrix3D>(runtime.inspect(root)->worldTransform).values[12];
+        };
+        const auto ten = offset3D(0x4120'0000U, 0U, 0U);
+        const auto twenty = offset3D(0x41A0'0000U, 0U, 0U);
+        DataBytes pair = ten;
+        append(pair, twenty);
+        struct ConstantCase { std::uint8_t interpolation; std::int32_t end; bool paired; };
+        const std::array constantCases{
+            ConstantCase{1, 20, true}, // Constant interpolation ignores final key.
+            ConstantCase{2, 20, false}, // A missing final key also gives proportion zero.
+            ConstantCase{2, 0, true}}; // Infinite duration cannot interpolate.
+        for (std::size_t index = 0; index < constantCases.size(); ++index)
+        {
+            const auto& current = constantCases[index];
+            DataBytes children = dimensionality(3);
+            append(children, timedTweeker(current.interpolation, 0, current.end, 2, 1,
+                current.paired ? pair : ten));
+            append(children, timedTweeker(1, 5, 1, 1, 2, twenty));
+            const std::array items{ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 0, 2, 0, true, children)}};
+            DataBankRegistry registry;
+            (void)archive(fixture.root / ("tweeker-cache-" + std::to_string(index) + ".dat"),
+                items, registry);
+            SequenceRuntime runtime;
+            ClockStartOptions options; options.timeMultiple = 1;
+            const auto root = runtime.start(program(registry), 19, options).value();
+            expect(runtime.update(0).has_value() && xPosition(runtime, root) == 10.0F,
+                "first tweeker application writes its initial offset");
+            const auto first = runtime.inspect(root)->children.front();
+            expect(runtime.update(5).has_value() && xPosition(runtime, root) == 20.0F,
+                "later constant tweeker replaces the previous parent effect");
+            expect(runtime.update(6).has_value() && runtime.inspect(root)->children.size() == 1 &&
+                xPosition(runtime, root) == 20.0F,
+                "expired later tweeker leaves its effect; unchanged earlier proportion does not rewrite it");
+            expect(runtime.setEndingAction(first, 2).has_value() && runtime.update(6).has_value() &&
+                xPosition(runtime, root) == 20.0F,
+                "forced same-tick reevaluation preserves the cached constant proportion");
+            expect(runtime.seek(first, 0).has_value() && runtime.update(6).has_value() &&
+                xPosition(runtime, root) == 20.0F,
+                "seeking a constant tweeker does not reset its applied-proportion cache");
+            expect(runtime.seek(root, 0).has_value() && runtime.update(6).has_value() &&
+                !runtime.inspect(first) && xPosition(runtime, root) == 10.0F,
+                "recreating a child instance gives it a fresh cache and applies its initial key");
+        }
+
+        DataBytes linearKeys = offset3D(0U, 0U, 0U);
+        append(linearKeys, offset3D(0x4180'0000U, 0U, 0U)); // 0 -> 16 over 16 ticks.
+        DataBytes linearChildren = dimensionality(3);
+        append(linearChildren, timedTweeker(2, 0, 16, 2, 1, linearKeys));
+        append(linearChildren, timedTweeker(1, 5, 1, 1, 2, twenty));
+        const std::array linearItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 0, 2, 0, true, linearChildren)}};
+        DataBankRegistry linearRegistry;
+        (void)archive(fixture.root / "tweeker-linear-cache.dat", linearItems, linearRegistry);
+        SequenceRuntime linear;
+        ClockStartOptions options; options.timeMultiple = 1;
+        const auto linearRoot = linear.start(program(linearRegistry), 20, options).value();
+        (void)linear.update(0);
+        const auto linearChild = linear.inspect(linearRoot)->children.front();
+        expect(linear.update(5).has_value() && xPosition(linear, linearRoot) == 20.0F,
+            "linear effect can be overridden by a later constant at the same tick");
+        expect(linear.seek(linearChild, 5).has_value() && linear.update(5).has_value() &&
+            xPosition(linear, linearRoot) == 20.0F,
+            "seek to unchanged linear proportion does not replay over another tweeker");
+        expect(linear.seek(linearChild, 4).has_value() && linear.update(5).has_value() &&
+            xPosition(linear, linearRoot) == 4.0F,
+            "seek to a different linear proportion applies the changed interpolation");
+        expect(linear.seek(linearChild, 5).has_value() && linear.update(5).has_value() &&
+            xPosition(linear, linearRoot) == 5.0F,
+            "returning to an earlier-used proportion runs again after an intervening value");
+
+        DataBytes identityChildren = dimensionality(3);
+        append(identityChildren, timedTweeker(2, 0, 16, 2, 1, linearKeys));
+        append(identityChildren, timedTweeker(0, 0, 0, 2, 2, {}));
+        const std::array identityItems{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 0, 2, 0, true, identityChildren)}};
+        DataBankRegistry identityRegistry;
+        (void)archive(fixture.root / "tweeker-identity-cache.dat", identityItems, identityRegistry);
+        SequenceRuntime identity;
+        const auto identityRoot = identity.start(program(identityRegistry), 21, options).value();
+        expect(identity.update(0).has_value() && !identity.inspect(identityRoot)->tweekerTransformApplied,
+            "identity tweeker initially clears transform effects");
+        expect(identity.update(4).has_value() && xPosition(identity, identityRoot) == 0.0F &&
+            !identity.inspect(identityRoot)->tweekerTransformApplied,
+            "identity bypasses proportion caching and clears newly changed effects on subsequent ticks");
+    }
+
     void testPauseAndSeek()
     {
         Fixture fixture;
@@ -1461,6 +1566,7 @@ int main()
         testRecursiveLifecycleAndOrder();
         testEndCrossingHoldAndLoop();
         testLifecycleNotificationsAndClock();
+        testTweekerProportionLifetime();
         testPauseAndSeek();
         testBitmapLeafRuntimeIntent();
         testMeshLeafRuntimeIntent();

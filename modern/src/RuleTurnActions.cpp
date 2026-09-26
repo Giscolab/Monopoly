@@ -4,6 +4,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleEconomy.hpp"
 #include "RuleAuction.hpp"
 #include "RuleRandom.hpp"
@@ -72,16 +73,18 @@ namespace monopoly::rules::turnactions
 
 
         void sendWrongPhase(
+            const GameState& state,
             const actions::Message& message)
         {
-            sendActionCompleted(message, false);
+            rejections::wrongPhase(state, message);
         }
 
 
         void sendWrongPlayer(
+            const GameState& state,
             const actions::Message& message)
         {
-            sendActionCompleted(message, false);
+            rejections::wrongPlayer(state, message);
         }
 
 
@@ -561,13 +564,13 @@ const PlayerState& player =
         if (phases::current(state).phase !=
             GamePhase::WaitStartTurn)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 
         if (message.fromPlayer != BankPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
@@ -624,14 +627,14 @@ const PlayerState& player =
         if (message.fromPlayer !=
             state.currentPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
         if (phases::current(state).phase !=
             GamePhase::WaitEndTurn)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 
@@ -738,14 +741,14 @@ const PlayerState& player =
             phase != GamePhase::WaitUtilityRoll &&
             phase != GamePhase::PickingStartingOrder)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 
         if (message.fromPlayer !=
             state.currentPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
@@ -981,14 +984,14 @@ const PlayerState& player =
     {
         if (message.fromPlayer != BankPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
         if (phases::current(state).phase !=
             GamePhase::MovingToken)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 
@@ -1078,14 +1081,14 @@ const PlayerState& player =
     {
         if (message.fromPlayer != BankPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
         if (phases::current(state).phase !=
             GamePhase::MovingToken)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 
@@ -1140,14 +1143,14 @@ const PlayerState& player =
     {
         if (message.fromPlayer != BankPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
         if (phases::current(state).phase !=
             GamePhase::MovingToken)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 
@@ -1223,14 +1226,14 @@ const PlayerState& player =
     {
         if (message.fromPlayer != BankPlayer)
         {
-            sendWrongPlayer(message);
+            sendWrongPlayer(state, message);
             return;
         }
 
         if (phases::current(state).phase !=
             GamePhase::MovingToken)
         {
-            sendWrongPhase(message);
+            sendWrongPhase(state, message);
             return;
         }
 

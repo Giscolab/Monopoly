@@ -756,6 +756,9 @@ namespace monopoly::sequence
         bool soundFailed{};
         bool scrollingOnScreen{true};
         bool scrollingHibernating{};
+        // RuntimeTweekerInfo::currentProportion belongs to this instance.
+        // Seek and forced reevaluation do not reset an already applied key.
+        std::optional<float> tweekerProportion;
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -1308,6 +1311,18 @@ namespace monopoly::sequence
             node.definition().dataId, node.definition().record.chunk.headerOffset,
             "a tweeker must be a child of the sequence it modifies"));
         const auto& tweeker = std::get<data::SequenceTweekerData>(node.definition().record.data);
+        std::optional<float> proportion;
+        if (tweeker.interpolationType != 0)
+        {
+            const auto keys = selectTweekerKeys(node.definition().attributes);
+            proportion = tweeker.interpolationType == 2 && keys.second &&
+                node.clock.endTime() < 1'234'567'890
+                ? static_cast<float>(node.clock.clock()) / static_cast<float>(node.clock.endTime())
+                : 0.0F;
+            // DoTweeking returns before changing its parent when the same key
+            // has already run. A later sibling's effects survive its deletion.
+            if (node.tweekerProportion == proportion) return {};
+        }
         const auto evaluated = evaluateTweekerTransform(node.definition().attributes,
             tweeker.interpolationType, node.clock.clock(), node.clock.endTime(),
             node.parent->dimensionality);
@@ -1357,6 +1372,7 @@ namespace monopoly::sequence
         if (audio->pitch) node.parent->pitch = *audio->pitch;
         if (audio->volume) node.parent->volume = *audio->volume;
         if (audio->panning) node.parent->panning = *audio->panning;
+        if (proportion) node.tweekerProportion = proportion;
         return {};
     }
     std::expected<void, RuntimeError> SequenceRuntime::update(std::int32_t parentClock)

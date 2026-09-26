@@ -4,6 +4,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleArchive.hpp"
 #include "RuleResync.hpp"
 
@@ -53,33 +54,7 @@ namespace monopoly::rules::save
             const GameState& state,
             const actions::Message& message)
         {
-            completed(
-                message,
-                false
-            );
-
-
-            const PlayerNumber destination =
-                message.fromPlayer < MaxPlayers
-                    ? message.fromPlayer
-                    : AllPlayers;
-
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                destination,
-                legacy_text::ErrorWrongPlayer,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                state.numberOfPendingPhases > 0
-                    ? static_cast<std::int64_t>(
-                        phases::current(state).phase
-                    )
-                    : 0
-            );
+            rejections::wrongPlayer(state, message);
         }
 
 
@@ -87,33 +62,7 @@ namespace monopoly::rules::save
             const GameState& state,
             const actions::Message& message)
         {
-            completed(
-                message,
-                false
-            );
-
-
-            const PlayerNumber destination =
-                message.fromPlayer < MaxPlayers
-                    ? message.fromPlayer
-                    : AllPlayers;
-
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                destination,
-                legacy_text::ErrorWrongPhase,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                state.numberOfPendingPhases > 0
-                    ? static_cast<std::int64_t>(
-                        phases::current(state).phase
-                    )
-                    : 0
-            );
+            rejections::wrongPhase(state, message);
         }
 
 

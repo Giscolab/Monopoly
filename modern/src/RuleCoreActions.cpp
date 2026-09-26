@@ -4,6 +4,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleBuildings.hpp"
 #include "RuleEconomy.hpp"
 #include "RuleRandom.hpp"
@@ -164,34 +165,7 @@ namespace monopoly::rules::coreactions
             const GameState& state,
             const actions::Message& message)
         {
-            messaging::sendAction(
-                actions::Type::NotifyActionCompleted,
-                BankPlayer,
-                AllPlayers,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                0,
-                message.fromPlayer,
-                0
-            );
-
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                AllPlayers,
-                legacy_text::ErrorWrongPlayer,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                state.numberOfPendingPhases > 0
-                    ? static_cast<std::int64_t>(
-                        phases::current(state).phase
-                    )
-                    : 0
-            );
+            rejections::wrongPlayer(state, message);
         }
 
 
@@ -199,34 +173,7 @@ namespace monopoly::rules::coreactions
             const GameState& state,
             const actions::Message& message)
         {
-            messaging::sendAction(
-                actions::Type::NotifyActionCompleted,
-                BankPlayer,
-                AllPlayers,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                0,
-                message.fromPlayer,
-                0
-            );
-
-
-            messaging::sendAction(
-                actions::Type::NotifyErrorMessage,
-                BankPlayer,
-                AllPlayers,
-                legacy_text::ErrorWrongPhase,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                message.fromPlayer,
-                state.numberOfPendingPhases > 0
-                    ? static_cast<std::int64_t>(
-                        phases::current(state).phase
-                    )
-                    : 0
-            );
+            rejections::wrongPhase(state, message);
         }
 
 

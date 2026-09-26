@@ -5,6 +5,7 @@
 #include "LegacyTextIds.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
+#include "RuleRejections.hpp"
 #include "RuleEconomy.hpp"
 
 #include <cstddef>
@@ -514,16 +515,7 @@ namespace monopoly::rules::cards
             ).phase !=
                 GamePhase::WaitUntilCardSeen)
         {
-            messaging::sendAction(
-                actions::Type::NotifyActionCompleted,
-                BankPlayer,
-                AllPlayers,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                0,
-                message.fromPlayer
-            );
+            rejections::wrongPhase(state, message);
 
             return;
         }
@@ -535,16 +527,7 @@ namespace monopoly::rules::cards
             state.currentPlayer >=
                 state.numberOfPlayers)
         {
-            messaging::sendAction(
-                actions::Type::NotifyActionCompleted,
-                BankPlayer,
-                AllPlayers,
-                static_cast<std::int64_t>(
-                    message.action
-                ),
-                0,
-                message.fromPlayer
-            );
+            rejections::wrongPlayer(state, message);
 
             return;
         }

@@ -19,6 +19,7 @@
 #include "ExtendedInitialization.hpp"
 #include "IBar.hpp"
 #include "IBarBackdropPlayback.hpp"
+#include "LegacyTextIds.hpp"
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
@@ -467,6 +468,183 @@ namespace
             "RULE accepts the continuation archive from its actual local player");
     }
 
+    void testHumanRejectedActions()
+    {
+        auto waiting = rules::state();
+        waiting.currentPlayer = 0;
+        waiting.numberOfPendingPhases = 1;
+        waiting.phaseStack = {};
+        waiting.phaseUndo = {};
+        waiting.phaseStack[0].phase = rules::GamePhase::WaitMoveRoll;
+        loadHumanState(waiting);
+        require(messaging::sendAction(actions::Type::PlayerBuySellMort, 1, rules::BankPlayer),
+            "another human interrupts the turn through the real property-management action");
+        drain(false);
+        require(rules::state().numberOfPendingPhases == 2 &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::BuySellMortgage &&
+            rules::phases::current(rules::state()).fromPlayer == 1,
+            "property management owns the top phase while the first human's roll remains pending");
+
+        const auto exchange = [](const actions::Message& request)
+        {
+            require(messaging::currentQueueSize() == 0 && messaging::sendAction(request),
+                "rejected action enters an otherwise drained production FIFO");
+            actions::Message queued;
+            require(messaging::receiveAction(queued) && queued.action == request.action,
+                "the actual queued request reaches RULE before its replies");
+            deliver(queued, false);
+            std::vector<actions::Message> replies;
+            while (messaging::receiveAction(queued)) replies.push_back(std::move(queued));
+            return replies;
+        };
+        const auto replay = [](const std::vector<actions::Message>& replies)
+        {
+            for (const auto& reply : replies) deliver(reply, false);
+            drain(false);
+        };
+        const auto verifyRefusal = [](const std::vector<actions::Message>& replies,
+            const actions::Message& request, rules::GamePhase phase, std::int64_t error,
+            bool completedBeforeRefusal = false)
+        {
+            const auto offset = completedBeforeRefusal ? 1u : 0u;
+            const bool internal = request.fromPlayer == rules::BankPlayer;
+            require(replies.size() == offset + (internal ? 1u : 3u),
+                "a stale action has exactly one completion, targeted error and restart; bank actions only complete");
+            if (completedBeforeRefusal)
+                require(replies[0].action == actions::Type::NotifyActionCompleted &&
+                    replies[0].numberB == 1, "PauseGame preserves the retail completion before its phase check");
+            const auto& completion = replies[offset];
+            require(completion.action == actions::Type::NotifyActionCompleted &&
+                completion.fromPlayer == rules::BankPlayer && completion.toPlayer == rules::AllPlayers &&
+                completion.numberA == static_cast<std::int64_t>(request.action) &&
+                completion.numberB == 0 && completion.numberC == request.fromPlayer && completion.numberD == 0,
+                "refusal completion identifies the rejected action and player without copying its argument");
+            if (internal) return;
+            const auto& notification = replies[offset + 1];
+            require(notification.action == actions::Type::NotifyErrorMessage &&
+                notification.fromPlayer == rules::BankPlayer &&
+                notification.toPlayer == (request.fromPlayer < rules::MaxPlayers
+                    ? request.fromPlayer : rules::AllPlayers) &&
+                notification.numberA == error &&
+                notification.numberB == static_cast<std::int64_t>(request.action) &&
+                notification.numberC == request.fromPlayer &&
+                notification.numberD == static_cast<std::int64_t>(phase),
+                "only the requester receives the source error with the phase at rejection time");
+            const auto& restart = replies[offset + 2];
+            require(restart.action == actions::Type::RestartPhase &&
+                restart.fromPlayer == rules::BankPlayer && restart.toPlayer == rules::BankPlayer &&
+                restart.numberA == 0 && restart.numberB == 0 && restart.numberC == 0 &&
+                restart.numberD == 0 && restart.numberE == 0,
+                "one clean bank restart follows the error instead of leaving the decision unrefreshed");
+        };
+
+        struct StaleAction
+        {
+            actions::Type action;
+            std::int64_t error;
+            std::int64_t argument{};
+        };
+        // Independent expected outcomes from the guards of these twelve
+        // handlers in Source/monopoly/Rule.cpp, followed by ErrorWrong*.
+        const std::array staleActions{
+            StaleAction{actions::Type::RollDice, legacy_text::ErrorWrongPhase, 17},
+            StaleAction{actions::Type::CardSeen, legacy_text::ErrorWrongPhase},
+            StaleAction{actions::Type::ExitJailDecision, legacy_text::ErrorWrongPhase, 1},
+            StaleAction{actions::Type::BuyOrAuctionDecision, legacy_text::ErrorWrongPhase, 1},
+            StaleAction{actions::Type::TaxDecision, legacy_text::ErrorWrongPhase, 1},
+            StaleAction{actions::Type::Mortgaging, legacy_text::ErrorWrongPlayer, 1},
+            StaleAction{actions::Type::BuyHouse, legacy_text::ErrorWrongPlayer, 1},
+            StaleAction{actions::Type::SellBuildings, legacy_text::ErrorWrongPlayer, 1},
+            StaleAction{actions::Type::CancelDecomposition, legacy_text::ErrorWrongPhase},
+            StaleAction{actions::Type::PlayerDoneBuySellMort, legacy_text::ErrorWrongPlayer},
+            StaleAction{actions::Type::Bid, legacy_text::ErrorWrongPhase},
+            StaleAction{actions::Type::StartHousingAuction, legacy_text::ErrorWrongPhase}};
+        const auto interrupted = rules::state();
+        for (const auto& stale : staleActions)
+        {
+            actions::Message request;
+            request.action = stale.action;
+            request.fromPlayer = 0;
+            request.toPlayer = rules::BankPlayer;
+            request.numberA = stale.argument;
+            const auto prompts = observed[static_cast<std::size_t>(actions::Type::NotifyPlayerBuySellMort)];
+            const auto replies = exchange(request);
+            verifyRefusal(replies, request, rules::GamePhase::BuySellMortgage, stale.error);
+            replay(replies);
+            const auto& state = rules::state();
+            require(state.numberOfPendingPhases == 2 && state.currentPlayer == 0 &&
+                state.phaseStack[0].phase == rules::GamePhase::BuySellMortgage &&
+                state.phaseStack[0].fromPlayer == 1 &&
+                state.phaseStack[1].phase == rules::GamePhase::WaitMoveRoll &&
+                state.players[0].cash == interrupted.players[0].cash &&
+                state.players[0].currentSquare == interrupted.players[0].currentSquare &&
+                state.squares[1].owner == interrupted.squares[1].owner &&
+                state.squares[1].houses == interrupted.squares[1].houses &&
+                state.squares[1].mortgaged == interrupted.squares[1].mortgaged,
+                "a refused late action does not change the interrupted turn or its property");
+            require(observed[static_cast<std::size_t>(actions::Type::NotifyPlayerBuySellMort)] == prompts + 1 &&
+                userinterface::iBarRuleStateReadOnly().mode == ibar::RuleMode::OtherPlayer &&
+                userinterface::iBarRuleStateReadOnly().player == 1,
+                "the real restart republishes the other human's property decision into IBar");
+        }
+
+        loadHumanState(waiting);
+        for (const auto requester : {rules::PlayerNumber{1}, rules::BankPlayer, rules::SpectatorPlayer})
+        {
+            actions::Message request;
+            request.action = actions::Type::RollDice;
+            request.fromPlayer = requester;
+            request.toPlayer = rules::BankPlayer;
+            request.numberA = 17;
+            const auto prompts = observed[static_cast<std::size_t>(actions::Type::NotifyPleaseRollDice)];
+            const auto replies = exchange(request);
+            verifyRefusal(replies, request, rules::GamePhase::WaitMoveRoll, legacy_text::ErrorWrongPlayer);
+            replay(replies);
+            require(observed[static_cast<std::size_t>(actions::Type::NotifyPleaseRollDice)] ==
+                    prompts + (requester == rules::BankPlayer ? 0u : 1u) &&
+                userinterface::iBarRuleStateReadOnly().mode == ibar::RuleMode::StartTurn &&
+                userinterface::iBarRuleStateReadOnly().player == 0,
+                "a wrong player refreshes the actual roller; rejected bank work never creates a restart loop");
+        }
+
+        waiting.phaseStack[0].phase = rules::GamePhase::WaitEndTurn;
+        loadHumanState(waiting);
+        actions::Message pause;
+        pause.action = actions::Type::PauseGame;
+        pause.fromPlayer = 0;
+        pause.toPlayer = rules::BankPlayer;
+        pause.numberA = 1;
+        const auto pauseReplies = exchange(pause);
+        verifyRefusal(pauseReplies, pause, rules::GamePhase::WaitEndTurn, legacy_text::ErrorWrongPhase, true);
+        replay(pauseReplies);
+        require(rules::state().numberOfPendingPhases == 1 &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::WaitEndTurn,
+            "a refused end-turn pause leaves the phase stack intact");
+
+        waiting.squares[1].owner = 1;
+        waiting.squares[1].houses = 0;
+        waiting.squares[1].mortgaged = false;
+        loadHumanState(waiting);
+        require(messaging::sendAction(actions::Type::PlayerBuySellMort, 0, rules::BankPlayer),
+            "the active human opens property management for a semantic refusal");
+        drain(false);
+        actions::Message mortgage;
+        mortgage.action = actions::Type::Mortgaging;
+        mortgage.fromPlayer = 0;
+        mortgage.toPlayer = rules::BankPlayer;
+        mortgage.numberA = 1;
+        mortgage.numberB = 1;
+        const auto mortgageReplies = exchange(mortgage);
+        require(mortgageReplies.size() == 2 &&
+            mortgageReplies[0].action == actions::Type::NotifyActionCompleted && mortgageReplies[0].numberB == 0 &&
+            mortgageReplies[1].action == actions::Type::NotifyErrorMessage &&
+            mortgageReplies[1].numberA == legacy_text::ErrorMortgagingOnUnowned &&
+            !rules::state().squares[1].mortgaged,
+            "an unowned-property refusal retains its specific error without inventing a phase restart");
+        replay(mortgageReplies);
+        std::cout << "[PASS] twelve stale decisions, wrong players and refused pauses recover through RULE/FIFO/IBar\n";
+    }
+
     void testHumanCounterOffer()
     {
         auto saved = rules::state();
@@ -653,6 +831,7 @@ namespace
             "Done closes the mortgage decision without changing the retained mortgage");
         std::cout << "[PASS] real human clicks/Space complete turns, dismiss cards and finish mortgage decisions\n";
         testHumanCounterOffer();
+        testHumanRejectedActions();
         rules::shutdown();
         ibar::shutdown();
         messaging::shutdown();
