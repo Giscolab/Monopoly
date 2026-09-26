@@ -140,6 +140,7 @@ namespace monopoly::sequence
         SequenceTransform worldTransform;
         std::vector<SequenceNodeId> children; // runtime priority order
         SequenceMeshChoice3D meshChoice{};
+        std::uint8_t volume{100};
     };
 
     struct SequenceInfoView
@@ -166,6 +167,7 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
         std::uint8_t endingAction{};
+        std::uint8_t volume{100};
     };
     struct SequenceVideoInstanceView
     {
@@ -179,6 +181,7 @@ namespace monopoly::sequence
         std::uint8_t endingAction{};
         bool binkDoubleSize{};
         std::int32_t elapsedParentClock{};
+        std::uint8_t volume{100};
     };
     struct SequenceMeshInstanceView
     {
@@ -221,6 +224,8 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<void, RuntimeError> setPaused(SequenceNodeId node, bool paused);
         [[nodiscard]] std::expected<void, RuntimeError> seek(SequenceNodeId node, std::int32_t time);
         [[nodiscard]] std::expected<void, RuntimeError> setEndingAction(SequenceNodeId node, std::uint8_t action);
+        [[nodiscard]] std::expected<void, RuntimeError> setVolume(
+            SequenceNodeId node, std::uint8_t volume);
 
         // Historical command targeting excludes nested records (offset != 0),
         // including during whole-tree searches. Duplicate matches are legal.
@@ -230,6 +235,9 @@ namespace monopoly::sequence
             std::uint16_t priority, bool wholeTree = false);
         [[nodiscard]] std::expected<std::size_t, RuntimeError> setEndingActionMatching(
             data::DataId id, std::uint16_t priority, std::uint8_t action,
+            bool wholeTree = false);
+        [[nodiscard]] std::size_t setVolumeMatching(
+            data::DataId id, std::uint16_t priority, std::uint8_t volume,
             bool wholeTree = false);
         [[nodiscard]] std::size_t moveMatching(data::DataId id,
             std::uint16_t priority, const SequenceTransform& transform,
