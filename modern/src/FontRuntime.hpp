@@ -114,6 +114,12 @@ namespace monopoly::fonts
             std::string_view utf8, std::uint32_t colorRef, ClipRect clip) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
             std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip) const;
+        [[nodiscard]] std::expected<void, Error> blitText(
+            data::LegacyBitmapRGBA8& destination, std::string_view utf8,
+            int x, int y, std::uint32_t colorRef) const;
+        [[nodiscard]] std::expected<void, Error> blitText(
+            data::LegacyBitmapRGBA8& destination, std::u16string_view utf16,
+            int x, int y, std::uint32_t colorRef) const;
 
     private:
         [[nodiscard]] std::expected<void, Error> reopen();
