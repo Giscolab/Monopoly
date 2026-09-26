@@ -16,53 +16,6 @@ namespace monopoly::tradeui
         // LEG_MCR(220,220,220): COLORREF byte order is R,G,B.
         constexpr std::uint32_t NameColour = 0x00DCDCDCU;
 
-        void appendCodePoint(std::string& output, std::uint32_t cp)
-        {
-            if (cp <= 0x7FU) output.push_back(static_cast<char>(cp));
-            else if (cp <= 0x7FFU)
-            {
-                output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-            }
-            else if (cp <= 0xFFFFU)
-            {
-                output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-                output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-            }
-            else
-            {
-                output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
-                output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-            }
-        }
-
-        [[nodiscard]] std::string toUtf8(std::wstring_view text)
-        {
-            std::string output;
-            output.reserve(text.size());
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                std::uint32_t cp = static_cast<std::uint32_t>(text[index]);
-                if constexpr (sizeof(wchar_t) == 2)
-                {
-                    if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1U < text.size())
-                    {
-                        const auto low = static_cast<std::uint32_t>(text[index + 1U]);
-                        if (low >= 0xDC00U && low <= 0xDFFFU)
-                        {
-                            cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
-                            ++index;
-                        }
-                    }
-                }
-                appendCodePoint(output, cp);
-            }
-            return output;
-        }
-
         [[nodiscard]] data::LegacyBitmapRGBA8 blankImage()
         {
             data::LegacyBitmapRGBA8 image{NameWidth, NameHeight, {}};
@@ -127,7 +80,10 @@ namespace monopoly::tradeui
             for (std::size_t side = 0; side < 2; ++side)
             {
                 if (!desiredVisible[side]) continue;
-                const auto text = toUtf8(gameState.players[players[side]].name);
+                const auto encoded = fonts::transcodeUtf8(
+                    std::wstring_view(gameState.players[players[side]].name));
+                if (!encoded) return std::unexpected(encoded.error().detail);
+                const auto& text = *encoded;
                 if (textCache_[side] && *textCache_[side] == text) continue;
                 auto image = blankImage();
                 if (!text.empty())
