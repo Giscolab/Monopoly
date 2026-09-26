@@ -1,7 +1,5 @@
 #include "PieceBuildingDisplay.hpp"
 
-#include "SequenceTransforms.hpp"
-
 #include <cstddef>
 
 namespace monopoly::pieces
@@ -20,12 +18,6 @@ namespace monopoly::pieces
                 static_cast<std::uint16_t>(square) * HouseSlotCount + slot);
         }
 
-        [[nodiscard]] sequence::Matrix3D buildingTransform(
-            const BuildingPose& pose) noexcept
-        {
-            return sequence::moveRySTxzTransform(
-                pose.yaw, BuildingDisplayScale, pose.x, pose.z);
-        }
     }
 
     void PieceBuildingDisplay::reset() noexcept
@@ -93,8 +85,9 @@ namespace monopoly::pieces
                 if (hotels_[square]) continue;
                 const auto pose = hotelPosition(square);
                 if (!pose) return std::unexpected("hotel square is invalid");
-                const auto started = playback.startMoved(hotelId,
-                    housingPriority(square, 0), buildingTransform(*pose));
+                const auto started = playback.startRySTxz(
+                    hotelId, housingPriority(square, 0),
+                    pose->yaw, BuildingDisplayScale, pose->x, pose->z);
                 if (!started) return std::unexpected(started.error());
                 hotels_[square] = true;
                 ++update.started;
@@ -135,8 +128,9 @@ namespace monopoly::pieces
                 }
                 const auto pose = housePosition(square, slot);
                 if (!pose) return std::unexpected("house square/slot is invalid");
-                const auto started = playback.startMoved(
-                    houseId, priority, buildingTransform(*pose));
+                const auto started = playback.startRySTxz(
+                    houseId, priority, pose->yaw, BuildingDisplayScale,
+                    pose->x, pose->z);
                 if (!started) return std::unexpected(started.error());
                 houses_[square][slot] = true;
                 ++update.started;

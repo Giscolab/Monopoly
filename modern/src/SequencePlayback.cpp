@@ -96,6 +96,14 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::startXYDrop(
+        data::DataId id, std::uint16_t priority,
+        std::int32_t x, std::int32_t y, bool dropFrames,
+        std::uint8_t labelOverride)
+    {
+        return startXY(id, priority, x, y, dropFrames, labelOverride);
+    }
+
     std::expected<void, std::string> SequencePlayback::startXYSR(
         data::DataId id, std::uint16_t priority,
         std::int32_t x, std::int32_t y,
@@ -107,6 +115,41 @@ namespace monopoly::engine
             *program, priority, {},
             sequence::SequenceTransform(
                 sequence::moveXYSRTransform(x, y, scale, rotate))});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue capacity exceeded");
+        return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::startRySTxz(
+        data::DataId id, std::uint16_t priority,
+        float yaw, float scale, float x, float z)
+    {
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
+        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, {},
+            sequence::SequenceTransform(
+                sequence::moveRySTxzTransform(yaw, scale, x, z))});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue capacity exceeded");
+        return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::startRySTxzDrop(
+        data::DataId id, std::uint16_t priority,
+        float yaw, float scale, float x, float z,
+        bool dropFrames)
+    {
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
+        sequence::ClockStartOptions options{};
+        options.dropFrames = dropFrames;
+        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, options,
+            sequence::SequenceTransform(
+                sequence::moveRySTxzTransform(yaw, scale, x, z))});
         if (!queued)
             return std::unexpected(
                 "sequence command queue capacity exceeded");

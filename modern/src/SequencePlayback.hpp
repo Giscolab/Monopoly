@@ -26,10 +26,22 @@ namespace monopoly::engine
             data::DataId id, std::uint16_t priority,
             std::int32_t x, std::int32_t y, bool dropFrames = false,
             std::uint8_t labelOverride = 0);
+        [[nodiscard]] std::expected<void, std::string> startXYDrop(
+            data::DataId id, std::uint16_t priority,
+            std::int32_t x, std::int32_t y,
+            bool dropFrames = true,
+            std::uint8_t labelOverride = 0);
         [[nodiscard]] std::expected<void, std::string> startXYSR(
             data::DataId id, std::uint16_t priority,
             std::int32_t x, std::int32_t y,
             float scale, float rotate);
+        [[nodiscard]] std::expected<void, std::string> startRySTxz(
+            data::DataId id, std::uint16_t priority,
+            float yaw, float scale, float x, float z);
+        [[nodiscard]] std::expected<void, std::string> startRySTxzDrop(
+            data::DataId id, std::uint16_t priority,
+            float yaw, float scale, float x, float z,
+            bool dropFrames);
         [[nodiscard]] std::expected<void, std::string> transitionXY(
             std::optional<data::DataId> previousId, data::DataId id,
             std::uint16_t priority, std::int32_t x, std::int32_t y,
