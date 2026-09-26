@@ -590,6 +590,25 @@ namespace
         const auto emptyMetadata = archive->metadata(3U);
         expect(emptyMetadata && !emptyMetadata->present(),
             "metadata exposes an empty sparse slot without loading it");
+        expect(requireValue(
+                archive->initialDataType(0U),
+                "query initial type for index item") ==
+                LegacyDataType::IndexTable,
+            "initial data type matches the DAT physical index type");
+        expect(requireValue(
+                archive->initialDataType(3U),
+                "query initial type for sparse item") ==
+                LegacyDataType::Unknown,
+            "empty sparse slots preserve LE_DATA_DataUnknown");
+        expect(requireValue(
+                archive->initialSize(2U),
+                "query initial answer size") ==
+                items[2].payload.size(),
+            "initial size reports raw uncompressed DAT bytes");
+        expect(requireValue(
+                archive->initialSize(3U),
+                "query initial sparse size") == 0U,
+            "empty sparse slots report zero initial size");
         expectError(
             archive->metadata(5U),
             DataErrorCode::TagOutOfRange,
@@ -618,6 +637,18 @@ namespace
                 archive->isLoaded(2U),
                 "query answer state before cached load"),
             "raw slice read leaves the item in legacy unloaded state");
+        expect(requireValue(
+                archive->loadedRawSize(2U),
+                "load answer solely to query loaded raw size") ==
+                items[2].payload.size(),
+            "loaded raw size returns decompressed size after ensuring a load");
+        expect(requireValue(
+                archive->isLoaded(2U),
+                "query answer state after loadedRawSize"),
+            "loadedRawSize mirrors LE_DATA_GetLoadedSize by loading the item");
+        requireValue(
+            archive->unload(2U),
+            "return answer to unloaded state after loadedRawSize");
 
         std::array<std::byte, 4> beyond{};
         const auto beyondCount = requireValue(
@@ -1215,6 +1246,27 @@ namespace
         expect(
             answerMetadata && answerMetadata->type == LegacyDataType::String,
             "registry routes metadata by the DataId high-word group");
+        expect(requireValue(
+                registry.initialDataType(answerId),
+                "query registry initial type") ==
+                LegacyDataType::String,
+            "registry exposes the raw DAT initial type by DataId");
+        expect(requireValue(
+                registry.initialSize(answerId),
+                "query registry initial size") ==
+                items[2].payload.size(),
+            "registry exposes the raw DAT initial size by DataId");
+        expect(requireValue(
+                registry.initialDataType(monopoly::data::EmptyDataId),
+                "query empty sentinel initial type") ==
+                LegacyDataType::Unknown &&
+            requireValue(
+                registry.initialSize(monopoly::data::EmptyDataId),
+                "query empty sentinel initial size") == 0U &&
+            requireValue(
+                registry.loadedRawSize(monopoly::data::EmptyDataId),
+                "query empty sentinel loaded size") == 0U,
+            "LE_DATA_EmptyItem preserves Unknown/zero legacy metadata");
         const auto answerLease = requireValue(
             registry.load(answerId),
             "load registry answer item");
