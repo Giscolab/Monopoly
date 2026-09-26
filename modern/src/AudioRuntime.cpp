@@ -17,6 +17,7 @@ namespace monopoly::audio
         data::DataId waveDataId{};
         SDL_AudioStream* stream{};
         std::vector<Uint8> pcm;
+        std::uint32_t sourceFrequency{};
         float gain{1.0F};
         bool loop{};
 
@@ -119,6 +120,27 @@ namespace monopoly::audio
                 std::numeric_limits<std::uint32_t>::max()));
     }
 
+    float legacyPitchFrequencyRatio(
+        std::uint32_t requestedHertz,
+        std::uint32_t originalHertz) noexcept
+    {
+        if (originalHertz == 0U || requestedHertz == 0U)
+            return 1.0F;
+
+        constexpr std::uint32_t DirectSoundMinimumHertz = 100U;
+        constexpr std::uint32_t DirectSoundMaximumHertz = 100'000U;
+        constexpr float SdlMinimumRatio = 0.01F;
+        constexpr float SdlMaximumRatio = 100.0F;
+
+        const auto effectiveHertz = std::clamp(
+            requestedHertz,
+            DirectSoundMinimumHertz,
+            DirectSoundMaximumHertz);
+        const float ratio = static_cast<float>(effectiveHertz) /
+            static_cast<float>(originalHertz);
+        return std::clamp(ratio, SdlMinimumRatio, SdlMaximumRatio);
+    }
+
     Runtime::Runtime(
         std::shared_ptr<const data::ResourceSnapshot> resources)
         : resources_(std::move(resources))
@@ -173,7 +195,8 @@ namespace monopoly::audio
         PlaybackKey key,
         data::DataId waveDataId,
         float gain,
-        bool loop)
+        bool loop,
+        std::uint32_t pitchHertz)
     {
         if (!resources_)
             return std::unexpected("audio runtime has no resource snapshot");
@@ -225,12 +248,19 @@ namespace monopoly::audio
         voice->waveDataId = waveDataId;
         voice->stream = stream;
         voice->pcm = std::move(pcm);
+        voice->sourceFrequency = spec.freq > 0 ?
+            static_cast<std::uint32_t>(spec.freq) : 0U;
         voice->gain = clampedGain(gain);
         voice->loop = loop;
 
         if (!SDL_SetAudioStreamGain(stream, voice->gain))
             return std::unexpected(
                 std::string("SDL_SetAudioStreamGain: ") + SDL_GetError());
+        if (!SDL_SetAudioStreamFrequencyRatio(
+                stream,
+                legacyPitchFrequencyRatio(pitchHertz, voice->sourceFrequency)))
+            return std::unexpected(
+                std::string("SDL_SetAudioStreamFrequencyRatio: ") + SDL_GetError());
 
         const int bytes = static_cast<int>(voice->pcm.size());
         const int copies = loop ? 3 : 1;
@@ -272,6 +302,17 @@ namespace monopoly::audio
             (void)SDL_SetAudioStreamGain(voice->stream, voice->gain);
         }
     }
+
+    void Runtime::setPitch(PlaybackKey key, std::uint32_t hertz) noexcept
+    {
+        if (auto* voice = find(key))
+        {
+            (void)SDL_SetAudioStreamFrequencyRatio(
+                voice->stream,
+                legacyPitchFrequencyRatio(hertz, voice->sourceFrequency));
+        }
+    }
+
     void Runtime::setLooping(PlaybackKey key, bool loop) noexcept
     {
         if (auto* voice = find(key))

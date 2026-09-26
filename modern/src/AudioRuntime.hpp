@@ -18,6 +18,14 @@ namespace monopoly::audio
         std::span<const std::uint8_t> riffWave,
         std::uint32_t ticksPerSecond = 60U) noexcept;
 
+    // Source/artlib/L_Sound.cpp::LE_SOUND_SetPitchBufSnd.
+    // Zero restores the original recording rate; DirectSound 7 clamps
+    // explicit frequencies to 100..100000 Hz. SDL additionally constrains
+    // its stream ratio to 0.01..100.
+    [[nodiscard]] float legacyPitchFrequencyRatio(
+        std::uint32_t requestedHertz,
+        std::uint32_t originalHertz) noexcept;
+
     enum class PlaybackDomain : std::uint8_t
     {
         Sequence,
@@ -47,10 +55,12 @@ namespace monopoly::audio
             PlaybackKey key,
             data::DataId waveDataId,
             float gain = 1.0F,
-            bool loop = false);
+            bool loop = false,
+            std::uint32_t pitchHertz = 0U);
         void stop(PlaybackKey key) noexcept;
         void stopAll() noexcept;
         void setGain(PlaybackKey key, float gain) noexcept;
+        void setPitch(PlaybackKey key, std::uint32_t hertz) noexcept;
         void setLooping(PlaybackKey key, bool loop) noexcept;
         void update() noexcept;
         [[nodiscard]] bool active(PlaybackKey key) const noexcept;

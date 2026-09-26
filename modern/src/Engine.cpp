@@ -1500,13 +1500,14 @@ namespace monopoly::engine
             {
                 const auto started = output->play(
                     key, instance.contentsDataId,
-                    gain, instance.endingAction == 3);
+                    gain, instance.endingAction == 3, instance.pitch);
                 if (!started)
                     return std::unexpected(started.error());
             }
             else
             {
                 output->setGain(key, gain);
+                output->setPitch(key, instance.pitch);
                 output->setLooping(key, instance.endingAction == 3);
             }
             next.push_back(instance.node);

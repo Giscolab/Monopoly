@@ -112,6 +112,24 @@ namespace
         return bytes;
     }
 
+    void testLegacyPitchFrequencyRatio()
+    {
+        require(audio::legacyPitchFrequencyRatio(0U, 44'100U) == 1.0F,
+            "zero pitch restores the original recording rate");
+        require(audio::legacyPitchFrequencyRatio(22'050U, 44'100U) == 0.5F,
+            "explicit pitch converts absolute hertz to an SDL frequency ratio");
+        require(audio::legacyPitchFrequencyRatio(50U, 1'000U) == 0.1F,
+            "explicit pitch preserves DirectSound's 100 Hz minimum");
+        require(audio::legacyPitchFrequencyRatio(200'000U, 1'000U) == 100.0F,
+            "explicit pitch preserves DirectSound 7's 100000 Hz maximum");
+        require(audio::legacyPitchFrequencyRatio(100U, 44'100U) == 0.01F,
+            "pitch ratio clamps to SDL's documented lower limit");
+        require(audio::legacyPitchFrequencyRatio(100'000U, 100U) == 100.0F,
+            "pitch ratio clamps to SDL's documented upper limit");
+        require(audio::legacyPitchFrequencyRatio(22'050U, 0U) == 1.0F,
+            "invalid source frequency safely preserves normal playback speed");
+    }
+
     void testLegacyWaveDuration()
     {
         const auto sixTicks = legacyDurationWave(44'100U, 4'410U, true);
@@ -381,6 +399,8 @@ int main()
     {
         // Select dummy before any SDL audio initialization. Override prevents
         // a user environment hint from accidentally selecting physical audio.
+        testLegacyPitchFrequencyRatio();
+        std::cout << "[PASS] retail absolute pitch conversion and SDL ratio bounds\n";
         testLegacyWaveDuration();
         std::cout << "[PASS] retail RIFF/WAVE duration contract and malformed input handling\n";
         require(SDL_WasInit(SDL_INIT_AUDIO) == 0, "audio has not been initialized before driver selection");
