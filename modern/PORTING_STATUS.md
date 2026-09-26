@@ -10,7 +10,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 
 - Initialisation, boucle de jeu, timers, slots, règles, IA, messages locaux, archives et restauration de partie.
 - Surfaces UI : enchères, plateau, pièces, sélection locale, Trade/Future/Immunity, IBar et Banque maisons/hôtels, chat avec texte et défilement, statistiques et deed floater, options Load/Save, Credits et QuickHelp.
-- **GIS-8** : capture SDL3, PCM 11025 Hz/8-bit/mono, GSM 6.10 WAV49, DAT1/DATN, playback et transport TCP de voix. Les sessions de jeu C01 ont désormais leur admission, ownership, routage et retour local ; voir [sessions TCP](NETWORK_GAME.md). Cette extension reste non compilée/non testée.
+- **GIS-8** : capture SDL3, PCM 11025 Hz/8-bit/mono, GSM 6.10 WAV49, DAT1/DATN, playback et transport TCP de voix. Les sessions de jeu C01 ont désormais leur admission, ownership, routage et retour local ; voir [sessions TCP](NETWORK_GAME.md). Sa validation sur le HEAD courant reste à confirmer.
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
 - Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
 
@@ -20,12 +20,14 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 
 | ID | Travail | Critère de fermeture |
 |---|---|---|
-| C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; aucun build/test de cette extension. Voir [usage](NETWORK_GAME.md). |
+| C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; résultat de validation du HEAD courant à confirmer. Voir [usage](NETWORK_GAME.md). |
 | C02 | FullHelp portable raccordé : conversion HLP → HTML asynchrone puis ouverture navigateur. | Exporteur externe `winhlp` requis ; conversion réelle, sujets/images et plateformes à qualifier. Voir [aide complète](FULL_HELP.md). |
 | C03 | Actes Europe dynamiques : porter UDPENNY_CreateDeed et raccorder les 28 rectos/28 versos aux consommateurs. | Userifce.cpp les régénère au démarrage et au chargement selon langue, plateau et devise ; les propriétaires modernes utilisent encore les ressources statiques. Chemin Europe distinct de D01. |
 | D01 | Six références Europe d’historique absentes du corpus livré ; aucune valeur inventée. | Les appels sont dans les branches Europe de `UDIBar.cpp`, désactivées par `USA_VERSION=1` dans le build source livré. Les définitions/données Europe restent nécessaires pour cette édition ; l’achat utilise déjà LANG 3178. |
 
 QuickHelp n’est plus bloqué par les accents hors Windows : son décodage CP1252 vers UTF-8 est explicite et testé. Les fichiers fournis sont compatibles avec ce choix ; leur contenu ne permet pas de distinguer CP1252 de Latin-1 pour les octets qu’ils emploient.
+
+Un écart actif connu est un comportement utilisé dans la version d’origine dont une différence ou une absence moderne a été identifiée. C03 est un travail de code ; D01 dépend de données Europe absentes. Les lignes UDStats et UDPenny de la matrice partagent C03 : elles ne représentent pas deux manques distincts. Les comparaisons A et qualifications Q ci-dessous ne sont pas, à elles seules, des défauts démontrés.
 
 ## Comparaisons encore nécessaires
 
@@ -61,7 +63,7 @@ Sessions réseau C01, aide C02, attente des actions IA avant trade (A02), taille
 
 Les onze branches `assistant/*` sont intégrées (dix têtes distinctes). Elles ajoutent la durée WAV, le backend de surfaces GRAFIX partagé, le blending des ombres et des contrats de tests. Leurs conclusions utiles sont reprises dans la matrice ; les anciennes réserves déjà résolues ne sont pas réintroduites. La génération des actes Europe reste explicitement ouverte en C03.
 
-**Lot non compilé et non testé**, conformément à la consigne courante. La référence ci-dessous précède ces modifications ; elle ne les qualifie pas. Les commits de ce lot évitent le déclenchement CI, sans désactiver les workflows du dépôt.
+**Compilations et tests autorisés via GitHub Actions.** Les premiers commits de ce lot avaient été publiés sans validation, avec `[skip ci]`. Cette restriction est levée. La référence ci-dessous précède ces modifications ; elle ne les qualifie pas. Pour chaque résultat CI, vérifier le SHA testé : un succès sur un commit antérieur ne qualifie pas les changements suivants.
 
 ## Validation de référence
 
