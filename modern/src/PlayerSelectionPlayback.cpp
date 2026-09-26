@@ -277,12 +277,20 @@ namespace monopoly::playerselection
                         if(!id) return std::unexpected(id.error());
                         found=surfaces_.emplace(key,*id).first;
                     }
-                    // Store updates are immutable snapshots; queued 2D consumers see the new revision.
                     const auto previous=playback.runtimeBitmaps().asset(found->second);
-                    if(!previous || previous->image.pixels!=image.pixels)
+                    const bool changed=!previous || previous->image.pixels!=image.pixels;
+                    if(changed)
                     {
                         auto r=playback.runtimeBitmaps().update(found->second,std::move(image));
                         if(!r) return r;
+                        const auto live=next.find(key);
+                        if(!phaseChange && live!=next.end() &&
+                            live->second.id==found->second && !live->second.leaving)
+                        {
+                            auto redraw=playback.forceRedraw(
+                                found->second,static_cast<std::uint16_t>(priority));
+                            if(!redraw) return redraw;
+                        }
                     }
                     desired.emplace(key,Spec{O{},target,found->second,0,0,x,y,static_cast<std::uint16_t>(priority)});
                     return {};

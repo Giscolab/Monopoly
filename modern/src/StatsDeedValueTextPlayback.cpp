@@ -194,6 +194,7 @@ namespace monopoly::statsui
         while (surfaces_.size() < rows.size())
             surfaces_.push_back(std::nullopt);
 
+        std::vector<std::size_t> changedRows;
         for (std::size_t index = 0; index < rows.size(); ++index)
         {
             if (!surfaces_[index])
@@ -212,11 +213,18 @@ namespace monopoly::statsui
                 const auto updated = playback.runtimeBitmaps().update(
                     *surfaces_[index], std::move(images[index]));
                 if (!updated) return updated;
+                changedRows.push_back(index);
             }
         }
 
         if (!layoutChanged)
         {
+            for (const auto index : changedRows)
+            {
+                const auto forced = playback.forceRedraw(
+                    *surfaces_[index], DeedValueTextPriority);
+                if (!forced) return forced;
+            }
             content_.resize(rows.size());
             for (std::size_t index = 0; index < rows.size(); ++index)
                 content_[index] = rows[index].text;
