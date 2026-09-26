@@ -181,16 +181,12 @@ namespace monopoly::statsui
                 const auto metrics = fontRuntime->measure(row.text);
                 if (!metrics)
                     return std::unexpected(metrics.error().detail);
-                const auto rendered =
-                    fontRuntime->render(row.text, TextColour);
-                if (!rendered)
-                    return std::unexpected(rendered.error().detail);
                 const int x =
                     static_cast<int>(DeedValueTextWidth) - metrics->width;
-                const auto copied = data::blitStraightRGBA8(
-                    image, *rendered, x, 0,
-                    data::BitmapBlitMode::SourceOver);
-                if (!copied) return copied;
+                const auto copied = fontRuntime->blitText(
+                    image, row.text, x, 0, TextColour);
+                if (!copied)
+                    return std::unexpected(copied.error().detail);
                 images.push_back(std::move(image));
             }
         }
