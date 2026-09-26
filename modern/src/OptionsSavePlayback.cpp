@@ -61,18 +61,9 @@ namespace monopoly::optionsui
         {
             auto result = blankImage(width, height);
             if (text.empty()) return result;
-            if (x < 0 || y < 0 ||
-                static_cast<std::uint32_t>(x) >= width ||
-                static_cast<std::uint32_t>(y) >= height)
-                return result;
-            const auto rendered = fontRuntime.renderClipped(
-                text, 0x00FFFFFFU,
-                {0, 0, width - static_cast<std::uint32_t>(x),
-                    height - static_cast<std::uint32_t>(y)});
-            if (!rendered) return std::unexpected(rendered.error().detail);
-            const auto blitted = data::blitStraightRGBA8(
-                result, *rendered, x, y, data::BitmapBlitMode::SourceOver);
-            if (!blitted) return std::unexpected(blitted.error());
+            const auto blitted = fontRuntime.blitText(
+                result, text, x, y, 0x00FFFFFFU);
+            if (!blitted) return std::unexpected(blitted.error().detail);
             return result;
         }
 
