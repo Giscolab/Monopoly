@@ -6,21 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 STATUSES = {
-    "PORTED_COMPLETE",
-    "REPLACED_PORTABLE",
-    "PORTED_PARTIAL",
-    "NOT_STARTED",
-    "BLOCKED_MISSING_DATA",
-    "MISSING_TOOLING",
-    "LEGACY_UNUSED",
+    "PORTED_COMPLETE", "REPLACED_PORTABLE", "PORTED_PARTIAL", "NOT_STARTED",
+    "REVIEW_REQUIRED", "BLOCKED_MISSING_DATA", "MISSING_TOOLING", "LEGACY_UNUSED",
 }
-ACTIVE = (
-    "PORTED_COMPLETE",
-    "REPLACED_PORTABLE",
-    "PORTED_PARTIAL",
-    "NOT_STARTED",
-)
 FAMILY_SECTIONS = {"Jeu Monopoly", "Services ArtLib consommes"}
+MATRIX_SECTIONS = FAMILY_SECTIONS | {"PC3D consomme", "Donnees et verification"}
 
 
 @dataclass(frozen=True)
@@ -41,24 +31,16 @@ class Metrics:
     done: int
     partial: int
     not_started: int
-    mechanical_index: int
-    family_active: int
-    family_engaged: int
-    family_percent: float
-    closed_percent: float
-    functional_percent: float
+    review_required: int
+    functional_percent: float | None
     functional_label: str
     ctest_passed: int | None
     ctest_total: int | None
-
-    @property
-    def ctest_percent(self) -> float | None:
-        if not self.ctest_total:
-            return None
-        return self.ctest_passed * 100.0 / self.ctest_total
+    ctest_reference: str
 
 
 def parse_status(path: Path) -> tuple[list[StatusRow], str]:
+    """Read the canonical matrix; reject unknown statuses instead of dropping rows."""
     text = path.read_text(encoding="utf-8-sig")
     rows: list[StatusRow] = []
     section = ""
@@ -66,114 +48,81 @@ def parse_status(path: Path) -> tuple[list[StatusRow], str]:
         if line.startswith("## "):
             section = line[3:].strip()
             continue
-        if not line.startswith("|"):
+        if not line.startswith("|") or section not in MATRIX_SECTIONS:
             continue
-        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line)[1:-1]]
         if len(cells) < 3:
+            raise ValueError(f"{path.name}:{number}: incomplete matrix row")
+        status = cells[2].strip("`")
+        if status.lower() in {"status", "statut"} or re.fullmatch(r":?-+:?", status):
             continue
-        status = cells[2].strip(chr(96))
         if status not in STATUSES:
-            continue
-        rows.append(
-            StatusRow(
-                section=section,
-                original=cells[0].strip(chr(96)),
-                equivalent=cells[1].strip(chr(96)),
-                status=status,
-                details=" | ".join(cells[3:]),
-                line_number=number,
-            )
-        )
+            raise ValueError(f"{path.name}:{number}: unknown matrix status {status!r}")
+        rows.append(StatusRow(section, cells[0].strip("`"), cells[1].strip("`"),
+                              status, " | ".join(cells[3:]), number))
+    if not rows:
+        raise ValueError(f"{path.name}: no canonical matrix rows found")
     return rows, text
 
 
-def functional_estimate(text: str) -> tuple[float, str]:
-    pattern = re.compile(
-        r"Progression fonctionnelle estim(?:ee|\u00e9e)"
-        r"(?:\s+au\s+([^:\r\n]+))?\s*:\s*"
-        r"(?:environ\s*)?([0-9]+(?:[.,][0-9]+)?)\s*%",
-        flags=re.IGNORECASE,
-    )
-    matches = list(pattern.finditer(text))
+def functional_estimate(text: str) -> tuple[float | None, str]:
+    """Only an explicit current audit may supply a functional percentage."""
+    matches = list(re.finditer(
+        r"^Progression fonctionnelle (?:etablie|établie)\s*:\s*"
+        r"([0-9]+(?:[.,][0-9]+)?)\s*%\s*[—-]\s*(.+)$", text, re.M))
     if not matches:
-        raise ValueError(
-            "PORTING_STATUS.md has no audited functional estimate; "
-            "refusing to invent one"
-        )
-    match = matches[-1]
-    label = (match.group(1) or "audit manuel").strip()
-    value = float(match.group(2).replace(",", "."))
-    return value, label
+        return None, "Non établi"
+    if len(matches) != 1:
+        raise ValueError("Multiple current functional estimates")
+    value = float(matches[0].group(1).replace(",", "."))
+    if not 0 <= value <= 100:
+        raise ValueError("Functional estimate must be between 0 and 100")
+    return value, matches[0].group(2).strip()
+
+
+def ctest_reference(text: str) -> tuple[int | None, int | None, str]:
+    matches = list(re.finditer(
+        r"^Validation de r[ée]f[ée]rence\s*:\s*\*\*(\d+)/(\d+) suites CTest pass[ée]es\*\*"
+        r"\s*[—-]\s*(.+)$", text, re.M | re.I))
+    if not matches:
+        return None, None, "Non documentée"
+    if len(matches) != 1:
+        raise ValueError("Multiple CTest reference validations")
+    passed, total = map(int, matches[0].group(1, 2))
+    if total == 0 or passed > total:
+        raise ValueError("Invalid CTest reference counts")
+    return passed, total, matches[0].group(3).strip()
 
 
 def latest_ctest(text: str) -> tuple[int | None, int | None]:
-    current = re.search(
-        r"preuve executable courante.*?\*\*(\d+)/(\d+) suites CTest passees",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if current:
-        return int(current.group(1)), int(current.group(2))
-
-    matches = list(
-        re.finditer(
-            r"\*\*(\d+)/(\d+)(?: suites)? CTest passees",
-            text,
-            flags=re.IGNORECASE,
-        )
-    )
-    if not matches:
-        return None, None
-    match = matches[-1]
-    return int(match.group(1)), int(match.group(2))
+    passed, total, _reference = ctest_reference(text)
+    return passed, total
 
 
 def calculate_metrics(rows: list[StatusRow], text: str) -> Metrics:
-    counts: Counter[str] = Counter(row.status for row in rows)
-    family_counts: Counter[str] = Counter(
-        row.status for row in rows if row.section in FAMILY_SECTIONS
-    )
-    active = sum(counts[status] for status in ACTIVE)
-    done = counts["PORTED_COMPLETE"] + counts["REPLACED_PORTABLE"]
-    partial = counts["PORTED_PARTIAL"]
-    not_started = counts["NOT_STARTED"]
-    mechanical = (done * 100 + partial * 50) // active if active else 0
-
-    family_active = sum(family_counts[status] for status in ACTIVE)
-    family_engaged = family_active - family_counts["NOT_STARTED"]
-    family_percent = (
-        family_engaged * 100.0 / family_active if family_active else 0.0
-    )
-    closed_percent = done * 100.0 / active if active else 0.0
+    counts = Counter(row.status for row in rows)
+    family_counts = Counter(row.status for row in rows if row.section in FAMILY_SECTIONS)
     functional_percent, functional_label = functional_estimate(text)
-    ctest_passed, ctest_total = latest_ctest(text)
-
+    passed, total, reference = ctest_reference(text)
     return Metrics(
-        counts=counts,
-        family_counts=family_counts,
-        active=active,
-        done=done,
-        partial=partial,
-        not_started=not_started,
-        mechanical_index=mechanical,
-        family_active=family_active,
-        family_engaged=family_engaged,
-        family_percent=family_percent,
-        closed_percent=closed_percent,
-        functional_percent=functional_percent,
-        functional_label=functional_label,
-        ctest_passed=ctest_passed,
-        ctest_total=ctest_total,
+        counts=counts, family_counts=family_counts,
+        active=len(rows) - counts["LEGACY_UNUSED"],
+        done=counts["PORTED_COMPLETE"] + counts["REPLACED_PORTABLE"],
+        partial=counts["PORTED_PARTIAL"], not_started=counts["NOT_STARTED"],
+        review_required=counts["REVIEW_REQUIRED"],
+        functional_percent=functional_percent, functional_label=functional_label,
+        ctest_passed=passed, ctest_total=total, ctest_reference=reference,
     )
 
 
 def load_metrics(path: Path) -> tuple[list[StatusRow], str, Metrics]:
-    rows, text = parse_status(path)
-    return rows, text, calculate_metrics(rows, text)
+    status_text = path.read_text(encoding="utf-8-sig")
+    rows, matrix_text = parse_status(path.with_name("PORTING_MATRIX.md"))
+    return rows, status_text + "\n" + matrix_text, calculate_metrics(rows, status_text)
 
 
-def format_percent(value: float) -> str:
+def format_percent(value: float | None) -> str:
+    if value is None:
+        return "Non établi"
     rounded = round(value, 1)
-    if rounded.is_integer():
-        return f"{int(rounded)}%"
-    return f"{rounded:.1f}%"
+    return f"{int(rounded)}%" if rounded.is_integer() else f"{rounded:.1f}%"

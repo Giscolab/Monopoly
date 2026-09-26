@@ -13,17 +13,13 @@ reste disponible dans [`Source/`](Source/).
 
 ![Portabilité du code](modern/porting-progress.svg)
 
-Le suivi est automatisé à partir de [`modern/PORTING_STATUS.md`](modern/PORTING_STATUS.md).
-Le SVG ci-dessus est régénéré par GitHub Actions à chaque changement suivi sous `modern/`
-(hors SVG généré), lors d'une modification du workflow/script, chaque nuit ou manuellement.
+Le [plan courant](modern/PORTING_STATUS.md) distingue les écarts connus, les comparaisons
+restantes et la qualification sur données réelles. L’[inventaire détaillé](modern/PORTING_MATRIX.md)
+conserve les contrats du portage et leurs statuts.
 
-Les trois barres ont volontairement des sens différents :
-
-- **Estimation fonctionnelle** : estimation prudente maintenue dans `PORTING_STATUS.md` ; GitHub Actions la lit et l'affiche automatiquement.
-- **Familles engagées** : calcul automatique des familles `Jeu Monopoly` + `Services ArtLib` qui ne sont plus `NOT_STARTED`.
-- **Indice mécanique** : calcul automatique sur toute la matrice active : complet/remplacé = 100 %, partiel = 50 %, non démarré = 0 % ; bloqué/tooling/legacy-unused sont exclus.
-
-Ainsi, l'indice mécanique peut rester stable pendant qu'une grosse famille déjà `PORTED_PARTIAL` progresse fortement ; les trois barres évitent de confondre cette mesure avec la progression fonctionnelle globale.
+GitHub Actions contrôle cet inventaire, régénère le graphique et le rapport structurel,
+puis compile et exécute les tests sous Windows. Les compteurs ne mesurent pas un
+pourcentage de fidélité au jeu d’origine ; aucun pourcentage fonctionnel n’est établi.
 
 ## 📚 Documentation technique
 

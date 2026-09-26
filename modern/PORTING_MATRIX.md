@@ -1,0 +1,115 @@
+# Inventaire du portage {#porting_matrix}
+
+Cette matrice conserve les 79 entrées de référence. Le [plan courant](PORTING_STATUS.md) définit les travaux C, D, A et Q cités ci-dessous. Les familles et leurs sous-contrats se recouvrent : leur nombre ne mesure pas un pourcentage de jeu terminé.
+
+## Lecture des statuts
+
+- `PORTED_COMPLETE` : contrat indiqué implémenté ; la qualification retail ou multiplateforme peut rester ouverte.
+- `REPLACED_PORTABLE` : contrat remplacé par un mécanisme moderne explicite.
+- `PORTED_PARTIAL` : écart actif identifié, décrit dans la ligne.
+- `REVIEW_REQUIRED` : comparaison sémantique inachevée ; ce statut ne prétend ni à une omission prouvée ni à une conformité complète.
+- `NOT_STARTED` : travail actif identifié sans implémentation.
+- `BLOCKED_MISSING_DATA` : données nécessaires absentes.
+- `MISSING_TOOLING` : outil manquant ; son caractère nécessaire ou optionnel est précisé.
+- `LEGACY_UNUSED` : hors cible sur preuve d’absence d’usage actif ; jamais sur le seul âge du code.
+
+Les noms de modules désignent les sources et équivalents à examiner, pas une preuve de qualification. Les tests de référence et leurs limites sont dans le plan. Les exclusions doivent être réexaminées si un nouvel appelant ou un asset consommé les contredit.
+
+## Jeu Monopoly
+
+| Origine / contrat | Équivalent moderne | Statut | Portée, preuve et suite |
+|---|---|---|---|
+| Source/monopoly/Main.cpp | Application, Engine, Game, RenderSlots, Timers, GPUFrame, UserInterface | `REPLACED_PORTABLE` | Boucle SDL, slots, timers, arrêt et rollback portés ; ResourceLifecycleTests. |
+| Source/monopoly/GameInc.cpp/.h | DataBanks, ResourceContext, ExtendedInitialization, CMake et includes modernes explicites | `REPLACED_PORTABLE` | Initialisation étendue et groupes DAT portés ; films d’ouverture raccordés. Qualification Q04. |
+| Source/monopoly/Mdef.cpp | DataBanks::LanguageId, ResourceContext, resultats d initialisation modernes | `REPLACED_PORTABLE` | Langue courante et résultats d’initialisation portés par ResourceContext. |
+| Source/monopoly/Mess.cpp | Messaging | `PORTED_PARTIAL` | Messagerie locale et transport voix existants ; propriété des joueurs et actions distantes à raccorder (C01). |
+| Source/monopoly/Rule.cpp | RulesEngine, Rule*, BoardRules, PhaseStack, CardDeck* | `REVIEW_REQUIRED` | Règles et archives exécutables ; comparaison exhaustive des branches encore ouverte (A01). |
+| Source/monopoly/trade.cpp | RuleTrade, TradeUI | `REVIEW_REQUIRED` | Trade_SendItems raccordé ; parité des décisions et transitions à terminer de comparer (A02). |
+| Source/monopoly/Ai.cpp | AIDecisionUtility, AIUtility, AIMessageIngress, AITradeIngress, BoardRules | `REVIEW_REQUIRED` | IA opérationnelle ; couverture des décisions à établir (A02). |
+| Source/monopoly/Ai_load.cpp | AIProfile, AIProfileRuntime | `PORTED_COMPLETE` | Chargement des paramètres IA porté. |
+| Source/monopoly/Ai_trade.cpp | AITradeUtility, AIDecisionUtility, AICounterTradeRuntime, AITradeSendRuntime, AITradeIngress | `REVIEW_REQUIRED` | Évaluation des échanges à comparer aux décisions originales (A02). |
+| Source/monopoly/Ai_util.cpp | AIUtility, BoardRules | `REVIEW_REQUIRED` | Utilitaires IA portés ; parité globale à établir (A02). |
+| Source/monopoly/Lang.cpp | LanguageCatalog, LanguageService, ResourceRuntime, DataBanks, LegacyTextIds | `REVIEW_REQUIRED` | Adaptateurs LANG utilisés par l’UI ; formatage et UTF-16 à comparer (A04). |
+| Source/monopoly/TexInfo.cpp | TextureCatalog | `PORTED_COMPLETE` | Catalogue TexInfo et résolution de ressources portés ; qualification Q03. |
+| Source/monopoly/Tickler.cpp | Aucun requis | `LEGACY_UNUSED` | Utilitaire Win95 de mémoire, lié au projet mais sans appelant externe actif ; Tickler.cpp et TheGame.dsp. |
+| Source/monopoly/L_voice.cpp | VoiceChatLegacyContract, VoiceChatAudioRuntime, Gsm610Codec, VoiceChatPacket, Messaging, Engine | `REPLACED_PORTABLE` | Capture SDL3, PCM 11025 Hz/8-bit/mono, GSM WAV49, DAT1/DATN et playback portés ; Q02. |
+| Source/monopoly/display.cpp | Display, GPUFrame, RenderSlots, LogicalViewport, World2DRenderer | `REVIEW_REQUIRED` | Slots, fonds, animations et notifications présents ; transitions à comparer (A03). |
+| Source/monopoly/Userifce.cpp | UserInterface, LocalPlayers, RuntimeState, TimeStep, ExtendedInitialization, ResourceRuntime, IBarRuleState | `REVIEW_REQUIRED` | Dispatcher UI et cycle de jeu présents ; scénarios et transitions à comparer (A01, A03). |
+| Source/monopoly/UDAuct.cpp | AuctionUI, AuctionPlayback, AuctionTextPlayback, AuctionPennyBagsPlayback, UserInterface, RuleAuction | `PORTED_COMPLETE` | Enchères et surfaces texte portées ; validation avec ressources du jeu en Q01. |
+| Source/monopoly/UDBoard.cpp | Display, BoardCameraController, BoardGeometry, BoardBackdropPlayback, BoardOwnershipHighlight, BoardLightingController, World3DRenderer | `REVIEW_REQUIRED` | Plateau et textures présents ; comparaison du rendu et du Board Editor (A03, A07, Q03). |
+| Source/monopoly/UDIBar.cpp | IBar, IBarLayout, IBarBackdropPlayback, IBarPropertyPlayback, IBarCardPlayback, IBarJailCardPlayback, IBarBankPlayback, IBarCameraButtonPlayback, IBarCurrentPlayerPlayback, IBarRuleState | `REVIEW_REQUIRED` | Textes Trade/IBar et Banque maisons/hôtels portés ; notifications/animations à comparer (A03). |
+| Source/monopoly/UDOpts.cpp | OptionsUI, OptionsFilePlayback, OptionsNavigationPlayback, OptionsOptionPlayback, OptionsTogglePlayback, OptionsHelpPlayback, OptionsSaveRuntime, OptionsSavePlayback, UserInterface, IBar, IBarBackdropPlayback | `PORTED_PARTIAL` | Load/Save, Credits et QuickHelp portés ; lecteur FullHelp portable manquant (C02). |
+| Source/monopoly/UDPieces.cpp | PiecePlacement, PieceRuntime, PieceCamera, PieceMovePlan, PieceMovePlayback, PieceMoveIngress, PieceInterpolation, PieceJailPlan, PieceJailPlayback, PieceIdleTransition, PieceIdlePlayback, PieceIdleDisplay, PieceBuildingDisplay, PieceShadowDisplay, DiceIngress, DiceDisplay, BoardGeometry | `REVIEW_REQUIRED` | Pièces et animations présentes ; transitions à comparer (A03). |
+| Source/monopoly/UDPsel.cpp | PlayerSelection, PlayerSetupFlow, LocalPlayers, IBar | `PORTED_PARTIAL` | Phases locales et interactions portées ; entrée réseau et propriété des joueurs manquantes (C01). |
+| Source/monopoly/UDSound.cpp | UDSoundRuntime, TokenVoiceCatalog, PennybagsCatalog, AudioRuntime, Engine, OptionsUI, PieceMovePlan | `REVIEW_REQUIRED` | Audio et transitions présents ; comparer les usages actifs (A03, A06). MIDI désactivé dans C_ArtLib.h. |
+| Source/monopoly/UDStats.cpp | StatsUI, StatsPlayback, StatsBankPlayback, StatsCalculatorPlayback, StatsCalculatorDeedPickerPlayback, StatsCalculatorLogic, StatsCalculatorUI, StatsPlayerPlayback, StatsPlayerCashPlayback, StatsPlayerAuxPlayback, StatsFutureImmunityUI, StatsFutureImmunityPlayback, StatsFutureImmunityTextPlayback, StatsDeedPlayback, StatsDeedFloaterPlayback, StatsDeedFloaterTextPlayback, StatsDeedBarPlayback, StatsDeedValueTextPlayback, UserInterface, Engine, AIUtility, BoardRules | `PORTED_PARTIAL` | Deed floater, value bars, calculateur, textes et historique portés ; six libellés Europe manquent (D01). |
+| Source/monopoly/UDTrade.cpp | TradeUI, TradePropertyPlayback, TradeOfferIconPlayback, TradeCashDialogPlayback, TradeContractDialogPlayback, TradeBackdropPlayback, TradeTokenPlayback, TradeActionButtonPlayback, UserInterface, IBar, LocalPlayers::tradeSourcePlayer, RuleTrade | `REVIEW_REQUIRED` | Échanges, listes et panneau Future/Immunity portés ; comparaison des transitions (A02, A03). |
+| Source/monopoly/UDCGE.cpp | Aucun requis | `LEGACY_UNUSED` | Éditeur retiré vers une application séparée : UDCGE.cpp, appels commentés dans Userifce/display. |
+| Source/monopoly/UDChat.cpp | ChatRuntime, ChatRecipientPlayback, ChatOptionPlayback, ChatFluffPlayback, Messaging, UserInterface, Engine | `PORTED_PARTIAL` | Texte, messages publics/privés/spectateurs, Fluff, wrap/scroll et alpha présents ; raccordement distant C01, comparaison A03. |
+| Source/monopoly/UDPlrCfg.cpp | Aucun requis | `LEGACY_UNUSED` | Module absent de TheGame.dsp ; seul appelant identifié dans UDPlrSum également exclu. |
+| Source/monopoly/UDPlrSum.cpp | Aucun requis | `LEGACY_UNUSED` | Module absent de TheGame.dsp ; aucun appelant externe actif identifié. |
+| Source/monopoly/UDRules.cpp | Aucun requis | `LEGACY_UNUSED` | Module absent de TheGame.dsp ; aucun appelant externe actif identifié. |
+| Source/monopoly/UDTitle.cpp | Aucun requis | `LEGACY_UNUSED` | Module absent de TheGame.dsp ; aucun appelant externe actif identifié. |
+| Source/monopoly/UDPenny.cpp | UDPennyVoice, TokenVoiceCatalog, PennybagsCatalog, UserInterface, Engine, UDSoundRuntime | `REVIEW_REQUIRED` | Penny présent ; séquences, notifications et transitions à comparer (A03). |
+| Source/monopoly/UDUtils.cpp | UDUtils, ResourcePaths, ResourceContext, TextureCatalog | `REVIEW_REQUIRED` | Sauvegarde/restauration des 39 vues et textures portée ; comparaison des usages restants (A03, Q03). |
+| Source/monopoly/Unility.cpp | Aucun requis dans la cible livree | `LEGACY_UNUSED` | Lié au projet mais appels sous #if 0 ou FOREMAILVERSION=0 ; Userifce/Main/GameInc. |
+| Source/monopoly/Debugart.cpp | DebugDialogs | `PORTED_COMPLETE` | Diagnostics et contrats de debug portés. |
+
+## Services ArtLib consommes
+
+| Origine / contrat | Équivalent moderne | Statut | Portée, preuve et suite |
+|---|---|---|---|
+| Source/artlib/L_Main.* | Application, Engine, Game | `REPLACED_PORTABLE` | Initialisation et arrêt ArtLib remplacés par les owners modernes. |
+| Source/artlib/L_Timers.* | Timers + UIMessages | `REPLACED_PORTABLE` | Timers remplacés par le runtime moderne. |
+| Source/artlib/L_UIMsg.* | UIMessages, Application, Timers | `REVIEW_REQUIRED` | FIFO, input, événements et cycle vidéo présents ; contrats séquence/callback à comparer (A06). |
+| Source/artlib/L_Data.* | DataBanks, LegacyDataArchive, DataBankRegistry, LegacyDataArchiveBuilder | `REVIEW_REQUIRED` | Bitmaps runtime, fichiers externes, snapshots et leases présents ; LRU/mémoire/sentinelles à comparer (A05). |
+| Source/artlib/L_Chunk.* | LegacyChunkReader, openLegacyChunkReader | `PORTED_COMPLETE` | Lecture des chunks portée. |
+| Source/artlib/L_Grafix.*, L_Rend2D.*, L_Sprite.* | Display, SequenceBitmapRenderData, SequenceWorld2DSlot, World2DRenderer | `REVIEW_REQUIRED` | Rendu 2D et sprites présents ; comparaison des surfaces et métriques texte (A03, A04). |
+| Source/artlib/L_Rend3D.* | GPUFrame, SequenceWorld3DSlot, World3DGPUScene, World3DProjection, World3DRenderer | `REVIEW_REQUIRED` | Rendu GPU et slots présents ; comparaison caméra/matériau (A07, Q03). |
+| Source/artlib/L_Seqncr.* | LegacySequence, SequenceClock, SequenceChildSchedule, SequenceProgram, SequenceRuntime, SequenceCommandQueue, SequenceTransforms, SequenceRenderData, SequenceBitmapRenderData | `REVIEW_REQUIRED` | Séquences et cycle des médias présents ; contrats consommés encore à comparer (A06). |
+| Source/artlib/L_Fonts.*, L_Print.* | FontRuntime, SDL3_ttf | `REVIEW_REQUIRED` | Propriétaires de texte et rendu des fonts présents ; métriques, clipping et formatage à comparer (A04). |
+| Source/artlib/L_Keybrd.*, L_Mouse.* | traduction SDL dans Application, MousePointer, MousePointerPlayback | `REPLACED_PORTABLE` | Clavier et souris remplacés par SDL3. |
+| Source/artlib/L_Sound.*, L_Midi.* | AudioRuntime, UDSoundRuntime, VoiceChatRuntime, VoiceChatPacket, feuilles Sound de SequenceRuntime, Engine | `REVIEW_REQUIRED` | Audio présent ; attributs avancés consommés à établir (A06). MIDI désactivé, hors cible. |
+| Source/artlib/L_Video.* | VideoRuntime, VideoDecoder, VideoPresentation, SequenceVideoRuntime, OpeningMovies | `REVIEW_REQUIRED` | Vidéo CNK, frames, PCM, EOF et Stop/Stay/Loop présents ; autres contrats consommés à comparer (A06, Q04). |
+
+## PC3D consomme
+
+| Origine / contrat | Équivalent moderne | Statut | Portée, preuve et suite |
+|---|---|---|---|
+| cameras, viewports, background (camera.*, D3DDevice.*, view code) | GPUFrame, World3DProjection, World3DRenderer, Display::Viewport3D, LogicalViewport | `REVIEW_REQUIRED` | Caméras, viewports et fonds présents ; comparaison sémantique encore ouverte (A07). |
+| meshes/scenes/materials (mesh*, NewMesh*, Scene.h, l_material.h) | MeshXRuntime, MeshRuntimeCache, MeshRenderData, MeshGPUCache, World3DGPUScene | `REVIEW_REQUIRED` | Chemin oldframe actif porté ; comparaison scènes/matériaux (A07). NewMesh alternatif non consommé. |
+| decodeur HMD / postload MESHX (HMDData.h, NewMesh.cpp, hmdload.*) | LegacyMeshData, openLegacyMeshData, MeshXRuntime | `PORTED_COMPLETE` | GIS-10 fermé pour les types HMD consommés ; reset/joint/UIMG0/ground/envmap commentés dans hmdload.cpp. Q03. |
+| vieux DirectDraw/Direct3D drivers (DDraw*, D3DDevice*) | SDL3 / SDL_GPU | `REPLACED_PORTABLE` | DirectDraw/Direct3D remplacés par SDL_GPU ; Windows D3D12 testé, autres backends Q05. |
+
+## Donnees et verification
+
+| Origine / contrat | Équivalent moderne | Statut | Portée, preuve et suite |
+|---|---|---|---|
+| DataId / DataTag / groupes | DataBanks, y compris IdWithFileFromParent | `PORTED_COMPLETE` | Identifiants groupe/tag 16+16 bits portés et testés. |
+| Header et index physique DAT | LegacyDataArchive | `PORTED_COMPLETE` | En-tête DAT 28 octets et index 16 octets little-endian portés. |
+| Codec DAT | zlib via uncompress2 avec consommation exacte | `PORTED_COMPLETE` | Décompression zlib via uncompress2, fenêtre 15, portée. |
+| Lifecycle, lookup, metadata et ownership | LegacyDataArchive, DataBankRegistry, ResourceRuntime | `REVIEW_REQUIRED` | Lifecycle, lookup et ownership présents ; différences mémoire/sentinelles à comparer (A05). |
+| Resolution des chemins DATA | ResourcePaths, UDUtils, ResourceContext | `REPLACED_PORTABLE` | Résolution de chemins portable, recherche des ressources et éditions portée. |
+| CRC global DAT | option ChecksumPolicy::Verify | `REVIEW_REQUIRED` | CRC Ignore conforme au runtime ; Verify disponible. Convention des fichiers retail à qualifier (Q01). |
+| Writer DAT portable | LegacyDataArchiveBuilder | `PORTED_COMPLETE` | Writer DAT pour des payloads fournis ; ne recrée pas les assets retail absents. |
+| Index logique packed 6 octets | DataIndexTable, lookupIndexedDataId | `PORTED_COMPLETE` | Index logique 6 octets porté ; erreurs typées au lieu d’une sentinelle nulle, appelants à comparer (A05). |
+| Lecteur CNK | LegacyChunkReader, openLegacyChunkReader | `PORTED_COMPLETE` | Lecteur CNK et validation des limites portés. |
+| Parseurs semantiques CNK / sequence | LegacySequence | `REVIEW_REQUIRED` | Parsers dont vidéo portés ; Model type 8 et autres contrats conditionnés par preuve d’usage (A06). |
+| SequenceClock | SequenceClock | `PORTED_COMPLETE` | Horloge de séquence et synchronisation des médias portées. |
+| SequenceChildSchedule | SequenceChildSchedule | `PORTED_COMPLETE` | Planification des enfants portée. |
+| Arbre runtime et execution | SequenceProgram, SequenceRuntime | `REVIEW_REQUIRED` | Arbre et feuilles courantes dont son/vidéo présents ; préchargement/modèle/callbacks à comparer (A06). |
+| Commandes L_Seqncr | SequenceCommandQueue | `PORTED_COMPLETE` | Commandes consommées portées ; chaînes sans appelant actif identifié. |
+| Transformations / tweekers | SequenceTransforms, etat SequenceRuntime | `REVIEW_REQUIRED` | Transformations présentes ; tweekers, audio avancé et scrollingworld à vérifier par appelant ou DAT (A06). |
+| MESHX runtime | MeshXRuntime, MeshRuntimeCache | `PORTED_COMPLETE` | MESHX et postload du chemin oldframe consommé portés ; ressources retail à qualifier (Q03). |
+| Render data de sequence | MeshRenderData, SequenceRenderData, SequenceBitmapRenderData | `PORTED_COMPLETE` | Échange mesh/bitmap/média vers le rendu porté ; qualification Q03. |
+| Raccordement sequence -> render slots | SequenceWorld3DSlot, World3DGPUScene, SequenceWorld2DSlot, World2DRenderer | `PORTED_COMPLETE` | Séquences raccordées aux slots GPU et readback testés ; qualification Q03. |
+| LANG core | LanguageCatalog, LanguageService, ResourceRuntime | `REVIEW_REQUIRED` | Lecture et adaptateurs LANG présents ; formatage et UTF-16 à comparer (A04). |
+| Chaines/audio/dialogues LANG retail | aucun payload | `BLOCKED_MISSING_DATA` | Payloads LANG du jeu absents ; validation multilingue/éditions bloquée sur ces données (Q01). |
+| Catalogue TexInfo | TextureCatalog | `PORTED_COMPLETE` | Catalogue de textures porté. |
+| Corpus BMP TexInfo | LegacyBitmap, manifeste de 1 001 assets | `PORTED_COMPLETE` | Corpus de 1001 BMP 8/24 bits BI_RGB contrôlé ; ce corpus ne remplace pas tous les DAT retail. |
+| Loader BMP runtime | LegacyBitmap, BitmapRuntimeCache, World2DRenderer, LegacyAssets | `PORTED_COMPLETE` | BMP 8/24 bits BI_RGB consommés décodés ; chemin LegacyAssets distinct existant, pas une omission prouvée (Q03). |
+| Manifestes DMake | LegacyManifest, MonopolyManifestTool | `PORTED_COMPLETE` | Manifestes DMAKE : groupes, tags et types exportables ; pas les payloads absents. |
+| DMAKE99 et reconstruction bit-a-bit | aucun outil historique | `MISSING_TOOLING` | Reproduction binaire exacte de DMAKE99 non fournie ; outil optionnel de reconstruction, pas prérequis du jeu moderne. |
+| Banques DAT retail exactes | absentes | `BLOCKED_MISSING_DATA` | DAT retail exacts absents ; ne pas inventer leurs payloads (Q01). |
+| 2DVIEW01..39 externes | noms portes, fichiers absents | `BLOCKED_MISSING_DATA` | Fichiers VIEW01..39 externes de scénarios personnalisés absents ; qualification Board Editor (Q03), pas blocage du plateau standard. |
+| HMD retail / objets MESHX | headers/tags seulement, fixtures HMD synthetiques | `BLOCKED_MISSING_DATA` | HMD retail absents ; décodeur consommé implémenté mais qualification réelle ouverte (Q03). |

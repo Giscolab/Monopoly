@@ -10,27 +10,6 @@ from porting_metrics import Metrics, StatusRow, format_percent, load_metrics
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".inl"}
 MARKER_RE = re.compile(r"\b(TODO|FIXME|XXX|TBD)\b", re.IGNORECASE)
 
-PRIORITY_RULES = (
-    (
-        4,
-        "gameplay/runtime central",
-        re.compile(r"(Rule\.cpp|Userifce\.cpp|Main\.cpp|Tickler\.cpp)", re.I),
-    ),
-    (
-        3,
-        "parcours visible joueur",
-        re.compile(
-            r"(UDBoard|UDIBar|UDPsel|UDStats|UDTrade|UDAuct|UDChat|UDOpts|display\.cpp)",
-            re.I,
-        ),
-    ),
-    (
-        2,
-        "infrastructure ArtLib active",
-        re.compile(r"(L_Seqncr|L_Grafix|L_Rend2D|L_Sound|L_Video|L_Data|Lang\.cpp)", re.I),
-    ),
-)
-
 
 @dataclass(frozen=True)
 class Marker:
@@ -44,335 +23,131 @@ class Marker:
 class Audit:
     orphan_sources: tuple[str, ...]
     orphan_tests: tuple[str, ...]
-    undocumented_sources: tuple[str, ...]
     markers: tuple[Marker, ...]
     claim_errors: tuple[str, ...]
 
 
 def cmake_cpp_references(cmake_text: str, prefix: str) -> set[str]:
-    pattern = re.compile(
-        rf"{re.escape(prefix)}/([A-Za-z0-9_./-]+\.cpp)",
-        flags=re.IGNORECASE,
-    )
-    references = {
-        match.replace("/", "\\") for match in pattern.findall(cmake_text)
-    }
-
+    pattern = re.compile(rf"{re.escape(prefix)}/([A-Za-z0-9_./-]+\.cpp)", re.I)
+    references = {match.replace("/", "\\") for match in pattern.findall(cmake_text)}
     foreach_pattern = re.compile(
-        r"foreach\((\w+)\s+IN\s+ITEMS\s+([^\)]+)\)(.*?)endforeach\(\)",
-        flags=re.IGNORECASE | re.DOTALL,
-    )
+        r"foreach\((\w+)\s+IN\s+ITEMS\s+([^\)]+)\)(.*?)endforeach\(\)", re.I | re.S)
     for variable, items_text, body in foreach_pattern.findall(cmake_text):
         template = re.compile(
-            rf"{re.escape(prefix)}/\$\{{{re.escape(variable)}\}}"
-            r"([A-Za-z0-9_.-]*\.cpp)",
-            flags=re.IGNORECASE,
-        )
-        suffixes = template.findall(body)
-        if not suffixes:
-            continue
-        items = re.findall(r"[A-Za-z0-9_.-]+", items_text)
-        for item in items:
-            for suffix in suffixes:
+            rf"{re.escape(prefix)}/\$\{{{re.escape(variable)}\}}([A-Za-z0-9_.-]*\.cpp)", re.I)
+        for item in re.findall(r"[A-Za-z0-9_.-]+", items_text):
+            for suffix in template.findall(body):
                 references.add(f"{item}{suffix}".replace("/", "\\"))
-
     return references
 
 
 def cpp_files(root: Path) -> set[str]:
-    if not root.exists():
-        return set()
-    return {
-        str(path.relative_to(root)).replace("/", "\\")
-        for path in root.rglob("*.cpp")
-        if path.is_file()
-    }
+    return {str(path.relative_to(root)).replace("/", "\\")
+            for path in root.rglob("*.cpp") if path.is_file()}
 
 
 def scan_markers(modern_root: Path) -> tuple[Marker, ...]:
     markers: list[Marker] = []
     for folder_name in ("src", "tests"):
-        folder = modern_root / folder_name
-        if not folder.exists():
-            continue
-        for path in sorted(folder.rglob("*")):
+        for path in sorted((modern_root / folder_name).rglob("*")):
             if not path.is_file() or path.suffix.lower() not in SOURCE_SUFFIXES:
                 continue
-            try:
-                lines = path.read_text(
-                    encoding="utf-8-sig", errors="replace"
-                ).splitlines()
-            except OSError:
-                continue
-            for number, line in enumerate(lines, start=1):
+            for number, line in enumerate(path.read_text(
+                    encoding="utf-8-sig", errors="replace").splitlines(), start=1):
                 match = MARKER_RE.search(line)
-                if not match:
-                    continue
-                excerpt = line.strip()
-                if len(excerpt) > 140:
-                    excerpt = excerpt[:137] + "..."
-                markers.append(
-                    Marker(
-                        path=str(path.relative_to(modern_root)).replace("\\", "/"),
-                        line=number,
-                        tag=match.group(1).upper(),
-                        text=excerpt,
-                    )
-                )
+                if match:
+                    markers.append(Marker(path.relative_to(modern_root).as_posix(), number,
+                                          match.group(1).upper(), line.strip()[:140]))
     return tuple(markers)
 
 
 def current_claim_errors(text: str, metrics: Metrics) -> tuple[str, ...]:
-    errors: list[str] = []
-    family_claims = re.findall(
-        r"\*\*(\d+)/(\d+) familles\s+engagees = ([0-9]+(?:[.,][0-9]+)?) %\*\*",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if family_claims:
-        engaged, total, percent = family_claims[-1]
-        if (int(engaged), int(total)) != (
-            metrics.family_engaged,
-            metrics.family_active,
-        ):
-            errors.append(
-                "latest family-engagement claim does not match the matrix: "
-                f"document={engaged}/{total}, matrix="
-                f"{metrics.family_engaged}/{metrics.family_active}"
-            )
-        claimed_percent = float(percent.replace(",", "."))
-        if abs(claimed_percent - metrics.family_percent) > 0.11:
-            errors.append(
-                "latest family-engagement percentage does not match the matrix: "
-                f"document={claimed_percent:g}%, matrix="
-                f"{metrics.family_percent:.1f}%"
-            )
-
-    index_claims = re.findall(
-        r"\*\*(\d+) %\s+d[ '’]indice automatique\*\*",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if index_claims and int(index_claims[-1]) != metrics.mechanical_index:
-        errors.append(
-            "latest mechanical-index claim does not match the matrix: "
-            f"document={index_claims[-1]}%, matrix={metrics.mechanical_index}%"
-        )
-
-    current = re.search(
-        r"Etat structurel courant\s*:.*?soit\s+(\d+)\s+entrees "
-        r"completes/remplacees,\s+(\d+)\s+partielles et\s+(\d+)\s+non demarree",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if current:
-        closed, partial, not_started = map(int, current.groups())
-        expected = (metrics.done, metrics.partial, metrics.not_started)
-        if (closed, partial, not_started) != expected:
-            errors.append(
-                "current structural entry counts do not match the matrix: "
-                f"document={(closed, partial, not_started)}, matrix={expected}"
-            )
+    errors = []
+    # Retiring these claims is deliberate: weights and engagement are not fidelity.
+    if re.search(r"\*\*\d+\s*%\s+d[ '’]indice automatique\*\*", text, re.I):
+        errors.append("Obsolete weighted progress claim; use inventory counts instead")
+    if re.search(r"\*\*\d+/\d+ familles\s+engagees\s*=", text, re.I):
+        errors.append("Obsolete family-engagement percentage; use inventory counts instead")
+    if metrics.ctest_total is None:
+        errors.append("Missing explicit CTest reference validation in PORTING_STATUS.md")
     return tuple(errors)
 
 
 def build_audit(status_text: str, modern_root: Path, metrics: Metrics) -> Audit:
-    cmake_path = modern_root / "CMakeLists.txt"
-    cmake_text = cmake_path.read_text(encoding="utf-8-sig")
-    registered_sources = cmake_cpp_references(cmake_text, "src")
-    registered_tests = cmake_cpp_references(cmake_text, "tests")
-    source_files = cpp_files(modern_root / "src")
-    test_files = cpp_files(modern_root / "tests")
-
-    orphan_sources = tuple(sorted(source_files - registered_sources))
-    orphan_tests = tuple(sorted(test_files - registered_tests))
-
-    undocumented: list[str] = []
-    for path in sorted((modern_root / "src").glob("*.cpp")):
-        if path.name not in status_text:
-            undocumented.append(path.name)
-
+    cmake_text = (modern_root / "CMakeLists.txt").read_text(encoding="utf-8-sig")
     return Audit(
-        orphan_sources=orphan_sources,
-        orphan_tests=orphan_tests,
-        undocumented_sources=tuple(undocumented),
+        orphan_sources=tuple(sorted(cpp_files(modern_root / "src") -
+                                    cmake_cpp_references(cmake_text, "src"))),
+        orphan_tests=tuple(sorted(cpp_files(modern_root / "tests") -
+                                  cmake_cpp_references(cmake_text, "tests"))),
         markers=scan_markers(modern_root),
         claim_errors=current_claim_errors(status_text, metrics),
     )
 
 
-def priority_for(row: StatusRow) -> tuple[int, str]:
-    haystack = f"{row.original} {row.equivalent} {row.details}"
-    best = (1, "revue de fidelite")
-    for score, label, pattern in PRIORITY_RULES:
-        if pattern.search(haystack) and score > best[0]:
-            best = (score, label)
-    return best
-
-
 def markdown_report(rows: list[StatusRow], metrics: Metrics, audit: Audit) -> str:
-    partial_rows = [row for row in rows if row.status == "PORTED_PARTIAL"]
-    priority_rows = sorted(
-        ((priority_for(row), row) for row in partial_rows),
-        key=lambda item: (-item[0][0], item[1].line_number),
-    )
-
-    out: list[str] = [
-        "# Audit automatique du portage {#porting_audit}",
-        "",
-        "> Genere mecaniquement depuis `PORTING_STATUS.md`, `modern/src`, "
-        "`modern/tests` et `modern/CMakeLists.txt`. Ce rapport detecte les "
-        "derives structurelles; il ne certifie **pas** la parite semantique avec le jeu de 1999.",
-        "",
-        "## Synthese",
-        "",
-        "| Metrique | Valeur courante | Signification |",
-        "|---|---:|---|",
-        f"| Audit fonctionnel | {format_percent(metrics.functional_percent)} | "
-        f"Snapshot manuel : {metrics.functional_label} |",
-        f"| Familles engagees | {metrics.family_engaged}/{metrics.family_active} "
-        f"({format_percent(metrics.family_percent)}) | Familles legacy actives avec "
-        "un equivalent moderne engage |",
-        f"| Indice automatique | {metrics.mechanical_index}% | Complet/remplace=100, "
-        "partiel=50, non demarre=0 |",
-        f"| Entrees actives closes | {metrics.done}/{metrics.active} "
-        f"({format_percent(metrics.closed_percent)}) | `PORTED_COMPLETE` + "
-        "`REPLACED_PORTABLE` |",
-        f"| Entrees actives partielles | {metrics.partial}/{metrics.active} | "
-        "Travail connu restant |",
-        f"| Non demarrees | {metrics.not_started} | Entrees actives sans equivalent "
-        "moderne significatif |",
+    out = [
+        "# Contrôles automatiques du portage {#porting_audit}", "",
+        "> Généré depuis [la matrice](PORTING_MATRIX.md), [l’état courant](PORTING_STATUS.md), "
+        "les sources modernes et CMake. Ce rapport vérifie la cohérence de l’inventaire ; "
+        "il ne certifie ni la fidélité au jeu d’origine ni la portabilité sur une plateforme non testée.", "",
+        "## Inventaire", "",
+        "Les lignes peuvent partager des dépendances. Leurs nombres ne sont pas un pourcentage fonctionnel.", "",
+        "| Catégorie | Nombre de lignes |", "|---|---:|",
+        f"| Complètes ou remplacées | {metrics.done} |",
+        f"| Écarts actifs connus (`PORTED_PARTIAL`) | {metrics.partial} |",
+        f"| Non commencées (`NOT_STARTED`) | {metrics.not_started} |",
+        f"| Comparaison à mener (`REVIEW_REQUIRED`) | {metrics.review_required} |",
+        f"| Données manquantes | {metrics.counts['BLOCKED_MISSING_DATA']} |",
+        f"| Outils manquants | {metrics.counts['MISSING_TOOLING']} |",
+        f"| Hors périmètre, preuve d’absence d’usage | {metrics.counts['LEGACY_UNUSED']} |", "",
+        f"Progression fonctionnelle : **{format_percent(metrics.functional_percent)}**.", "",
     ]
     if metrics.ctest_total:
-        out.append(
-            f"| Preuve CTest documentee | {metrics.ctest_passed}/"
-            f"{metrics.ctest_total} ({format_percent(metrics.ctest_percent or 0.0)}) | "
-            "Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |"
-        )
-
-    out.extend(["", "## Controles automatiques", ""])
-    gates = [
-        (
-            not audit.claim_errors,
-            "Les chiffres structurels ecrits dans PORTING_STATUS correspondent a la matrice",
-        ),
-        (
-            not audit.orphan_sources,
-            "Tous les `modern/src/*.cpp` sont enregistres dans CMake",
-        ),
-        (
-            not audit.orphan_tests,
-            "Tous les `modern/tests/*.cpp` sont enregistres dans CMake",
-        ),
-        (
-            metrics.not_started == 0,
-            "Aucune entree active de la matrice n est `NOT_STARTED`",
-        ),
-    ]
-    for passed, label in gates:
-        out.append(f"- {'PASS' if passed else 'A_REVOIR'} - {label}")
-
-    if audit.claim_errors:
-        out.extend(["", "### Incoherences structurelles", ""])
-        out.extend(f"- {message}" for message in audit.claim_errors)
-
-    if audit.orphan_sources or audit.orphan_tests:
-        out.extend(["", "### Trous d enregistrement CMake", ""])
-        out.extend(f"- source: `{name}`" for name in audit.orphan_sources)
-        out.extend(f"- test: `{name}`" for name in audit.orphan_tests)
-
-    out.extend(
-        [
-            "",
-            "## File de revue des `PORTED_PARTIAL`",
-            "",
-            "Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les "
-            "chemins visibles avant les travaux de fidelite plus bas niveau; c est une aide "
-            "au triage, pas un verdict de completion.",
-            "",
-            "| Poids | Zone | Ligne legacy | Ligne matrice |",
-            "|---:|---|---|---:|",
-        ]
-    )
-    for (weight, reason), row in priority_rows[:20]:
-        original = row.original.replace("|", "/").replace(chr(96), "'")
-        out.append(
-            f"| {weight} | {reason} | `{original}` | {row.line_number} |"
-        )
-
-    out.extend(
-        [
-            "",
-            f"<details><summary>Les {len(partial_rows)} entrees PARTIAL</summary>",
-            "",
-            "| Section | Ligne legacy | Ligne matrice |",
-            "|---|---|---:|",
-        ]
-    )
-    for row in partial_rows:
-        section = row.section.replace("|", "/")
-        original = row.original.replace("|", "/").replace(chr(96), "'")
-        out.append(f"| {section} | `{original}` | {row.line_number} |")
-    out.extend(["", "</details>", ""])
-
-    out.extend(
-        [
-            "## Signaux informatifs",
-            "",
-            f"- Marqueurs source/tests (`TODO`, `FIXME`, `XXX`, `TBD`) : "
-            f"**{len(audit.markers)}**.",
-            f"- Fichiers source modernes `.cpp` dont le nom n est pas cite litteralement "
-            f"dans PORTING_STATUS : **{len(audit.undocumented_sources)}**. Ce signal reste "
-            "informatif car un helper peut legitimement etre couvert par une ligne de famille.",
-        ]
-    )
-    if audit.undocumented_sources:
-        sample = ", ".join(f"`{name}`" for name in audit.undocumented_sources[:25])
-        out.append(f"- Premiers noms non cites : {sample}")
-
+        out += [f"Validation de référence : **{metrics.ctest_passed}/{metrics.ctest_total} suites CTest** "
+                f"— {metrics.ctest_reference}", ""]
+    out += ["## Contrôles de cohérence", ""]
+    for passed, label in (
+        (not audit.claim_errors, "Référence de validation et conventions documentaires"),
+        (not audit.orphan_sources, "Tous les fichiers source .cpp figurent dans CMake"),
+        (not audit.orphan_tests, "Tous les fichiers de tests .cpp figurent dans CMake"),
+    ):
+        out.append(f"- {'PASS' if passed else 'À CORRIGER'} — {label}.")
+    out += [f"- {error}" for error in audit.claim_errors]
+    out += [f"- Source absente de CMake : `{name}`" for name in audit.orphan_sources]
+    out += [f"- Test absent de CMake : `{name}`" for name in audit.orphan_tests]
+    out += ["", "## Écarts et comparaisons ouverts", "",
+            "Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit la matrice, "
+            "sans pondération automatique ni verdict sur les fonctionnalités non examinées.", "",
+            "| Section | Origine | Statut | Référence |", "|---|---|---|---|"]
+    open_statuses = {"PORTED_PARTIAL", "NOT_STARTED", "REVIEW_REQUIRED",
+                     "BLOCKED_MISSING_DATA", "MISSING_TOOLING"}
+    for row in rows:
+        if row.status in open_statuses:
+            original = row.original.replace("|", "/").replace("`", "'")
+            out.append(f"| {row.section} | `{original}` | `{row.status}` | "
+                       f"[Matrice, ligne {row.line_number}](PORTING_MATRIX.md#L{row.line_number}) |")
+    out += ["", "## Marqueurs informatifs", "",
+            f"{len(audit.markers)} occurrences de TODO/FIXME/XXX/TBD dans les sources et tests. "
+            "Un marqueur peut décrire un fixture ou une limite volontaire ; il ne prouve pas un manque actif."]
     if audit.markers:
-        out.extend(["", "<details><summary>Echantillon des marqueurs</summary>", ""])
-        for marker in audit.markers[:40]:
-            safe = marker.text.replace(chr(96), "'")
-            out.append(
-                f"- `{marker.path}:{marker.line}` **{marker.tag}** - {safe}"
-            )
-        out.extend(["", "</details>"])
-
-    out.extend(
-        [
-            "",
-            "## Limites d interpretation",
-            "",
-            "- CMake et CTest ne prouvent que la coherence build/tests.",
-            "- `PORTING_PARTIAL` remains partial until its documented omissions are "
-            "closed or explicitly excluded by caller/content evidence.",
-            "- Les DAT/HMD retail, la parite visuelle, l audio/reseau physique et les parties "
-            "completes demandent une qualification separee.",
-            "- Le SVG genere separe volontairement l audit fonctionnel manuel des pourcentages mecaniques.",
-            "",
-        ]
-    )
-    return "\n".join(out)
+        out += ["", "<details><summary>Occurrences</summary>", ""]
+        for marker in audit.markers:
+            excerpt = marker.text.replace("`", "'")
+            out.append(f"- [{marker.path}:{marker.line}]({marker.path}#L{marker.line}) "
+                       f"**{marker.tag}** — {excerpt}")
+        out += ["", "</details>"]
+    return "\n".join(out) + "\n"
 
 
 def append_summary(path: Path, metrics: Metrics, audit: Audit) -> None:
     with path.open("a", encoding="utf-8") as stream:
-        stream.write("## Audit automatique du portage\n")
-        stream.write(
-            f"- Matrix: {metrics.done} closed, {metrics.partial} partial, "
-            f"{metrics.not_started} not started / {metrics.active} active\n"
-        )
-        stream.write(
-            f"- Families: {metrics.family_engaged}/{metrics.family_active} "
-            f"({format_percent(metrics.family_percent)})\n"
-        )
-        stream.write(
-            f"- Structural claim errors: {len(audit.claim_errors)}\n"
-            f"- CMake orphan sources: {len(audit.orphan_sources)}\n"
-            f"- CMake orphan tests: {len(audit.orphan_tests)}\n"
-            f"- TODO/FIXME/XXX/TBD markers: {len(audit.markers)}\n\n"
-        )
+        stream.write("## Porting inventory checks\n\n")
+        stream.write(f"- Closed: {metrics.done}; known gaps: {metrics.partial}; "
+                     f"not started: {metrics.not_started}; review required: {metrics.review_required}.\n")
+        stream.write(f"- Documentation errors: {len(audit.claim_errors)}; "
+                     f"CMake orphan sources: {len(audit.orphan_sources)}; "
+                     f"orphan tests: {len(audit.orphan_tests)}.\n\n")
 
 
 def main() -> int:
@@ -383,38 +158,20 @@ def main() -> int:
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
-
     rows, status_text, metrics = load_metrics(args.status_file)
-    if not rows or metrics.active == 0:
-        raise SystemExit("No active porting matrix rows were parsed")
-
     audit = build_audit(status_text, args.modern_root, metrics)
     report = markdown_report(rows, metrics, audit)
-
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(report, encoding="utf-8", newline="\n")
     else:
         print(report)
-
     if args.summary:
         append_summary(args.summary, metrics, audit)
-
-    print(
-        "AUDIT "
-        f"active={metrics.active} done={metrics.done} partial={metrics.partial} "
-        f"not_started={metrics.not_started} families="
-        f"{metrics.family_engaged}/{metrics.family_active} "
-        f"claim_errors={len(audit.claim_errors)} "
-        f"orphan_sources={len(audit.orphan_sources)} "
-        f"orphan_tests={len(audit.orphan_tests)} markers={len(audit.markers)}"
-    )
-
-    if args.strict and (
-        audit.claim_errors or audit.orphan_sources or audit.orphan_tests
-    ):
-        return 2
-    return 0
+    print(f"AUDIT entries={len(rows)} closed={metrics.done} partial={metrics.partial} "
+          f"review_required={metrics.review_required} claim_errors={len(audit.claim_errors)} "
+          f"orphan_sources={len(audit.orphan_sources)} orphan_tests={len(audit.orphan_tests)}")
+    return 2 if args.strict and (audit.claim_errors or audit.orphan_sources or audit.orphan_tests) else 0
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ CREATE_SUBDIRS         = NO
 INPUT                  = modern/src \
                          docs/mainpage.md \
                          modern/PORTING_STATUS.md \
+                         modern/PORTING_MATRIX.md \
                          modern/PORTING_AUDIT.md
 RECURSIVE              = YES
 FILE_PATTERNS          = *.cpp *.hpp *.md

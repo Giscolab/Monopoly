@@ -5,6 +5,7 @@ on:
     branches:
       - master
     paths:
+      - 'Source/**'
       - 'modern/**'
       - '!modern/porting-progress.svg'
       - '!modern/PORTING_AUDIT.md'
@@ -28,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -64,7 +65,7 @@ jobs:
           --report modern/PORTING_AUDIT.md
           --summary "$GITHUB_STEP_SUMMARY"
 
-      - name: Generate enriched progress dashboard
+      - name: Generate inventory dashboard
         run: >-
           python .github/scripts/update_porting_progress.py
           modern/PORTING_STATUS.md
@@ -99,6 +100,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: Install and verify video test tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install ffmpeg --yes --no-progress
+          if ($LASTEXITCODE -notin @(0, 3010)) {
+            throw "FFmpeg installation failed with exit code $LASTEXITCODE"
+          }
+          foreach ($tool in @('ffmpeg', 'ffprobe')) {
+            $executable = (Get-Command $tool -CommandType Application -ErrorAction Stop).Source
+            & $executable -version
+            if ($LASTEXITCODE -ne 0) {
+              throw "$tool verification failed with exit code $LASTEXITCODE"
+            }
+            "MONOPOLY_TEST_$($tool.ToUpperInvariant())=$executable" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
 
       - name: Configure Debug build
         shell: pwsh

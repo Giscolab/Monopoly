@@ -6,7 +6,7 @@ on:
       - master
     paths:
       - 'modern/src/**'
-      - 'modern/PORTING_STATUS.md'
+      - 'modern/PORTING_*.md'
       - 'modern/PORTING_AUDIT.md'
       - 'modern/porting-progress.svg'
       - 'docs/**'

@@ -37,7 +37,7 @@
   </a>
   <a class="doc-card" href="porting_status.html">
     <strong>Suivi du portage</strong>
-    <span>Matrice de référence, campagnes et état des familles.</span>
+    <span>Écarts connus, comparaisons restantes et qualification.</span>
   </a>
   <a class="doc-card" href="porting_audit.html">
     <strong>Audit structurel</strong>
@@ -59,6 +59,9 @@ cmake --build modern/build --config Debug
 ctest --test-dir modern/build -C Debug --output-on-failure
 ```
 
+Les tests vidéo nécessitent aussi FFmpeg et FFprobe accessibles dans le PATH
+ou via les variables documentées dans `modern/VIDEO_RUNTIME.md`.
+
 Les dépendances nécessaires sont récupérées par CMake lorsque cela est prévu
 par le projet. Le détail des cibles et composants est visible dans la
 documentation des fichiers et dans `modern/CMakeLists.txt`.
@@ -70,18 +73,19 @@ documentation des fichiers et dans `modern/CMakeLists.txt`.
 | `Source/` | Code historique conservé comme référence sémantique |
 | `modern/src/` | Implémentation portable active |
 | `modern/tests/` | Tests de contrat, régression et intégration |
-| `modern/PORTING_STATUS.md` | Carte de référence du portage |
+| `modern/PORTING_STATUS.md` | Plan courant et validation de référence |
+| `modern/PORTING_MATRIX.md` | Inventaire complet des contrats et statuts |
 | `modern/PORTING_AUDIT.md` | Rapport généré automatiquement |
 | `.github/workflows/` | Audit, validation et publication de la documentation |
 
 ## Lire les indicateurs correctement
 
-Le graphique de progression est généré automatiquement. Les différents
-indicateurs n'ont pas la même signification : un pourcentage structurel ne
-constitue pas à lui seul une preuve de fidélité fonctionnelle au jeu de 1999.
+Le graphique est généré automatiquement depuis l’inventaire. Ses compteurs
+ne mesurent pas la fidélité fonctionnelle au jeu de 1999 : les familles et
+leurs sous-contrats se recouvrent. Aucun pourcentage fonctionnel n’est établi.
 
 Pour le détail, utiliser en priorité le
-[suivi du portage](porting_status.html) et
+[suivi du portage](porting_status.html), l’[inventaire](porting_matrix.html) et
 [l'audit automatisé](porting_audit.html).
 
 <div class="doc-footer-note">
