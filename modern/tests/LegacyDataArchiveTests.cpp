@@ -603,6 +603,29 @@ namespace
             DataErrorCode::TagOutOfRange,
             "loader rejects an out-of-range DataTag");
 
+        std::array<std::byte, 3> rawSlice{};
+        const auto rawCount = requireValue(
+            archive->readRaw(2U, rawSlice, 2U),
+            "read raw answer slice without caching");
+        expect(rawCount == rawSlice.size() &&
+            rawSlice[0] == std::byte{'s'} &&
+            rawSlice[1] == std::byte{'w'} &&
+            rawSlice[2] == std::byte{'e'},
+            "raw slice read honors start offset and destination size");
+        expect(archive->cachedItemCount() == 0U,
+            "raw slice read does not install cache ownership");
+
+        std::array<std::byte, 4> beyond{};
+        const auto beyondCount = requireValue(
+            archive->readRaw(2U, beyond, 999U),
+            "read raw answer beyond end");
+        expect(beyondCount == 0U,
+            "raw slice read returns zero when StartOffset is beyond the item");
+        expectError(
+            archive->readRaw(3U, rawSlice, 0U),
+            DataErrorCode::EmptyItem,
+            "raw slice read rejects an empty sparse slot");
+
         const auto firstLoad = requireValue(
             archive->load(2U),
             "load answer item first time");
@@ -1138,6 +1161,30 @@ namespace
             requireValue(registry.archive(9U), "retrieve mounted text group") ==
                 mountedText,
             "registry returns the exact shared archive instance");
+
+        std::array<std::byte, 4> registryRaw{};
+        const auto registryRawCount = requireValue(
+            registry.readRaw(
+                monopoly::data::packDataId(9U, 2U),
+                registryRaw,
+                1U),
+            "read raw registry slice");
+        expect(registryRawCount == registryRaw.size() &&
+            registryRaw[0] == std::byte{'n'} &&
+            registryRaw[1] == std::byte{'s'} &&
+            registryRaw[2] == std::byte{'w'} &&
+            registryRaw[3] == std::byte{'e'},
+            "registry raw read routes group/tag and preserves byte offsets");
+        expect(registry.cachedItemCount() == 0U,
+            "registry raw read leaves all mounted caches untouched");
+        const auto emptyRawCount = requireValue(
+            registry.readRaw(
+                monopoly::data::EmptyDataId,
+                registryRaw,
+                0U),
+            "read LE_DATA_EmptyItem raw sentinel");
+        expect(emptyRawCount == 0U && registry.cachedItemCount() == 0U,
+            "LE_DATA_EmptyItem raw read is a zero-byte no-op");
         expectError(
             registry.archive(8U),
             DataErrorCode::GroupNotMounted,
