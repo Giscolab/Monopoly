@@ -24,17 +24,6 @@ namespace monopoly::statsui
             return data::packDataId(data::LegacyGroupId::LanguageGraphics, tag);
         }
 
-        [[nodiscard]] sequence::Matrix2D scaleTranslate2D(
-            float scale, int x, int y) noexcept
-        {
-            auto transform = sequence::identity2D();
-            transform.values[0] = scale;
-            transform.values[4] = scale;
-            transform.values[6] = static_cast<float>(x);
-            transform.values[7] = static_cast<float>(y);
-            return transform;
-        }
-
         [[nodiscard]] std::expected<std::pair<int, int>, std::string>
         bitmapSize(const sequence::SequenceProgram& program)
         {
@@ -301,7 +290,8 @@ namespace monopoly::statsui
             std::optional<sequence::SequenceTransform> transform;
             if (object.positioned && object.scale != 1.0F)
                 transform = sequence::SequenceTransform{
-                    scaleTranslate2D(object.scale, object.x, object.y)};
+                    sequence::moveXYSRTransform(
+                        object.x, object.y, object.scale, 0.0F)};
             else if (object.positioned)
                 transform = sequence::moveXYTransform(object.x, object.y);
             if (!playback.commands().enqueue(sequence::StartSequenceCommand{
