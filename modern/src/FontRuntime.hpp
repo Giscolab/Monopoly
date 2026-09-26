@@ -26,7 +26,8 @@ namespace monopoly::fonts
         InvalidSlot,
         MeasureFailed,
         RenderFailed,
-        SurfaceConversionFailed
+        SurfaceConversionFailed,
+        InvalidTextEncoding
     };
 
     struct Error
@@ -53,6 +54,14 @@ namespace monopoly::fonts
     {
         int width{};
         int height{};
+    };
+
+    struct ClipRect
+    {
+        std::uint32_t x{};
+        std::uint32_t y{};
+        std::uint32_t width{};
+        std::uint32_t height{};
     };
 
     class Runtime final
@@ -83,6 +92,8 @@ namespace monopoly::fonts
 
         [[nodiscard]] std::expected<Metrics, Error> measure(
             std::string_view utf8) const;
+        [[nodiscard]] std::expected<Metrics, Error> measure(
+            std::u16string_view utf16) const;
         // Source/monopoly/UDChat.cpp::CHAT_WordWrap core semantics using the
         // currently selected font: prefer spaces, hard-break only when a
         // word cannot fit, and treat '_' as a non-breaking space marker.
@@ -92,6 +103,12 @@ namespace monopoly::fonts
             std::string_view utf8, int width) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> render(
             std::string_view utf8, std::uint32_t colorRef) const;
+        [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> render(
+            std::u16string_view utf16, std::uint32_t colorRef) const;
+        [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
+            std::string_view utf8, std::uint32_t colorRef, ClipRect clip) const;
+        [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
+            std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip) const;
 
     private:
         [[nodiscard]] std::expected<void, Error> reopen();
