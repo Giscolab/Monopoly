@@ -8,10 +8,10 @@ Les lignes peuvent partager des dépendances. Leurs nombres ne sont pas un pourc
 
 | Catégorie | Nombre de lignes |
 |---|---:|
-| Complètes ou remplacées | 31 |
-| Écarts actifs connus (`PORTED_PARTIAL`) | 1 |
+| Complètes ou remplacées | 37 |
+| Écarts actifs connus (`PORTED_PARTIAL`) | 2 |
 | Non commencées (`NOT_STARTED`) | 0 |
-| Comparaison à mener (`REVIEW_REQUIRED`) | 35 |
+| Comparaison à mener (`REVIEW_REQUIRED`) | 28 |
 | Données manquantes | 4 |
 | Outils manquants | 1 |
 | Hors périmètre, preuve d’absence d’usage | 7 |
@@ -37,8 +37,6 @@ Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit l
 | Jeu Monopoly | `Source/monopoly/trade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 27](PORTING_MATRIX.md#L27) |
 | Jeu Monopoly | `Source/monopoly/Ai.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 28](PORTING_MATRIX.md#L28) |
 | Jeu Monopoly | `Source/monopoly/Ai_trade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 30](PORTING_MATRIX.md#L30) |
-| Jeu Monopoly | `Source/monopoly/Ai_util.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 31](PORTING_MATRIX.md#L31) |
-| Jeu Monopoly | `Source/monopoly/Lang.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 32](PORTING_MATRIX.md#L32) |
 | Jeu Monopoly | `Source/monopoly/display.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 36](PORTING_MATRIX.md#L36) |
 | Jeu Monopoly | `Source/monopoly/Userifce.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 37](PORTING_MATRIX.md#L37) |
 | Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 39](PORTING_MATRIX.md#L39) |
@@ -50,14 +48,10 @@ Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit l
 | Jeu Monopoly | `Source/monopoly/UDStats.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 45](PORTING_MATRIX.md#L45) |
 | Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 46](PORTING_MATRIX.md#L46) |
 | Jeu Monopoly | `Source/monopoly/UDChat.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 48](PORTING_MATRIX.md#L48) |
-| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 53](PORTING_MATRIX.md#L53) |
+| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 53](PORTING_MATRIX.md#L53) |
 | Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 54](PORTING_MATRIX.md#L54) |
-| Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | `REVIEW_REQUIRED` | [Matrice, ligne 64](PORTING_MATRIX.md#L64) |
 | Services ArtLib consommes | `Source/artlib/L_Data.*` | `REVIEW_REQUIRED` | [Matrice, ligne 65](PORTING_MATRIX.md#L65) |
-| Services ArtLib consommes | `Source/artlib/L_Grafix.*, L_Rend2D.*, L_Sprite.*` | `REVIEW_REQUIRED` | [Matrice, ligne 67](PORTING_MATRIX.md#L67) |
-| Services ArtLib consommes | `Source/artlib/L_Rend3D.*` | `REVIEW_REQUIRED` | [Matrice, ligne 68](PORTING_MATRIX.md#L68) |
 | Services ArtLib consommes | `Source/artlib/L_Seqncr.*` | `REVIEW_REQUIRED` | [Matrice, ligne 69](PORTING_MATRIX.md#L69) |
-| Services ArtLib consommes | `Source/artlib/L_Fonts.*, L_Print.*` | `REVIEW_REQUIRED` | [Matrice, ligne 70](PORTING_MATRIX.md#L70) |
 | Services ArtLib consommes | `Source/artlib/L_Sound.*, L_Midi.*` | `REVIEW_REQUIRED` | [Matrice, ligne 72](PORTING_MATRIX.md#L72) |
 | Services ArtLib consommes | `Source/artlib/L_Video.*` | `REVIEW_REQUIRED` | [Matrice, ligne 73](PORTING_MATRIX.md#L73) |
 | PC3D consomme | `cameras, viewports, background (camera.*, D3DDevice.*, view code)` | `REVIEW_REQUIRED` | [Matrice, ligne 79](PORTING_MATRIX.md#L79) |
