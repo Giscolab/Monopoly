@@ -614,6 +614,10 @@ namespace
             "raw slice read honors start offset and destination size");
         expect(archive->cachedItemCount() == 0U,
             "raw slice read does not install cache ownership");
+        expect(!requireValue(
+                archive->isLoaded(2U),
+                "query answer state before cached load"),
+            "raw slice read leaves the item in legacy unloaded state");
 
         std::array<std::byte, 4> beyond{};
         const auto beyondCount = requireValue(
@@ -633,6 +637,10 @@ namespace
             "zlib round-trip restores exact uncompressed payload bytes");
         expect(archive->cachedItemCount() == 1U,
             "first load installs exactly one strong cache entry");
+        expect(requireValue(
+                archive->isLoaded(2U),
+                "query answer state after load"),
+            "loaded-state query mirrors LE_DATA_GetPointer non-null semantics");
 
         const auto secondLoad = requireValue(
             archive->load(2U),
@@ -646,6 +654,10 @@ namespace
         expect(removed, "unload reports that a cached entry was removed");
         expect(archive->cachedItemCount() == 0U,
             "unload releases only the archive cache ownership");
+        expect(!requireValue(
+                archive->isLoaded(2U),
+                "query answer state after unload"),
+            "loaded-state query becomes false after cache ownership is retired");
         expect(*firstLoad == items[2].payload,
             "caller lease survives unload with its bytes intact");
         expect(
@@ -1177,6 +1189,14 @@ namespace
             "registry raw read routes group/tag and preserves byte offsets");
         expect(registry.cachedItemCount() == 0U,
             "registry raw read leaves all mounted caches untouched");
+        expect(!requireValue(
+                registry.isLoaded(monopoly::data::packDataId(9U, 2U)),
+                "query registry item before load"),
+            "registry loaded-state remains false after raw reads");
+        expect(!requireValue(
+                registry.isLoaded(monopoly::data::EmptyDataId),
+                "query LE_DATA_EmptyItem loaded state"),
+            "LE_DATA_EmptyItem is never reported loaded");
         const auto emptyRawCount = requireValue(
             registry.readRaw(
                 monopoly::data::EmptyDataId,
@@ -1202,6 +1222,10 @@ namespace
             "registry routes payload loads by group and tag");
         expect(registry.cachedItemCount() == 1U,
             "registry reports cache ownership across mounted archives");
+        expect(requireValue(
+                registry.isLoaded(answerId),
+                "query loaded registry answer"),
+            "registry loaded-state becomes true after load");
         requireSuccess(
             registry.unload(monopoly::data::EmptyDataId),
             "unload LE_DATA_EmptyItem sentinel");
@@ -1212,6 +1236,10 @@ namespace
             "unload registry answer item");
         expect(registry.cachedItemCount() == 0U,
             "registry unload retires cache ownership for one DataId");
+        expect(!requireValue(
+                registry.isLoaded(answerId),
+                "query registry answer after unload"),
+            "registry loaded-state becomes false after unload");
         expect(*answerLease == items[2].payload,
             "registry unload preserves an outstanding caller lease");
         requireSuccess(
