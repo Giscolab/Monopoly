@@ -201,6 +201,17 @@ namespace monopoly::data
         [[nodiscard]] std::expected<ArchiveItemMetadata, DataError>
         metadata(DataTag tag) const;
 
+        [[nodiscard]] std::expected<LegacyDataType, DataError>
+        initialDataType(DataTag tag) const;
+
+        [[nodiscard]] std::expected<std::uint32_t, DataError>
+        initialSize(DataTag tag) const;
+
+        // Loads raw DAT bytes if necessary and returns their decompressed size.
+        // Bitmap/mesh post-load conversions are owned by their modern runtimes.
+        [[nodiscard]] std::expected<std::uint32_t, DataError>
+        loadedRawSize(DataTag tag);
+
         [[nodiscard]] std::expected<SharedDataBytes, DataError>
         load(DataTag tag);
 
@@ -266,6 +277,15 @@ namespace monopoly::data
 
         [[nodiscard]] std::expected<ArchiveItemMetadata, DataError>
         metadata(DataId id) const;
+
+        [[nodiscard]] std::expected<LegacyDataType, DataError>
+        initialDataType(DataId id) const;
+
+        [[nodiscard]] std::expected<std::uint32_t, DataError>
+        initialSize(DataId id) const;
+
+        [[nodiscard]] std::expected<std::uint32_t, DataError>
+        loadedRawSize(DataId id) const;
 
         [[nodiscard]] std::expected<SharedDataBytes, DataError>
         load(DataId id) const;
