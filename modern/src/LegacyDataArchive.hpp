@@ -204,6 +204,14 @@ namespace monopoly::data
         [[nodiscard]] std::expected<SharedDataBytes, DataError>
         load(DataTag tag);
 
+        // LE_DATA_LoadRawIntoBuffer: read raw decompressed bytes without
+        // installing or touching cache ownership/post-load state.
+        [[nodiscard]] std::expected<std::size_t, DataError>
+        readRaw(
+            DataTag tag,
+            std::span<std::byte> destination,
+            std::uint32_t startOffset = 0);
+
         // Retire seulement la possession du cache. Les SharedDataBytes deja
         // remis aux callers restent valides, contrairement aux pointeurs nus
         // de L_Data.
@@ -256,6 +264,12 @@ namespace monopoly::data
 
         [[nodiscard]] std::expected<SharedDataBytes, DataError>
         load(DataId id) const;
+
+        [[nodiscard]] std::expected<std::size_t, DataError>
+        readRaw(
+            DataId id,
+            std::span<std::byte> destination,
+            std::uint32_t startOffset = 0) const;
 
         // LE_DATA_Unload at registry scope. Already-unloaded items are a
         // successful no-op. Existing SharedDataBytes leases remain valid;
