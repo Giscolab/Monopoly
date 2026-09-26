@@ -140,7 +140,9 @@ namespace monopoly::sequence
         SequenceTransform worldTransform;
         std::vector<SequenceNodeId> children; // runtime priority order
         SequenceMeshChoice3D meshChoice{};
+        std::uint16_t pitch{};
         std::uint8_t volume{100};
+        std::int8_t panning{};
     };
 
     struct SequenceInfoView
@@ -167,7 +169,9 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
         std::uint8_t endingAction{};
+        std::uint16_t pitch{};
         std::uint8_t volume{100};
+        std::int8_t panning{};
     };
     struct SequenceVideoInstanceView
     {
@@ -181,7 +185,9 @@ namespace monopoly::sequence
         std::uint8_t endingAction{};
         bool binkDoubleSize{};
         std::int32_t elapsedParentClock{};
+        std::uint16_t pitch{};
         std::uint8_t volume{100};
+        std::int8_t panning{};
     };
     struct SequenceMeshInstanceView
     {
