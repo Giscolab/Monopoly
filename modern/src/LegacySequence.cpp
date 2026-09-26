@@ -139,6 +139,9 @@ namespace monopoly::data
             case 136: required = 16; break;
             case 139: required = 8; break;
             case 140: required = 1; break;
+            case 141: required = 2; break;
+            case 142: required = 1; break;
+            case 143: required = 1; break;
             case 144: required = 4; break;
             default:
                 result.values.push_back(SequenceUnsupportedAttribute{*part});
@@ -219,6 +222,19 @@ namespace monopoly::data
             case 140:
                 result.values.push_back(SequenceLabelAttribute{
                     *part, std::to_integer<std::uint8_t>((*bytes)[0])});
+                break;
+            case 141:
+                result.values.push_back(SequenceSoundPitchAttribute{
+                    *part, readU16(*bytes, 0)});
+                break;
+            case 142:
+                result.values.push_back(SequenceSoundVolumeAttribute{
+                    *part, std::to_integer<std::uint8_t>((*bytes)[0])});
+                break;
+            case 143:
+                result.values.push_back(SequenceSoundPanningAttribute{
+                    *part, static_cast<std::int8_t>(
+                        std::to_integer<std::uint8_t>((*bytes)[0]))});
                 break;
             case 144:
                 result.values.push_back(SequenceCameraFieldOfViewAttribute{*part,
