@@ -45,6 +45,7 @@ namespace monopoly::engine
         reset();
         device_ = std::exchange(other.device_, nullptr);
         pipeline_ = std::exchange(other.pipeline_, nullptr);
+        shadowPipeline_ = std::exchange(other.shadowPipeline_, nullptr);
         depthFormat_ = std::exchange(other.depthFormat_, SDL_GPU_TEXTUREFORMAT_INVALID);
         shaders_ = std::move(other.shaders_);
         return *this;
@@ -52,8 +53,11 @@ namespace monopoly::engine
 
     void World3DPipeline::reset() noexcept
     {
+        if (device_ && shadowPipeline_)
+            SDL_ReleaseGPUGraphicsPipeline(device_, shadowPipeline_);
         if (device_ && pipeline_)
             SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
+        shadowPipeline_ = nullptr;
         pipeline_ = nullptr;
         shaders_.reset();
         depthFormat_ = SDL_GPU_TEXTUREFORMAT_INVALID;
@@ -146,9 +150,32 @@ namespace monopoly::engine
                 World3DPipelineErrorCode::PipelineCreateFailed,
                 SDL_GetError(), {}});
 
+        // UDPieces.cpp + UDUTILS_ConvertToShadow use D3DBLEND_ZERO /
+        // D3DBLEND_SRCALPHA for the eleven token-shadow meshes. Their texture
+        // stores transmissivity in alpha: black texels darken the destination,
+        // white texels leave it untouched.
+        colorTarget.blend_state.enable_blend = true;
+        colorTarget.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        colorTarget.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        colorTarget.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        colorTarget.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        colorTarget.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        colorTarget.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
+        SDL_GPUGraphicsPipeline* shadowPipeline =
+            SDL_CreateGPUGraphicsPipeline(device, &info);
+        if (!shadowPipeline)
+        {
+            SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+            return std::unexpected(World3DPipelineError{
+                World3DPipelineErrorCode::PipelineCreateFailed,
+                SDL_GetError(), {}});
+        }
+
         World3DPipeline result;
         result.device_ = device;
         result.pipeline_ = pipeline;
+        result.shadowPipeline_ = shadowPipeline;
         result.depthFormat_ = *depthFormat;
         result.shaders_ = std::move(*shaders);
         return result;
