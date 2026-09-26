@@ -1153,6 +1153,41 @@ namespace
             "load registry answer item");
         expect(*answerLease == items[2].payload,
             "registry routes payload loads by group and tag");
+        expect(registry.cachedItemCount() == 1U,
+            "registry reports cache ownership across mounted archives");
+        requireSuccess(
+            registry.unload(monopoly::data::EmptyDataId),
+            "unload LE_DATA_EmptyItem sentinel");
+        expect(registry.cachedItemCount() == 1U,
+            "unloading LE_DATA_EmptyItem is a cache no-op");
+        requireSuccess(
+            registry.unload(answerId),
+            "unload registry answer item");
+        expect(registry.cachedItemCount() == 0U,
+            "registry unload retires cache ownership for one DataId");
+        expect(*answerLease == items[2].payload,
+            "registry unload preserves an outstanding caller lease");
+        requireSuccess(
+            registry.unload(answerId),
+            "unload already uncached registry answer item");
+        expect(registry.cachedItemCount() == 0U,
+            "registry unload is idempotent like LE_DATA_Unload");
+
+        const auto textReload = requireValue(
+            registry.load(answerId),
+            "reload text-group answer before global cache purge");
+        const auto dialogAnswerId = monopoly::data::packDataId(10U, 2U);
+        const auto dialogLease = requireValue(
+            registry.load(dialogAnswerId),
+            "load dialog-group answer before global cache purge");
+        expect(registry.cachedItemCount() == 2U,
+            "registry cache count spans distinct mounted groups");
+        registry.clearCaches();
+        expect(registry.cachedItemCount() == 0U,
+            "registry clearCaches retires cache ownership in every bank");
+        expect(*textReload == items[2].payload &&
+               *dialogLease == items[2].payload,
+            "global cache purge preserves all outstanding caller leases");
         expectError(
             registry.metadata(monopoly::data::packDataId(9U, 99U)),
             DataErrorCode::TagOutOfRange,
