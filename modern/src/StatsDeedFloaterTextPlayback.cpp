@@ -286,7 +286,9 @@ namespace monopoly::statsui
             *ownerLabel + ':' + *rentLabel + ':' +
             *earningsLabel + ':' + *futureLabel;
 
-        if (!contentKey_ || *contentKey_ != key)
+        const bool contentChanged =
+            !contentKey_ || *contentKey_ != key;
+        if (contentChanged)
         {
             RestoreFont restore{*fontRuntime};
             if (const auto restored = fontRuntime->restoreSettings(0);
@@ -359,6 +361,13 @@ namespace monopoly::statsui
                 *surface_, std::move(image));
             if (!updated) return updated;
             contentKey_ = key;
+        }
+
+        if (visible_ && currentX_ == desiredX && contentChanged)
+        {
+            const auto forced = playback.forceRedraw(
+                *surface_, DeedFloaterTextPriority);
+            if (!forced) return forced;
         }
 
         if (!visible_ || currentX_ != desiredX)

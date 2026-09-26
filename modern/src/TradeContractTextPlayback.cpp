@@ -344,7 +344,9 @@ namespace monopoly::tradeui
             key.push_back(selected[row] ? '1' : '0');
         }
 
-        if (!contentKey_ || *contentKey_ != key)
+        const bool contentChanged =
+            !contentKey_ || *contentKey_ != key;
+        if (contentChanged)
         {
             RestoreDefaultFont restore{*fontRuntime};
             const auto settings = fontRuntime->restoreSettings(7);
@@ -426,7 +428,16 @@ namespace monopoly::tradeui
             if (!updated) return std::unexpected(updated.error());
             contentKey_ = std::move(key);
         }
-        if (visible_) return {};
+        if (visible_)
+        {
+            if (contentChanged)
+            {
+                const auto forced = playback.forceRedraw(
+                    *surface_, TradeContractTextPriority);
+                if (!forced) return forced;
+            }
+            return {};
+        }
         auto program = sequence::SequenceProgram::rawBitmap(*surface_, data::LegacyDataType::Native);
         if (!program) return std::unexpected(program.error().detail);
         if (!playback.commands().enqueue(sequence::StartSequenceCommand{

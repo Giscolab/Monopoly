@@ -114,7 +114,9 @@ namespace monopoly::tradeui
         if (!trading2) return std::unexpected(trading2.error());
         const std::string key = *trading + '\n' + *trading2;
 
-        if (!contentKey_ || *contentKey_ != key)
+        const bool contentChanged =
+            !contentKey_ || *contentKey_ != key;
+        if (contentChanged)
         {
             auto image = blankPanel();
             RestoreDefaultFont restore{fontRuntime};
@@ -146,7 +148,16 @@ namespace monopoly::tradeui
             contentKey_ = key;
         }
 
-        if (visible_) return {};
+        if (visible_)
+        {
+            if (contentChanged)
+            {
+                const auto forced = playback.forceRedraw(
+                    *surface_, TradePanelTextPriority);
+                if (!forced) return forced;
+            }
+            return {};
+        }
         if (playback.commands().pendingCount() >=
                 sequence::SequenceCommandQueue::Capacity)
             return std::unexpected(
