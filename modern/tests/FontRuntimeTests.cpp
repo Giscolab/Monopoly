@@ -127,6 +127,48 @@ namespace
         require(take(font.measure(""), "measure empty string").width == 0 &&
             take(font.render("", 0), "render empty string").pixels.empty(),
             "empty text has no fabricated glyph surface");
+
+        const std::string utf8Accent = "\xC3\xA9";
+        const auto utf8Metrics = take(font.measure(utf8Accent), "measure UTF-8 accent");
+        const auto utf16Metrics = take(font.measure(std::u16string_view(u"é")),
+            "measure UTF-16 accent");
+        require(utf8Metrics.width == utf16Metrics.width &&
+            utf8Metrics.height == utf16Metrics.height,
+            "UTF-16 language text reaches the same SDL_ttf metrics as UTF-8");
+
+        const auto utf16Image = take(font.render(std::u16string_view(u"é"), 0x00FFFFFFu),
+            "render UTF-16 accent");
+        require(utf16Image.width == static_cast<std::uint32_t>(utf16Metrics.width) &&
+            utf16Image.height == static_cast<std::uint32_t>(utf16Metrics.height),
+            "UTF-16 text renders through the same legacy one-pixel metric contract");
+
+        const std::u16string invalidHigh{static_cast<char16_t>(0xD800)};
+        const std::u16string invalidLow{static_cast<char16_t>(0xDC00)};
+        require(!font.measure(invalidHigh) && !font.render(invalidLow, 0),
+            "malformed UTF-16 is rejected instead of leaking invalid UTF-8 into SDL_ttf");
+
+        require(image.width > 2 && image.height > 1, "clip fixture has a nontrivial extent");
+        const fonts::ClipRect clip{1, 0, image.width - 2, image.height - 1};
+        const auto clipped = take(font.renderClipped("Ag", 0x80563412u, clip),
+            "clip rendered text surface");
+        require(clipped.width == clip.width && clipped.height == clip.height,
+            "text clipping returns exactly the requested in-bounds legacy rectangle");
+        for (std::uint32_t y = 0; y < clipped.height; ++y)
+        {
+            const auto sourceOffset =
+                (static_cast<std::size_t>(y) * image.width + clip.x) * 4U;
+            const auto destinationOffset =
+                static_cast<std::size_t>(y) * clipped.width * 4U;
+            require(std::equal(
+                clipped.pixels.begin() + static_cast<std::ptrdiff_t>(destinationOffset),
+                clipped.pixels.begin() + static_cast<std::ptrdiff_t>(
+                    destinationOffset + clipped.width * 4U),
+                image.pixels.begin() + static_cast<std::ptrdiff_t>(sourceOffset)),
+                "clipped RGBA rows preserve the exact source glyph pixels");
+        }
+        require(take(font.renderClipped("Ag", 0, {image.width, 0, 4, 4}),
+            "clip outside rendered extent").pixels.empty(),
+            "fully out-of-bounds clipping produces an empty surface");
     }
 
     void testLegacyWrap(const std::filesystem::path& path)
