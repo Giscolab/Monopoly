@@ -142,6 +142,13 @@ namespace monopoly::optionsui
             const auto updated = playback.runtimeBitmaps().update(
                 *slotText_[slot], *image);
             if (!updated) return std::unexpected(updated.error());
+            if (visible_)
+            {
+                const auto forced = playback.forceRedraw(
+                    *slotText_[slot],
+                    static_cast<std::uint16_t>(TextPriorityBase + slot));
+                if (!forced) return forced;
+            }
         }
         return {};
     }

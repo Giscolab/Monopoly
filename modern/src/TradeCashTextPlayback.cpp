@@ -100,6 +100,7 @@ namespace monopoly::tradeui
 
         std::vector<Published> desired;
         desired.reserve(8);
+        std::vector<data::DataId> changedTextSurfaces;
         for (std::size_t index = 0; index < visible.size(); ++index)
         {
             if (!visible[index]) continue;
@@ -172,10 +173,20 @@ namespace monopoly::tradeui
                     *textSurfaces_[index], std::move(image));
                 if (!updated) return std::unexpected(updated.error());
                 textCache_[index] = *text;
+                changedTextSurfaces.push_back(*textSurfaces_[index]);
             }
         }
 
-        if (desired == current_) return {};
+        if (desired == current_)
+        {
+            for (const auto id : changedTextSurfaces)
+            {
+                const auto forced =
+                    playback.forceRedraw(id, TradeCashTextPriority);
+                if (!forced) return forced;
+            }
+            return {};
+        }
         for (const auto& object : current_)
         {
             if (!playback.commands().enqueue(sequence::StopSequenceCommand{
