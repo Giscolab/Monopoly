@@ -18,7 +18,7 @@ Les lignes peuvent partager des dépendances. Leurs nombres ne sont pas un pourc
 
 Progression fonctionnelle : **Non établi**.
 
-Validation de référence : **132/132 suites CTest** — code `d77be96`, Windows/MSVC Debug, 26 septembre 2026.
+Validation de référence : **140/140 suites CTest** — code `cf1ba45`, Windows/MSVC Debug, 27 septembre 2026.
 
 ## Contrôles de cohérence
 
