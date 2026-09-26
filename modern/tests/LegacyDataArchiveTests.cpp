@@ -1202,6 +1202,27 @@ namespace
             DataErrorCode::TypeMismatch,
             "indexed lookup rejects a non-IndexTable source item");
 
+        const auto legacyMissing = monopoly::data::lookupIndexedDataIdLegacy(
+            registry, indexId, 999U);
+        expect(
+            legacyMissing && *legacyMissing == monopoly::data::EmptyDataId,
+            "legacy indexed lookup maps a missing key to LE_DATA_EmptyItem");
+        const auto legacyWrongType = monopoly::data::lookupIndexedDataIdLegacy(
+            registry, monopoly::data::packDataId(9U, 1U), 0U);
+        expect(
+            legacyWrongType && *legacyWrongType == monopoly::data::EmptyDataId,
+            "legacy indexed lookup maps a non-index item to LE_DATA_EmptyItem");
+        const auto legacyFound = monopoly::data::lookupIndexedDataIdLegacy(
+            registry, indexId, 7U);
+        expect(
+            legacyFound && *legacyFound == answerId,
+            "legacy indexed lookup preserves successful DataId resolution");
+        expectError(
+            monopoly::data::lookupIndexedDataIdLegacy(
+                registry, monopoly::data::packDataId(8U, 0U), 7U),
+            DataErrorCode::GroupNotMounted,
+            "legacy sentinel lookup does not hide archive or I/O failures");
+
         requireSuccess(registry.unmount(9U), "unmount text group");
         expect(registry.mountedCount() == 1U,
             "unmount removes exactly one registry group");
