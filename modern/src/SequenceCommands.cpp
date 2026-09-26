@@ -65,6 +65,12 @@ namespace monopoly::sequence
     }
 
     std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        SetSequenceVolumeCommand command)
+    {
+        return enqueueValidated(command);
+    }
+
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
         ForceRedrawSequenceCommand command)
     {
         return enqueueValidated(command);
@@ -155,6 +161,13 @@ namespace monopoly::sequence
                     outcomes_.push_back(SequenceCommandOutcome{SequenceCommandKind::SetEndingAction,
                         {}, result ? *result : 0U,
                         result ? std::nullopt : std::optional<RuntimeError>(result.error())});
+                }
+                else if constexpr (std::is_same_v<Command, SetSequenceVolumeCommand>)
+                {
+                    const auto count = runtime_.setVolumeMatching(
+                        value.dataId, value.priority, value.volume, value.wholeTree);
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::SetVolume, {}, count, {}});
                 }
                 else if constexpr (std::is_same_v<Command, ForceRedrawSequenceCommand>)
                 {
