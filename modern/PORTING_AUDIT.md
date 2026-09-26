@@ -27,74 +27,74 @@ Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chem
 
 | Poids | Zone | Ligne legacy | Ligne matrice |
 |---:|---|---|---:|
-| 4 | gameplay/runtime central | `Source/monopoly/Rule.cpp` | 269 |
-| 4 | gameplay/runtime central | `Source/monopoly/Userifce.cpp` | 280 |
-| 4 | gameplay/runtime central | `Source/monopoly/UDPsel.cpp` | 286 |
-| 4 | gameplay/runtime central | `Source/monopoly/UDChat.cpp` | 291 |
-| 3 | parcours visible joueur | `Source/monopoly/trade.cpp` | 270 |
-| 3 | parcours visible joueur | `Source/monopoly/display.cpp` | 279 |
-| 3 | parcours visible joueur | `Source/monopoly/UDBoard.cpp` | 282 |
-| 3 | parcours visible joueur | `Source/monopoly/UDIBar.cpp` | 283 |
-| 3 | parcours visible joueur | `Source/monopoly/UDOpts.cpp` | 284 |
-| 3 | parcours visible joueur | `Source/monopoly/UDStats.cpp` | 288 |
-| 3 | parcours visible joueur | `Source/monopoly/UDTrade.cpp` | 289 |
-| 3 | parcours visible joueur | `Source/artlib/L_Fonts.*', 'L_Print.*` | 313 |
-| 3 | parcours visible joueur | `cameras, viewports, background ('camera.*', 'D3DDevice.*', view code)` | 322 |
-| 2 | infrastructure ArtLib active | `Source/monopoly/Lang.cpp` | 275 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Data.*` | 308 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 310 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Seqncr.*` | 312 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 315 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Video.*` | 316 |
-| 2 | infrastructure ArtLib active | `Commandes 'L_Seqncr` | 344 |
+| 4 | gameplay/runtime central | `Source/monopoly/Rule.cpp` | 375 |
+| 4 | gameplay/runtime central | `Source/monopoly/Userifce.cpp` | 386 |
+| 4 | gameplay/runtime central | `Source/monopoly/UDPsel.cpp` | 392 |
+| 4 | gameplay/runtime central | `Source/monopoly/UDChat.cpp` | 397 |
+| 3 | parcours visible joueur | `Source/monopoly/trade.cpp` | 376 |
+| 3 | parcours visible joueur | `Source/monopoly/display.cpp` | 385 |
+| 3 | parcours visible joueur | `Source/monopoly/UDBoard.cpp` | 388 |
+| 3 | parcours visible joueur | `Source/monopoly/UDIBar.cpp` | 389 |
+| 3 | parcours visible joueur | `Source/monopoly/UDOpts.cpp` | 390 |
+| 3 | parcours visible joueur | `Source/monopoly/UDStats.cpp` | 394 |
+| 3 | parcours visible joueur | `Source/monopoly/UDTrade.cpp` | 395 |
+| 3 | parcours visible joueur | `Source/artlib/L_Fonts.*', 'L_Print.*` | 419 |
+| 3 | parcours visible joueur | `cameras, viewports, background ('camera.*', 'D3DDevice.*', view code)` | 428 |
+| 2 | infrastructure ArtLib active | `Source/monopoly/Lang.cpp` | 381 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Data.*` | 414 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 416 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Seqncr.*` | 418 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 421 |
+| 2 | infrastructure ArtLib active | `Source/artlib/L_Video.*` | 422 |
+| 2 | infrastructure ArtLib active | `Commandes 'L_Seqncr` | 450 |
 
 <details><summary>Les 43 entrees PARTIAL</summary>
 
 | Section | Ligne legacy | Ligne matrice |
 |---|---|---:|
-| Jeu Monopoly | `Source/monopoly/GameInc.cpp/.h` | 266 |
-| Jeu Monopoly | `Source/monopoly/Mess.cpp` | 268 |
-| Jeu Monopoly | `Source/monopoly/Rule.cpp` | 269 |
-| Jeu Monopoly | `Source/monopoly/trade.cpp` | 270 |
-| Jeu Monopoly | `Source/monopoly/Ai.cpp` | 271 |
-| Jeu Monopoly | `Source/monopoly/Ai_trade.cpp` | 273 |
-| Jeu Monopoly | `Source/monopoly/Ai_util.cpp` | 274 |
-| Jeu Monopoly | `Source/monopoly/Lang.cpp` | 275 |
-| Jeu Monopoly | `Source/monopoly/display.cpp` | 279 |
-| Jeu Monopoly | `Source/monopoly/Userifce.cpp` | 280 |
-| Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | 282 |
-| Jeu Monopoly | `Source/monopoly/UDIBar.cpp` | 283 |
-| Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | 284 |
-| Jeu Monopoly | `Source/monopoly/UDPieces.cpp` | 285 |
-| Jeu Monopoly | `Source/monopoly/UDPsel.cpp` | 286 |
-| Jeu Monopoly | `Source/monopoly/UDSound.cpp` | 287 |
-| Jeu Monopoly | `Source/monopoly/UDStats.cpp` | 288 |
-| Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | 289 |
-| Jeu Monopoly | `Source/monopoly/UDChat.cpp` | 291 |
-| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | 296 |
-| Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | 297 |
-| Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | 307 |
-| Services ArtLib consommes | `Source/artlib/L_Data.*` | 308 |
-| Services ArtLib consommes | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 310 |
-| Services ArtLib consommes | `Source/artlib/L_Rend3D.*` | 311 |
-| Services ArtLib consommes | `Source/artlib/L_Seqncr.*` | 312 |
-| Services ArtLib consommes | `Source/artlib/L_Fonts.*', 'L_Print.*` | 313 |
-| Services ArtLib consommes | `Source/artlib/L_Sound.*', 'L_Midi.*` | 315 |
-| Services ArtLib consommes | `Source/artlib/L_Video.*` | 316 |
-| PC3D consomme | `cameras, viewports, background ('camera.*', 'D3DDevice.*', view code)` | 322 |
-| PC3D consomme | `meshes/scenes/materials ('mesh*', 'NewMesh*', 'Scene.h', 'l_material.h')` | 323 |
-| PC3D consomme | `decodeur HMD / postload MESHX ('HMDData.h', 'NewMesh.cpp', 'hmdload.*')` | 324 |
-| Donnees et verification | `Lifecycle, lookup, metadata et ownership` | 334 |
-| Donnees et verification | `CRC global DAT` | 336 |
-| Donnees et verification | `Parseurs semantiques CNK / sequence` | 340 |
-| Donnees et verification | `Arbre runtime et execution` | 343 |
-| Donnees et verification | `Commandes 'L_Seqncr` | 344 |
-| Donnees et verification | `Transformations / tweekers` | 345 |
-| Donnees et verification | `MESHX runtime` | 346 |
-| Donnees et verification | `Render data de sequence` | 347 |
-| Donnees et verification | `Raccordement sequence -> render slots` | 348 |
-| Donnees et verification | `LANG core` | 349 |
-| Donnees et verification | `Loader BMP runtime` | 353 |
+| Jeu Monopoly | `Source/monopoly/GameInc.cpp/.h` | 372 |
+| Jeu Monopoly | `Source/monopoly/Mess.cpp` | 374 |
+| Jeu Monopoly | `Source/monopoly/Rule.cpp` | 375 |
+| Jeu Monopoly | `Source/monopoly/trade.cpp` | 376 |
+| Jeu Monopoly | `Source/monopoly/Ai.cpp` | 377 |
+| Jeu Monopoly | `Source/monopoly/Ai_trade.cpp` | 379 |
+| Jeu Monopoly | `Source/monopoly/Ai_util.cpp` | 380 |
+| Jeu Monopoly | `Source/monopoly/Lang.cpp` | 381 |
+| Jeu Monopoly | `Source/monopoly/display.cpp` | 385 |
+| Jeu Monopoly | `Source/monopoly/Userifce.cpp` | 386 |
+| Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | 388 |
+| Jeu Monopoly | `Source/monopoly/UDIBar.cpp` | 389 |
+| Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | 390 |
+| Jeu Monopoly | `Source/monopoly/UDPieces.cpp` | 391 |
+| Jeu Monopoly | `Source/monopoly/UDPsel.cpp` | 392 |
+| Jeu Monopoly | `Source/monopoly/UDSound.cpp` | 393 |
+| Jeu Monopoly | `Source/monopoly/UDStats.cpp` | 394 |
+| Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | 395 |
+| Jeu Monopoly | `Source/monopoly/UDChat.cpp` | 397 |
+| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | 402 |
+| Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | 403 |
+| Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | 413 |
+| Services ArtLib consommes | `Source/artlib/L_Data.*` | 414 |
+| Services ArtLib consommes | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 416 |
+| Services ArtLib consommes | `Source/artlib/L_Rend3D.*` | 417 |
+| Services ArtLib consommes | `Source/artlib/L_Seqncr.*` | 418 |
+| Services ArtLib consommes | `Source/artlib/L_Fonts.*', 'L_Print.*` | 419 |
+| Services ArtLib consommes | `Source/artlib/L_Sound.*', 'L_Midi.*` | 421 |
+| Services ArtLib consommes | `Source/artlib/L_Video.*` | 422 |
+| PC3D consomme | `cameras, viewports, background ('camera.*', 'D3DDevice.*', view code)` | 428 |
+| PC3D consomme | `meshes/scenes/materials ('mesh*', 'NewMesh*', 'Scene.h', 'l_material.h')` | 429 |
+| PC3D consomme | `decodeur HMD / postload MESHX ('HMDData.h', 'NewMesh.cpp', 'hmdload.*')` | 430 |
+| Donnees et verification | `Lifecycle, lookup, metadata et ownership` | 440 |
+| Donnees et verification | `CRC global DAT` | 442 |
+| Donnees et verification | `Parseurs semantiques CNK / sequence` | 446 |
+| Donnees et verification | `Arbre runtime et execution` | 449 |
+| Donnees et verification | `Commandes 'L_Seqncr` | 450 |
+| Donnees et verification | `Transformations / tweekers` | 451 |
+| Donnees et verification | `MESHX runtime` | 452 |
+| Donnees et verification | `Render data de sequence` | 453 |
+| Donnees et verification | `Raccordement sequence -> render slots` | 454 |
+| Donnees et verification | `LANG core` | 455 |
+| Donnees et verification | `Loader BMP runtime` | 459 |
 
 </details>
 
