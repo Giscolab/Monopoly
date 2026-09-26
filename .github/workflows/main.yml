@@ -42,6 +42,9 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Verify immutable retail source tree
+        run: python .github/scripts/check_source_lock.py --commit HEAD
+
       - name: Protect legacy and generated files
         if: github.event_name == 'push'
         shell: bash
