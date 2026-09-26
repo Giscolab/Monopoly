@@ -15,6 +15,13 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+env:
+  PORT_ROOT: modern
+  PORT_STATUS: modern/PORTING_STATUS.md
+  PORT_AUDIT: modern/PORTING_AUDIT.md
+  PORT_PROGRESS: modern/porting-progress.svg
+  PORT_BUILD: modern/build-ci
+
 concurrency:
   group: porting-audit-${{ github.ref }}
   cancel-in-progress: true
@@ -53,23 +60,34 @@ jobs:
             exit 1
           fi
 
+      - name: Validate CI layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in "$PORT_ROOT/CMakeLists.txt" "$PORT_STATUS" "$PORT_ROOT/PORTING_MATRIX.md" ".github/scripts/porting_audit.py" ".github/scripts/update_porting_progress.py"; do
+            if [[ ! -e "$path" ]]; then
+              echo "::error file=.github/workflows/main.yml::Required porting path is missing: $path"
+              exit 1
+            fi
+          done
+
       - name: Test porting audit tools
         run: python .github/scripts/test_porting_tools.py
 
       - name: Generate structural audit
         run: >-
           python .github/scripts/porting_audit.py
-          modern/PORTING_STATUS.md
-          modern
+          "$PORT_STATUS"
+          "$PORT_ROOT"
           --strict
-          --report modern/PORTING_AUDIT.md
+          --report "$PORT_AUDIT"
           --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Generate inventory dashboard
         run: >-
           python .github/scripts/update_porting_progress.py
-          modern/PORTING_STATUS.md
-          modern/porting-progress.svg
+          "$PORT_STATUS"
+          "$PORT_PROGRESS"
           --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Check generated diff
@@ -79,14 +97,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- modern/PORTING_AUDIT.md modern/porting-progress.svg; then
+          if git diff --quiet -- "$PORT_AUDIT" "$PORT_PROGRESS"; then
             echo "Generated audit artifacts are already current."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add modern/PORTING_AUDIT.md modern/porting-progress.svg
+          git add "$PORT_AUDIT" "$PORT_PROGRESS"
           git commit -m "Update automated porting audit"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
@@ -120,15 +138,15 @@ jobs:
 
       - name: Configure Debug build
         shell: pwsh
-        run: cmake -S modern -B modern/build-ci -G "Visual Studio 18 2026" -A x64 -DBUILD_TESTING=ON
+        run: cmake -S "$env:PORT_ROOT" -B "$env:PORT_BUILD" -G "Visual Studio 18 2026" -A x64 -DBUILD_TESTING=ON
 
       - name: Build
         shell: pwsh
-        run: cmake --build modern/build-ci --config Debug --parallel 2
+        run: cmake --build "$env:PORT_BUILD" --config Debug --parallel 2
 
       - name: Run complete CTest suite
         shell: pwsh
-        run: ctest --test-dir modern/build-ci -C Debug --output-on-failure
+        run: ctest --test-dir "$env:PORT_BUILD" -C Debug --output-on-failure
 
       - name: Publish validation summary
         if: success()
@@ -144,5 +162,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ctest-failure-log
-          path: modern/build-ci/Testing/Temporary/LastTest.log
+          path: ${{ env.PORT_BUILD }}/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
