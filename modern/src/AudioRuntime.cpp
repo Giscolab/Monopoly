@@ -5,12 +5,62 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <limits>
 #include <utility>
 
 namespace monopoly::audio
 {
+    namespace
+    {
+        struct StereoPanState
+        {
+            std::atomic<float> left{1.0F};
+            std::atomic<float> right{1.0F};
+
+            void set(std::int32_t percentage) noexcept
+            {
+                const auto gains = legacyPanGains(percentage);
+                left.store(gains.left, std::memory_order_relaxed);
+                right.store(gains.right, std::memory_order_relaxed);
+            }
+        };
+
+        void SDLCALL applyStereoPan(
+            void* userdata, const SDL_AudioSpec* spec,
+            float* buffer, int buflen) noexcept
+        {
+            if (!userdata || !spec || !buffer || buflen <= 0 || spec->channels < 2)
+                return;
+            const auto& pan = *static_cast<const StereoPanState*>(userdata);
+            const float left = pan.left.load(std::memory_order_relaxed);
+            const float right = pan.right.load(std::memory_order_relaxed);
+            const int samples = buflen / static_cast<int>(sizeof(float));
+            const int channels = static_cast<int>(spec->channels);
+            for (int sample = 0; sample + 1 < samples; sample += channels)
+            {
+                buffer[sample] *= left;
+                buffer[sample + 1] *= right;
+            }
+        }
+
+        [[nodiscard]] bool installStereoPan(
+            SDL_AudioStream* stream, StereoPanState& pan) noexcept
+        {
+            const auto device = SDL_GetAudioStreamDevice(stream);
+            return device != 0 &&
+                SDL_SetAudioPostmixCallback(device, applyStereoPan, &pan);
+        }
+
+        void uninstallStereoPan(SDL_AudioStream* stream) noexcept
+        {
+            const auto device = SDL_GetAudioStreamDevice(stream);
+            if (device != 0)
+                (void)SDL_SetAudioPostmixCallback(device, nullptr, nullptr);
+        }
+    }
+
     struct Runtime::Voice
     {
         PlaybackKey key{};
@@ -19,12 +69,16 @@ namespace monopoly::audio
         std::vector<Uint8> pcm;
         std::uint32_t sourceFrequency{};
         float gain{1.0F};
+        StereoPanState pan;
         bool loop{};
 
         ~Voice()
         {
             if (stream != nullptr)
+            {
+                uninstallStereoPan(stream);
                 SDL_DestroyAudioStream(stream);
+            }
         }
     };
     namespace
@@ -175,7 +229,8 @@ namespace monopoly::audio
         data::DataId waveDataId,
         float gain,
         bool loop,
-        std::uint32_t pitchHertz)
+        std::uint32_t pitchHertz,
+        std::int32_t panPercentage)
     {
         if (!resources_)
             return std::unexpected("audio runtime has no resource snapshot");
@@ -230,6 +285,7 @@ namespace monopoly::audio
         voice->sourceFrequency = spec.freq > 0 ?
             static_cast<std::uint32_t>(spec.freq) : 0U;
         voice->gain = clampedGain(gain);
+        voice->pan.set(panPercentage);
         voice->loop = loop;
 
         if (!SDL_SetAudioStreamGain(stream, voice->gain))
@@ -240,6 +296,9 @@ namespace monopoly::audio
                 legacyPitchFrequencyRatio(pitchHertz, voice->sourceFrequency)))
             return std::unexpected(
                 std::string("SDL_SetAudioStreamFrequencyRatio: ") + SDL_GetError());
+        if (!installStereoPan(stream, voice->pan))
+            return std::unexpected(
+                std::string("SDL_SetAudioPostmixCallback: ") + SDL_GetError());
 
         const int bytes = static_cast<int>(voice->pcm.size());
         const int copies = loop ? 3 : 1;
@@ -290,6 +349,13 @@ namespace monopoly::audio
                 voice->stream,
                 legacyPitchFrequencyRatio(hertz, voice->sourceFrequency));
         }
+    }
+
+    void Runtime::setPanning(
+        PlaybackKey key, std::int32_t percentage) noexcept
+    {
+        if (auto* voice = find(key))
+            voice->pan.set(percentage);
     }
 
     void Runtime::setLooping(PlaybackKey key, bool loop) noexcept

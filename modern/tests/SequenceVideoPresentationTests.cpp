@@ -65,6 +65,7 @@ void testAudioClockAndAbsentAudio(const test::VideoDecoderFixture& movie,const t
     video::Presentation presentation;
     checked(presentation.setGain(0.35F));
     checked(presentation.setPitch(96'000U, 48'000U));
+    presentation.setPanning(-50);
     require(!presentation.setGain(std::numeric_limits<float>::infinity()),
         "video presentation rejects non-finite sequence gain");
     checked(presentation.open(silent.file(),true,decoderOptions()));
@@ -81,9 +82,10 @@ void testAudioClockAndAbsentAudio(const test::VideoDecoderFixture& movie,const t
     require(clock.elapsedMicroseconds>0,"audio clock advances while sequence time remains exactly zero");
     checked(presentation.setGain(0.20F));
     checked(presentation.setPitch(48'000U, 48'000U));
+    presentation.setPanning(50);
     pump();
     require(clock.consumedAudioBytes>0,
-        "live video audio stream accepts sequence gain and pitch changes without resetting playback");
+        "live video audio stream accepts sequence gain, pitch and pan changes without resetting playback");
     pump(true); const auto paused=clock.elapsedMicroseconds;
     std::this_thread::sleep_for(50ms); pump(true);
     require(clock.elapsedMicroseconds==paused,"pause freezes the presented media clock");

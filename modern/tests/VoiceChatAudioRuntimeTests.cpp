@@ -1,6 +1,7 @@
 #include "AudioRuntime.hpp"
 #include "Gsm610Codec.hpp"
 #include "Messaging.hpp"
+#include "SyntheticSequenceResources.hpp"
 #include "VoiceChatAudioRuntime.hpp"
 #include "VoiceChatPacket.hpp"
 
@@ -128,6 +129,44 @@ namespace
             "pitch ratio clamps to SDL's documented upper limit");
         require(audio::legacyPitchFrequencyRatio(22'050U, 0U) == 1.0F,
             "invalid source frequency safely preserves normal playback speed");
+    }
+
+    void testLegacyPanGains()
+    {
+        const auto fullLeft = audio::legacyPanGains(-100);
+        const auto halfLeft = audio::legacyPanGains(-50);
+        const auto centre = audio::legacyPanGains(0);
+        const auto halfRight = audio::legacyPanGains(50);
+        const auto fullRight = audio::legacyPanGains(100);
+        const auto clampedLeft = audio::legacyPanGains(-127);
+        const auto clampedRight = audio::legacyPanGains(127);
+        require(fullLeft.left == 1.0F && fullLeft.right == 0.0F &&
+            halfLeft.left == 1.0F && halfLeft.right == 0.5F &&
+            centre.left == 1.0F && centre.right == 1.0F &&
+            halfRight.left == 0.5F && halfRight.right == 1.0F &&
+            fullRight.left == 0.0F && fullRight.right == 1.0F &&
+            clampedLeft.right == 0.0F && clampedRight.left == 0.0F,
+            "legacy pan preserves -100 left, zero centre, +100 right and clamps endpoints");
+    }
+
+    void testLegacy2DSoundMix()
+    {
+        const auto left = audio::legacy2DSoundMix(32, 0);
+        const auto centre = audio::legacy2DSoundMix(32, 400);
+        const auto right = audio::legacy2DSoundMix(32, 800);
+        const auto halfOffLeft = audio::legacy2DSoundMix(32, -500);
+        const auto silentRight = audio::legacy2DSoundMix(32, 1800);
+        const auto clampedVolume = audio::legacy2DSoundMix(255, 400);
+
+        require(left.volume == 32 && left.panning == -100 &&
+            centre.volume == 32 && centre.panning == 0 &&
+            right.volume == 32 && right.panning == 100,
+            "retail 2D sound maps the 800-pixel viewport from full left to full right");
+        require(halfOffLeft.volume == 16 && halfOffLeft.panning == -100 &&
+            silentRight.volume == 0 && silentRight.panning == 100,
+            "retail 2D sound fades linearly to silence 1000 pixels off screen");
+        require(clampedVolume.volume == 100 && clampedVolume.panning == 0,
+            "retail 2D sound clamps the base volume before positional fading");
     }
 
     void testLegacyWaveDuration()
@@ -401,6 +440,10 @@ int main()
         // a user environment hint from accidentally selecting physical audio.
         testLegacyPitchFrequencyRatio();
         std::cout << "[PASS] retail absolute pitch conversion and SDL ratio bounds\n";
+        testLegacyPanGains();
+        std::cout << "[PASS] retail DirectSound pan balance conversion\n";
+        testLegacy2DSoundMix();
+        std::cout << "[PASS] retail 2D positional pan and off-screen volume fade\n";
         testLegacyWaveDuration();
         std::cout << "[PASS] retail RIFF/WAVE duration contract and malformed input handling\n";
         require(SDL_WasInit(SDL_INIT_AUDIO) == 0, "audio has not been initialized before driver selection");

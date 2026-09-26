@@ -119,6 +119,23 @@ namespace
 
     DataBytes dimensionality(std::uint8_t value)
     { return chunk(129, DataBytes{static_cast<std::byte>(value)}); }
+    DataBytes offset2D(std::int32_t x, std::int32_t y)
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint32_t>(x));
+        word(payload, static_cast<std::uint32_t>(y));
+        return chunk(130, payload);
+    }
+    DataBytes boundingBox2D(std::int32_t left, std::int32_t top,
+        std::int32_t right, std::int32_t bottom)
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint32_t>(left));
+        word(payload, static_cast<std::uint32_t>(top));
+        word(payload, static_cast<std::uint32_t>(right));
+        word(payload, static_cast<std::uint32_t>(bottom));
+        return chunk(136, payload);
+    }
     DataBytes offset3D(std::uint32_t xBits, std::uint32_t yBits, std::uint32_t zBits)
     {
         DataBytes payload;
@@ -915,11 +932,19 @@ namespace
         append(soundAttributes, soundPitch(22050));
         append(soundAttributes, soundVolume(70));
         append(soundAttributes, soundPanning(-25));
+        DataBytes positionedSoundAttributes;
+        append(positionedSoundAttributes, dimensionality(2));
+        append(positionedSoundAttributes, offset2D(300, 0));
+        append(positionedSoundAttributes, boundingBox2D(100, 0, 100, 0));
         const std::array soundItems{
             ArchiveBuildItem{LegacyDataType::Chunky,
                 sound(waveId, true, 0, soundAttributes)},
             ArchiveBuildItem{LegacyDataType::Wave,
-                {std::byte{'R'}, std::byte{'I'}, std::byte{'F'}, std::byte{'F'}}}
+                {std::byte{'R'}, std::byte{'I'}, std::byte{'F'}, std::byte{'F'}}},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sound(waveId, true, 0, {})},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sound(waveId, true, 0, positionedSoundAttributes)}
         };
         DataBankRegistry soundRegistry;
         (void)archive(fixture.root / "volume-sound.dat", soundItems, soundRegistry);
@@ -943,6 +968,26 @@ namespace
             initialSound && initialSound->pitch == 22050 &&
             initialSound->volume == 70 && initialSound->panning == -25,
             "static DAT pitch volume and panning reach the active sound intent");
+
+        SequenceRuntime defaultSoundRuntime;
+        const auto defaultSoundStarted = defaultSoundRuntime.start(
+            program(soundRegistry, 2), 45);
+        expect(defaultSoundStarted.has_value() &&
+            defaultSoundRuntime.soundInstances().size() == 1 &&
+            defaultSoundRuntime.soundInstances().front().volume == 32,
+            "sound without volume attribute starts at Monopoly's retail 32 percent level");
+
+        SequenceRuntime positionedSoundRuntime;
+        const auto positionedSoundStarted = positionedSoundRuntime.start(
+            program(soundRegistry, 3), 46);
+        const auto positionedIntent = positionedSoundRuntime.soundInstances();
+        expect(positionedSoundStarted.has_value() &&
+            positionedIntent.size() == 1 &&
+            positionedIntent.front().dimensionality == 2 &&
+            positionedIntent.front().screenCenterX2D &&
+            *positionedIntent.front().screenCenterX2D == 400,
+            "2D sound intent carries the retail transformed bounding-box centre");
+
         expect(soundRuntime.setVolume(soundRoot, 25).has_value() &&
             soundRuntime.soundInstances().front().volume == 25,
             "direct sequence volume updates active sound intent");
@@ -959,7 +1004,9 @@ namespace
         append(videoAttributes, soundPanning(30));
         const std::array videoItems{
             ArchiveBuildItem{LegacyDataType::Chunky,
-                video(0, videoAttributes)}
+                video(0, videoAttributes)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                video(0, {})}
         };
         DataBankRegistry videoRegistry;
         (void)archive(fixture.root / "volume-video.dat", videoItems, videoRegistry, 3);
@@ -976,6 +1023,21 @@ namespace
         expect(initialVideo && initialVideo->pitch == 24000 &&
             initialVideo->volume == 65 && initialVideo->panning == 30,
             "static DAT audio attributes also initialize video runtime audio state");
+
+        const auto defaultVideoProgram = SequenceProgram::load(
+            videoRegistry, packDataId(3, 1));
+        expect(defaultVideoProgram.has_value(), "default-volume video program loads");
+        if (defaultVideoProgram)
+        {
+            SequenceRuntime defaultVideoRuntime;
+            const auto defaultVideoStarted =
+                defaultVideoRuntime.start(*defaultVideoProgram, 10);
+            expect(defaultVideoStarted.has_value() &&
+                defaultVideoRuntime.videoInstances().size() == 1 &&
+                defaultVideoRuntime.videoInstances().front().volume == 32,
+                "video without volume attribute starts at Monopoly's retail 32 percent level");
+        }
+
         expect(videoRuntime.setVolumeMatching(packDataId(3, 0), 9, 35) == 1 &&
             videoRuntime.inspect(videoRoot)->volume == 35,
             "LE_SEQNCR_SetVolume targets video sequences as in ArtLib");

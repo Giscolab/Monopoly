@@ -35,6 +35,70 @@ namespace monopoly::audio
         return ratio < 0.01F ? 0.01F : ratio > 100.0F ? 100.0F : ratio;
     }
 
+    struct StereoPanGains
+    {
+        float left{1.0F};
+        float right{1.0F};
+    };
+
+    // Source/artlib/L_Sound.cpp::LE_SOUND_SetPanBufSnd. The retail
+    // nLogVolume table encodes this percentage balance as DirectSound dB:
+    // -100 is full left, 0 leaves both channels unchanged, +100 is full right.
+    [[nodiscard]] constexpr StereoPanGains legacyPanGains(
+        std::int32_t percentage) noexcept
+    {
+        const auto pan = percentage < -100 ? -100 :
+            percentage > 100 ? 100 : percentage;
+        if (pan <= 0)
+            return {1.0F, static_cast<float>(pan + 100) / 100.0F};
+        return {static_cast<float>(100 - pan) / 100.0F, 1.0F};
+    }
+
+    struct Legacy2DSoundMix
+    {
+        std::uint8_t volume{};
+        std::int8_t panning{};
+    };
+
+    // Source/artlib/L_Rend2D.cpp::SequenceMoved. Monopoly's 2D slots use
+    // the 800-pixel virtual screen and fade sounds to silence 1000 pixels
+    // beyond either edge.
+    [[nodiscard]] constexpr Legacy2DSoundMix legacy2DSoundMix(
+        std::uint8_t baseVolume, std::int32_t centerX,
+        std::int32_t left = 0, std::int32_t right = 800,
+        std::int32_t quietDistance = 1000) noexcept
+    {
+        std::int32_t volume = baseVolume > 100U ? 100 : baseVolume;
+        if (right <= left || quietDistance <= 0)
+            return {static_cast<std::uint8_t>(volume), 0};
+
+        const auto rawPan = static_cast<std::int32_t>(
+            (200LL * (static_cast<std::int64_t>(centerX) - left)) /
+            (right - left) - 100LL);
+        std::int32_t pan = rawPan;
+        std::int64_t distance{};
+        if (pan < -100)
+        {
+            pan = -100;
+            distance = static_cast<std::int64_t>(left) - centerX;
+        }
+        else if (pan > 100)
+        {
+            pan = 100;
+            distance = static_cast<std::int64_t>(centerX) - right;
+        }
+
+        if (distance >= quietDistance)
+            volume = 0;
+        else if (distance > 0)
+            volume = static_cast<std::int32_t>(
+                static_cast<std::int64_t>(volume) *
+                (quietDistance - distance) / quietDistance);
+
+        return {static_cast<std::uint8_t>(volume),
+            static_cast<std::int8_t>(pan)};
+    }
+
     enum class PlaybackDomain : std::uint8_t
     {
         Sequence,
@@ -65,11 +129,13 @@ namespace monopoly::audio
             data::DataId waveDataId,
             float gain = 1.0F,
             bool loop = false,
-            std::uint32_t pitchHertz = 0U);
+            std::uint32_t pitchHertz = 0U,
+            std::int32_t panPercentage = 0);
         void stop(PlaybackKey key) noexcept;
         void stopAll() noexcept;
         void setGain(PlaybackKey key, float gain) noexcept;
         void setPitch(PlaybackKey key, std::uint32_t hertz) noexcept;
+        void setPanning(PlaybackKey key, std::int32_t percentage) noexcept;
         void setLooping(PlaybackKey key, bool loop) noexcept;
         void update() noexcept;
         [[nodiscard]] bool active(PlaybackKey key) const noexcept;

@@ -50,6 +50,7 @@ namespace monopoly::video
         [[nodiscard]] std::expected<void, std::string> setGain(float gain);
         [[nodiscard]] std::expected<void, std::string> setPitch(
             std::uint32_t hertz, std::uint32_t originalHertz);
+        void setPanning(std::int32_t percentage) noexcept;
         [[nodiscard]] bool videoDrained() const;
         void stop() noexcept;
     private:

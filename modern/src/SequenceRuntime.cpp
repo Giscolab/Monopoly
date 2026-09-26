@@ -1,6 +1,7 @@
 #include "SequenceRuntime.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -64,6 +65,11 @@ namespace monopoly::sequence
                 !std::holds_alternative<data::SequenceVideoData>(record.data))
                 return result;
 
+            // Monopoly's C_ArtLib.h sets CE_ARTLIB_SeqncrDefaultSoundLevelPercent
+            // to 32. L_Seqncr.cpp applies that default to sound and video nodes
+            // before any SET_SOUND_VOLUME attribute overrides it.
+            result.volume = 32;
+
             for (const auto& attribute : attributes.values)
             {
                 if (const auto* pitch =
@@ -108,7 +114,7 @@ namespace monopoly::sequence
             return {};
         }
 
-        std::optional<data::Sequence2DBoundingBoxAttribute> videoBoundingBox(
+        std::optional<data::Sequence2DBoundingBoxAttribute> boundingBox2D(
             const data::LegacySequenceAttributes& attributes)
         {
             for (const auto& attribute : attributes.values)
@@ -116,6 +122,43 @@ namespace monopoly::sequence
                     std::get_if<data::Sequence2DBoundingBoxAttribute>(&attribute))
                     return *box;
             return std::nullopt;
+        }
+
+        std::int32_t legacyRound2D(float value) noexcept
+        {
+            const auto rounded = std::nearbyint(static_cast<double>(value));
+            return static_cast<std::int32_t>(std::clamp(
+                rounded,
+                static_cast<double>(std::numeric_limits<std::int32_t>::min()),
+                static_cast<double>(std::numeric_limits<std::int32_t>::max())));
+        }
+
+        std::int32_t transformPointX(
+            const Matrix2D& matrix, std::int32_t x, std::int32_t y) noexcept
+        {
+            const auto& m = matrix.values;
+            const float newX = m[0] * static_cast<float>(x) +
+                m[3] * static_cast<float>(y) + m[6];
+            const float newW = m[2] * static_cast<float>(x) +
+                m[5] * static_cast<float>(y) + m[8];
+            return newW == 0.0F ? 0 : legacyRound2D(newX / newW);
+        }
+
+        std::int32_t soundCenterX2D(
+            const data::LegacySequenceAttributes& attributes,
+            const Matrix2D& worldTransform) noexcept
+        {
+            const auto box = boundingBox2D(attributes);
+            const std::int32_t left = box ? box->left : 0;
+            const std::int32_t right = box ? box->right : 0;
+            const std::int32_t top = box ? box->top : 0;
+            const std::int32_t bottom = box ? box->bottom : 0;
+            const std::int64_t sum =
+                static_cast<std::int64_t>(transformPointX(worldTransform, left, top)) +
+                transformPointX(worldTransform, right, top) +
+                transformPointX(worldTransform, left, bottom) +
+                transformPointX(worldTransform, right, bottom);
+            return static_cast<std::int32_t>(sum / 4);
         }
 
         float initialCameraFieldOfView(const data::LegacySequenceRecord& record,
@@ -1100,10 +1143,18 @@ namespace monopoly::sequence
                 const auto& definition = node->definition();
                 if (definition.contentsDataId &&
                     std::holds_alternative<data::SequenceSoundData>(definition.record.data))
+                {
+                    std::optional<std::int32_t> centerX;
+                    if (node->dimensionality == 2 &&
+                        std::holds_alternative<Matrix2D>(node->worldTransform))
+                        centerX = soundCenterX2D(
+                            definition.attributes,
+                            std::get<Matrix2D>(node->worldTransform));
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
-                        node->clock.endingAction(), node->pitch,
-                        node->volume, node->panning});
+                        node->clock.endingAction(), node->dimensionality,
+                        node->pitch, node->volume, node->panning, centerX});
+                }
                 self(self, node->children);
             }
         };
@@ -1129,7 +1180,7 @@ namespace monopoly::sequence
                         node->clock.clock(),
                         std::get<data::SequenceVideoData>(definition.record.data),
                         videoFileName(definition.attributes),
-                        videoBoundingBox(definition.attributes),
+                        boundingBox2D(definition.attributes),
                         std::get<Matrix2D>(node->worldTransform),
                         node->clock.endingAction(), definition.binkDoubleSize,
                         node->clock.elapsedParentClock(), node->pitch,

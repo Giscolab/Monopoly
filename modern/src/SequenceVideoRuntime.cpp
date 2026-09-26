@@ -359,6 +359,7 @@ namespace monopoly::video
             const auto pitch = entry.presentation->setPitch(
                 intent.pitch, metadata.audioSampleRate);
             if (!pitch) return std::unexpected(pitch.error());
+            entry.presentation->setPanning(intent.panning);
             const auto clock = entry.presentation->pump(
                 *sequenceTime, paused || entry.runtime.status().ended);
             if (!clock) return std::unexpected(clock.error());

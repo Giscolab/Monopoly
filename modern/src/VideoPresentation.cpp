@@ -2,6 +2,7 @@
 #include "AudioRuntime.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 
@@ -13,6 +14,51 @@ namespace monopoly::video
         constexpr int MaximumQueuedAudio = static_cast<int>(BytesPerSecond / 2U);
         std::string sdlError(const char* operation)
         { return std::string(operation) + ": " + SDL_GetError(); }
+
+        struct StereoPanState
+        {
+            std::atomic<float> left{1.0F};
+            std::atomic<float> right{1.0F};
+            void set(std::int32_t percentage) noexcept
+            {
+                const auto gains = audio::legacyPanGains(percentage);
+                left.store(gains.left, std::memory_order_relaxed);
+                right.store(gains.right, std::memory_order_relaxed);
+            }
+        };
+
+        void SDLCALL applyStereoPan(
+            void* userdata, const SDL_AudioSpec* spec,
+            float* buffer, int buflen) noexcept
+        {
+            if (!userdata || !spec || !buffer || buflen <= 0 || spec->channels < 2)
+                return;
+            const auto& pan = *static_cast<const StereoPanState*>(userdata);
+            const float left = pan.left.load(std::memory_order_relaxed);
+            const float right = pan.right.load(std::memory_order_relaxed);
+            const int samples = buflen / static_cast<int>(sizeof(float));
+            const int channels = static_cast<int>(spec->channels);
+            for (int sample = 0; sample + 1 < samples; sample += channels)
+            {
+                buffer[sample] *= left;
+                buffer[sample + 1] *= right;
+            }
+        }
+
+        [[nodiscard]] bool installStereoPan(
+            SDL_AudioStream* stream, StereoPanState& pan) noexcept
+        {
+            const auto device = SDL_GetAudioStreamDevice(stream);
+            return device != 0 &&
+                SDL_SetAudioPostmixCallback(device, applyStereoPan, &pan);
+        }
+
+        void uninstallStereoPan(SDL_AudioStream* stream) noexcept
+        {
+            const auto device = SDL_GetAudioStreamDevice(stream);
+            if (device != 0)
+                (void)SDL_SetAudioPostmixCallback(device, nullptr, nullptr);
+        }
     }
     std::expected<data::LegacyBitmapRGBA8, std::string> prepareVideoFrame(
         DecodedVideoFrame frame, const data::SequenceVideoData& options)
@@ -89,10 +135,22 @@ namespace monopoly::video
         std::uint64_t lastElapsed{};
         float gain{1.0F};
         float frequencyRatio{1.0F};
-        ~Impl() { if (stream) SDL_DestroyAudioStream(stream); }
+        StereoPanState pan;
+        ~Impl()
+        {
+            if (stream)
+            {
+                uninstallStereoPan(stream);
+                SDL_DestroyAudioStream(stream);
+            }
+        }
         void clearAudio()
         {
-            if (stream) SDL_DestroyAudioStream(stream);
+            if (stream)
+            {
+                uninstallStereoPan(stream);
+                SDL_DestroyAudioStream(stream);
+            }
             stream = nullptr;
             resumed = flushed = tailAnchored = false;
             submitted = consumed = 0;
@@ -154,6 +212,11 @@ namespace monopoly::video
         return {};
     }
 
+    void Presentation::setPanning(std::int32_t percentage) noexcept
+    {
+        impl_->pan.set(percentage);
+    }
+
     std::expected<PresentationClock, std::string> Presentation::pump(
         std::uint64_t sequenceTime, bool paused)
     {
@@ -187,6 +250,8 @@ namespace monopoly::video
             if (!SDL_SetAudioStreamFrequencyRatio(
                     state.stream, state.frequencyRatio))
                 return std::unexpected(sdlError("set initial video audio pitch"));
+            if (!installStereoPan(state.stream, state.pan))
+                return std::unexpected(sdlError("set video audio panning callback"));
         }
         int queued = SDL_GetAudioStreamQueued(state.stream);
         if (queued < 0) return std::unexpected(sdlError("query video audio queue"));

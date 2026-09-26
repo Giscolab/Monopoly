@@ -1494,13 +1494,23 @@ namespace monopoly::engine
             const audio::PlaybackKey key{audio::PlaybackDomain::Sequence, instance.node};
             const bool known = std::find(activeSequenceSounds.begin(),
                 activeSequenceSounds.end(), instance.node) != activeSequenceSounds.end();
+            std::uint8_t effectiveVolume = instance.volume;
+            std::int32_t pan = instance.dimensionality == 0 ?
+                static_cast<std::int32_t>(instance.panning) : 0;
+            if (instance.dimensionality == 2 && instance.screenCenterX2D)
+            {
+                const auto spatial = audio::legacy2DSoundMix(
+                    instance.volume, *instance.screenCenterX2D);
+                effectiveVolume = spatial.volume;
+                pan = spatial.panning;
+            }
             const float gain =
-                static_cast<float>(instance.volume) / 100.0F;
+                static_cast<float>(effectiveVolume) / 100.0F;
             if (!known)
             {
                 const auto started = output->play(
-                    key, instance.contentsDataId,
-                    gain, instance.endingAction == 3, instance.pitch);
+                    key, instance.contentsDataId, gain,
+                    instance.endingAction == 3, instance.pitch, pan);
                 if (!started)
                     return std::unexpected(started.error());
             }
@@ -1508,6 +1518,7 @@ namespace monopoly::engine
             {
                 output->setGain(key, gain);
                 output->setPitch(key, instance.pitch);
+                output->setPanning(key, pan);
                 output->setLooping(key, instance.endingAction == 3);
             }
             next.push_back(instance.node);

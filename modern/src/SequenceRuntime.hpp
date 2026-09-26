@@ -169,9 +169,11 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
         std::uint8_t endingAction{};
+        std::uint8_t dimensionality{};
         std::uint16_t pitch{};
         std::uint8_t volume{100};
         std::int8_t panning{};
+        std::optional<std::int32_t> screenCenterX2D;
     };
     struct SequenceVideoInstanceView
     {
