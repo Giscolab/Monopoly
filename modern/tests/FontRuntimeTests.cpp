@@ -67,6 +67,17 @@ namespace
         font.setStrikeOut(true);
         font.setWeight(2000);
         require(font.settings().weight == 1000, "weight remains within the legacy style range");
+        const auto resetPath = font.settings().fontPath;
+        const auto resetFamily = font.settings().familyName;
+        const int resetSize = font.settings().size;
+        font.resetCharacteristics();
+        require(font.settings().weight == 400 &&
+            !font.settings().italic && !font.settings().underline &&
+            !font.settings().strikeOut &&
+            font.settings().size == resetSize &&
+            font.settings().fontPath == resetPath &&
+            font.settings().familyName == resetFamily,
+            "ResetCharacteristics resets retail styles without replacing font or size");
         checked(font.restoreSettings(0), "restore display font after chat styling");
         require(font.settings() == original, "font slots restore size, family and every style characteristic");
         const auto before = take(font.measure("Arial sample"), "measure before rejected update");
