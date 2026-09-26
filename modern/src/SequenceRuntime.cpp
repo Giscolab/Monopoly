@@ -375,7 +375,60 @@ namespace monopoly::sequence
         auto result = load(resources->banks(), id, offset, limits);
         if (!result) return result;
         // Created privately above; no mutable alias is exposed to callers.
-        std::const_pointer_cast<SequenceProgram>(*result)->resources_ = std::move(resources);
+        auto program = std::const_pointer_cast<SequenceProgram>(*result);
+        const auto metadata = resources->banks().metadata(id);
+        if (!metadata)
+            return std::unexpected(caused(RuntimeErrorCode::DataFailure,
+                id, offset, metadata.error()));
+
+        const auto preload = [&](data::DataId contents, std::size_t recordOffset)
+            -> std::expected<void, RuntimeError>
+        {
+            // Absolute EmptyItem is legal; relative tag zero was already
+            // resolved with the containing group while building descriptions.
+            if (contents == data::EmptyDataId) return {};
+            auto bytes = resources->banks().load(contents);
+            if (!bytes)
+            {
+                auto failure = caused(RuntimeErrorCode::DataFailure,
+                    contents, recordOffset, bytes.error());
+                failure.detail = "sequence preload failed: " + bytes.error().detail;
+                return std::unexpected(std::move(failure));
+            }
+            // Main.cpp requests Load without AddRef. Release this local lease
+            // now; the archive cache retains the item subject to its LRU budget.
+            return {};
+        };
+
+        // Main.cpp:342 enables PreloadData for Start. PrepareSequenceData in
+        // L_Seqncr.cpp:9257-9353 loads raw data, or only direct bitmap/sound
+        // children of a top-level grouping. It deliberately does not preload
+        // video files or recursively traverse indirect/grouping dependencies.
+        // Do not pin all prepared assets: UseReferenceCounts is false, so cache
+        // pressure may evict one before the first render/audio update, as in Source.
+        if (metadata->type != data::LegacyDataType::Chunky)
+        {
+            if (auto loaded = preload(id, offset); !loaded)
+                return std::unexpected(loaded.error());
+        }
+        else if (program->descriptions_.front().record.chunk.id == 1)
+        {
+            for (const auto childIndex : program->descriptions_.front().childDescriptions)
+            {
+                const auto& child = program->descriptions_[childIndex];
+                if ((std::holds_alternative<data::SequenceBitmapData>(child.record.data) ||
+                     std::holds_alternative<data::SequenceSoundData>(child.record.data)) &&
+                    child.contentsDataId)
+                {
+                    if (auto loaded = preload(*child.contentsDataId,
+                            child.record.chunk.headerOffset); !loaded)
+                        return std::unexpected(loaded.error());
+                }
+            }
+            if (auto loaded = preload(id, offset); !loaded)
+                return std::unexpected(loaded.error());
+        }
+        program->resources_ = std::move(resources);
         return result;
     }
     std::span<const SequenceDescription> SequenceProgram::descriptions() const noexcept

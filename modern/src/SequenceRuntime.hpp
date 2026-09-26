@@ -52,8 +52,8 @@ namespace monopoly::sequence
     // Immutable, bounded description DAG. Shared sublists are not expanded
     // exponentially; cycles are rejected by (DATA ID, chunk offset). Every
     // CNK lease needed by the supported tree is acquired before publication.
-    // Currently executable: grouping/indirect, 2D bitmap, 3D mesh, 3D camera and
-    // transform/FOV tweekers. Private attributes are immutable input.
+    // Currently executable: grouping/indirect, 2D bitmap, sound, video, 3D mesh,
+    // 3D camera and transform/FOV tweekers. Attributes are immutable input.
     // Other decoded kinds and attributes fail explicitly; no fake renderer.
     class SequenceProgram final
     {
@@ -61,9 +61,13 @@ namespace monopoly::sequence
         [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
         load(const data::DataBankRegistry& registry, data::DataId id,
             std::size_t offset = 0, DescriptionLimits limits = {});
+        // Runtime loading also applies Monopoly's default PrepareSequenceData:
+        // raw assets, or the direct bitmap/sound children of a grouping. As in
+        // Main.cpp, UseReferenceCounts is false: the warmed cache stays evictable.
         [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
         load(std::shared_ptr<const data::ResourceSnapshot> resources, data::DataId id,
-            std::size_t offset = 0, DescriptionLimits limits = {});        [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
+            std::size_t offset = 0, DescriptionLimits limits = {});
+        [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
         rawBitmap(data::DataId id, data::LegacyDataType sourceType,
             DescriptionLimits limits = {});
         // External media is owned by the video backend. Its real EOF, not a
