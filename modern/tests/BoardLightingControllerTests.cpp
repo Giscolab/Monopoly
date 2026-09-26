@@ -66,6 +66,14 @@ namespace
             near(start->spotlight.color[1], 0.997F) &&
             near(start->spotlight.color[2], 0.997F),
             "spotlight colour begins at white and moves by 0.003 per tick");
+        expect(start &&
+            start->spotlight.direction == std::array<float, 3>{0.0F, -1.0F, 0.0F} &&
+            start->spotlight.attenuation == std::array<float, 3>{0.0F, 1.0F, 0.0F} &&
+            near(start->spotlight.range, 300.0F) &&
+            near(start->spotlight.falloff, 4.0F) &&
+            near(start->spotlight.theta, 3.14159265358979323846F / 7.0F) &&
+            near(start->spotlight.phi, 3.14159265358979323846F / 2.0F),
+            "spotlight preserves retail direction, attenuation, range, falloff and cone");
 
         inputs.tick = 106;
         inputs.numberOfTicks = 105;
