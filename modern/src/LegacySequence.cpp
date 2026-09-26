@@ -17,6 +17,14 @@ namespace monopoly::data
                 (std::to_integer<std::uint32_t>(bytes[offset + 3]) << 24U);
         }
 
+        std::uint16_t readU16(std::span<const std::byte> bytes,
+            std::size_t offset) noexcept
+        {
+            return static_cast<std::uint16_t>(
+                std::to_integer<std::uint8_t>(bytes[offset]) |
+                (std::to_integer<std::uint8_t>(bytes[offset + 1]) << 8U));
+        }
+
         std::int16_t readI16(std::span<const std::byte> bytes,
             std::size_t offset) noexcept
         {
