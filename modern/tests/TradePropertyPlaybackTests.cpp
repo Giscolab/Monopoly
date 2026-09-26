@@ -1,4 +1,5 @@
 #include "TradePropertyPlayback.hpp"
+#include "IBarLayout.hpp"
 #include "SyntheticSequenceResources.hpp"
 
 #include <iostream>
@@ -220,6 +221,74 @@ namespace
             "leaving Trade stops every remaining static deed");
     }
 
+    void testTradeDeedHover()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        tradeui::PropertyPlayback deeds;
+        auto game = propertyGame();
+        tradeui::State state{};
+        require(tradeui::beginLocalTrade(state, game, 0),
+            "hover fixture initializes local trade");
+        const auto projection = tradeui::projectProperties(state, game);
+        mouse::State pointer{};
+        pointer.inside = true;
+        pointer.x = projection.hitRects[0][5].left + 1;
+        pointer.y = projection.hitRects[0][5].top + 1;
+        const auto front = data::packDataId(data::LegacyGroupId::LanguageGraphics,
+            static_cast<data::DataTag>(0x0CD0 + ibar::layout::propertyIndex(5)));
+        const auto back = data::packDataId(data::LegacyGroupId::LanguageGraphics,
+            static_cast<data::DataTag>(0x0B53 + ibar::layout::propertyIndex(5)));
+        auto sync = [&](std::uint64_t tick, display::Screen2D view = display::Screen2D::Trade)
+        {
+            require(deeds.sync(state, game, view, tick * 1000 / 60,
+                    playback, pointer, tick).has_value() &&
+                    playback.update(static_cast<std::int32_t>(tick)).has_value(),
+                "Trade hover transition publishes successfully");
+        };
+        sync(0);
+        sync(36);
+        require(playback.runtime().matching(front, tradeui::TradeDeedHoverPriority).empty(),
+            "Trade hover waits strictly more than 36 ticks");
+        sync(37);
+        const auto* popup = object(playback, front, tradeui::TradeDeedHoverPriority);
+        require(popup && popup->worldTransform.values[6] == 600 &&
+                popup->worldTransform.values[7] == -2,
+            "normal Trade hover shows front at (600,-2), priority 1001");
+
+        game.squares[5].mortgaged = true;
+        sync(38);
+        require(playback.runtime().matching(front, tradeui::TradeDeedHoverPriority).empty() &&
+                playback.runtime().matching(back, tradeui::TradeDeedHoverPriority).size() == 1,
+            "mortgaging under stationary pointer switches immediately to deed back");
+
+        state.contractDialogVisible = true;
+        sync(39);
+        require(playback.runtime().matching(back, tradeui::TradeDeedHoverPriority).empty(),
+            "opening contract panel clears hover for the legacy check frame");
+        sync(40);
+        popup = object(playback, back, tradeui::TradeDeedHoverPriority);
+        require(popup && popup->worldTransform.values[6] == 0 &&
+                popup->worldTransform.values[7] == -2,
+            "Future/Immunity panel moves deed hover to (0,-2) without restarting delay");
+
+        state.cashDialogVisible = true;
+        sync(41);
+        require(playback.runtime().matching(back, tradeui::TradeDeedHoverPriority).empty(),
+            "cash dialog suppresses Trade deed hover");
+        state.cashDialogVisible = false;
+        sync(42);
+        sync(78);
+        require(playback.runtime().matching(back, tradeui::TradeDeedHoverPriority).empty(),
+            "cash dialog closure requires a fresh hover delay");
+        sync(79);
+        require(playback.runtime().matching(back, tradeui::TradeDeedHoverPriority).size() == 1,
+            "hover returns after fresh 37 tick delay");
+        sync(80, display::Screen2D::Portfolio);
+        require(playback.runtime().matching(back, tradeui::TradeDeedHoverPriority).empty(),
+            "leaving Trade removes its hover deed");
+    }
+
     void testTransactionalFailures()
     {
         auto game = propertyGame();
@@ -261,6 +330,7 @@ int main()
         testDataIds();
         testStaticLifecycleAndAnimatedMoveBetweenBoxes();
         testTransactionalFailures();
+        testTradeDeedHover();
         return 0;
     }
     catch (const std::exception& error)

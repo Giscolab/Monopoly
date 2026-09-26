@@ -186,6 +186,12 @@ namespace monopoly::rules::board
     }
 
 
+    const SquareDefinition& originalDefinition(SquareType square)
+    {
+        return OriginalDefinitions[static_cast<std::size_t>(square)];
+    }
+
+
     PropertySet propertyBit(
         SquareType square)
     {

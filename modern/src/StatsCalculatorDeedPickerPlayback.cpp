@@ -29,7 +29,7 @@ namespace monopoly::statsui
 
         [[nodiscard]] std::vector<CalculatorDeedPickerPlayback::Published>
         desiredPicker(const CalculatorUIState& ui, int city,
-            display::Screen2D desiredView)
+            display::Screen2D desiredView, engine::SequencePlayback& playback)
         {
             std::vector<CalculatorDeedPickerPlayback::Published> result;
             if (desiredView != display::Screen2D::Portfolio ||
@@ -52,7 +52,8 @@ namespace monopoly::statsui
             }
             if (ui.hoveredDeed)
             {
-                const auto id = cornerDeedId(*ui.hoveredDeed, city);
+                const auto id = playback.deedDataId(*ui.hoveredDeed, true,
+                    cornerDeedId(*ui.hoveredDeed, city));
                 if (id != data::EmptyDataId)
                     result.push_back({id, CalculatorDeedPickerPriority, 600, -2});
             }
@@ -68,7 +69,7 @@ namespace monopoly::statsui
         const bool desiredBackground =
             desiredView == display::Screen2D::Portfolio &&
             ui.picker == CalculatorPicker::Deed;
-        auto desired = desiredPicker(ui, city, desiredView);
+        auto desired = desiredPicker(ui, city, desiredView, playback);
         if (desired == current_ && desiredBackground == backgroundVisible_)
             return {};
 
@@ -85,11 +86,10 @@ namespace monopoly::statsui
         programs.reserve(added.size());
         for (const auto& object : added)
         {
-            auto loaded = sequence::SequenceProgram::load(
-                playback.resources(), object.id);
+            auto loaded = playback.loadProgram(object.id);
             if (!loaded)
                 return std::unexpected(
-                    "UDStats calculator deed picker failed: " + loaded.error().detail);
+                    "UDStats calculator deed picker failed: " + loaded.error());
             programs.push_back(std::move(*loaded));
         }
 

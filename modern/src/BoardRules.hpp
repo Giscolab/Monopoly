@@ -112,6 +112,11 @@ namespace monopoly::rules::board
     const SquareDefinition&
         definition(SquareType square);
 
+    // Printed deeds use canonical rents: UDPENNY_CreateDeed compensated the
+    // short-game table swap, so their values are independent of active rules.
+    const SquareDefinition&
+        originalDefinition(SquareType square);
+
     PropertySet propertyBit(
         SquareType square
     );

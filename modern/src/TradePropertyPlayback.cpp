@@ -1,6 +1,9 @@
 #include "TradePropertyPlayback.hpp"
 
 #include "IBarLayout.hpp"
+#include "IBarPropertyPlayback.hpp"
+
+#include <algorithm>
 
 #include <memory>
 #include <utility>
@@ -103,7 +106,10 @@ namespace monopoly::tradeui
         const rules::GameState& gameState,
         display::Screen2D desiredView,
         std::uint64_t nowMs,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback,
+        const mouse::State& pointer,
+        std::uint64_t hoverTick,
+        int city)
     {
         std::optional<MovingState> nextMoving = moving_;
         bool startMoving = false;
@@ -214,6 +220,55 @@ namespace monopoly::tradeui
             movingProgram = std::move(*loaded);
         }
 
+        // UDTrade refreshes the hit from the live pointer even without a new
+        // input event: offers and modal dialogs can change beneath the mouse.
+        int hover = -1;
+        if (desiredView == display::Screen2D::Trade && pointer.inside &&
+            !state.cashDialogVisible)
+        {
+            if (const auto hit = propertyHit(projectProperties(state, gameState),
+                    pointer.x, pointer.y))
+                hover = *hit + (state.contractDialogVisible ? 0 : 1000);
+        }
+        int nextCheckedHover = checkedHover_;
+        auto nextHoverStartTick = hoverStartTick_;
+        data::DataId nextHoverDeed = data::EmptyDataId;
+        if (hover < 0)
+            nextCheckedHover = -1;
+        else if (hover == checkedHover_)
+        {
+            if (hoverTick >= hoverStartTick_ &&
+                hoverTick - hoverStartTick_ > TradeDeedHoverDelayTicks)
+            {
+                const int square = hover % 100;
+                const bool mortgaged = gameState.squares[
+                    static_cast<std::size_t>(square)].mortgaged;
+                const auto base = mortgaged ? ibar::PropertyHoverMortgagedBaseTag
+                    : ibar::PropertyHoverNormalBaseTag;
+                const auto fallback = data::packDataId(
+                    data::LegacyGroupId::LanguageGraphics,
+                    static_cast<data::DataTag>(base + ibar::layout::propertyIndex(square)
+                        + 28 * std::max(city, 0)));
+                nextHoverDeed = playback.deedDataId(square, !mortgaged, fallback);
+            }
+        }
+        else
+        {
+            // Moving straight between deeds retains the original delay, but
+            // changes the check for one frame exactly as UDIBar does.
+            if (checkedHover_ == -1)
+                nextHoverStartTick = hoverTick;
+            nextCheckedHover = hover;
+        }
+        std::shared_ptr<const sequence::SequenceProgram> hoverProgram;
+        if (nextHoverDeed != hoverDeed_ && nextHoverDeed != data::EmptyDataId)
+        {
+            auto loaded = playback.loadProgram(nextHoverDeed);
+            if (!loaded)
+                return std::unexpected(loaded.error());
+            hoverProgram = std::move(*loaded);
+        }
+
         std::vector<sequence::SequenceCommand> commands;
         if (finishMoving && moving_)
         {
@@ -263,6 +318,20 @@ namespace monopoly::tradeui
                 nextMoving->x, nextMoving->y));
         }
 
+        if (nextHoverDeed != hoverDeed_)
+        {
+            if (hoverDeed_ != data::EmptyDataId)
+                commands.push_back(sequence::StopSequenceCommand{
+                    hoverDeed_, TradeDeedHoverPriority, false});
+            if (nextHoverDeed != data::EmptyDataId)
+            {
+                commands.push_back(sequence::StartSequenceCommand{
+                    std::move(hoverProgram), TradeDeedHoverPriority, {}});
+                commands.push_back(sequence::makeMoveXY(nextHoverDeed,
+                    TradeDeedHoverPriority, hover >= 1000 ? 600 : 0, -2));
+            }
+        }
+
         if (commands.size() > sequence::SequenceCommandQueue::Capacity -
                 playback.commands().pendingCount())
         {
@@ -282,6 +351,9 @@ namespace monopoly::tradeui
                 return std::unexpected("validated trade deed command rejected");
         }
 
+        checkedHover_ = nextCheckedHover;
+        hoverStartTick_ = nextHoverStartTick;
+        hoverDeed_ = nextHoverDeed;
         current_ = *desired;
         moving_ = std::move(nextMoving);
         if (clearMoveRequest)
@@ -293,5 +365,8 @@ namespace monopoly::tradeui
     {
         current_ = {};
         moving_.reset();
+        checkedHover_ = -1;
+        hoverStartTick_ = 0;
+        hoverDeed_ = data::EmptyDataId;
     }
 }

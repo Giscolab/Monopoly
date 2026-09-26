@@ -2,6 +2,7 @@
 
 #include "DataBanks.hpp"
 #include "Display.hpp"
+#include "MousePointer.hpp"
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
 #include "TradeUI.hpp"
@@ -20,6 +21,8 @@ namespace monopoly::tradeui
     inline constexpr std::array<std::uint16_t, 4> TradePropertyBasePriorities{{
         324, 374, 424, 474
     }};
+    inline constexpr std::uint16_t TradeDeedHoverPriority = 1001;
+    inline constexpr std::uint64_t TradeDeedHoverDelayTicks = 36;
     inline constexpr std::uint64_t TradePropertyMoveStepMs = 25;
     inline constexpr int TradePropertyMoveSteps = 4;
     inline constexpr std::array<std::uint16_t, 4> TradePropertyMovingPriorities{{
@@ -40,7 +43,10 @@ namespace monopoly::tradeui
             const rules::GameState& gameState,
             display::Screen2D desiredView,
             std::uint64_t nowMs,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback,
+            const mouse::State& pointer = {},
+            std::uint64_t hoverTick = 0,
+            int city = 0);
 
         void reset() noexcept;
 
@@ -70,5 +76,8 @@ namespace monopoly::tradeui
 
         std::array<ObjectState, TradePropertyPlaybackObjectCount> current_{};
         std::optional<MovingState> moving_;
+        int checkedHover_{-1};
+        std::uint64_t hoverStartTick_{};
+        data::DataId hoverDeed_{data::EmptyDataId};
     };
 }

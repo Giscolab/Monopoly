@@ -236,7 +236,8 @@ namespace monopoly::ibar
     {
         data::DataId desired = data::EmptyDataId;
         if (desiredSquare && display::isBoardVisible(view))
-            desired = propertyHoverDataId(*desiredSquare, false);
+            desired = playback.deedDataId(*desiredSquare, true,
+                propertyHoverDataId(*desiredSquare, false));
 
         if (desired == currentDeed_)
             return {};
@@ -266,10 +267,9 @@ namespace monopoly::ibar
         std::shared_ptr<const sequence::SequenceProgram> program;
         if (desired != data::EmptyDataId)
         {
-            auto loaded = sequence::SequenceProgram::load(
-                playback.resources(), desired);
+            auto loaded = playback.loadProgram(desired);
             if (!loaded)
-                return std::unexpected(loaded.error().detail);
+                return std::unexpected(loaded.error());
             program = std::move(*loaded);
         }
 
@@ -350,8 +350,9 @@ namespace monopoly::ibar
                 if (style == PropertyTitleStyle::FullColour ||
                     style == PropertyTitleStyle::Mortgaged)
                 {
-                    desired = propertyHoverDataId(
-                        currentMouseOver, state.squares[index].mortgaged);
+                    desired = playback.deedDataId(currentMouseOver,
+                        !state.squares[index].mortgaged, propertyHoverDataId(
+                            currentMouseOver, state.squares[index].mortgaged));
                 }
             }
         }
@@ -372,10 +373,9 @@ namespace monopoly::ibar
         std::shared_ptr<const sequence::SequenceProgram> program;
         if (desired != data::EmptyDataId)
         {
-            auto loaded = sequence::SequenceProgram::load(
-                playback.resources(), desired);
+            auto loaded = playback.loadProgram(desired);
             if (!loaded)
-                return std::unexpected(loaded.error().detail);
+                return std::unexpected(loaded.error());
             program = std::move(*loaded);
         }
 

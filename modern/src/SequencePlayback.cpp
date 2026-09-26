@@ -1,8 +1,33 @@
 #include "SequencePlayback.hpp"
 #include "BoardTextureRuntime.hpp"
+#include <algorithm>
 
 namespace monopoly::engine
 {
+    void SequencePlayback::setEuropeanDeeds(const std::array<data::DataId, 56>& ids)
+    {
+        for (const auto id : europeanDeeds_)
+            if (id != data::EmptyDataId && std::find(ids.begin(), ids.end(), id) == ids.end())
+                retiredDeeds_.push_back(id);
+        europeanDeeds_ = ids;
+    }
+
+    data::DataId SequencePlayback::deedDataId(int square, bool front,
+        data::DataId staticFallback) const noexcept
+    {
+        const auto snapshot = resources();
+        if (!snapshot || snapshot->context().board == data::BoardEdition::Usa)
+            return staticFallback;
+        // DISPLAY_propertyToOwnablePropertyConversion: board order, not TRANS_PROP.
+        static constexpr std::array<int, 28> squares{
+            1,3,5,6,8,9,11,12,13,14,15,16,18,19,
+            21,23,24,25,26,27,28,29,31,32,34,35,37,39};
+        const auto found = std::find(squares.begin(), squares.end(), square);
+        if (found == squares.end()) return data::EmptyDataId;
+        const auto property = std::distance(squares.begin(), found);
+        return europeanDeeds_[static_cast<std::size_t>(property + (front ? 0 : 28))];
+    }
+
     std::expected<void, std::string> SequencePlayback::configureBoardTextures(
         data::BoardMeshKind mesh, data::TextureResolution resolution,
         int city, int currency, const std::filesystem::path& customRoot)
@@ -219,6 +244,15 @@ namespace monopoly::engine
         const auto published = world_.sync(*items);
         if (!published)
         { world_.clear(); world2D_.clear(); return std::unexpected("duplicate sequence render node"); }
+        // Keep the old immutable surfaces until consumers have stopped them.
+        std::erase_if(retiredDeeds_, [&](data::DataId id)
+        {
+            if (std::any_of(bitmapItems->begin(), bitmapItems->end(),
+                    [id](const auto& item) { return item.contentsDataId == id; }))
+                return false;
+            (void)runtimeBitmaps_.remove(id);
+            return true;
+        });
         return {};
     }
 }

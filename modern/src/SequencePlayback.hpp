@@ -6,6 +6,8 @@
 #include "RuntimeBitmapSurface.hpp"
 #include "TextureCatalog.hpp"
 
+#include <array>
+#include <vector>
 #include <filesystem>
 #include <tuple>
 
@@ -61,9 +63,16 @@ namespace monopoly::engine
         const data::RuntimeBitmapStore& runtimeBitmaps() const noexcept { return runtimeBitmaps_; }
         std::shared_ptr<const data::ResourceSnapshot> resources() const noexcept
         { return meshes_.resources(); }
-    private:
+        // All deed owners share one generated Europe catalog. Static USA IDs
+        // remain unchanged; runtime IDs are replaced as one complete set.
+        void setEuropeanDeeds(const std::array<data::DataId, 56>& ids);
+        [[nodiscard]] data::DataId deedDataId(int square, bool front,
+            data::DataId staticFallback) const noexcept;
         [[nodiscard]] std::expected<std::shared_ptr<const sequence::SequenceProgram>, std::string>
             loadProgram(data::DataId id);
+    private:
+        std::array<data::DataId, 56> europeanDeeds_{};
+        std::vector<data::DataId> retiredDeeds_;
 
         data::MeshRuntimeCache meshes_;
         using BoardTextureSelection = std::tuple<data::BoardMeshKind,

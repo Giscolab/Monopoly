@@ -7,6 +7,7 @@
 #include "RulesEngine.hpp"
 #include "OptionsHelpRuntime.hpp"
 #include "FontRuntime.hpp"
+#include "EuropeanDeed.hpp"
 #include "UDSoundRuntime.hpp"
 #include "UDPennyVoice.hpp"
 #include "UISound.hpp"
@@ -103,6 +104,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace monopoly::engine
@@ -125,6 +127,8 @@ namespace monopoly::engine
         std::string lastVoiceNetworkError;
         std::unique_ptr<fonts::Runtime> fontRuntime;
         bool fontDisabled{};
+        using EuropeanDeedSelection = std::tuple<data::LanguageId, int, int, int>;
+        std::optional<EuropeanDeedSelection> europeanDeedSelection;
         udsound::Runtime monopolySoundRuntime;
         std::vector<sequence::SequenceNodeId> activeSequenceSounds;
         bool audioDisabled{};
@@ -936,6 +940,61 @@ namespace monopoly::engine
         }
     }
 
+    namespace
+    {
+        std::expected<void, std::string> syncEuropeanDeeds(SequencePlayback& session,
+            int city, int currency, int housesPerHotel)
+        {
+            const auto resources = session.resources();
+            if (!resources || resources->context().board == data::BoardEdition::Usa)
+                return {};
+            const auto language = resources->context().language;
+            const EuropeanDeedSelection selection{language, city, currency, housesPerHotel};
+            if (europeanDeedSelection == selection) return {};
+            auto* fonts = fontPlayback();
+            if (!fonts) return std::unexpected("Europe deeds require the retail font runtime");
+            data::BitmapRuntimeCache templates;
+            const deeds::TemplateResolver resolve = [&](data::DataId id)
+                -> std::expected<std::shared_ptr<const data::BitmapRuntimeAsset>, std::string>
+            {
+                const auto metadata = resources->banks().metadata(id);
+                if (!metadata) return std::unexpected(metadata.error().detail);
+                const auto bytes = resources->banks().load(id);
+                if (!bytes) return std::unexpected(bytes.error().detail);
+                const auto bitmap = templates.resolve(id, metadata->type, *bytes);
+                if (!bitmap) return std::unexpected(bitmap.error().detail);
+                return *bitmap;
+            };
+            std::array<data::DataId, 56> next{};
+            const auto rollback = [&]()
+            {
+                for (const auto id : next)
+                    if (id != data::EmptyDataId) (void)session.runtimeBitmaps().remove(id);
+            };
+            // Userifce startup/loadgame: publish all fronts then all backs in
+            // logical board order. Never expose a partly regenerated catalog.
+            for (int square = 0; square < 40; ++square)
+            {
+                const auto property = ibar::layout::propertyIndex(square);
+                if (property < 0) continue;
+                for (int side = 0; side < 2; ++side)
+                {
+                    const auto image = deeds::render({square, static_cast<int>(language),
+                        city, currency, side == 0, housesPerHotel}, *fonts, resolve);
+                    if (!image) { rollback(); return std::unexpected(image.error()); }
+                    const auto id = session.runtimeBitmaps().create(image->width, image->height, false);
+                    if (!id) { rollback(); return std::unexpected(id.error()); }
+                    next[static_cast<std::size_t>(property + side * 28)] = *id;
+                    const auto updated = session.runtimeBitmaps().update(*id, *image);
+                    if (!updated) { rollback(); return std::unexpected(updated.error()); }
+                }
+            }
+            session.setEuropeanDeeds(next);
+            europeanDeedSelection = selection;
+            return {};
+        }
+    }
+
     SequencePlayback* sequencePlayback()
     {
         if (!gpuDevice) return nullptr;
@@ -943,6 +1002,7 @@ namespace monopoly::engine
             if (auto resources = startup::resources())
             {
                 playback = std::make_unique<SequencePlayback>(std::move(resources));
+                europeanDeedSelection.reset();
                 sequenceUIUpdateCount = 0;
             }
         return playback.get();
@@ -953,6 +1013,7 @@ namespace monopoly::engine
     {
         void resetPresentationOwners()
         {
+            europeanDeedSelection.reset();
             pieceMovePlayback = {};
             pieceJailPlayback = {};
             pieceIdlePlayback = {};
@@ -1692,6 +1753,15 @@ namespace monopoly::engine
             const bool iBarVisible =
                 display::isIBarVisible(displayState.desired2DView);
             const auto& ruleState = userinterface::ruleStateReadOnly();
+            // Source generates at game start/load, after player configuration.
+            // Only game screens consume deeds; setup and movies need no templates.
+            if (boardVisible || displayState.desired2DView == display::Screen2D::Auction)
+            {
+                const auto deedsSync = syncEuropeanDeeds(*session, displayState.city,
+                    displayState.system, ruleState.options.housesPerHotel);
+                if (!deedsSync)
+                    return SDL_SetError("Europe deed generation: %s", deedsSync.error().c_str());
+            }
             const auto playerSelectionSync = playerSelectionPlayback.sync(
                 playerselection::renderStateReadOnly(), fontPlayback(), *session);
             if (!playerSelectionSync)
@@ -1865,7 +1935,8 @@ namespace monopoly::engine
                     optionsHelpSync.error().c_str());
             const auto tradePropertySync = tradePropertyPlayback.sync(
                 userinterface::tradeState(), ruleState,
-                displayState.desired2DView, tick, *session);
+                displayState.desired2DView, SDL_GetTicks(), *session,
+                mouse::stateReadOnly(), tick, displayState.city);
             if (!tradePropertySync)
                 return SDL_SetError("Trade deed playback: %s",
                     tradePropertySync.error().c_str());

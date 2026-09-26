@@ -103,6 +103,10 @@ namespace
         const auto pathText = path.u8string();
         TTF_Font* reference = TTF_OpenFont(reinterpret_cast<const char*>(pathText.c_str()), 20.0F);
         require(reference != nullptr, "open independent SDL_ttf metric reference");
+        // L_Fonts uses the original Windows 96-DPI logical point size.
+        const bool referenceSized = TTF_SetFontSizeDPI(reference, 20.0F, 96, 96);
+        if (!referenceSized) TTF_CloseFont(reference);
+        require(referenceSized, "set independent metric reference to retail 96 DPI");
         int width = 0, height = 0;
         const bool measured = TTF_GetStringSize(reference, "Ag", 2, &width, &height);
         TTF_CloseFont(reference);

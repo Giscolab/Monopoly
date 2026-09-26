@@ -548,6 +548,7 @@ target_sources(
     src/VideoPresentation.cpp
     src/OpeningMovies.cpp
     src/MoneyFormat.cpp
+    src/EuropeanDeed.cpp
     src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
     src/TokenVoiceCatalog.cpp
@@ -3549,4 +3550,24 @@ if(BUILD_TESTING)
         NAME Monopoly.LegacyTextFormat
         COMMAND MonopolyLegacyTextFormatTests
     )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyEuropeanDeedTests tests/EuropeanDeedTests.cpp
+        src/EuropeanDeed.cpp src/FontRuntime.cpp src/MoneyFormat.cpp src/BoardRules.cpp)
+    target_include_directories(MonopolyEuropeanDeedTests PRIVATE src tests)
+    target_link_libraries(MonopolyEuropeanDeedTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+    if(MSVC)
+        target_compile_options(MonopolyEuropeanDeedTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.EuropeanDeed COMMAND MonopolyEuropeanDeedTests)
+    set_tests_properties(Monopoly.EuropeanDeed PROPERTIES TIMEOUT 60)
+endif()
+
+# The European deed tables are exact UTF-8 transcriptions of CP1252 source data.
+# SDL_ttf consumes UTF-8 independently of the Windows execution code page.
+if(MSVC)
+    set_source_files_properties(src/EuropeanDeed.cpp tests/EuropeanDeedTests.cpp
+        PROPERTIES COMPILE_OPTIONS /utf-8)
 endif()

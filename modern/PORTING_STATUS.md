@@ -18,13 +18,11 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 
 ## Code à terminer
 
-| ID | Travail | Critère de fermeture |
-|---|---|---|
-| C03 | Actes Europe dynamiques : porter UDPENNY_CreateDeed et raccorder les 28 rectos/28 versos aux consommateurs. | Userifce.cpp les régénère au démarrage et au chargement selon langue, plateau et devise ; les propriétaires modernes utilisent encore les ressources statiques. Chemin Europe distinct de D01. |
+Aucun manque de code confirmé n’est actuellement listé ici après implémentation de C03. Les comparaisons A01–A07 restent ouvertes et peuvent révéler d’autres écarts.
 
 QuickHelp n’est plus bloqué par les accents hors Windows : son décodage CP1252 vers UTF-8 est explicite et testé. Les fichiers fournis sont compatibles avec ce choix ; leur contenu ne permet pas de distinguer CP1252 de Latin-1 pour les octets qu’ils emploient.
 
-Un écart actif connu est un comportement utilisé dans la version d’origine dont une différence ou une absence moderne a été identifiée. C03 est un travail de code ; D01 dépend de données Europe absentes. Les lignes UDStats et UDPenny de la matrice partagent C03 : elles ne représentent pas deux manques distincts. Les comparaisons A et qualifications Q ci-dessous ne sont pas, à elles seules, des défauts démontrés.
+Un écart actif connu est un comportement utilisé dans la version d’origine dont une différence ou une absence moderne a été identifiée. C03 est désormais implémenté et reste à qualifier visuellement ; D01 dépend de données Europe absentes. Les lignes UDStats et UDPenny de la matrice partagent C03 : elles ne représentent pas deux travaux distincts. Les comparaisons A et qualifications Q ci-dessous ne sont pas, à elles seules, des défauts démontrés.
 
 ## Comparaisons encore nécessaires
 
@@ -48,6 +46,7 @@ MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint
 |---|---|---|
 | C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; résultat de validation du HEAD courant à confirmer. Voir [usage](NETWORK_GAME.md). |
 | C02 | FullHelp portable raccordé : conversion HLP → HTML asynchrone puis ouverture navigateur. | Exporteur externe `winhlp` requis ; conversion réelle, sujets/images et plateformes à qualifier. Voir [aide complète](FULL_HELP.md). |
+| C03 | Génération des 28 rectos/28 versos Europe et catalogue runtime raccordés aux enchères, IBar, Trade et Stats ; variantes de langue, plateau, devise et règle maisons/hôtel. | Qualification visuelle avec les modèles DAT retail en Q03 ; génération et remplacement du catalogue couverts par tests ciblés, résultat consigné ci-dessous. |
 
 ## Données manquantes
 
@@ -71,7 +70,7 @@ La reproduction binaire exacte de DMAKE99 est un outil de reconstruction optionn
 
 Sessions réseau C01, aide C02, attente des actions IA avant trade (A02), tailles de fonts normalisées à 96 DPI (A04), cache DAT LRU global (A05) et préchargement des ressources de séquence (A06) sont implémentés dans les commits `ce78e39` à `ccf5f28`. Les autres comparaisons A01–A07 restent ouvertes : ces corrections ciblées ne prouvent pas leur clôture exhaustive.
 
-Les onze branches `assistant/*` sont intégrées (dix têtes distinctes). Elles ajoutent la durée WAV, le backend de surfaces GRAFIX partagé, le blending des ombres et des contrats de tests. Leurs conclusions utiles sont reprises dans la matrice ; les anciennes réserves déjà résolues ne sont pas réintroduites. La génération des actes Europe reste explicitement ouverte en C03.
+Les onze branches `assistant/*` sont intégrées (dix têtes distinctes). Elles ajoutent la durée WAV, le backend de surfaces GRAFIX partagé, le blending des ombres et des contrats de tests. Leurs conclusions utiles sont reprises dans la matrice ; les anciennes réserves déjà résolues ne sont pas réintroduites. La génération des actes Europe C03 est implémentée dans le lot suivant, avec le survol Trade et le remplacement transactionnel des 56 surfaces.
 
 **Compilations et tests autorisés via GitHub Actions.** Les premiers commits de ce lot avaient été publiés sans validation, avec `[skip ci]`. Cette restriction est levée. La référence ci-dessous précède ces modifications ; elle ne les qualifie pas. Pour chaque résultat CI, vérifier le SHA testé : un succès sur un commit antérieur ne qualifie pas les changements suivants.
 

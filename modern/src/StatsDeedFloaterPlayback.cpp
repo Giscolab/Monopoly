@@ -55,7 +55,8 @@ namespace monopoly::statsui
             for (const auto& item : *grid)
             {
                 if (!contains(item, state.mouseX, state.mouseY)) continue;
-                desiredDeed = floaterDeedId(item.square, city);
+                desiredDeed = playback.deedDataId(item.square, true,
+                    floaterDeedId(item.square, city));
                 if (desiredDeed == data::EmptyDataId)
                     return std::unexpected("UDStats Deed floater square has no large deed");
                 const bool showLeft = state.mouseX > 400;
@@ -80,11 +81,10 @@ namespace monopoly::statsui
                     frame.error().detail);
             frameProgram = std::move(*frame);
 
-            auto deed = sequence::SequenceProgram::load(
-                playback.resources(), desiredDeed);
+            auto deed = playback.loadProgram(desiredDeed);
             if (!deed)
                 return std::unexpected("UDStats Deed floater deed failed: " +
-                    deed.error().detail);
+                    deed.error());
             deedProgram = std::move(*deed);
         }
         std::vector<sequence::SequenceCommand> commands;

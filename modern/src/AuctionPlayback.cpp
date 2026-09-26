@@ -23,7 +23,7 @@ namespace monopoly::auctionui
             const State& state,
             const rules::GameState& gameState,
             display::Screen2D desiredView,
-            int city)
+            int city, engine::SequencePlayback& playback)
         {
             std::array<ObjectState, AuctionPlaybackObjectCount> desired{};
             if (desiredView != display::Screen2D::Auction)
@@ -36,7 +36,17 @@ namespace monopoly::auctionui
                 auctionBottomBarDataId(), AuctionBottomBarPriority,
                 AuctionBottomBarX, AuctionBottomBarY};
 
-            const auto property = auctionPropertyDataId(state.propertyForSale, city);
+            auto property = auctionPropertyDataId(state.propertyForSale,
+                playback.resources() && playback.resources()->context().board ==
+                    data::BoardEdition::Europe ? 0 : city);
+            if (property && state.propertyForSale >= 0 && state.propertyForSale < 28)
+            {
+                static constexpr std::array<int, 28> squares{
+                    1,3,5,6,8,9,11,12,13,14,15,16,18,19,
+                    21,23,24,25,26,27,28,29,31,32,34,35,37,39};
+                *property = playback.deedDataId(
+                    squares[static_cast<std::size_t>(state.propertyForSale)], true, *property);
+            }
             if (!property)
                 return std::unexpected(property.error());
             if (*property != data::EmptyDataId)
@@ -159,7 +169,7 @@ namespace monopoly::auctionui
         engine::SequencePlayback& playback)
     {
         const auto desired = desiredObjects(
-            state, gameState, desiredView, city);
+            state, gameState, desiredView, city, playback);
         if (!desired)
             return std::unexpected(desired.error());
 
@@ -174,10 +184,9 @@ namespace monopoly::auctionui
             if (!needsStart)
                 continue;
 
-            auto loaded = sequence::SequenceProgram::load(
-                playback.resources(), after.id);
+            auto loaded = playback.loadProgram(after.id);
             if (!loaded)
-                return std::unexpected(loaded.error().detail);
+                return std::unexpected(loaded.error());
             programs[index] = std::move(*loaded);
         }
 
