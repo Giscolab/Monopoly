@@ -9,9 +9,9 @@ Les lignes peuvent partager des dépendances. Leurs nombres ne sont pas un pourc
 | Catégorie | Nombre de lignes |
 |---|---:|
 | Complètes ou remplacées | 31 |
-| Écarts actifs connus (`PORTED_PARTIAL`) | 5 |
+| Écarts actifs connus (`PORTED_PARTIAL`) | 1 |
 | Non commencées (`NOT_STARTED`) | 0 |
-| Comparaison à mener (`REVIEW_REQUIRED`) | 31 |
+| Comparaison à mener (`REVIEW_REQUIRED`) | 35 |
 | Données manquantes | 4 |
 | Outils manquants | 1 |
 | Hors périmètre, preuve d’absence d’usage | 7 |
@@ -32,7 +32,7 @@ Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit l
 
 | Section | Origine | Statut | Référence |
 |---|---|---|---|
-| Jeu Monopoly | `Source/monopoly/Mess.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 25](PORTING_MATRIX.md#L25) |
+| Jeu Monopoly | `Source/monopoly/Mess.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 25](PORTING_MATRIX.md#L25) |
 | Jeu Monopoly | `Source/monopoly/Rule.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 26](PORTING_MATRIX.md#L26) |
 | Jeu Monopoly | `Source/monopoly/trade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 27](PORTING_MATRIX.md#L27) |
 | Jeu Monopoly | `Source/monopoly/Ai.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 28](PORTING_MATRIX.md#L28) |
@@ -43,13 +43,13 @@ Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit l
 | Jeu Monopoly | `Source/monopoly/Userifce.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 37](PORTING_MATRIX.md#L37) |
 | Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 39](PORTING_MATRIX.md#L39) |
 | Jeu Monopoly | `Source/monopoly/UDIBar.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 40](PORTING_MATRIX.md#L40) |
-| Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 41](PORTING_MATRIX.md#L41) |
+| Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 41](PORTING_MATRIX.md#L41) |
 | Jeu Monopoly | `Source/monopoly/UDPieces.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 42](PORTING_MATRIX.md#L42) |
-| Jeu Monopoly | `Source/monopoly/UDPsel.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 43](PORTING_MATRIX.md#L43) |
+| Jeu Monopoly | `Source/monopoly/UDPsel.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 43](PORTING_MATRIX.md#L43) |
 | Jeu Monopoly | `Source/monopoly/UDSound.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 44](PORTING_MATRIX.md#L44) |
 | Jeu Monopoly | `Source/monopoly/UDStats.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 45](PORTING_MATRIX.md#L45) |
 | Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 46](PORTING_MATRIX.md#L46) |
-| Jeu Monopoly | `Source/monopoly/UDChat.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 48](PORTING_MATRIX.md#L48) |
+| Jeu Monopoly | `Source/monopoly/UDChat.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 48](PORTING_MATRIX.md#L48) |
 | Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 53](PORTING_MATRIX.md#L53) |
 | Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 54](PORTING_MATRIX.md#L54) |
 | Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | `REVIEW_REQUIRED` | [Matrice, ligne 64](PORTING_MATRIX.md#L64) |
