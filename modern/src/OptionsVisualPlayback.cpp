@@ -96,6 +96,7 @@ namespace monopoly::optionsui
         if (changed && count + published_.size() > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
             return std::unexpected("sequence command queue cannot fit Options visual transition");
         std::vector<Object> desired;
+        std::vector<data::DataId> changedSurfaces;
         auto publishImage = [&](std::size_t index, data::LegacyBitmapRGBA8 image, int x, int y, std::uint16_t priority)
             -> std::expected<void, std::string>
         {
@@ -105,8 +106,10 @@ namespace monopoly::optionsui
                 if (!created) return std::unexpected(created.error());
                 surfaces_[index] = *created;
             }
-            if (const auto updated = playback.runtimeBitmaps().update(*surfaces_[index], std::move(image)); !updated)
+            if (const auto updated = playback.runtimeBitmaps().update(
+                    *surfaces_[index], std::move(image)); !updated)
                 return updated;
+            changedSurfaces.push_back(*surfaces_[index]);
             desired.push_back({*surfaces_[index], priority, x, y});
             return {};
         };
@@ -245,7 +248,18 @@ namespace monopoly::optionsui
                 if (auto result = publishImage(16 + index, std::move(*button), xs[index], 455, 50); !result) return result;
             }
         }
-        if (desired != published_)
+        if (desired == published_)
+        {
+            for (const auto id : changedSurfaces)
+            {
+                const auto object = std::find_if(desired.begin(), desired.end(),
+                    [id](const auto& value) { return value.id == id; });
+                if (object == desired.end()) continue;
+                const auto forced = playback.forceRedraw(id, object->priority);
+                if (!forced) return forced;
+            }
+        }
+        else
         {
             if (desired.size() + published_.size() > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
                 return std::unexpected("sequence command queue cannot fit Options visual objects");

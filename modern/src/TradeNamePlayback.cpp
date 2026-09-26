@@ -69,6 +69,7 @@ namespace monopoly::tradeui
             return std::unexpected(
                 "sequence command queue cannot fit Trade name transition");
 
+        std::array<bool, 2> contentChanged{};
         if (anyVisible)
         {
             const auto sized = fontRuntime->setSize(12);
@@ -96,12 +97,22 @@ namespace monopoly::tradeui
                     *surfaces_[side], std::move(image));
                 if (!updated) return std::unexpected(updated.error());
                 textCache_[side] = text;
+                contentChanged[side] = true;
             }
         }
 
         for (std::size_t side = 0; side < 2; ++side)
         {
-            if (visible_[side] == desiredVisible[side]) continue;
+            if (visible_[side] == desiredVisible[side])
+            {
+                if (visible_[side] && contentChanged[side])
+                {
+                    const auto forced = playback.forceRedraw(
+                        *surfaces_[side], TradeNamePriority);
+                    if (!forced) return forced;
+                }
+                continue;
+            }
             if (visible_[side])
             {
                 if (!playback.commands().enqueue(sequence::StopSequenceCommand{
