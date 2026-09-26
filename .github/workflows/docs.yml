@@ -7,7 +7,8 @@ on:
     paths:
       - 'modern/src/**'
       - 'modern/PORTING_*.md'
-      - 'modern/PORTING_AUDIT.md'
+      - 'modern/NETWORK_VOICE.md'
+      - 'modern/VIDEO_RUNTIME.md'
       - 'modern/porting-progress.svg'
       - 'docs/**'
       - '.github/scripts/**'
