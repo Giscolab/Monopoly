@@ -20,17 +20,6 @@ namespace monopoly::statsui
             return data::packDataId(data::LegacyGroupId::LanguageGraphics, tag);
         }
 
-        [[nodiscard]] sequence::Matrix2D calculatorTokenTransform(
-            int x, int y) noexcept
-        {
-            auto transform = sequence::identity2D();
-            transform.values[0] = CalculatorTokenScale;
-            transform.values[4] = CalculatorTokenScale;
-            transform.values[6] = static_cast<float>(x);
-            transform.values[7] = static_cast<float>(y);
-            return transform;
-        }
-
         [[nodiscard]] std::expected<
             std::pair<data::DataId, std::shared_ptr<const sequence::SequenceProgram>>,
             std::string> loadEnter(engine::SequencePlayback& playback)
@@ -127,7 +116,8 @@ namespace monopoly::statsui
                     const auto rect = calculatorTokenRect(
                         static_cast<rules::PlayerNumber>(index));
                     initialTransforms[slot] = sequence::SequenceTransform{
-                        calculatorTokenTransform(rect.left, rect.top)};
+                        sequence::moveXYSRTransform(
+                            rect.left, rect.top, CalculatorTokenScale, 0.0F)};
                 }
             }
         }
