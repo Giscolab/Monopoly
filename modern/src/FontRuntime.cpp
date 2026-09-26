@@ -79,8 +79,18 @@ namespace monopoly::fonts
                 "no font path has been selected"));
 
         const auto path = utf8Path(settings_.fontPath);
-        TTF_Font* replacement = TTF_OpenFont(path.c_str(),
-            static_cast<float>(settings_.size));
+        const SDL_PropertiesID properties = SDL_CreateProperties();
+        if (!properties)
+            return std::unexpected(makeError(ErrorCode::FontOpenFailed,
+                settings_.fontPath, SDL_GetError()));
+        const bool configured =
+            SDL_SetStringProperty(properties, TTF_PROP_FONT_CREATE_FILENAME_STRING, path.c_str()) &&
+            SDL_SetFloatProperty(properties, TTF_PROP_FONT_CREATE_SIZE_FLOAT,
+                static_cast<float>(settings_.size)) &&
+            SDL_SetNumberProperty(properties, TTF_PROP_FONT_CREATE_HORIZONTAL_DPI_NUMBER, 96) &&
+            SDL_SetNumberProperty(properties, TTF_PROP_FONT_CREATE_VERTICAL_DPI_NUMBER, 96);
+        TTF_Font* replacement = configured ? TTF_OpenFontWithProperties(properties) : nullptr;
+        SDL_DestroyProperties(properties);
         if (!replacement)
             return std::unexpected(makeError(ErrorCode::FontOpenFailed,
                 settings_.fontPath, SDL_GetError()));
