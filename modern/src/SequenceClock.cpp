@@ -34,7 +34,7 @@ namespace monopoly::sequence
     {
         switch (record.chunk.id)
         {
-        case 1: case 2: case 3: case 4: case 6: case 7: case 9: case 10: break;
+        case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 9: case 10: break;
         default: return std::unexpected(ClockError::UnsupportedSequenceType);
         }
         if (record.header.scrollingWorld)
