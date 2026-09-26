@@ -204,4 +204,14 @@ namespace monopoly::engine
     const std::optional<World3DProjectionState>&
     SequenceWorld3DSlot::view() const noexcept
     { return view_; }
+
+    bool SequenceWorld3DSlot::boundsVisible(
+        const sequence::SequenceBounds3D& bounds,
+        const sequence::Matrix3D& worldTransform) const noexcept
+    {
+        if (!view_) return true;
+        const data::MeshBounds meshBounds{bounds.minimum, bounds.maximum};
+        return world3DMeshScreenRect(
+            meshBounds, worldTransform, *view_).has_value();
+    }
 }

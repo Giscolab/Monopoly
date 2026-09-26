@@ -179,6 +179,20 @@ namespace monopoly::sequence
         return {};
     }
 
+    void SequenceClock::hibernateScrollingWorld(
+        std::int32_t parentClock) noexcept
+    {
+        if (stopped_) return;
+        clock_ = -static_cast<std::int32_t>(timeMultiple_);
+        lastParentClock_ = parentClock;
+        if (videoClock_)
+        {
+            elapsedParentClock_ = clock_;
+            pendingVideoClock_.reset();
+            videoHeld_ = false;
+        }
+    }
+
     ClockUpdate SequenceClock::seek(std::int32_t newTime, std::int32_t parentClock)
     {
         ClockUpdate result{ !stopped_, clock_, clock_, false, false, false, stopped_ };

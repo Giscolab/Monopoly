@@ -198,6 +198,16 @@ namespace monopoly::sequence
         auto operator<=>(const SequenceBounds3D&) const = default;
     };
 
+    struct SequenceScrollingWorldView
+    {
+        SequenceNodeId node{};
+        std::uint8_t dimensionality{};
+        SequenceTransform worldTransform;
+        std::optional<data::Sequence2DBoundingBoxAttribute> bounds2D;
+        std::optional<SequenceBounds3D> bounds3D;
+        bool onScreen{true};
+    };
+
     struct SequenceMeshInstanceView
     {
         SequenceNodeId node{};
@@ -242,6 +252,8 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<void, RuntimeError> setEndingAction(SequenceNodeId node, std::uint8_t action);
         [[nodiscard]] std::expected<void, RuntimeError> setVolume(
             SequenceNodeId node, std::uint8_t volume);
+        [[nodiscard]] std::expected<void, RuntimeError>
+            setScrollingWorldVisibility(SequenceNodeId node, bool onScreen);
 
         // Historical command targeting excludes nested records (offset != 0),
         // including during whole-tree searches. Duplicate matches are legal.
@@ -282,6 +294,8 @@ namespace monopoly::sequence
         [[nodiscard]] std::vector<SequenceSoundInstanceView> soundInstances() const;
         [[nodiscard]] std::vector<SequenceVideoInstanceView> videoInstances() const;
         [[nodiscard]] std::vector<SequenceMeshInstanceView> meshInstances() const;
+        [[nodiscard]] std::vector<SequenceScrollingWorldView>
+            scrollingWorldInstances() const;
         // Active 3D camera sequences with raw ArtLib FOV semantics. Projection
         // interpretation remains the renderer's responsibility.
         [[nodiscard]] std::vector<SequenceCamera3DView> cameraInstances() const;

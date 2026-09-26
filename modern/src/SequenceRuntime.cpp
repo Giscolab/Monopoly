@@ -669,6 +669,8 @@ namespace monopoly::sequence
         std::uint16_t pitch{};
         std::uint8_t volume{100};
         std::int8_t panning{};
+        bool scrollingOnScreen{true};
+        bool scrollingHibernating{};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -923,6 +925,27 @@ namespace monopoly::sequence
             node->volume = std::min<std::uint8_t>(volume, 100U);
         return {};
     }
+    std::expected<void, RuntimeError>
+    SequenceRuntime::setScrollingWorldVisibility(
+        SequenceNodeId id, bool onScreen)
+    {
+        auto* node = find(id);
+        if (!node)
+            return std::unexpected(error(
+                RuntimeErrorCode::InvalidHandle, 0, 0,
+                "scrolling-world visibility references an inactive sequence"));
+        if (!node->definition().record.header.scrollingWorld)
+            return {};
+        if (node->scrollingOnScreen == onScreen)
+            return {};
+
+        node->scrollingOnScreen = onScreen;
+        node->scrollingHibernating = false;
+        node->reevaluate = true;
+        forceAncestors(*node);
+        return {};
+    }
+
     std::expected<void, RuntimeError> SequenceRuntime::birthChildren(Node& node,
         std::optional<std::int32_t> previous)
     {
@@ -985,6 +1008,22 @@ namespace monopoly::sequence
     {
         node.needsRedraw = node.redrawRequested;
         node.redrawRequested = false;
+
+        if (node.definition().record.header.scrollingWorld &&
+            !node.scrollingOnScreen)
+        {
+            if (!node.scrollingHibernating)
+            {
+                destroyChildren(node);
+                node.schedule.rewind();
+                node.scrollingHibernating = true;
+            }
+            node.clock.hibernateScrollingWorld(parentClock);
+            node.needsRedraw = false;
+            node.reevaluate = false;
+            return true;
+        }
+
         const auto tick = node.clock.update(parentClock, node.reevaluate);
         if (!tick) return std::unexpected(caused(RuntimeErrorCode::ClockFailure,
             node.definition().dataId, node.definition().record.chunk.headerOffset, tick.error()));
@@ -1357,6 +1396,34 @@ namespace monopoly::sequence
                         node->priority, node->clock.clock(),
                         std::get<Matrix3D>(node->worldTransform), node->meshChoice,
                         initialBounds3D(definition.attributes, node->dimensionality)});
+                }
+                self(self, node->children);
+            }
+        };
+        visit(visit, roots_);
+        return result;
+    }
+
+    std::vector<SequenceScrollingWorldView>
+    SequenceRuntime::scrollingWorldInstances() const
+    {
+        std::vector<SequenceScrollingWorldView> result;
+        const auto visit = [&](const auto& self, const Nodes& nodes) -> void {
+            for (const auto& node : nodes)
+            {
+                const auto& definition = node->definition();
+                if (definition.record.header.scrollingWorld)
+                {
+                    result.push_back({
+                        node->id,
+                        node->dimensionality,
+                        node->worldTransform,
+                        node->dimensionality == 2
+                            ? boundingBox2D(definition.attributes)
+                            : std::nullopt,
+                        initialBounds3D(
+                            definition.attributes, node->dimensionality),
+                        node->scrollingOnScreen});
                 }
                 self(self, node->children);
             }

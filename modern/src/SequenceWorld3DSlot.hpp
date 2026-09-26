@@ -78,6 +78,9 @@ namespace monopoly::engine
         [[nodiscard]] std::vector<sequence::SequenceNodeId> visibleOrder() const;
         [[nodiscard]] const std::optional<World3DProjectionState>&
             view() const noexcept;
+        [[nodiscard]] bool boundsVisible(
+            const sequence::SequenceBounds3D& bounds,
+            const sequence::Matrix3D& worldTransform) const noexcept;
 
     private:
         void refreshBounds(SequenceWorld3DObject& object) noexcept;

@@ -53,7 +53,8 @@ namespace monopoly::sequence
     // consume restart/stop events and manage children, commands, tweekers,
     // transforms and render slots. Video receives an elapsed timeline; decoded
     // media EOF remains the video backend's responsibility. Sound hardware
-    // clocks and scrolling visibility are explicitly refused.
+    // clocks stay external; scrolling-world hibernation is driven explicitly
+    // by SequenceRuntime from render-slot visibility.
     class SequenceClock final
     {
     public:
@@ -77,6 +78,7 @@ namespace monopoly::sequence
         { return videoClock_ ? elapsedParentClock_ : clock_; }
         [[nodiscard]] std::expected<void, ClockError> setPaused(
             bool paused, std::int32_t parentClock);
+        void hibernateScrollingWorld(std::int32_t parentClock) noexcept;
 
         // GoBackwardsInTime: explicit seek uses modulo for loops, unlike a
         // natural end. Caller destroys/recreates children and recursively

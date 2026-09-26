@@ -4,6 +4,58 @@
 
 namespace monopoly::engine
 {
+    namespace
+    {
+        std::array<float, 2> transform2DPoint(
+            const sequence::Matrix2D& matrix, float x, float y) noexcept
+        {
+            const auto& m = matrix.values;
+            const float outX = m[0] * x + m[3] * y + m[6];
+            const float outY = m[1] * x + m[4] * y + m[7];
+            const float outW = m[2] * x + m[5] * y + m[8];
+            if (outW == 0.0F) return {};
+            return {outX / outW, outY / outW};
+        }
+
+        bool scrollingWorld2DVisible(
+            const sequence::SequenceScrollingWorldView& view) noexcept
+        {
+            if (!view.bounds2D ||
+                !std::holds_alternative<sequence::Matrix2D>(view.worldTransform))
+                return true;
+
+            const auto& box = *view.bounds2D;
+            const auto& matrix =
+                std::get<sequence::Matrix2D>(view.worldTransform);
+            const std::array points{
+                transform2DPoint(matrix,
+                    static_cast<float>(box.left),
+                    static_cast<float>(box.top)),
+                transform2DPoint(matrix,
+                    static_cast<float>(box.right),
+                    static_cast<float>(box.top)),
+                transform2DPoint(matrix,
+                    static_cast<float>(box.left),
+                    static_cast<float>(box.bottom)),
+                transform2DPoint(matrix,
+                    static_cast<float>(box.right),
+                    static_cast<float>(box.bottom))};
+
+            float left = points.front()[0];
+            float right = left;
+            float top = points.front()[1];
+            float bottom = top;
+            for (const auto& point : points)
+            {
+                left = std::min(left, point[0]);
+                right = std::max(right, point[0]);
+                top = std::min(top, point[1]);
+                bottom = std::max(bottom, point[1]);
+            }
+            return right > 0.0F && bottom > 0.0F &&
+                left < 800.0F && top < 600.0F;
+        }
+    }
     void SequencePlayback::setEuropeanDeeds(const std::array<data::DataId, 56>& ids)
     {
         for (const auto id : europeanDeeds_)
@@ -393,6 +445,28 @@ namespace monopoly::engine
             world_.clear();
             world2D_.clear();
             return std::unexpected("duplicate sequence render node");
+        }
+
+        for (const auto& scrolling : runtime_.scrollingWorldInstances())
+        {
+            bool visible = true;
+            if (scrolling.dimensionality == 2)
+                visible = scrollingWorld2DVisible(scrolling);
+            else if (scrolling.dimensionality == 3 &&
+                     scrolling.bounds3D &&
+                     std::holds_alternative<sequence::Matrix3D>(
+                         scrolling.worldTransform))
+                visible = world_.boundsVisible(
+                    *scrolling.bounds3D,
+                    std::get<sequence::Matrix3D>(
+                        scrolling.worldTransform));
+
+            if (visible == scrolling.onScreen)
+                continue;
+            const auto changed = runtime_.setScrollingWorldVisibility(
+                scrolling.node, visible);
+            if (!changed)
+                return std::unexpected(changed.error().detail);
         }
 
         // Keep the old immutable surfaces until consumers have stopped them.
