@@ -913,6 +913,35 @@ namespace monopoly::data
     }
 
 
+    std::expected<bool, DataError> LegacyDataArchive::isLoaded(DataTag tag) const
+    {
+        std::scoped_lock lock(mutex_);
+
+        if (!open_)
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::ArchiveClosed,
+                path_,
+                "cannot query loaded state from a closed archive",
+                tag));
+        }
+
+        if (static_cast<std::size_t>(tag) >= items_.size())
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::TagOutOfRange,
+                path_,
+                "DataTag is outside this archive index",
+                tag));
+        }
+
+        if (!items_[tag].present())
+            return false;
+
+        return !cache_[tag].expired();
+    }
+
+
     std::expected<bool, DataError> LegacyDataArchive::unload(DataTag tag)
     {
         std::scoped_lock lock(mutex_);
@@ -1078,6 +1107,20 @@ namespace monopoly::data
 
         return (*mounted)->readRaw(
             dataTag(id), destination, startOffset);
+    }
+
+
+    std::expected<bool, DataError>
+    DataBankRegistry::isLoaded(DataId id) const
+    {
+        if (isEmptyDataId(id))
+            return false;
+
+        auto mounted = archive(dataGroup(id));
+        if (!mounted)
+            return std::unexpected(mounted.error());
+
+        return (*mounted)->isLoaded(dataTag(id));
     }
 
 
