@@ -856,7 +856,16 @@ namespace
         DataBankRegistry soundRegistry;
         (void)archive(fixture.root / "volume-sound.dat", soundItems, soundRegistry);
         SequenceRuntime soundRuntime;
-        const auto soundRoot = soundRuntime.start(program(soundRegistry), 44).value();
+        const auto soundProgram = program(soundRegistry);
+        if (!soundProgram)
+        {
+            expect(false, "volume sound program is available");
+            return;
+        }
+        const auto soundStarted = soundRuntime.start(soundProgram, 44);
+        expect(soundStarted.has_value(), "volume sound runtime starts");
+        if (!soundStarted) return;
+        const auto soundRoot = *soundStarted;
         auto soundIntent = soundRuntime.soundInstances();
         expect(soundIntent.size() == 1 && soundIntent.front().volume == 100 &&
             soundRuntime.inspect(soundRoot)->volume == 100,
@@ -877,9 +886,14 @@ namespace
         DataBankRegistry videoRegistry;
         (void)archive(fixture.root / "volume-video.dat", videoItems, videoRegistry, 3);
         const auto videoProgram = SequenceProgram::load(
-            videoRegistry, packDataId(3, 0)).value();
+            videoRegistry, packDataId(3, 0));
+        expect(videoProgram.has_value(), "volume video program loads");
+        if (!videoProgram) return;
         SequenceRuntime videoRuntime;
-        const auto videoRoot = videoRuntime.start(videoProgram, 9).value();
+        const auto videoStarted = videoRuntime.start(*videoProgram, 9);
+        expect(videoStarted.has_value(), "volume video runtime starts");
+        if (!videoStarted) return;
+        const auto videoRoot = *videoStarted;
         expect(videoRuntime.inspect(videoRoot)->volume == 100,
             "sequence video volume also defaults to 100");
         expect(videoRuntime.setVolumeMatching(packDataId(3, 0), 9, 35) == 1 &&
@@ -897,8 +911,13 @@ namespace
         (void)archive(fixture.root / "volume-group.dat", groupItems, groupRegistry, 4);
         SequenceRuntime groupRuntime;
         const auto groupProgram = SequenceProgram::load(
-            groupRegistry, packDataId(4, 0)).value();
-        const auto groupRoot = groupRuntime.start(groupProgram, 5).value();
+            groupRegistry, packDataId(4, 0));
+        expect(groupProgram.has_value(), "volume non-audio program loads");
+        if (!groupProgram) return;
+        const auto groupStarted = groupRuntime.start(*groupProgram, 5);
+        expect(groupStarted.has_value(), "volume non-audio runtime starts");
+        if (!groupStarted) return;
+        const auto groupRoot = *groupStarted;
         expect(groupRuntime.setVolumeMatching(packDataId(4, 0), 5, 10) == 1 &&
             groupRuntime.inspect(groupRoot)->volume == 100,
             "SetVolume finds non-audio matches but does not mutate their audio state");
