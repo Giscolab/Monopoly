@@ -1,112 +1,79 @@
-# Audit automatique du portage {#porting_audit}
+# Contrôles automatiques du portage {#porting_audit}
 
-> Genere mecaniquement depuis `PORTING_STATUS.md`, `modern/src`, `modern/tests` et `modern/CMakeLists.txt`. Ce rapport detecte les derives structurelles; il ne certifie **pas** la parite semantique avec le jeu de 1999.
+> Généré depuis [la matrice](PORTING_MATRIX.md), [l’état courant](PORTING_STATUS.md), les sources modernes et CMake. Ce rapport vérifie la cohérence de l’inventaire ; il ne certifie ni la fidélité au jeu d’origine ni la portabilité sur une plateforme non testée.
 
-## Synthese
+## Inventaire
 
-| Metrique | Valeur courante | Signification |
-|---|---:|---|
-| Audit fonctionnel | 75% | Snapshot manuel : 14 septembre |
-| Familles engagees | 40/40 (100%) | Familles legacy actives avec un equivalent moderne engage |
-| Indice automatique | 67% | Complet/remplace=100, partiel=50, non demarre=0 |
-| Entrees actives closes | 24/67 (35.8%) | `PORTED_COMPLETE` + `REPLACED_PORTABLE` |
-| Entrees actives partielles | 43/67 | Travail connu restant |
-| Non demarrees | 0 | Entrees actives sans equivalent moderne significatif |
-| Preuve CTest documentee | 127/127 (100%) | Derniere preuve courante de PORTING_STATUS; ce n est pas un score de fidelite |
+Les lignes peuvent partager des dépendances. Leurs nombres ne sont pas un pourcentage fonctionnel.
 
-## Controles automatiques
+| Catégorie | Nombre de lignes |
+|---|---:|
+| Complètes ou remplacées | 31 |
+| Écarts actifs connus (`PORTED_PARTIAL`) | 5 |
+| Non commencées (`NOT_STARTED`) | 0 |
+| Comparaison à mener (`REVIEW_REQUIRED`) | 31 |
+| Données manquantes | 4 |
+| Outils manquants | 1 |
+| Hors périmètre, preuve d’absence d’usage | 7 |
 
-- PASS - Les chiffres structurels ecrits dans PORTING_STATUS correspondent a la matrice
-- PASS - Tous les `modern/src/*.cpp` sont enregistres dans CMake
-- PASS - Tous les `modern/tests/*.cpp` sont enregistres dans CMake
-- PASS - Aucune entree active de la matrice n est `NOT_STARTED`
+Progression fonctionnelle : **Non établi**.
 
-## File de revue des `PORTED_PARTIAL`
+Validation de référence : **132/132 suites CTest** — code `d77be96`, Windows/MSVC Debug, 26 septembre 2026.
 
-Le classement ci-dessous est mecanique. Il place le runtime/gameplay et les chemins visibles avant les travaux de fidelite plus bas niveau; c est une aide au triage, pas un verdict de completion.
+## Contrôles de cohérence
 
-| Poids | Zone | Ligne legacy | Ligne matrice |
-|---:|---|---|---:|
-| 4 | gameplay/runtime central | `Source/monopoly/Rule.cpp` | 465 |
-| 4 | gameplay/runtime central | `Source/monopoly/Userifce.cpp` | 476 |
-| 4 | gameplay/runtime central | `Source/monopoly/UDPsel.cpp` | 482 |
-| 4 | gameplay/runtime central | `Source/monopoly/UDChat.cpp` | 487 |
-| 3 | parcours visible joueur | `Source/monopoly/trade.cpp` | 466 |
-| 3 | parcours visible joueur | `Source/monopoly/display.cpp` | 475 |
-| 3 | parcours visible joueur | `Source/monopoly/UDBoard.cpp` | 478 |
-| 3 | parcours visible joueur | `Source/monopoly/UDIBar.cpp` | 479 |
-| 3 | parcours visible joueur | `Source/monopoly/UDOpts.cpp` | 480 |
-| 3 | parcours visible joueur | `Source/monopoly/UDStats.cpp` | 484 |
-| 3 | parcours visible joueur | `Source/monopoly/UDTrade.cpp` | 485 |
-| 3 | parcours visible joueur | `Source/artlib/L_Fonts.*', 'L_Print.*` | 509 |
-| 3 | parcours visible joueur | `cameras, viewports, background ('camera.*', 'D3DDevice.*', view code)` | 518 |
-| 2 | infrastructure ArtLib active | `Source/monopoly/Lang.cpp` | 471 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Data.*` | 504 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 506 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Seqncr.*` | 508 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Sound.*', 'L_Midi.*` | 511 |
-| 2 | infrastructure ArtLib active | `Source/artlib/L_Video.*` | 512 |
-| 2 | infrastructure ArtLib active | `Commandes 'L_Seqncr` | 540 |
+- PASS — Référence de validation et conventions documentaires.
+- PASS — Tous les fichiers source .cpp figurent dans CMake.
+- PASS — Tous les fichiers de tests .cpp figurent dans CMake.
 
-<details><summary>Les 43 entrees PARTIAL</summary>
+## Écarts et comparaisons ouverts
 
-| Section | Ligne legacy | Ligne matrice |
-|---|---|---:|
-| Jeu Monopoly | `Source/monopoly/GameInc.cpp/.h` | 462 |
-| Jeu Monopoly | `Source/monopoly/Mess.cpp` | 464 |
-| Jeu Monopoly | `Source/monopoly/Rule.cpp` | 465 |
-| Jeu Monopoly | `Source/monopoly/trade.cpp` | 466 |
-| Jeu Monopoly | `Source/monopoly/Ai.cpp` | 467 |
-| Jeu Monopoly | `Source/monopoly/Ai_trade.cpp` | 469 |
-| Jeu Monopoly | `Source/monopoly/Ai_util.cpp` | 470 |
-| Jeu Monopoly | `Source/monopoly/Lang.cpp` | 471 |
-| Jeu Monopoly | `Source/monopoly/display.cpp` | 475 |
-| Jeu Monopoly | `Source/monopoly/Userifce.cpp` | 476 |
-| Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | 478 |
-| Jeu Monopoly | `Source/monopoly/UDIBar.cpp` | 479 |
-| Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | 480 |
-| Jeu Monopoly | `Source/monopoly/UDPieces.cpp` | 481 |
-| Jeu Monopoly | `Source/monopoly/UDPsel.cpp` | 482 |
-| Jeu Monopoly | `Source/monopoly/UDSound.cpp` | 483 |
-| Jeu Monopoly | `Source/monopoly/UDStats.cpp` | 484 |
-| Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | 485 |
-| Jeu Monopoly | `Source/monopoly/UDChat.cpp` | 487 |
-| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | 492 |
-| Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | 493 |
-| Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | 503 |
-| Services ArtLib consommes | `Source/artlib/L_Data.*` | 504 |
-| Services ArtLib consommes | `Source/artlib/L_Grafix.*', 'L_Rend2D.*', 'L_Sprite.*` | 506 |
-| Services ArtLib consommes | `Source/artlib/L_Rend3D.*` | 507 |
-| Services ArtLib consommes | `Source/artlib/L_Seqncr.*` | 508 |
-| Services ArtLib consommes | `Source/artlib/L_Fonts.*', 'L_Print.*` | 509 |
-| Services ArtLib consommes | `Source/artlib/L_Sound.*', 'L_Midi.*` | 511 |
-| Services ArtLib consommes | `Source/artlib/L_Video.*` | 512 |
-| PC3D consomme | `cameras, viewports, background ('camera.*', 'D3DDevice.*', view code)` | 518 |
-| PC3D consomme | `meshes/scenes/materials ('mesh*', 'NewMesh*', 'Scene.h', 'l_material.h')` | 519 |
-| PC3D consomme | `decodeur HMD / postload MESHX ('HMDData.h', 'NewMesh.cpp', 'hmdload.*')` | 520 |
-| Donnees et verification | `Lifecycle, lookup, metadata et ownership` | 530 |
-| Donnees et verification | `CRC global DAT` | 532 |
-| Donnees et verification | `Parseurs semantiques CNK / sequence` | 536 |
-| Donnees et verification | `Arbre runtime et execution` | 539 |
-| Donnees et verification | `Commandes 'L_Seqncr` | 540 |
-| Donnees et verification | `Transformations / tweekers` | 541 |
-| Donnees et verification | `MESHX runtime` | 542 |
-| Donnees et verification | `Render data de sequence` | 543 |
-| Donnees et verification | `Raccordement sequence -> render slots` | 544 |
-| Donnees et verification | `LANG core` | 545 |
-| Donnees et verification | `Loader BMP runtime` | 549 |
+Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit la matrice, sans pondération automatique ni verdict sur les fonctionnalités non examinées.
 
-</details>
+| Section | Origine | Statut | Référence |
+|---|---|---|---|
+| Jeu Monopoly | `Source/monopoly/Mess.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 25](PORTING_MATRIX.md#L25) |
+| Jeu Monopoly | `Source/monopoly/Rule.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 26](PORTING_MATRIX.md#L26) |
+| Jeu Monopoly | `Source/monopoly/trade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 27](PORTING_MATRIX.md#L27) |
+| Jeu Monopoly | `Source/monopoly/Ai.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 28](PORTING_MATRIX.md#L28) |
+| Jeu Monopoly | `Source/monopoly/Ai_trade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 30](PORTING_MATRIX.md#L30) |
+| Jeu Monopoly | `Source/monopoly/Ai_util.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 31](PORTING_MATRIX.md#L31) |
+| Jeu Monopoly | `Source/monopoly/Lang.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 32](PORTING_MATRIX.md#L32) |
+| Jeu Monopoly | `Source/monopoly/display.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 36](PORTING_MATRIX.md#L36) |
+| Jeu Monopoly | `Source/monopoly/Userifce.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 37](PORTING_MATRIX.md#L37) |
+| Jeu Monopoly | `Source/monopoly/UDBoard.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 39](PORTING_MATRIX.md#L39) |
+| Jeu Monopoly | `Source/monopoly/UDIBar.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 40](PORTING_MATRIX.md#L40) |
+| Jeu Monopoly | `Source/monopoly/UDOpts.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 41](PORTING_MATRIX.md#L41) |
+| Jeu Monopoly | `Source/monopoly/UDPieces.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 42](PORTING_MATRIX.md#L42) |
+| Jeu Monopoly | `Source/monopoly/UDPsel.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 43](PORTING_MATRIX.md#L43) |
+| Jeu Monopoly | `Source/monopoly/UDSound.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 44](PORTING_MATRIX.md#L44) |
+| Jeu Monopoly | `Source/monopoly/UDStats.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 45](PORTING_MATRIX.md#L45) |
+| Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 46](PORTING_MATRIX.md#L46) |
+| Jeu Monopoly | `Source/monopoly/UDChat.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 48](PORTING_MATRIX.md#L48) |
+| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 53](PORTING_MATRIX.md#L53) |
+| Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 54](PORTING_MATRIX.md#L54) |
+| Services ArtLib consommes | `Source/artlib/L_UIMsg.*` | `REVIEW_REQUIRED` | [Matrice, ligne 64](PORTING_MATRIX.md#L64) |
+| Services ArtLib consommes | `Source/artlib/L_Data.*` | `REVIEW_REQUIRED` | [Matrice, ligne 65](PORTING_MATRIX.md#L65) |
+| Services ArtLib consommes | `Source/artlib/L_Grafix.*, L_Rend2D.*, L_Sprite.*` | `REVIEW_REQUIRED` | [Matrice, ligne 67](PORTING_MATRIX.md#L67) |
+| Services ArtLib consommes | `Source/artlib/L_Rend3D.*` | `REVIEW_REQUIRED` | [Matrice, ligne 68](PORTING_MATRIX.md#L68) |
+| Services ArtLib consommes | `Source/artlib/L_Seqncr.*` | `REVIEW_REQUIRED` | [Matrice, ligne 69](PORTING_MATRIX.md#L69) |
+| Services ArtLib consommes | `Source/artlib/L_Fonts.*, L_Print.*` | `REVIEW_REQUIRED` | [Matrice, ligne 70](PORTING_MATRIX.md#L70) |
+| Services ArtLib consommes | `Source/artlib/L_Sound.*, L_Midi.*` | `REVIEW_REQUIRED` | [Matrice, ligne 72](PORTING_MATRIX.md#L72) |
+| Services ArtLib consommes | `Source/artlib/L_Video.*` | `REVIEW_REQUIRED` | [Matrice, ligne 73](PORTING_MATRIX.md#L73) |
+| PC3D consomme | `cameras, viewports, background (camera.*, D3DDevice.*, view code)` | `REVIEW_REQUIRED` | [Matrice, ligne 79](PORTING_MATRIX.md#L79) |
+| PC3D consomme | `meshes/scenes/materials (mesh*, NewMesh*, Scene.h, l_material.h)` | `REVIEW_REQUIRED` | [Matrice, ligne 80](PORTING_MATRIX.md#L80) |
+| Donnees et verification | `Lifecycle, lookup, metadata et ownership` | `REVIEW_REQUIRED` | [Matrice, ligne 91](PORTING_MATRIX.md#L91) |
+| Donnees et verification | `CRC global DAT` | `REVIEW_REQUIRED` | [Matrice, ligne 93](PORTING_MATRIX.md#L93) |
+| Donnees et verification | `Parseurs semantiques CNK / sequence` | `REVIEW_REQUIRED` | [Matrice, ligne 97](PORTING_MATRIX.md#L97) |
+| Donnees et verification | `Arbre runtime et execution` | `REVIEW_REQUIRED` | [Matrice, ligne 100](PORTING_MATRIX.md#L100) |
+| Donnees et verification | `Transformations / tweekers` | `REVIEW_REQUIRED` | [Matrice, ligne 102](PORTING_MATRIX.md#L102) |
+| Donnees et verification | `LANG core` | `REVIEW_REQUIRED` | [Matrice, ligne 106](PORTING_MATRIX.md#L106) |
+| Donnees et verification | `Chaines/audio/dialogues LANG retail` | `BLOCKED_MISSING_DATA` | [Matrice, ligne 107](PORTING_MATRIX.md#L107) |
+| Donnees et verification | `DMAKE99 et reconstruction bit-a-bit` | `MISSING_TOOLING` | [Matrice, ligne 112](PORTING_MATRIX.md#L112) |
+| Donnees et verification | `Banques DAT retail exactes` | `BLOCKED_MISSING_DATA` | [Matrice, ligne 113](PORTING_MATRIX.md#L113) |
+| Donnees et verification | `2DVIEW01..39 externes` | `BLOCKED_MISSING_DATA` | [Matrice, ligne 114](PORTING_MATRIX.md#L114) |
+| Donnees et verification | `HMD retail / objets MESHX` | `BLOCKED_MISSING_DATA` | [Matrice, ligne 115](PORTING_MATRIX.md#L115) |
 
-## Signaux informatifs
+## Marqueurs informatifs
 
-- Marqueurs source/tests (`TODO`, `FIXME`, `XXX`, `TBD`) : **0**.
-- Fichiers source modernes `.cpp` dont le nom n est pas cite litteralement dans PORTING_STATUS : **199**. Ce signal reste informatif car un helper peut legitimement etre couvert par une ligne de famille.
-- Premiers noms non cites : `AICounterTradeRuntime.cpp`, `AIDecisionUtility.cpp`, `AIMessageIngress.cpp`, `AIProfile.cpp`, `AIProfileRuntime.cpp`, `AISaveState.cpp`, `AITradeIngress.cpp`, `AITradeSendRuntime.cpp`, `AITradeUtility.cpp`, `AIUtility.cpp`, `Application.cpp`, `AuctionPennyBagsPlayback.cpp`, `AuctionPlayback.cpp`, `AuctionUI.cpp`, `AudioRuntime.cpp`, `BitmapRuntime.cpp`, `BoardBackdropPlayback.cpp`, `BoardCameraController.cpp`, `BoardGeometry.cpp`, `BoardLightingController.cpp`, `BoardOwnershipHighlight.cpp`, `BoardRules.cpp`, `BoardTextureRuntime.cpp`, `CardDeckRuntime.cpp`, `CardDecks.cpp`
-
-## Limites d interpretation
-
-- CMake et CTest ne prouvent que la coherence build/tests.
-- `PORTING_PARTIAL` remains partial until its documented omissions are closed or explicitly excluded by caller/content evidence.
-- Les DAT/HMD retail, la parite visuelle, l audio/reseau physique et les parties completes demandent une qualification separee.
-- Le SVG genere separe volontairement l audit fonctionnel manuel des pourcentages mecaniques.
+0 occurrences de TODO/FIXME/XXX/TBD dans les sources et tests. Un marqueur peut décrire un fixture ou une limite volontaire ; il ne prouve pas un manque actif.
