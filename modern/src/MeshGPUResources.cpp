@@ -1,5 +1,7 @@
 #include "MeshGPUResources.hpp"
 
+#include "LegacyShadow.hpp"
+
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -368,15 +370,35 @@ namespace monopoly::engine
         std::memcpy(mapped, plan->vertices.data(), plan->vertexBytes);
         std::memcpy(static_cast<std::byte*>(mapped) + plan->vertexBytes,
             plan->indices.data(), plan->indexBytes);
+        const bool legacyShadow = data::isLegacyShadowMesh(asset->dataId);
         for (const auto& upload : *texturePlan)
         {
             const auto sourceRowBytes = static_cast<std::size_t>(upload.width) * 4U;
             const auto destinationRowBytes = static_cast<std::size_t>(upload.rowPixels) * 4U;
             auto* destination = static_cast<std::byte*>(mapped) + upload.transferOffset;
             for (std::uint32_t row = 0; row < upload.height; ++row)
-                std::memcpy(destination + static_cast<std::size_t>(row) * destinationRowBytes,
-                    upload.source->rgba.data() + static_cast<std::size_t>(row) * sourceRowBytes,
-                    sourceRowBytes);
+            {
+                const auto* source = upload.source->rgba.data() +
+                    static_cast<std::size_t>(row) * sourceRowBytes;
+                auto* destinationRow = destination +
+                    static_cast<std::size_t>(row) * destinationRowBytes;
+                if (!legacyShadow)
+                {
+                    std::memcpy(destinationRow, source, sourceRowBytes);
+                    continue;
+                }
+
+                auto* shadow = reinterpret_cast<std::uint8_t*>(destinationRow);
+                for (std::uint32_t column = 0; column < upload.width; ++column)
+                {
+                    const auto sourceOffset = static_cast<std::size_t>(column) * 4U;
+                    const auto converted = data::legacyShadowPixel(
+                        source[sourceOffset], source[sourceOffset + 1U],
+                        source[sourceOffset + 2U]);
+                    std::memcpy(shadow + sourceOffset,
+                        converted.data(), converted.size());
+                }
+            }
         }
         SDL_UnmapGPUTransferBuffer(device_, transfer);
 

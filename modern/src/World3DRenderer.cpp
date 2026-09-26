@@ -361,9 +361,9 @@ namespace monopoly::engine
                 World3DRendererErrorCode::RenderPassCreationFailed,
                 SDL_GetError(), {}, {}});
 
-        SDL_BindGPUGraphicsPipeline(pass, pipeline_.handle());
         SDL_SetGPUViewport(pass, &viewport);
 
+        SDL_GPUGraphicsPipeline* boundPipeline = nullptr;
         World3DRenderStats stats;
         stats.objects = slot.visibleOrder().size();
         stats.batches = batches->size();
@@ -371,6 +371,14 @@ namespace monopoly::engine
 
         for (const auto& batch : *batches)
         {
+            SDL_GPUGraphicsPipeline* desiredPipeline =
+                batch.legacyShadow ? pipeline_.shadowHandle() : pipeline_.handle();
+            if (desiredPipeline != boundPipeline)
+            {
+                SDL_BindGPUGraphicsPipeline(pass, desiredPipeline);
+                boundPipeline = desiredPipeline;
+            }
+
             const auto worldView = sequence::multiply(
                 batch.worldTransform, projection.view);
             const auto worldViewProjection = sequence::multiply(

@@ -1,4 +1,5 @@
 #include "PieceShadowDisplay.hpp"
+#include "LegacyShadow.hpp"
 #include "SequenceTransforms.hpp"
 #include "SyntheticSequenceResources.hpp"
 
@@ -33,6 +34,29 @@ namespace
         auto matrix = monopoly::sequence::moveRySTxzTransform(yaw, 1.0F, x, z);
         matrix.values[13] = y;
         return matrix;
+    }
+
+    void testLegacyShadowContract()
+    {
+        using namespace monopoly;
+
+        expect(data::isLegacyShadowMesh(threeD(0x00B4)) &&
+            data::isLegacyShadowMesh(threeD(0x00BE)),
+            "retail HMD_ashadow..HMD_kshadow are classified as shadow meshes");
+        expect(!data::isLegacyShadowMesh(threeD(0x00B3)) &&
+            !data::isLegacyShadowMesh(threeD(0x00BF)) &&
+            !data::isLegacyShadowMesh(data::packDataId(
+                data::LegacyGroupId::Main, 0x00B4)),
+            "shadow classification is bounded and requires DAT_3D");
+
+        expect(data::legacyShadowAlpha(0, 0, 0) == 38 &&
+            data::legacyShadowAlpha(128, 128, 128) == 166 &&
+            data::legacyShadowAlpha(255, 255, 255) == 255,
+            "UDUTILS shadow alpha preserves +15 percent lightening and white clamp");
+
+        const auto pixel = data::legacyShadowPixel(255, 0, 0);
+        expect(pixel == std::array<std::uint8_t, 4>{0, 0, 0, 123},
+            "UDUTILS shadow conversion stores black RGB and luminance transmissivity");
     }
 
     void testRuntimePoseAndMove()
@@ -218,6 +242,7 @@ namespace
 
 int main()
 {
+    testLegacyShadowContract();
     testRuntimePoseAndMove();
     testVisibilityGates();
     testBankruptAndInvalidToken();

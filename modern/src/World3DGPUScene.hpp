@@ -23,6 +23,7 @@ namespace monopoly::engine
         SDL_GPUTexture* gpuTexture{};
         std::uint32_t firstIndex{};
         std::uint32_t indexCount{};
+        bool legacyShadow{};
         data::MeshMaterial material{};
         std::optional<data::MeshTextureRegion> texture;
     };

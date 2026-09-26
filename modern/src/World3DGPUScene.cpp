@@ -1,5 +1,7 @@
 #include "World3DGPUScene.hpp"
 
+#include "LegacyShadow.hpp"
+
 #include <limits>
 
 namespace monopoly::engine
@@ -62,6 +64,7 @@ namespace monopoly::engine
                     gpuTexture,
                     static_cast<std::uint32_t>(batch.firstIndex),
                     static_cast<std::uint32_t>(batch.indexCount),
+                    data::isLegacyShadowMesh(object->contentsDataId),
                     batch.material,
                     batch.texture});
             }

@@ -42,7 +42,8 @@ namespace
     }
 
     std::shared_ptr<const data::MeshRuntimeAsset> makeAsset(
-        data::DataId id, bool textured = false, bool contrastingTexture = false)
+        data::DataId id, bool textured = false, bool contrastingTexture = false,
+        bool shadowTexture = false)
     {
         auto render = std::make_shared<data::MeshRenderData>();
         render->vertices = {
@@ -74,6 +75,10 @@ namespace
                 image->rgba = {
                     255U, 0U, 0U, 255U, 0U, 255U, 0U, 255U,
                     255U, 0U, 0U, 255U, 0U, 255U, 0U, 255U};
+            if (shadowTexture)
+                image->rgba = {
+                    0U, 0U, 0U, 255U, 0U, 0U, 0U, 255U,
+                    0U, 0U, 0U, 255U, 0U, 0U, 0U, 255U};
 
             data::MeshTextureRegion region;
             region.key = 1U;
@@ -99,16 +104,21 @@ namespace
         asset->renderData = std::move(render);
         return asset;
     }
-    engine::SequenceWorld3DSlot makeSlot(bool textured = false, bool contrastingTexture = false)
+    engine::SequenceWorld3DSlot makeSlot(bool textured = false,
+        bool contrastingTexture = false,
+        data::DataId forcedId = data::EmptyDataId,
+        bool shadowTexture = false)
     {
         engine::SequenceWorld3DSlot slot;
         sequence::SequenceMeshRenderItem item;
         item.node = 1;
-        item.contentsDataId = data::packDataId(8, contrastingTexture ? 2 : 1);
+        item.contentsDataId = forcedId != data::EmptyDataId ?
+            forcedId : data::packDataId(8, contrastingTexture ? 2 : 1);
         item.priority = 7;
         item.clock = 12;
         item.worldTransform = sequence::identity3D();
-        item.asset = makeAsset(item.contentsDataId, textured, contrastingTexture);
+        item.asset = makeAsset(item.contentsDataId, textured,
+            contrastingTexture, shadowTexture);
         (void)slot.sync({item});
 
         engine::World3DCamera camera;
@@ -137,11 +147,12 @@ namespace
     }
 
     bool clearTarget(SDL_GPUCommandBuffer* commandBuffer,
-        SDL_GPUTexture* target)
+        SDL_GPUTexture* target,
+        SDL_FColor clearColor = {0, 0, 0, 1})
     {
         SDL_GPUColorTargetInfo color{};
         color.texture = target;
-        color.clear_color = {0, 0, 0, 1};
+        color.clear_color = clearColor;
         color.load_op = SDL_GPU_LOADOP_CLEAR;
         color.store_op = SDL_GPU_STOREOP_STORE;
         color.cycle = true;
@@ -267,6 +278,10 @@ namespace
             device, std::filesystem::path{MONOPOLY_SHADER_DIR},
             SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
         expect(renderer.has_value(), "renderer loads backend-compatible generated shaders");
+        if (renderer)
+            expect(renderer->pipeline().handle() != nullptr &&
+                renderer->pipeline().shadowHandle() != nullptr,
+                "renderer creates opaque and retail shadow blend pipelines");
         if (!renderer)
         {
             std::cout << "[INFO] pipeline load error: " << renderer.error().detail << '\n';
@@ -557,6 +572,42 @@ namespace
             expect(texturedRead && greenPixels > 0U,
                 "real SDL_GPU sampling reads embedded RGBA8 HMD pixels into the framebuffer");
         }
+
+        SDL_GPUCommandBuffer* shadowCommand =
+            SDL_AcquireGPUCommandBuffer(device);
+        expect(shadowCommand != nullptr,
+            "renderer acquires a command buffer for retail token-shadow blending");
+        if (shadowCommand)
+        {
+            const SDL_FColor white{1.0F, 1.0F, 1.0F, 1.0F};
+            expect(clearTarget(shadowCommand, target, white),
+                "shadow renderer test starts from a white destination");
+            const auto shadow = makeSlot(true, false,
+                data::packDataId(data::LegacyGroupId::ThreeD, 0x00B4), true);
+            const auto shadowStats = renderer->render(
+                shadowCommand, target, 64U, 64U, viewport, shadow);
+            if (!shadowStats)
+                std::cout << "[GPU] shadow render error: "
+                    << shadowStats.error().detail << '\n';
+
+            pixels.fill(0);
+            const bool shadowRead = shadowStats &&
+                downloadTarget(device, shadowCommand, target, pixels);
+            if (!shadowStats) (void)SDL_CancelGPUCommandBuffer(shadowCommand);
+            std::size_t darkenedPixels{};
+            if (shadowRead)
+            {
+                for (std::size_t i = 0; i + 3U < pixels.size(); i += 4U)
+                    if (pixels[i] >= 28U && pixels[i] <= 48U &&
+                        pixels[i + 1U] >= 28U && pixels[i + 1U] <= 48U &&
+                        pixels[i + 2U] >= 28U && pixels[i + 2U] <= 48U &&
+                        pixels[i + 3U] > 200U)
+                        ++darkenedPixels;
+            }
+            expect(shadowRead && darkenedPixels > 0U,
+                "retail ZERO/SRC_ALPHA shadow pipeline darkens the white destination");
+        }
+
         // The exact same uploaded 2x2 red/green texture is drawn three times.
         // Point sampling can only select an unmixed texel; bilinear sampling
         // must introduce interior red+green pixels, then switching back must

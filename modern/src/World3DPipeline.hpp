@@ -47,6 +47,8 @@ namespace monopoly::engine
 
         [[nodiscard]] SDL_GPUGraphicsPipeline* handle() const noexcept
         { return pipeline_; }
+        [[nodiscard]] SDL_GPUGraphicsPipeline* shadowHandle() const noexcept
+        { return shadowPipeline_; }
         [[nodiscard]] SDL_GPUTextureFormat depthFormat() const noexcept
         { return depthFormat_; }
         [[nodiscard]] const World3DShaderSet& shaders() const noexcept
@@ -57,6 +59,7 @@ namespace monopoly::engine
     private:
         SDL_GPUDevice* device_{};
         SDL_GPUGraphicsPipeline* pipeline_{};
+        SDL_GPUGraphicsPipeline* shadowPipeline_{};
         SDL_GPUTextureFormat depthFormat_{SDL_GPU_TEXTUREFORMAT_INVALID};
         World3DShaderSet shaders_;
     };
