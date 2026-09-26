@@ -31,74 +31,6 @@ namespace monopoly::auctionui
         constexpr std::int32_t CurrentBidX = 20;
         constexpr std::int32_t CurrentBidY = 280;
 
-        void appendCodePoint(std::string& output, std::uint32_t cp)
-        {
-            if (cp <= 0x7FU) output.push_back(static_cast<char>(cp));
-            else if (cp <= 0x7FFU)
-            {
-                output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-            }
-            else if (cp <= 0xFFFFU)
-            {
-                output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-                output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-            }
-            else
-            {
-                output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
-                output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-            }
-        }
-
-        [[nodiscard]] std::string toUtf8(std::u16string_view text)
-        {
-            std::string output;
-            output.reserve(text.size());
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                std::uint32_t cp = static_cast<std::uint16_t>(text[index]);
-                if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1U < text.size())
-                {
-                    const auto low = static_cast<std::uint16_t>(text[index + 1U]);
-                    if (low >= 0xDC00U && low <= 0xDFFFU)
-                    {
-                        cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
-                        ++index;
-                    }
-                }
-                appendCodePoint(output, cp);
-            }
-            return output;
-        }
-
-        [[nodiscard]] std::string toUtf8(std::wstring_view text)
-        {
-            std::string output;
-            output.reserve(text.size());
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                std::uint32_t cp = static_cast<std::uint32_t>(text[index]);
-                if constexpr (sizeof(wchar_t) == 2)
-                {
-                    if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1U < text.size())
-                    {
-                        const auto low = static_cast<std::uint32_t>(text[index + 1U]);
-                        if (low >= 0xDC00U && low <= 0xDFFFU)
-                        {
-                            cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
-                            ++index;
-                        }
-                    }
-                }
-                appendCodePoint(output, cp);
-            }
-            return output;
-        }
-
         [[nodiscard]] data::LegacyBitmapRGBA8 blankImage(
             std::uint32_t width, std::uint32_t height)
         {
@@ -214,12 +146,16 @@ namespace monopoly::auctionui
             const auto amount = money::format(
                 state.highestBid, monetarySystem, true, edition);
             if (!amount) return std::unexpected(amount.error());
-            const std::string currentKey = toUtf8(*currentBidLabel_) + '\n' + *amount;
+            const auto currentBidLabelUtf8 =
+                fonts::transcodeUtf8(std::u16string_view(*currentBidLabel_));
+            if (!currentBidLabelUtf8)
+                return std::unexpected(currentBidLabelUtf8.error().detail);
+            const std::string currentKey = *currentBidLabelUtf8 + '\n' + *amount;
             if (!currentBidCache_ || *currentBidCache_ != currentKey)
             {
                 auto image = blankImage(CurrentBidWidth, CurrentBidHeight);
                 if (auto drawn = drawText(image, *fontRuntime,
-                        toUtf8(*currentBidLabel_), White, 10, 5); !drawn)
+                        *currentBidLabelUtf8, White, 10, 5); !drawn)
                     return drawn;
                 if (auto drawn = drawText(image, *fontRuntime,
                         *amount, White, 10, 30); !drawn)
@@ -243,7 +179,10 @@ namespace monopoly::auctionui
                     AuctionBasePriority + player + TextPriorityOffset);
                 const int center = state.backdropCenterX[index];
 
-                const auto name = toUtf8(gameState.players[index].name);
+                const auto encodedName = fonts::transcodeUtf8(
+                    std::wstring_view(gameState.players[index].name));
+                if (!encodedName) return std::unexpected(encodedName.error().detail);
+                const auto& name = *encodedName;
                 if (!nameCache_[index] || *nameCache_[index] != name)
                 {
                     auto image = blankImage(NameTextWidth, NameTextHeight);
