@@ -64,17 +64,33 @@ namespace
         return chunk(3, payload);
     }
 
-    DataBytes sound(DataId target, bool absolute, std::int32_t start = 0)
+    DataBytes sound(
+        DataId target, bool absolute, std::int32_t start = 0,
+        const DataBytes& attributes = {})
     {
         DataBytes payload;
         word(payload, static_cast<std::uint32_t>(start) & 0x00FF'FFFFU);
         word(payload, 4U << 24U);
         word(payload, 2U | (absolute ? 16U : 0U)); // Hold + absolute IDs flag.
         word(payload, target);
+        append(payload, attributes);
         return chunk(5, payload);
     }
 
-    DataBytes video(std::int32_t start = 0)
+    DataBytes soundPitch(std::uint16_t value)
+    {
+        return chunk(141, DataBytes{
+            static_cast<std::byte>(value & 0xFFU),
+            static_cast<std::byte>((value >> 8U) & 0xFFU)});
+    }
+
+    DataBytes soundVolume(std::uint8_t value)
+    { return chunk(142, DataBytes{static_cast<std::byte>(value)}); }
+
+    DataBytes soundPanning(std::int8_t value)
+    { return chunk(143, DataBytes{static_cast<std::byte>(value)}); }
+
+    DataBytes video(std::int32_t start = 0, const DataBytes& attributes = {})
     {
         DataBytes payload;
         word(payload, static_cast<std::uint32_t>(start) & 0x00FF'FFFFU);
@@ -85,6 +101,7 @@ namespace
             std::byte{1}, std::byte{1}, std::byte{0}, std::byte{0},
             std::byte{0}, std::byte{0}, std::byte{0}};
         payload.insert(payload.end(), fields.begin(), fields.end());
+        append(payload, attributes);
         return chunk(6, payload);
     }
 
@@ -894,8 +911,13 @@ namespace
     {
         Fixture fixture;
         const auto waveId = packDataId(2, 1);
+        DataBytes soundAttributes;
+        append(soundAttributes, soundPitch(22050));
+        append(soundAttributes, soundVolume(70));
+        append(soundAttributes, soundPanning(-25));
         const std::array soundItems{
-            ArchiveBuildItem{LegacyDataType::Chunky, sound(waveId, true)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sound(waveId, true, 0, soundAttributes)},
             ArchiveBuildItem{LegacyDataType::Wave,
                 {std::byte{'R'}, std::byte{'I'}, std::byte{'F'}, std::byte{'F'}}}
         };
@@ -913,9 +935,14 @@ namespace
         if (!soundStarted) return;
         const auto soundRoot = *soundStarted;
         auto soundIntent = soundRuntime.soundInstances();
-        expect(soundIntent.size() == 1 && soundIntent.front().volume == 100 &&
-            soundRuntime.inspect(soundRoot)->volume == 100,
-            "sequence sound volume defaults to retail maximum 100");
+        const auto initialSound = soundRuntime.inspect(soundRoot);
+        expect(soundIntent.size() == 1 &&
+            soundIntent.front().pitch == 22050 &&
+            soundIntent.front().volume == 70 &&
+            soundIntent.front().panning == -25 &&
+            initialSound && initialSound->pitch == 22050 &&
+            initialSound->volume == 70 && initialSound->panning == -25,
+            "static DAT pitch volume and panning reach the active sound intent");
         expect(soundRuntime.setVolume(soundRoot, 25).has_value() &&
             soundRuntime.soundInstances().front().volume == 25,
             "direct sequence volume updates active sound intent");
@@ -926,8 +953,13 @@ namespace
             soundRuntime.soundInstances().front().volume == 70,
             "LE_SEQNCR_SetVolume targeting updates matching sound by DataID and priority");
 
+        DataBytes videoAttributes;
+        append(videoAttributes, soundPitch(24000));
+        append(videoAttributes, soundVolume(65));
+        append(videoAttributes, soundPanning(30));
         const std::array videoItems{
-            ArchiveBuildItem{LegacyDataType::Chunky, video()}
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                video(0, videoAttributes)}
         };
         DataBankRegistry videoRegistry;
         (void)archive(fixture.root / "volume-video.dat", videoItems, videoRegistry, 3);
@@ -940,14 +972,19 @@ namespace
         expect(videoStarted.has_value(), "volume video runtime starts");
         if (!videoStarted) return;
         const auto videoRoot = *videoStarted;
-        expect(videoRuntime.inspect(videoRoot)->volume == 100,
-            "sequence video volume also defaults to 100");
+        const auto initialVideo = videoRuntime.inspect(videoRoot);
+        expect(initialVideo && initialVideo->pitch == 24000 &&
+            initialVideo->volume == 65 && initialVideo->panning == 30,
+            "static DAT audio attributes also initialize video runtime audio state");
         expect(videoRuntime.setVolumeMatching(packDataId(3, 0), 9, 35) == 1 &&
             videoRuntime.inspect(videoRoot)->volume == 35,
             "LE_SEQNCR_SetVolume targets video sequences as in ArtLib");
         const auto videoIntent = videoRuntime.videoInstances();
-        expect(videoIntent.size() == 1 && videoIntent.front().volume == 35,
-            "video presentation intent carries the live sequence volume");
+        expect(videoIntent.size() == 1 &&
+            videoIntent.front().pitch == 24000 &&
+            videoIntent.front().volume == 35 &&
+            videoIntent.front().panning == 30,
+            "video presentation intent carries static pitch/pan and live sequence volume");
 
         const std::array groupItems{
             ArchiveBuildItem{LegacyDataType::Chunky,
