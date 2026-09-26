@@ -250,6 +250,11 @@ namespace monopoly::sequence
         // DataID/priority match at offset zero, optionally including descendants.
         [[nodiscard]] std::optional<SequenceInfoView> info(data::DataId id,
             std::uint16_t priority, bool wholeTree = false) const;
+        // LE_SEQNCR_IsSequenceFinished: true when the first matching sequence
+        // has reached its end time or when no matching sequence is active.
+        [[nodiscard]] bool isSequenceFinished(
+            data::DataId id, std::uint16_t priority,
+            bool wholeTree = false) const;
         // LE_SEQNCR_GetChildMeshWorldMatrix: select the first matching top-level
         // root, then search only that root/subtree for the first active 3D mesh.
         [[nodiscard]] std::optional<Matrix3D> childMeshWorldMatrix(
