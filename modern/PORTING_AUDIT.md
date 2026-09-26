@@ -9,9 +9,9 @@ Les lignes peuvent partager des dépendances. Leurs nombres ne sont pas un pourc
 | Catégorie | Nombre de lignes |
 |---|---:|
 | Complètes ou remplacées | 37 |
-| Écarts actifs connus (`PORTED_PARTIAL`) | 2 |
+| Écarts actifs connus (`PORTED_PARTIAL`) | 1 |
 | Non commencées (`NOT_STARTED`) | 0 |
-| Comparaison à mener (`REVIEW_REQUIRED`) | 28 |
+| Comparaison à mener (`REVIEW_REQUIRED`) | 29 |
 | Données manquantes | 4 |
 | Outils manquants | 1 |
 | Hors périmètre, preuve d’absence d’usage | 7 |
@@ -48,7 +48,7 @@ Le [plan des travaux](PORTING_STATUS.md) fixe les priorités. Cette liste suit l
 | Jeu Monopoly | `Source/monopoly/UDStats.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 45](PORTING_MATRIX.md#L45) |
 | Jeu Monopoly | `Source/monopoly/UDTrade.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 46](PORTING_MATRIX.md#L46) |
 | Jeu Monopoly | `Source/monopoly/UDChat.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 48](PORTING_MATRIX.md#L48) |
-| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | `PORTED_PARTIAL` | [Matrice, ligne 53](PORTING_MATRIX.md#L53) |
+| Jeu Monopoly | `Source/monopoly/UDPenny.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 53](PORTING_MATRIX.md#L53) |
 | Jeu Monopoly | `Source/monopoly/UDUtils.cpp` | `REVIEW_REQUIRED` | [Matrice, ligne 54](PORTING_MATRIX.md#L54) |
 | Services ArtLib consommes | `Source/artlib/L_Data.*` | `REVIEW_REQUIRED` | [Matrice, ligne 65](PORTING_MATRIX.md#L65) |
 | Services ArtLib consommes | `Source/artlib/L_Seqncr.*` | `REVIEW_REQUIRED` | [Matrice, ligne 69](PORTING_MATRIX.md#L69) |

@@ -9,10 +9,10 @@
   <text x="742" y="114" text-anchor="end" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#24292f">37</text>
   <text x="18" y="132" text-anchor="start" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#24292f">Entrées de la matrice, périmètre documenté.</text>
   <text x="18" y="163" text-anchor="start" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#24292f">Écarts actifs connus</text>
-  <text x="742" y="163" text-anchor="end" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#24292f">2</text>
-  <text x="18" y="181" text-anchor="start" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#24292f">2 partielles ; 0 non commencées.</text>
+  <text x="742" y="163" text-anchor="end" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#24292f">1</text>
+  <text x="18" y="181" text-anchor="start" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#24292f">1 partielles ; 0 non commencées.</text>
   <text x="18" y="212" text-anchor="start" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#24292f">Comparaisons à mener</text>
-  <text x="742" y="212" text-anchor="end" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#24292f">28</text>
+  <text x="742" y="212" text-anchor="end" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#24292f">29</text>
   <text x="18" y="230" text-anchor="start" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#24292f">REVIEW_REQUIRED : aucun manque de code déduit sans comparaison.</text>
   <text x="18" y="261" text-anchor="start" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#24292f">Données ou outils manquants</text>
   <text x="742" y="261" text-anchor="end" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#24292f">5</text>
