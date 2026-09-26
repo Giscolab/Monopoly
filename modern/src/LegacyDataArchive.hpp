@@ -212,6 +212,11 @@ namespace monopoly::data
             std::span<std::byte> destination,
             std::uint32_t startOffset = 0);
 
+        // Safe LE_DATA_GetPointer equivalent: report whether the item has
+        // live cache/lease ownership without exposing a raw pointer.
+        [[nodiscard]] std::expected<bool, DataError>
+        isLoaded(DataTag tag) const;
+
         // Retire seulement la possession du cache. Les SharedDataBytes deja
         // remis aux callers restent valides, contrairement aux pointeurs nus
         // de L_Data.
@@ -270,6 +275,9 @@ namespace monopoly::data
             DataId id,
             std::span<std::byte> destination,
             std::uint32_t startOffset = 0) const;
+
+        [[nodiscard]] std::expected<bool, DataError>
+        isLoaded(DataId id) const;
 
         // LE_DATA_Unload at registry scope. Already-unloaded items are a
         // successful no-op. Existing SharedDataBytes leases remain valid;
