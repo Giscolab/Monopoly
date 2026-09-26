@@ -36,16 +36,6 @@ namespace monopoly::boarddisplay
                 static_cast<data::DataTag>(base + boardIndex));
         }
 
-        [[nodiscard]] data::LegacyBitmapRGBA8 opaqueBlack(
-            std::uint32_t width, std::uint32_t height)
-        {
-            data::LegacyBitmapRGBA8 image{width, height, {}};
-            image.pixels.resize(static_cast<std::size_t>(width) * height * 4U, 0);
-            for (std::size_t offset = 3; offset < image.pixels.size(); offset += 4)
-                image.pixels[offset] = 255;
-            return image;
-        }
-
         [[nodiscard]] std::pair<std::int32_t, std::int32_t> backdropPosition(
             display::Screen2D view) noexcept
         {
@@ -177,14 +167,21 @@ namespace monopoly::boarddisplay
         data::DataId surface, const data::LegacyBitmapRGBA8& sourceImage,
         engine::SequencePlayback& playback) const
     {
-        const auto target = playback.runtimeBitmaps().asset(surface);
-        if (!target)
+        auto& bitmaps = playback.runtimeBitmaps();
+        const auto extent = bitmaps.extent(surface);
+        if (!extent)
             return std::unexpected("UDBoard backdrop runtime surface is missing");
-        auto composed = opaqueBlack(target->image.width, target->image.height);
-        const auto copied = data::blitStraightRGBA8(
-            composed, sourceImage, 0, 0, data::BitmapBlitMode::Replace);
-        if (!copied) return std::unexpected(copied.error());
-        return playback.runtimeBitmaps().update(surface, std::move(composed));
+
+        // L_Grafix equivalent: reset the native object to opaque black via
+        // ColorArea, then ShowObject/ShowTCB into the same fixed surface.
+        if (const auto cleared = bitmaps.fill(surface, 0, 0,
+                static_cast<std::int32_t>(extent->width),
+                static_cast<std::int32_t>(extent->height), 0x00000000U);
+            !cleared)
+            return cleared;
+
+        return bitmaps.blit(surface, sourceImage, 0, 0,
+            data::BitmapBlitMode::Replace);
     }
 
     std::expected<void, std::string> BoardBackdropPlayback::compileInto(

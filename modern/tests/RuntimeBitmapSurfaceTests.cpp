@@ -40,8 +40,74 @@ namespace
                 0,0,0,255, 0,0,0,255, 0,0,0,255, 0,0,0,255},
             "opaque ObjectCreate equivalent initializes black native RGBA8");
         expect(transparentAsset && transparentAsset->image.pixels ==
-            std::vector<std::uint8_t>(16, 0),
-            "transparent ObjectCreate equivalent initializes zero-alpha RGBA8");
+            std::vector<std::uint8_t>{
+                0,255,0,0, 0,255,0,0, 0,255,0,0, 0,255,0,0},
+            "transparent ObjectCreate equivalent preserves Monopoly pure-green colour key");
+        const auto opaqueExtent = opaque ? store.extent(*opaque) : std::nullopt;
+        const auto transparentExtent =
+            transparent ? store.extent(*transparent) : std::nullopt;
+        expect(opaqueExtent && transparentExtent &&
+            opaqueExtent->width == 2 && opaqueExtent->height == 2 &&
+            transparentExtent->width == 2 && transparentExtent->height == 2,
+            "ReturnObjectWidth/Height equivalent exposes immutable object extent");
+        expect(opaque && transparent &&
+            store.globalAlpha(*opaque) == 255 &&
+            store.globalAlpha(*transparent) == 255,
+            "ObjectCreate starts with retail ALPHA_OPAQUE100_0");
+
+        const auto alphaObject = store.create(3, 2, true, 128);
+        expect(alphaObject && store.globalAlpha(*alphaObject) == 128,
+            "ObjectCreateAlpha stores the requested absolute object alpha");
+        if (alphaObject)
+        {
+            expect(store.fill(*alphaObject, -1, 0, 3, 2, 0x00332211U).has_value(),
+                "ColorArea accepts a clipped rectangle and COLORREF");
+            const auto filled = store.asset(*alphaObject);
+            expect(filled &&
+                filled->image.pixels[0] == 0x11 &&
+                filled->image.pixels[1] == 0x22 &&
+                filled->image.pixels[2] == 0x33 &&
+                filled->image.pixels[3] == 128 &&
+                filled->image.pixels[8] == 0 &&
+                filled->image.pixels[9] == 255 &&
+                filled->image.pixels[10] == 0 &&
+                filled->image.pixels[11] == 0,
+                "ColorArea clips like ArtLib and COLORREF low byte remains red");
+
+            expect(store.fill(*alphaObject, 1, 0, 1, 1, 0x0000FF00U).has_value(),
+                "ColorArea can restore the Monopoly pure-green key");
+            const auto keyed = store.asset(*alphaObject);
+            expect(keyed && keyed->image.pixels[7] == 0,
+                "pure-green fill stays transparent on a colour-key object");
+
+            const auto alpha128Lease = store.asset(*alphaObject);
+            expect(store.setGlobalAlpha(*alphaObject, 63).has_value() &&
+                store.globalAlpha(*alphaObject) == 63,
+                "ChangeObjectAlpha replaces the global alpha absolutely");
+            const auto alpha63 = store.asset(*alphaObject);
+            expect(alpha63 && alpha63 != alpha128Lease &&
+                alpha63->image.pixels[3] == 63 &&
+                alpha128Lease && alpha128Lease->image.pixels[3] == 128,
+                "alpha change republishes immutably without cumulative multiplication");
+        }
+
+        const auto solidAlpha = store.create(1, 1, false, 63);
+        expect(solidAlpha && store.globalAlpha(*solidAlpha) == 63 &&
+            store.asset(*solidAlpha)->image.pixels[3] == 255,
+            "ShowObject solid branch ignores nAlpha exactly like BITMAP_NOTRANSPARENCY");
+        if (solidAlpha)
+        {
+            expect(store.fill(*solidAlpha, 0, 0, 1, 1, 0x000000FFU).has_value() &&
+                store.asset(*solidAlpha)->image.pixels ==
+                    std::vector<std::uint8_t>{255,0,0,255},
+                "opaque ColorArea publishes exact COLORREF pixels regardless of nAlpha");
+        }
+
+        const auto missing = data::packDataId(data::RuntimeBitmapGroup, 0xFF00);
+        expect(!store.fill(missing, 0, 0, 1, 1, 0) &&
+            !store.setGlobalAlpha(missing, 127) &&
+            !store.extent(missing) && !store.globalAlpha(missing),
+            "runtime GRAFIX mutations reject unknown DataIDs transactionally");
 
         auto destination = image(1, 1, {0,0,255,255});
         const auto halfRed = image(1, 1, {255,0,0,128});
