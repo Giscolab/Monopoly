@@ -82,11 +82,10 @@ namespace monopoly::statsui
             std::string_view text, int x, int y)
         {
             if (text.empty()) return {};
-            const auto rendered = font.render(text, TextColour);
-            if (!rendered) return std::unexpected(rendered.error().detail);
-            return data::blitStraightRGBA8(
-                image, *rendered, x, y,
-                data::BitmapBlitMode::SourceOver);
+            const auto blitted = font.blitText(
+                image, text, x, y, TextColour);
+            if (!blitted) return std::unexpected(blitted.error().detail);
+            return {};
         }
 
         [[nodiscard]] std::expected<void, std::string> printRight(
