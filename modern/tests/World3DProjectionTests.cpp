@@ -28,6 +28,23 @@ namespace
         return camera;
     }
 
+    void testRetailBoardClippingConstants()
+    {
+        expect(near(engine::MonopolyBoardNearPlane, 10.0F) &&
+            near(engine::MonopolyBoardFarPlane, 1540.0F),
+            "Monopoly board camera preserves retail clipping planes 10/1540");
+
+        const auto state = engine::makeWorld3DProjectionState(
+            {0, 0, 800, 450},
+            engine::World3DCamera{{0.0F, 0.0F, 0.0F},
+                {0.0F, 0.0F, 1.0F}, {0.0F, 1.0F, 0.0F},
+                1.5707963267948966F,
+                engine::MonopolyBoardNearPlane, engine::MonopolyBoardFarPlane});
+        expect(state && near(state->camera.nearPlane, 10.0F) &&
+            near(state->camera.farPlane, 1540.0F),
+            "projection state carries L_Rend3D clipping values unchanged");
+    }
+
     void testMatricesAndScreenBounds()
     {
         const auto state = engine::makeWorld3DProjectionState(
@@ -107,6 +124,7 @@ namespace
 
 int main()
 {
+    testRetailBoardClippingConstants();
     testMatricesAndScreenBounds();
     testNearPlaneClippingAndOffscreen();
     testCameraTranslationAndValidation();
