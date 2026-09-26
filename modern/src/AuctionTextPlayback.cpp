@@ -47,11 +47,9 @@ namespace monopoly::auctionui
             int x, int y)
         {
             if (text.empty()) return {};
-            const auto rendered = fontRuntime.render(text, colour);
-            if (!rendered) return std::unexpected(rendered.error().detail);
-            const auto blitted = data::blitStraightRGBA8(
-                destination, *rendered, x, y, data::BitmapBlitMode::SourceOver);
-            if (!blitted) return std::unexpected(blitted.error());
+            const auto blitted = fontRuntime.blitText(
+                destination, text, x, y, colour);
+            if (!blitted) return std::unexpected(blitted.error().detail);
             return {};
         }
 
