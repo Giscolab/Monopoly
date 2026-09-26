@@ -86,28 +86,29 @@ namespace monopoly::language
                         "isolated UTF-16 low surrogate");
                 result.push_back(static_cast<char16_t>(value));
             }
-            return result;
         }
-
-        for (const auto value : text)
+        else
         {
-            const auto codePoint =
-                static_cast<std::uint32_t>(value);
-            if (codePoint > 0x10FFFFU ||
-                (codePoint >= 0xD800U && codePoint <= 0xDFFFU))
-                return std::unexpected(
-                    "invalid wide-character Unicode code point");
-            if (codePoint <= 0xFFFFU)
+            for (const auto value : text)
             {
-                result.push_back(static_cast<char16_t>(codePoint));
-                continue;
-            }
+                const auto codePoint =
+                    static_cast<std::uint32_t>(value);
+                if (codePoint > 0x10FFFFU ||
+                    (codePoint >= 0xD800U && codePoint <= 0xDFFFU))
+                    return std::unexpected(
+                        "invalid wide-character Unicode code point");
+                if (codePoint <= 0xFFFFU)
+                {
+                    result.push_back(static_cast<char16_t>(codePoint));
+                    continue;
+                }
 
-            const auto adjusted = codePoint - 0x10000U;
-            result.push_back(static_cast<char16_t>(
-                0xD800U + (adjusted >> 10U)));
-            result.push_back(static_cast<char16_t>(
-                0xDC00U + (adjusted & 0x3FFU)));
+                const auto adjusted = codePoint - 0x10000U;
+                result.push_back(static_cast<char16_t>(
+                    0xD800U + (adjusted >> 10U)));
+                result.push_back(static_cast<char16_t>(
+                    0xDC00U + (adjusted & 0x3FFU)));
+            }
         }
         return result;
     }
