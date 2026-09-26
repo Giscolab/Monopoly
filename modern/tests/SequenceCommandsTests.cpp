@@ -58,6 +58,15 @@ namespace
         word(payload, target);
         return chunk(2, payload);
     }
+    DataBytes sound(DataId target)
+    {
+        DataBytes payload;
+        word(payload, 0);
+        word(payload, 4U << 24U);
+        word(payload, 18U); // ending action Hold + absolute DATA reference
+        word(payload, target);
+        return chunk(5, payload);
+    }
     DataBytes offset2D(std::int32_t x, std::int32_t y)
     {
         DataBytes payload;
@@ -381,6 +390,45 @@ namespace
             "missing ForceRedraw target is a submitted command with zero matches, not a runtime error");
     }
 
+    void testSetVolumeFifo()
+    {
+        Fixture fixture;
+        const std::array items{ArchiveBuildItem{LegacyDataType::Chunky,
+            sound(packDataId(2, 77))}};
+        auto program = makeProgram(fixture.root / "volume.dat", items);
+        const auto dataId = packDataId(2, 0);
+        SequenceRuntime runtime;
+        SequenceCommandQueue commands(runtime);
+
+        expect(commands.enqueue(StartSequenceCommand{program, 444}).has_value() &&
+            commands.updateCycle(0).has_value() &&
+            runtime.soundInstances().size() == 1 &&
+            runtime.soundInstances().front().volume == 100,
+            "sound command fixture starts at retail volume 100");
+
+        expect(commands.collect() == 1,
+            "SetVolume can be held by CollectCommands");
+        expect(commands.enqueue(SetSequenceVolumeCommand{
+                dataId, 444, 25, false}).has_value(),
+            "SetVolume command enters the historical FIFO");
+        expect(commands.updateCycle(0).has_value() &&
+            runtime.soundInstances().front().volume == 100 &&
+            commands.pendingCount() == 1,
+            "collected SetVolume remains pending");
+        expect(commands.execute() == 0 &&
+            commands.outcomes().size() == 1 &&
+            commands.outcomes().front().kind == SequenceCommandKind::SetVolume &&
+            commands.outcomes().front().matched == 1 &&
+            runtime.soundInstances().front().volume == 25,
+            "ExecuteCommands applies SetVolume before its zero-time update");
+
+        expect(commands.enqueue(SetSequenceVolumeCommand{
+                dataId, 444, 255, false}).has_value() &&
+            commands.updateCycle(0).has_value() &&
+            runtime.soundInstances().front().volume == 100,
+            "queued SetVolume preserves retail clamp above 100");
+    }
+
     void testMoveRySTxzSeekLoopAndChildRecreation()
     {
         Fixture fixture;
@@ -474,6 +522,7 @@ int main()
     testMoveXYReplacementAndRecursiveWorldPropagation();
     testSetCameraFifoState();
     testForceRedrawFifo();
+    testSetVolumeFifo();
     testMoveRySTxzSeekLoopAndChildRecreation();
     std::cout << (failures ? "Sequence command tests FAILED\n" :
         "Sequence command tests passed\n");
