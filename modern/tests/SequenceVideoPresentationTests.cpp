@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 
@@ -61,7 +62,11 @@ void testSilentPresentation(const test::VideoDecoderFixture& movie,bool expected
     require(stopped.phase==video::DecoderPhase::Stopped && stopped.queuedVideoFrames==0 && stopped.queuedAudioChunks==0,"stop reaps decoder and empties both queues");
 }
 void testAudioClockAndAbsentAudio(const test::VideoDecoderFixture& movie,const test::VideoDecoderFixture& silent) {
-    video::Presentation presentation; checked(presentation.open(silent.file(),true,decoderOptions()));
+    video::Presentation presentation;
+    checked(presentation.setGain(0.35F));
+    require(!presentation.setGain(std::numeric_limits<float>::infinity()),
+        "video presentation rejects non-finite sequence gain");
+    checked(presentation.open(silent.file(),true,decoderOptions()));
     until([&]{ const auto clock=take(presentation.pump(0)); const auto frame=take(presentation.frameAt(clock.elapsedMicroseconds)); return frame && red(frame->rgba); },"silent stream first decoded frame anchors its clock");
     const auto noAudio=take(presentation.pump(1250000));
     require(!presentation.snapshot().metadata->hasAudio && noAudio.elapsedMicroseconds==1250000 && noAudio.consumedAudioBytes==0 && noAudio.audioDrained && !noAudio.waitingForAudio,"audio enabled with no audio track uses sequence time immediately");
@@ -73,6 +78,10 @@ void testAudioClockAndAbsentAudio(const test::VideoDecoderFixture& movie,const t
     };
     until([&]{pump();return clock.consumedAudioBytes>0;},"SDL dummy device consumes decoded PCM");
     require(clock.elapsedMicroseconds>0,"audio clock advances while sequence time remains exactly zero");
+    checked(presentation.setGain(0.20F));
+    pump();
+    require(clock.consumedAudioBytes>0,
+        "live video audio stream accepts sequence gain changes without resetting playback");
     pump(true); const auto paused=clock.elapsedMicroseconds;
     std::this_thread::sleep_for(50ms); pump(true);
     require(clock.elapsedMicroseconds==paused,"pause freezes the presented media clock");
