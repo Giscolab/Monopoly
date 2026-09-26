@@ -1,10 +1,9 @@
 #include "FontRuntime.hpp"
-#include "RuntimeBitmapSurface.hpp"
-
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <system_error>
 #include <utility>
 
@@ -572,13 +571,56 @@ namespace monopoly::fonts
         auto clipped = clipBitmap(*rendered, clip);
         if (clipped.width == 0 || clipped.height == 0) return {};
 
-        const auto blitted = data::blitStraightRGBA8(
-            destination, clipped,
-            static_cast<int>(destinationX), static_cast<int>(destinationY),
-            data::BitmapBlitMode::SourceOver);
-        if (!blitted)
+        const auto pixelCount =
+            static_cast<std::uint64_t>(destination.width) * destination.height;
+        if (pixelCount > std::numeric_limits<std::size_t>::max() / 4U ||
+            destination.pixels.size() != static_cast<std::size_t>(pixelCount) * 4U)
             return std::unexpected(makeError(ErrorCode::SurfaceConversionFailed,
-                settings_.fontPath, blitted.error()));
+                settings_.fontPath, "invalid destination RGBA8 surface"));
+
+        const auto sourceOverChannel = [](
+            std::uint8_t source, std::uint8_t destination,
+            std::uint32_t sourceAlpha, std::uint32_t destinationAlpha,
+            std::uint32_t outputAlpha) noexcept
+        {
+            if (!outputAlpha) return std::uint8_t{0};
+            const auto destinationContribution =
+                (static_cast<std::uint32_t>(destination) * destinationAlpha *
+                    (255U - sourceAlpha) + 127U) / 255U;
+            const auto premultiplied =
+                static_cast<std::uint32_t>(source) * sourceAlpha +
+                destinationContribution;
+            return static_cast<std::uint8_t>(std::min(
+                (premultiplied + outputAlpha / 2U) / outputAlpha, 255U));
+        };
+
+        for (std::uint32_t row = 0; row < clipped.height; ++row)
+        {
+            for (std::uint32_t column = 0; column < clipped.width; ++column)
+            {
+                const auto sourceOffset =
+                    (static_cast<std::size_t>(row) * clipped.width + column) * 4U;
+                const auto destinationOffset =
+                    (static_cast<std::size_t>(destinationY + row) *
+                        destination.width + destinationX + column) * 4U;
+                const auto sourceAlpha = clipped.pixels[sourceOffset + 3U];
+                if (!sourceAlpha) continue;
+
+                const auto destinationAlpha =
+                    destination.pixels[destinationOffset + 3U];
+                const auto outputAlpha = sourceAlpha +
+                    (static_cast<std::uint32_t>(destinationAlpha) *
+                        (255U - sourceAlpha) + 127U) / 255U;
+                for (std::size_t channel = 0; channel < 3U; ++channel)
+                    destination.pixels[destinationOffset + channel] =
+                        sourceOverChannel(
+                            clipped.pixels[sourceOffset + channel],
+                            destination.pixels[destinationOffset + channel],
+                            sourceAlpha, destinationAlpha, outputAlpha);
+                destination.pixels[destinationOffset + 3U] =
+                    static_cast<std::uint8_t>(outputAlpha);
+            }
+        }
         return {};
     }
 
