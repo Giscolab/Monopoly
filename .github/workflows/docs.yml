@@ -8,6 +8,8 @@ on:
       - 'modern/src/**'
       - 'modern/PORTING_*.md'
       - 'modern/NETWORK_VOICE.md'
+      - 'modern/NETWORK_GAME.md'
+      - 'modern/FULL_HELP.md'
       - 'modern/VIDEO_RUNTIME.md'
       - 'modern/porting-progress.svg'
       - 'docs/**'

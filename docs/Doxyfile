@@ -10,6 +10,8 @@ INPUT                  = modern/src \
                          modern/PORTING_STATUS.md \
                          modern/PORTING_MATRIX.md \
                          modern/NETWORK_VOICE.md \
+                         modern/NETWORK_GAME.md \
+                         modern/FULL_HELP.md \
                          modern/VIDEO_RUNTIME.md \
                          modern/PORTING_AUDIT.md
 RECURSIVE              = YES
