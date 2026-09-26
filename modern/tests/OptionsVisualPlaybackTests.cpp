@@ -133,13 +133,35 @@ namespace
         require(visual.sync(state,display::Screen2D::Options,0,&font,playback).has_value() && playback.update(0).has_value(),"publish quick-help text and navigation");
         require(playback.world2D().size()==4 && state.quickHelpButtonRects[0].right==0,
             "first help page has four roots and inactive Back");
+        const auto firstPageCount=state.quickHelpLinesPerPage;
         const auto next=state.quickHelpButtonRects[1];
         (void)optionsui::processInput(state,display::Screen2D::Options,click(next.left,next.top));
         require(state.quickHelpFirstLine==state.quickHelpLinesPerPage,"Next advances exactly one measured page");
         require(visual.sync(state,display::Screen2D::Options,1,&font,playback).has_value(),"draw next help page");
+        const auto secondPageCount=state.quickHelpLinesPerPage;
+        (void)optionsui::processInput(state,display::Screen2D::Options,click(next.left,next.top));
+        require(state.quickHelpFirstLine==firstPageCount+secondPageCount,
+            "second rendered Next uses the shorter measured navigation page");
+        require(visual.sync(state,display::Screen2D::Options,2,&font,playback).has_value(),"draw third help page");
         const auto back=state.quickHelpButtonRects[0];
         (void)optionsui::processInput(state,display::Screen2D::Options,click(back.left,back.top));
+        require(state.quickHelpFirstLine==firstPageCount,"Back restores original first-page offset");
+        require(visual.sync(state,display::Screen2D::Options,3,&font,playback).has_value(),"redraw second help page");
+        (void)optionsui::processInput(state,display::Screen2D::Options,click(back.left,back.top));
         require(state.quickHelpFirstLine==0,"Back returns to original measured offset");
+        require(visual.sync(state,display::Screen2D::Options,4,&font,playback).has_value() &&
+            state.quickHelpLinesPerPage==secondPageCount && state.quickHelpButtonRects[0].right==0,
+            "Back to zero recalculates source navigated height and disables Back");
+        for (int page=0;page<100 && state.quickHelpButtonRects[1].right!=0;++page)
+        {
+            const auto button=state.quickHelpButtonRects[1];
+            (void)optionsui::processInput(state,display::Screen2D::Options,click(button.left,button.top));
+            require(visual.sync(state,display::Screen2D::Options,5+page,&font,playback).has_value(),
+                "render subsequent help page");
+        }
+        require(state.quickHelpButtonRects[1].right==0 &&
+            state.quickHelpFirstLine+state.quickHelpLinesPerPage==state.quickHelpLines.size(),
+            "final help page prints all remaining rows and disables Next");
         const auto cancel=state.quickHelpButtonRects[2];
         (void)optionsui::processInput(state,display::Screen2D::Options,click(cancel.left,cancel.top));
         require(!state.quickHelpVisible && state.active && state.currentScreen==optionsui::Screen::Help,"quick-help Cancel restores Help menu");

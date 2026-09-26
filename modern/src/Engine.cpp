@@ -23,6 +23,7 @@
 #include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
 #include "SequenceVideoRuntime.hpp"
+#include "OpeningMovies.hpp"
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
 #include "PieceRuntime.hpp"
@@ -113,6 +114,8 @@ namespace monopoly::engine
         SDL_Window* gameWindow = nullptr;
         std::unique_ptr<SequencePlayback> playback;
         video::SequenceRuntimeBridge sequenceVideoRuntime;
+        openingmovies::Controller openingMovies;
+        bool openingVideoCleanupPending{};
         std::unique_ptr<audio::Runtime> audioRuntime;
         std::unique_ptr<voicechat::AudioRuntime> voiceChatAudioRuntime;
         bool voiceChatNetworkActive{};
@@ -944,6 +947,60 @@ namespace monopoly::engine
     }
 
 
+    namespace
+    {
+        void applyOpeningMovieState()
+        {
+            if (const auto error = openingMovies.takeError(); !error.empty())
+                std::cerr << "Opening movies: " << error << '\n';
+            if (openingMovies.active())
+            {
+                display::setBackdrop(display::Screen2D::Black);
+                mouse::setEnabled(false);
+                display::showAll2();
+            }
+            else if (openingMovies.takePlayerSelectionRequest())
+            {
+                display::setBackdrop(display::Screen2D::PlayerSelect);
+                playerselection::switchPhase(display::PlayerSetupPhase::HiScore);
+                mouse::setEnabled(true);
+                display::showAll2();
+            }
+        }
+    }
+
+    void startOpeningMovies(bool startedByLobby)
+    {
+        if (auto* session = sequencePlayback())
+        {
+            openingMovies.begin(timers::tickCount(), startedByLobby,
+                display::stateReadOnly().board3DOn, *session);
+            applyOpeningMovieState();
+        }
+        else
+        {
+            std::cerr << "Opening movies: no resource playback owner\n";
+            display::setBackdrop(display::Screen2D::PlayerSelect);
+            playerselection::switchPhase(display::PlayerSetupPhase::HiScore);
+            mouse::setEnabled(true);
+            display::showAll2();
+        }
+    }
+
+    bool consumeOpeningMovieInput(const uimsg::Message& message)
+    {
+        if (!openingMovies.active() || message.type == uimsg::Type::Quit) return false;
+        if (message.type == uimsg::Type::KeyboardPressed ||
+            message.type == uimsg::Type::MouseLeftDown ||
+            message.type == uimsg::Type::MouseMiddleDown ||
+            message.type == uimsg::Type::MouseRightDown)
+        {
+            if (playback) openingMovies.skip(*playback);
+            applyOpeningMovieState();
+        }
+        return true;
+    }
+
     audio::Runtime* audioPlayback()
     {
         if (audioDisabled)
@@ -1442,6 +1499,40 @@ namespace monopoly::engine
             const auto tick = timers::tickCount();
             if (tick > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
                 return SDL_SetError("Sequence parent clock exceeds signed runtime range");
+            openingMovies.update(tick, sequenceVideoRuntime.states(), *session);
+            applyOpeningMovieState();
+            if (openingVideoCleanupPending)
+            {
+                const auto cleaned = sequenceVideoRuntime.reset(*session);
+                openingVideoCleanupPending = !cleaned;
+            }
+            if (!openingVideoCleanupPending)
+            {
+                // Video surfaces enter the same command FIFO as all other UI
+                // surfaces, before the single update/presentation below.
+                const auto videoSync = sequenceVideoRuntime.sync(*session);
+                if (!videoSync)
+                {
+                    if (!openingMovies.active())
+                        return SDL_SetError("Sequence video runtime: %s", videoSync.error().c_str());
+                    openingMovies.decoderFailed(videoSync.error(), *session);
+                    const auto cleaned = sequenceVideoRuntime.reset(*session);
+                    openingVideoCleanupPending = !cleaned;
+                    if (!cleaned)
+                        std::cerr << "Opening video cleanup queued for retry: "
+                                  << cleaned.error() << '\n';
+                    applyOpeningMovieState();
+                }
+                else for (const auto& notice : *videoSync)
+                {
+                    uimsg::Message message{};
+                    message.type = uimsg::Type::VideoJump;
+                    message.numberA = notice.event.decisionFrame;
+                    message.numberB = notice.event.jumpToFrame;
+                    message.numberC = notice.event.alternativeTaken ? 1 : 0;
+                    (void)uimsg::send(message);
+                }
+            }
             const auto& displayState = display::stateReadOnly();
             const bool boardVisible =
                 display::isBoardVisible(displayState.desired2DView);
@@ -1452,7 +1543,9 @@ namespace monopoly::engine
                 playerselection::renderStateReadOnly(), fontPlayback(), *session);
             if (!playerSelectionSync)
                 return SDL_SetError("Player selection playback: %s", playerSelectionSync.error().c_str());
-            playerselection::setPlaybackState(playerSelectionPlayback.ready(),
+            if (const auto started = playerSelectionPlayback.takeStartedPhase())
+                playerselection::visualPhaseStarted(*started);
+            playerselection::setPlaybackState(playerSelectionPlayback.interactable(),
                 playerSelectionPlayback.ruleHits(), playerSelectionPlayback.restoreRect(),
                 playerSelectionPlayback.shortRect());
             const auto auctionSync = auctionPlayback.sync(
@@ -2009,7 +2102,8 @@ namespace monopoly::engine
             {
                 mousePointerErrorReported = false;
             }
-            const auto nativeKind = (!pointerSync && mousePointerPlayback.visible())
+            const auto nativeKind = (openingMovies.active() ||
+                (!pointerSync && mousePointerPlayback.visible()))
                 ? mouse::NativeCursorKind::Hidden
                 : mouse::nativeCursorKind(
                     mouse::stateReadOnly(), mousePointerPlayback.visible());
@@ -2020,24 +2114,6 @@ namespace monopoly::engine
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             publishSequenceLifecycleEvents(*session);
-
-            const auto videoResources = session->resources();
-            if (!videoResources)
-                return SDL_SetError("Sequence video runtime has no resource snapshot");
-            const auto videoSync = sequenceVideoRuntime.sync(
-                session->runtime(), *videoResources);
-            if (!videoSync)
-                return SDL_SetError(
-                    "Sequence video runtime: %s", videoSync.error().c_str());
-            for (const auto& notice : *videoSync)
-            {
-                uimsg::Message message{};
-                message.type = uimsg::Type::VideoJump;
-                message.numberA = notice.event.decisionFrame;
-                message.numberB = notice.event.jumpToFrame;
-                message.numberC = notice.event.alternativeTaken ? 1 : 0;
-                (void)uimsg::send(message);
-            }
 
             if (!audioDisabled)
             {
@@ -2096,6 +2172,12 @@ namespace monopoly::engine
 
     void shutdown()
     {
+        if (playback)
+        {
+            openingMovies.reset(*playback);
+            (void)sequenceVideoRuntime.reset(*playback);
+        }
+        openingVideoCleanupPending = false;
         rules::cards::setBankPayoutObserver(nullptr);
         statsAccountRuntime.reset();
         pieceMovePlayback = {};

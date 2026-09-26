@@ -1287,6 +1287,13 @@ namespace monopoly::userinterface
 
     bool processUIMessage(const uimsg::Message& message)
     {
+        if (message.type == uimsg::Type::Quit)
+        {
+            runtime::state().gameQuitRequested = true;
+            return false;
+        }
+        if (engine::consumeOpeningMovieInput(message))
+            return !runtime::state().gameQuitRequested;
         chat::setPlayerNames(uiRuleState);
         // ProcessLibraryMessage() original appelle
         // AdvanceTimeStep() ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  chaque message ArtLib.
@@ -1648,11 +1655,6 @@ namespace monopoly::userinterface
         //
         // ProcessLibraryMessage() sera portÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© ici progressivement,
         // notamment AdvanceTimeStep(), clavier, souris et sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©quenceur.
-
-        if (message.type == uimsg::Type::Quit)
-        {
-            runtime::state().gameQuitRequested = true;
-        }
 
         // Source originale :
         // if (GameQuitRequested)

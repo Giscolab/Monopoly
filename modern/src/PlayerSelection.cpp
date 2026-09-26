@@ -28,7 +28,7 @@ namespace monopoly::playerselection
 
         ui::playersetupsound::State setupSoundState;
         bool playbackAttached{};
-        bool playbackReady{};
+        bool playbackInteractable{};
         std::vector<RuleHit> ruleHits;
         ui::playersetup::Rect restoreRuleRect{}, shortRuleRect{};
         PlayerSelectionHistory history;
@@ -928,7 +928,7 @@ namespace monopoly::playerselection
     bool initialize()
     {
         globalState = {};
-        playbackAttached = playbackReady = false;
+        playbackAttached = playbackInteractable = false;
         ruleHits.clear();
         loadRequested = false;
         customBoardRequested = false;
@@ -967,7 +967,7 @@ namespace monopoly::playerselection
     void shutdown()
     {
         globalState = {};
-        playbackAttached = playbackReady = false;
+        playbackAttached = playbackInteractable = false;
         ruleHits.clear();
         loadRequested = false;
         customBoardRequested = false;
@@ -1148,7 +1148,7 @@ namespace monopoly::playerselection
 
 
         syncLegacyStateFromFlow();
-        playSetupPhaseSound(displayState.currentPlayerSetupPhase);
+        // Phase sound is selected when playback starts the incoming objects.
 
 
         // The renderer retains its outgoing objects until their clocks finish.
@@ -1241,11 +1241,19 @@ namespace monopoly::playerselection
         return {};
     }
 
-    void setPlaybackState(bool ready, std::span<const RuleHit> hits,
+    void visualPhaseStarted(ui::playersetup::Phase phase) noexcept
+    {
+        // UDPsel.cpp:3937/4001: phase entry and returning from Options both
+        // re-evaluate sound. PlayerSetupSound retains the retail desired/playing
+        // deduplication, including the process-lifetime Welcome guard.
+        playSetupPhaseSound(toDisplayPhase(phase));
+    }
+
+    void setPlaybackState(bool interactable, std::span<const RuleHit> hits,
         ui::playersetup::Rect restore, ui::playersetup::Rect shortGame)
     {
         playbackAttached = true;
-        playbackReady = ready;
+        playbackInteractable = interactable;
         ruleHits.assign(hits.begin(), hits.end());
         restoreRuleRect = restore;
         shortRuleRect = shortGame;
@@ -1510,7 +1518,7 @@ namespace monopoly::playerselection
 
         // ENTERNAME accepts typing during anim-in, as in UDPsel. Clicks cannot
         // operate controls while the previous visual phase is still leaving.
-        if (playbackAttached && (!playbackReady ||
+        if (playbackAttached && (!playbackInteractable ||
             displayState.currentPlayerSetupPhase != displayState.desiredPlayerSetupPhase) &&
             message.type == uimsg::Type::MouseLeftDown)
             return;

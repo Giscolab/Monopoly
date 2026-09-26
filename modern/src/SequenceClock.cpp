@@ -1,6 +1,7 @@
 #include "SequenceClock.hpp"
 
 #include <limits>
+#include <algorithm>
 
 namespace monopoly::sequence
 {
@@ -33,7 +34,7 @@ namespace monopoly::sequence
     {
         switch (record.chunk.id)
         {
-        case 1: case 2: case 3: case 4: case 7: case 9: case 10: break;
+        case 1: case 2: case 3: case 4: case 6: case 7: case 9: case 10: break;
         default: return std::unexpected(ClockError::UnsupportedSequenceType);
         }
         if (record.header.scrollingWorld)
@@ -62,6 +63,9 @@ namespace monopoly::sequence
         if (!fitsClock(initial))
             return std::unexpected(ClockError::ClockOverflow);
         result.clock_ = static_cast<std::int32_t>(initial);
+        result.videoClock_ = record.chunk.id == 6;
+        result.elapsedParentClock_ = result.clock_;
+        result.authoredEndTime_ = result.endTime_;
         return result;
     }
 
@@ -76,6 +80,49 @@ namespace monopoly::sequence
         std::int64_t elapsed = lastParentClock_ ?
             static_cast<std::int64_t>(parentClock) - *lastParentClock_ : 0;
         if (paused_) elapsed = 0;
+        if (videoClock_)
+        {
+            const auto parentElapsed = static_cast<std::int64_t>(elapsedParentClock_) + elapsed;
+            if (!fitsClock(parentElapsed)) return std::unexpected(ClockError::ClockOverflow);
+            elapsedParentClock_ = static_cast<std::int32_t>(parentElapsed);
+            result.updated = !lastParentClock_ || forceReevaluation || pendingVideoClock_.has_value();
+            if (!lastParentClock_) result.previousClock.reset();
+            lastParentClock_ = parentClock;
+            if (pendingVideoClock_)
+            {
+                const auto supplied = *pendingVideoClock_;
+                pendingVideoClock_.reset();
+                endTime_ = std::min(authoredEndTime_, supplied.duration);
+                const bool finished = supplied.ended ||
+                    (authoredEndTime_ < supplied.duration && supplied.clock >= authoredEndTime_);
+                if (finished)
+                {
+                    result.hitEnd = !videoHeld_ || endingAction_ != 2;
+                    result.notifyEnd = result.hitEnd;
+                    clock_ = endTime_;
+                    if (endingAction_ <= 1) stopped_ = true;
+                    else if (endingAction_ == 2) videoHeld_ = true;
+                    else
+                    {
+                        clock_ = 0;
+                        videoHeld_ = false;
+                        result.restartChildren = true;
+                    }
+                }
+                else
+                {
+                    // A decoded backlog may outlive the nominal duration. Only
+                    // confirmed EOF (or an authored shorter clip) exposes the end.
+                    const auto mediaClock = std::min(supplied.clock, endTime_ - 1);
+                    if (mediaClock < clock_) result.restartChildren = true;
+                    clock_ = mediaClock;
+                    videoHeld_ = false;
+                }
+            }
+            result.clock = clock_;
+            result.stopped = stopped_;
+            return result;
+        }
         // First update is immediate; skipped updates do not consume time.
         if (lastParentClock_ && elapsed < timeMultiple_ && !forceReevaluation)
             return result;
@@ -112,6 +159,14 @@ namespace monopoly::sequence
         return result;
     }
 
+    std::expected<void, ClockError> SequenceClock::supplyVideoClock(
+        std::int32_t mediaClock, std::int32_t duration, bool ended)
+    {
+        if (!videoClock_) return std::unexpected(ClockError::UnsupportedSequenceType);
+        if (mediaClock < 0 || duration <= 0) return std::unexpected(ClockError::NegativeEndTime);
+        pendingVideoClock_ = VideoClockInput{mediaClock, duration, ended};
+        return {};
+    }
     std::expected<void, ClockError> SequenceClock::setPaused(
         bool paused, std::int32_t parentClock)
     {
@@ -138,6 +193,12 @@ namespace monopoly::sequence
         if (endingAction_ == 3) newTime %= endTime_;
         else if (endingAction_ == 2 && newTime > endTime_) newTime = endTime_;
         clock_ = newTime;
+        if (videoClock_)
+        {
+            elapsedParentClock_ = newTime;
+            pendingVideoClock_.reset();
+            videoHeld_ = false;
+        }
         result.clock = clock_;
         result.restartChildren = true;
         return result;

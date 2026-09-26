@@ -26,6 +26,9 @@ namespace
     monopoly::ibar::State routingIBarState{};
     bool enterExitCreditsOnNextIBarInput{};
     bool acceptRecipient = true;
+    bool openingInputActive{};
+    unsigned openingInputCalls{};
+    unsigned advanceTimeStepCalls{};
     int localResetCount = 0;
     int queueLockDepth = 0;
     int iBarRestoreCount = 0;
@@ -84,6 +87,30 @@ namespace
     {
         for (int shift = 0; shift < 32; shift += 8)
             data.push_back(static_cast<std::uint8_t>(value >> shift));
+    }
+
+    void testOpeningInputGate()
+    {
+        using namespace monopoly;
+        route.clear();
+        capturedMessages.clear();
+        runtime::state().gameQuitRequested = false;
+        openingInputActive = true;
+        openingInputCalls = advanceTimeStepCalls = 0;
+        for (const auto type : {uimsg::Type::KeyboardPressed, uimsg::Type::TextInput,
+                uimsg::Type::MouseLeftDown, uimsg::Type::MouseMiddleDown,
+                uimsg::Type::MouseRightDown, uimsg::Type::MouseMoved,
+                uimsg::Type::TimerReachedZero})
+            expect(userinterface::processUIMessage({type}),
+                "opening input is consumed while application remains active");
+        expect(openingInputCalls == 7 && advanceTimeStepCalls == 0 &&
+            route.empty() && capturedMessages.empty(),
+            "intro gate precedes time-step advancement and every gameplay/UI handler");
+        expect(!userinterface::processUIMessage({uimsg::Type::Quit}) &&
+            runtime::state().gameQuitRequested && openingInputCalls == 7,
+            "Quit bypasses intro consumption and closes the application immediately");
+        runtime::state().gameQuitRequested = false;
+        openingInputActive = false;
     }
 
     void appendI64(std::vector<std::uint8_t>& data, std::int64_t value)
@@ -158,6 +185,11 @@ namespace monopoly::engine
     statsui::AccountRuntime* statsAccounts() noexcept { return nullptr; }
     bool startVoiceChat() noexcept { return false; }
     void stopVoiceChat() noexcept {}
+    bool consumeOpeningMovieInput(const uimsg::Message&)
+    {
+        ++openingInputCalls;
+        return openingInputActive;
+    }
     void playWarningSound() noexcept { route.push_back("warning"); }
     void playSaveFailureSound() noexcept { route.push_back("save-failure"); }
     void playClickSound() noexcept { route.push_back("click"); }
@@ -500,6 +532,7 @@ namespace monopoly::userinterface
 {
     void advanceTimeStep()
     {
+        ++advanceTimeStepCalls;
     }
 
     void lockGameQueue()
@@ -2228,6 +2261,7 @@ int main()
         << "Monopoly UserInterface routing tests\r\n"
         << "====================================\r\n";
 
+    testOpeningInputGate();
     testUiModuleOrder();
     testOptionsEntryAndCancelRouting();
     testSavedCustomBoardRouting();

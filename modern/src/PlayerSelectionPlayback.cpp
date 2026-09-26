@@ -457,7 +457,13 @@ namespace monopoly::playerselection
                 return std::unexpected("Validated player selection command rejected");
         live_=std::move(next);
         pressSerial_=s.pressSerial;
-        if(!phaseChange || !desired.empty() || live_.empty())phase_=target;
+        if(!phaseChange || !desired.empty() || live_.empty())
+        {
+            if (phaseChange && target != P::None) startedPhase_ = target;
+            phase_ = target;
+        }
+        if (target == P::None) startedPhase_.reset();
+        interactable_ = target != P::None && phase_ == target;
         ready_=phase_==target && std::none_of(live_.begin(),live_.end(),[](const auto& item){return item.second.animating;});
         ruleHits_=std::move(nextHits);restoreRect_=nextRestore;shortRect_=nextShort;
         return {};
@@ -467,6 +473,6 @@ namespace monopoly::playerselection
     {
         live_.clear();surfaces_.clear();textCache_.clear();ruleHits_.clear();
         restoreRect_={};shortRect_={};phase_=P::None;ready_=false;
-        pressSerial_=0;
+        pressSerial_=0;interactable_=false;startedPhase_.reset();
     }
 }

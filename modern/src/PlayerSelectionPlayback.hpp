@@ -7,6 +7,7 @@
 
 #include <expected>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -51,6 +52,15 @@ namespace monopoly::playerselection
             const RenderState&, fonts::Runtime*, engine::SequencePlayback&);
         void reset() noexcept;
         [[nodiscard]] bool ready() const noexcept { return ready_; }
+        // Retail hotspots become active when incoming objects start, not when
+        // their clocks settle. Outgoing objects never remain interactive.
+        [[nodiscard]] bool interactable() const noexcept { return interactable_; }
+        [[nodiscard]] std::optional<ui::playersetup::Phase> takeStartedPhase() noexcept
+        {
+            const auto result = startedPhase_;
+            startedPhase_.reset();
+            return result;
+        }
         [[nodiscard]] std::span<const RuleHit> ruleHits() const noexcept { return ruleHits_; }
         [[nodiscard]] ui::playersetup::Rect restoreRect() const noexcept { return restoreRect_; }
         [[nodiscard]] ui::playersetup::Rect shortRect() const noexcept { return shortRect_; }
@@ -70,6 +80,8 @@ namespace monopoly::playerselection
         ui::playersetup::Rect restoreRect_{}, shortRect_{};
         ui::playersetup::Phase phase_{ui::playersetup::Phase::None};
         bool ready_{};
+        bool interactable_{};
+        std::optional<ui::playersetup::Phase> startedPhase_;
         std::uint64_t pressSerial_{};
     };
 }

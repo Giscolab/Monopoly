@@ -120,12 +120,20 @@ namespace
 
     void testFixedRecords()
     {
-        for (const auto id : std::array<std::uint8_t, 8>{ 1, 2, 3, 4, 5, 7, 9, 10 })
+        for (const auto id : std::array<std::uint8_t, 9>{ 1, 2, 3, 4, 5, 6, 7, 9, 10 })
         {
             DataBytes payload = CommonHeader;
             if (id == 10)
             {
                 payload.push_back(std::byte{2});
+            }
+            else if (id == 6)
+            {
+                // L_Seqncr.h VIDEO: seven unsigned playback bytes and three signed controls.
+                const DataBytes videoFields{std::byte{1}, std::byte{0}, std::byte{127},
+                    std::byte{1}, std::byte{1}, std::byte{0}, std::byte{1},
+                    std::byte{0xFE}, std::byte{3}, std::byte{0xFC}};
+                payload.insert(payload.end(), videoFields.begin(), videoFields.end());
             }
             else if (id == 7)
             {
@@ -182,6 +190,16 @@ namespace
                 expect(std::get<SequenceSoundData>(record->data).soundDataId ==
                     0x1234'BCDEU, "sound DataID is decoded little-endian");
                 break;
+            case 6:
+            {
+                const auto& video = std::get<SequenceVideoData>(record->data);
+                expect(video.drawSolid && !video.flipVertically && video.alphaLevel == 127 &&
+                    video.enableVideo && video.enableAudio && !video.drawDirectlyToScreen &&
+                    video.doubleAlternateLines && video.saturation == -2 &&
+                    video.brightness == 3 && video.contrast == -4,
+                    "video playback flags, alpha and signed controls decode from the 22-byte record");
+                break;
+            }
             case 7:
             {
                 const auto& camera = std::get<SequenceCameraData>(record->data);
@@ -244,7 +262,7 @@ namespace
             reader.currentOffset() == position && reader.level() == 1,
             "end-of-parent error is preserved without changing traversal state");
 
-        for (const auto id : std::array<std::uint8_t, 4>{ 6, 8, 20, 129 })
+        for (const auto id : std::array<std::uint8_t, 3>{ 8, 20, 129 })
         {
             const auto unsupportedBytes = chunk(id, CommonHeader);
             LegacyChunkReader unsupportedReader(unsupportedBytes);
@@ -252,7 +270,7 @@ namespace
             expect(!unsupported && unsupported.error().code ==
                 SequenceErrorCode::UnsupportedRecord &&
                 unsupportedReader.level() == 0 && unsupportedReader.currentOffset() == 0,
-                "unported sequence and non-sequence records are explicitly unsupported");
+                "unsupported model type 8 and non-sequence records remain explicitly rejected");
         }
 
         auto overrunBytes = bytes;

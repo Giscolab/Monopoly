@@ -119,14 +119,19 @@ namespace monopoly::video
         const auto parsed = parseAviMetadata(aviBytes);
         if (!parsed) return std::unexpected(parsed.error());
 
-        metadata_ = *parsed;
+        return open(*parsed, loopAtEnd);
+    }
+
+    std::expected<void, std::string> Runtime::open(
+        AviMetadata metadata, bool loopAtEnd)
+    {
+        if (!metadata.width || !metadata.height || !metadata.microsecondsPerFrame ||
+            !metadata.totalFrames || metadata.totalFrames >
+                static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max()))
+            return std::unexpected("video metadata is outside runtime limits");
+        metadata_ = metadata;
         status_.currentFrame = -1;
         status_.desiredFrame = -1;
-        if (metadata_.totalFrames >
-            static_cast<std::uint32_t>(
-                std::numeric_limits<std::int32_t>::max()))
-            return std::unexpected(
-                "AVI frame count exceeds runtime range");
         status_.numberOfFrames =
             static_cast<std::int32_t>(metadata_.totalFrames);
         status_.ended = false;

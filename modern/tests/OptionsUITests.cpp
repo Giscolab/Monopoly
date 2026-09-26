@@ -57,6 +57,47 @@ namespace
             "File hotspots preserve Win32 right/bottom exclusive edges");
     }
 
+    void testQuickHelpPageOffsets()
+    {
+        using namespace optionsui;
+        require(quickHelpPageLineCount(100, 0, 16, true) == 28,
+            "initial QuickHelp page prints 28 rows at 16px");
+        require(quickHelpPageLineCount(100, 28, 16, false) == 27 &&
+            quickHelpPageLineCount(100, 55, 16, false) == 27,
+            "navigated nonfinal QuickHelp pages reserve the source extra row");
+        require(quickHelpPageLineCount(100, 82, 16, false) == 18 &&
+            quickHelpPageLineCount(100, 0, 16, false) == 27,
+            "final page fits remaining rows and Previous to zero uses navigation height");
+        require(quickHelpPageLineCount(100, 24, 18, false) == 24,
+            "exactly fitting probe does not lose an extra row");
+        require(quickHelpPageLineCount(100, 100, 16, false) == 0 &&
+            quickHelpPageLineCount(100, 0, 0, true) == 0,
+            "empty remainder and invalid metrics cannot enable a Next page");
+
+        State state;
+        state.active = state.quickHelpVisible = true;
+        state.currentScreen = Screen::Help;
+        state.quickHelpLines.resize(100, "row");
+        state.quickHelpLinesPerPage = 28;
+        state.quickHelpPageOffsets.resize(3);
+        state.quickHelpButtonRects = {Rect{10,455,40,470}, Rect{50,455,80,470}, Rect{90,455,120,470}};
+        (void)processInput(state, display::Screen2D::Options, click(50,455));
+        require(state.quickHelpFirstLine == 28 && state.quickHelpPageOffsets[1] == 28,
+            "Next records the first source offset rather than recomputing it later");
+        state.quickHelpLinesPerPage = 27;
+        (void)processInput(state, display::Screen2D::Options, click(50,455));
+        require(state.quickHelpFirstLine == 55 && state.quickHelpPageOffsets[2] == 55,
+            "second Next records the shorter navigated page offset");
+        (void)processInput(state, display::Screen2D::Options, click(10,455));
+        require(state.quickHelpFirstLine == 28, "Previous restores exact saved offset 28");
+        (void)processInput(state, display::Screen2D::Options, click(10,455));
+        require(state.quickHelpFirstLine == 0 && !state.quickHelpInitialPage,
+            "Previous restores zero without pretending this is the initial render");
+        (void)processInput(state, display::Screen2D::Options, click(50,455));
+        require(state.quickHelpFirstLine == 27 && state.quickHelpPageOffsets[1] == 27,
+            "Next after returning to page zero replaces its old offset as source does");
+    }
+
     void testFileInput()
     {
         optionsui::State state{};
@@ -637,6 +678,7 @@ int main()
     try
     {
         testRetailContract();
+        testQuickHelpPageOffsets();
         testFileInput();
         testFilePlayback();
         testNavigationInputAndPlayback();

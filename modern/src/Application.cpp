@@ -238,6 +238,10 @@ namespace monopoly
                 }
             }
 
+            // Voice host/connect is not a lobby launch. Only a real lobby
+            // owner may request the historical opening-movie bypass.
+            if (!finished) engine::startOpeningMovies(false);
+
             while (!finished)
             {
                 SDL_Event event{};

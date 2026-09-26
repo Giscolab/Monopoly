@@ -61,7 +61,8 @@ namespace monopoly::playerselection
     void show();
 
     [[nodiscard]] RenderState renderStateReadOnly();
-    void setPlaybackState(bool ready, std::span<const RuleHit> rules,
+    void visualPhaseStarted(ui::playersetup::Phase phase) noexcept;
+    void setPlaybackState(bool interactable, std::span<const RuleHit> rules,
         ui::playersetup::Rect restore, ui::playersetup::Rect shortGame);
     [[nodiscard]] std::expected<void, std::string> configureHistory(std::filesystem::path path);
     [[nodiscard]] bool consumeLoadRequest() noexcept;

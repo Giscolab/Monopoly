@@ -45,6 +45,8 @@ namespace monopoly::sequence
         std::optional<data::DataId> contentsDataId;
         // One program index for each record in the schedule, in DISK order.
         std::vector<std::size_t> childDescriptions;
+        // Runtime-only TakeOverAndPlayBinkVideo option; never decoded from DAT.
+        bool binkDoubleSize{};
     };
 
     // Immutable, bounded description DAG. Shared sublists are not expanded
@@ -64,6 +66,13 @@ namespace monopoly::sequence
             std::size_t offset = 0, DescriptionLimits limits = {});        [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
         rawBitmap(data::DataId id, data::LegacyDataType sourceType,
             DescriptionLimits limits = {});
+        // External media is owned by the video backend. Its real EOF, not a
+        // guessed sequence duration, ends this runtime-created video record.
+        [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
+        runtimeVideo(data::DataId id, std::string fileName,
+            data::SequenceVideoData options,
+            data::Sequence2DBoundingBoxAttribute bounds,
+            bool binkDoubleSize = false);
         [[nodiscard]] std::span<const SequenceDescription> descriptions() const noexcept;
         [[nodiscard]] std::shared_ptr<const data::ResourceSnapshot> resources() const noexcept;
     private:
@@ -163,6 +172,9 @@ namespace monopoly::sequence
         std::string fileName;
         std::optional<data::Sequence2DBoundingBoxAttribute> boundingBox;
         Matrix2D worldTransform{};
+        std::uint8_t endingAction{};
+        bool binkDoubleSize{};
+        std::int32_t elapsedParentClock{};
     };
     struct SequenceMeshInstanceView
     {
@@ -197,6 +209,8 @@ namespace monopoly::sequence
             std::uint16_t priority = 0, ClockStartOptions options = {},
             std::optional<SequenceTransform> initialTransform = std::nullopt,
             std::uint8_t labelOverride = 0);
+        [[nodiscard]] std::expected<void, RuntimeError> requestVideoClock(
+            SequenceNodeId node, std::int32_t mediaClock, std::int32_t duration, bool ended);
         [[nodiscard]] std::expected<void, RuntimeError> update(std::int32_t parentClock);
         [[nodiscard]] std::expected<void, RuntimeError> stop(SequenceNodeId node);
         void stopAll();

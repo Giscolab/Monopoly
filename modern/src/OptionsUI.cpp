@@ -5,6 +5,26 @@
 
 namespace monopoly::optionsui
 {
+    std::size_t quickHelpPageLineCount(std::size_t totalLines,
+        std::size_t firstLine, int lineHeight, bool initialPage) noexcept
+    {
+        if (firstLine >= totalLines || lineHeight <= 0) return 0;
+        const int availableHeight = 450 - lineHeight;
+        if (availableHeight <= 0) return 0;
+        // PrintString's strict y < max_height test draws the row whose top is
+        // inside the area. The initial page has no GetStringHeight preflight.
+        const auto capacity = static_cast<std::size_t>((availableHeight - 1) / lineHeight + 1);
+        const auto probeRows = std::min(totalLines - firstLine, capacity);
+        if (!initialPage && probeRows * static_cast<std::size_t>(lineHeight) >
+                static_cast<std::size_t>(availableHeight))
+        {
+            // UDOpts Previous/Next reserve another line after an overflowing
+            // probe. This applies to Previous returning to page zero as well.
+            return std::min(totalLines - firstLine, capacity - 1);
+        }
+        return probeRows;
+    }
+
     namespace
     {
         inline constexpr std::array<int, 5> FileButtonY{
@@ -233,10 +253,23 @@ namespace monopoly::optionsui
                 {
                     if (!state.quickHelpButtonRects[index].contains(
                             static_cast<int>(message.numberA), static_cast<int>(message.numberB))) continue;
-                    if (index == 0 && state.quickHelpFirstLine > 0)
-                        state.quickHelpFirstLine -= std::min(state.quickHelpFirstLine, state.quickHelpLinesPerPage);
-                    else if (index == 1 && state.quickHelpFirstLine + state.quickHelpLinesPerPage < state.quickHelpLines.size())
+                    if (index == 0 && state.quickHelpPageIndex > 0)
+                    {
+                        --state.quickHelpPageIndex;
+                        state.quickHelpFirstLine = state.quickHelpPageOffsets[state.quickHelpPageIndex];
+                        state.quickHelpInitialPage = false;
+                    }
+                    else if (index == 1 && state.quickHelpLinesPerPage > 0 &&
+                        state.quickHelpFirstLine + state.quickHelpLinesPerPage < state.quickHelpLines.size() &&
+                        state.quickHelpPageIndex + 1 < state.quickHelpPageOffsets.size())
+                    {
                         state.quickHelpFirstLine += state.quickHelpLinesPerPage;
+                        ++state.quickHelpPageIndex;
+                        // The renderer reserves this slot before enabling Next;
+                        // UI dispatch stays allocation-free/noexcept.
+                        state.quickHelpPageOffsets[state.quickHelpPageIndex] = state.quickHelpFirstLine;
+                        state.quickHelpInitialPage = false;
+                    }
                     else if (index == 2) state.quickHelpVisible = false;
                     return result;
                 }

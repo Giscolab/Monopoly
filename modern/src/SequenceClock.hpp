@@ -51,8 +51,9 @@ namespace monopoly::sequence
     // UpdateSequenceClock. Consumes decoded records; no borrowed payload.
     // This is NOT a tree executor or animation renderer: the caller must
     // consume restart/stop events and manage children, commands, tweekers,
-    // transforms and render slots. Sound/video hardware clocks and scrolling
-    // visibility are explicitly refused, not simulated with wall time.
+    // transforms and render slots. Video receives an elapsed timeline; decoded
+    // media EOF remains the video backend's responsibility. Sound hardware
+    // clocks and scrolling visibility are explicitly refused.
     class SequenceClock final
     {
     public:
@@ -68,6 +69,12 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<ClockUpdate, ClockError> update(
             std::int32_t parentClock, bool forceReevaluation = false);
 
+        // Video media time is supplied by decoded frames / consumed PCM. The
+        // separate parent elapsed clock keeps silent playback progressing.
+        [[nodiscard]] std::expected<void, ClockError> supplyVideoClock(
+            std::int32_t mediaClock, std::int32_t duration, bool ended);
+        [[nodiscard]] std::int32_t elapsedParentClock() const noexcept
+        { return videoClock_ ? elapsedParentClock_ : clock_; }
         [[nodiscard]] std::expected<void, ClockError> setPaused(
             bool paused, std::int32_t parentClock);
 
@@ -94,5 +101,11 @@ namespace monopoly::sequence
         bool dropFrames_{};
         bool paused_{};
         bool stopped_{};
+        struct VideoClockInput { std::int32_t clock{}, duration{}; bool ended{}; };
+        std::optional<VideoClockInput> pendingVideoClock_;
+        std::int32_t elapsedParentClock_{};
+        std::int32_t authoredEndTime_{InfiniteEndTime};
+        bool videoClock_{};
+        bool videoHeld_{};
     };
 }

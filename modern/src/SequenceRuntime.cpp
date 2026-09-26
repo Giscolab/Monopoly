@@ -192,6 +192,38 @@ namespace monopoly::sequence
     }
 
     std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
+    SequenceProgram::runtimeVideo(data::DataId id, std::string fileName,
+        data::SequenceVideoData options, data::Sequence2DBoundingBoxAttribute bounds,
+        bool binkDoubleSize)
+    {
+        if (id == data::EmptyDataId || fileName.empty() ||
+            fileName.find('\0') != std::string::npos ||
+            bounds.right <= bounds.left || bounds.bottom <= bounds.top)
+            return std::unexpected(error(RuntimeErrorCode::DataFailure, id, 0,
+                "runtime video requires an ID, filename and positive destination rectangle"));
+        auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
+        data::LegacySequenceHeader header{};
+        header.timeMultiple = 1;
+        header.endingAction = 1;
+        // Video scheduling follows elapsed media time, never one decoded frame
+        // per UI event. The backend chooses/drops frames and reports real EOF.
+        header.dropFrames = true;
+        data::LegacySequenceRecord record{
+            data::ChunkInfo{6, 0, 0, 0, 0}, header, options, 0};
+        auto children = SequenceChildSchedule::read({}, id, 0);
+        if (!children)
+            return std::unexpected(error(RuntimeErrorCode::DecodeFailure, id, 0,
+                "cannot construct empty runtime video child schedule"));
+        data::LegacySequenceAttributes attributes;
+        attributes.values.push_back(data::SequenceDimensionalityAttribute{{}, 2});
+        attributes.values.push_back(bounds);
+        attributes.values.push_back(data::SequenceFileName5Attribute{{}, std::move(fileName)});
+        program->descriptions_.push_back({id, std::move(record),
+            std::move(*children), std::move(attributes), std::nullopt, {}, binkDoubleSize});
+        return std::shared_ptr<const SequenceProgram>(std::move(program));
+    }
+
+    std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
     SequenceProgram::load(const data::DataBankRegistry& registry, data::DataId id,
         std::size_t offset, DescriptionLimits limits)
     {
@@ -571,6 +603,20 @@ namespace monopoly::sequence
         erase(*node);
         return {};
     }
+    std::expected<void, RuntimeError> SequenceRuntime::requestVideoClock(
+        SequenceNodeId id, std::int32_t mediaClock, std::int32_t duration, bool ended)
+    {
+        auto* node = find(id);
+        if (!node) return std::unexpected(error(RuntimeErrorCode::InvalidHandle, 0, 0,
+            "video clock references an inactive sequence"));
+        const auto supplied = node->clock.supplyVideoClock(mediaClock, duration, ended);
+        if (!supplied) return std::unexpected(caused(RuntimeErrorCode::ClockFailure,
+            node->definition().dataId, node->definition().record.chunk.headerOffset, supplied.error()));
+        // Do not emit/clear events here. The unique update publishes lifecycle
+        // after queued commands, preserving ReachedEnd/Destroyed notifications.
+        forceAncestors(*node);
+        return {};
+    }
     std::expected<void, RuntimeError> SequenceRuntime::setPaused(SequenceNodeId id, bool paused)
     {
         events_.clear();
@@ -938,7 +984,9 @@ namespace monopoly::sequence
                         std::get<data::SequenceVideoData>(definition.record.data),
                         videoFileName(definition.attributes),
                         videoBoundingBox(definition.attributes),
-                        std::get<Matrix2D>(node->worldTransform)});
+                        std::get<Matrix2D>(node->worldTransform),
+                        node->clock.endingAction(), definition.binkDoubleSize,
+                        node->clock.elapsedParentClock()});
                 }
                 self(self, node->children);
             }

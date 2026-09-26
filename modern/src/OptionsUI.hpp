@@ -98,6 +98,9 @@ namespace monopoly::optionsui
         std::vector<std::string> quickHelpLines;
         std::size_t quickHelpFirstLine{};
         std::size_t quickHelpLinesPerPage{1};
+        std::vector<std::size_t> quickHelpPageOffsets;
+        std::size_t quickHelpPageIndex{};
+        bool quickHelpInitialPage{true};
         std::array<Rect, 3> quickHelpButtonRects{};
     };
 
@@ -121,6 +124,8 @@ namespace monopoly::optionsui
     [[nodiscard]] std::optional<FileButton> fileButtonHit(int x, int y) noexcept;
     [[nodiscard]] Rect helpButtonRect(HelpButton button) noexcept;
     [[nodiscard]] std::optional<HelpButton> helpButtonHit(int x, int y) noexcept;
+    [[nodiscard]] std::size_t quickHelpPageLineCount(std::size_t totalLines,
+        std::size_t firstLine, int lineHeight, bool initialPage) noexcept;
 
     [[nodiscard]] bool beginFromIBar(
         State& state,

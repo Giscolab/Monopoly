@@ -188,9 +188,86 @@ namespace
             "redundant resume does not reset an already running clock");
     }
 
+    void testVideoMediaClock()
+    {
+        auto video = record(1, true);
+        video.chunk.id = 6;
+        video.header.endTime = 120;
+        video.header.timeMultiple = 1;
+        auto clock = SequenceClock::start(video).value();
+        (void)clock.update(0);
+        auto update = clock.update(600).value();
+        expect(update.clock == 0 && !update.hitEnd && !update.stopped &&
+                clock.elapsedParentClock() == 600,
+            "finite video waits through probing while source parent time remains available");
+        (void)clock.supplyVideoClock(20, 120, false);
+        update = clock.update(1200).value();
+        expect(update.clock == 20 && !update.hitEnd,
+            "finite video advances only to supplied consumed media time");
+        update = clock.update(12000).value();
+        expect(update.clock == 20 && !update.hitEnd &&
+                clock.elapsedParentClock() == 12000,
+            "an audio underrun cannot advance video time from the parent clock");
+        (void)clock.supplyVideoClock(120, 120, false);
+        update = clock.update(12000).value();
+        expect(update.clock == 119 && !update.hitEnd && !update.stopped,
+            "nominal duration with undrained decode queues is not a completed video");
+        (void)clock.supplyVideoClock(120, 120, true);
+        update = clock.update(12000).value();
+        expect(update.clock == 120 && update.hitEnd && update.notifyEnd && update.stopped,
+            "confirmed EOF ends finite Stop video exactly at its duration");
+        update = clock.update(13000).value();
+        expect(!update.updated && !update.hitEnd && !update.notifyEnd,
+            "stopped video emits no duplicate completion");
+
+        video.header.endingAction = 2;
+        auto held = SequenceClock::start(video).value();
+        (void)held.update(0);
+        (void)held.supplyVideoClock(120, 120, true);
+        update = held.update(600).value();
+        expect(update.clock == 120 && update.hitEnd && update.notifyEnd && !update.stopped,
+            "Stay video retains its endpoint and reports completion once");
+        (void)held.supplyVideoClock(120, 120, true);
+        update = held.update(900).value();
+        expect(update.clock == 120 && !update.hitEnd && !update.notifyEnd,
+            "repeated EOF state does not repeat Stay completion");
+        const auto sought = held.seek(0, 900);
+        (void)held.supplyVideoClock(10, 120, false);
+        update = held.update(910).value();
+        expect(sought.restartChildren && update.clock == 10 && !update.hitEnd,
+            "seeking a held video resumes supplied media time");
+        (void)held.supplyVideoClock(120, 120, true);
+        update = held.update(910).value();
+        expect(update.hitEnd && update.notifyEnd,
+            "a new traversal after seek reports its own completion");
+
+        video.header.endingAction = 3;
+        auto loop = SequenceClock::start(video).value();
+        (void)loop.update(0);
+        (void)loop.supplyVideoClock(120, 120, true);
+        update = loop.update(600).value();
+        expect(update.clock == 0 && update.hitEnd && update.notifyEnd &&
+                update.restartChildren && !update.stopped &&
+                loop.elapsedParentClock() == 600,
+            "Loop EOF rewinds media and children without rewinding the source parent clock");
+        (void)loop.supplyVideoClock(10, 120, false);
+        update = loop.update(610).value();
+        expect(update.clock == 10 && !update.hitEnd && !update.restartChildren &&
+                loop.elapsedParentClock() == 610,
+            "loop resumes media playback without a second completion or parent reset");
+
+        video.header.endingAction = 1;
+        video.header.endTime = 60;
+        auto clipped = SequenceClock::start(video).value();
+        (void)clipped.update(0);
+        (void)clipped.supplyVideoClock(60, 120, false);
+        update = clipped.update(60).value();
+        expect(update.clock == 60 && update.hitEnd && update.stopped,
+            "an authored shorter clip ends at its own boundary before whole-file EOF");
+    }
     void testErrors()
     {
-        for (auto id : std::array<std::uint8_t, 4>{0, 5, 6, 8})
+        for (auto id : std::array<std::uint8_t, 3>{0, 5, 8})
         {
             auto unsupported = record();
             unsupported.chunk.id = id;
@@ -199,6 +276,28 @@ namespace
                 "unsupported and hardware-clock sequence types are refused");
         }
         auto camera = record();
+        auto video = record(1, true);
+        video.chunk.id = 6;
+        video.header.endTime = 0;
+        video.header.timeMultiple = 1;
+        auto videoClock = SequenceClock::start(video);
+        expect(videoClock && videoClock->update(10).has_value(),
+            "video accepts a timeline without requiring a guessed duration");
+        const auto delayedVideo = videoClock->update(610);
+        expect(delayedVideo && delayedVideo->clock == 0 && !delayedVideo->hitEnd &&
+                videoClock->elapsedParentClock() == 600,
+            "video waits for media while the independent parent clock advances");
+        expect(videoClock->supplyVideoClock(30, 120, false).has_value(),
+            "decoded audio/video supplies media time and duration");
+        const auto playingVideo = videoClock->update(12000);
+        expect(playingVideo && playingVideo->clock == 30 && !playingVideo->hitEnd,
+            "large parent time advance cannot bypass consumed video media time");
+        expect(videoClock->supplyVideoClock(120, 120, true).has_value(),
+            "decoded EOF is supplied explicitly");
+        const auto finishedVideo = videoClock->update(12000);
+        expect(finishedVideo && finishedVideo->hitEnd && finishedVideo->stopped &&
+                finishedVideo->clock == 120,
+            "video Stop ending action emits its actual media endpoint");
         camera.chunk.id = 7;
         auto cameraClock = SequenceClock::start(camera);
         expect(cameraClock && cameraClock->update(0).has_value(),
@@ -297,6 +396,7 @@ int main()
     testEndActions();
     testStartAndOverrides();
     testPauseAndForce();
+    testVideoMediaClock();
     testErrors();
     testSeekAndEndingCommand();
     return failures == 0 ? 0 : 1;

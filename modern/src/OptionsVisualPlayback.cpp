@@ -240,14 +240,22 @@ namespace monopoly::optionsui
             const auto metrics = font->measure("TEST");
             if (!metrics) return std::unexpected(metrics.error().detail);
             const int lineHeight = std::max(1, metrics->height);
-            state.quickHelpLinesPerPage = static_cast<std::size_t>(std::max(1, (449 / lineHeight)));
             if (state.quickHelpLines.empty())
             {
                 const auto lines = wrapOptionsText(*font, state.quickHelpText, 600,
                     playback.resources()->context().board != data::BoardEdition::Usa);
                 if (!lines) return std::unexpected(lines.error());
                 state.quickHelpLines = *lines;
+                state.quickHelpFirstLine = 0;
+                state.quickHelpPageIndex = 0;
+                state.quickHelpPageOffsets.assign(2, 0);
+                state.quickHelpInitialPage = true;
             }
+            state.quickHelpLinesPerPage = quickHelpPageLineCount(
+                state.quickHelpLines.size(), state.quickHelpFirstLine,
+                lineHeight, state.quickHelpInitialPage);
+            if (state.quickHelpPageOffsets.size() < state.quickHelpPageIndex + 2)
+                state.quickHelpPageOffsets.resize(state.quickHelpPageIndex + 2);
             auto image = blank(600, 450);
             int y = 0;
             for (std::size_t index = state.quickHelpFirstLine;
@@ -265,7 +273,8 @@ namespace monopoly::optionsui
                 if (!text) return std::unexpected(text.error());
                 auto button = font->render(*text, 0x00FFFFFFU);
                 if (!button) return std::unexpected(button.error().detail);
-                const bool enabled = index == 2 || (index == 0 ? state.quickHelpFirstLine > 0 :
+                const bool enabled = index == 2 || (index == 0 ? state.quickHelpPageIndex > 0 :
+                    state.quickHelpLinesPerPage > 0 &&
                     state.quickHelpFirstLine + state.quickHelpLinesPerPage < state.quickHelpLines.size());
                 state.quickHelpButtonRects[index] = enabled ? Rect{xs[index],455,
                     xs[index]+static_cast<int>(button->width),455+static_cast<int>(button->height)} : Rect{};

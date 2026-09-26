@@ -46,6 +46,9 @@ namespace monopoly::video
             std::span<const std::uint8_t> aviBytes,
             bool loopAtEnd = false);
 
+        [[nodiscard]] std::expected<void, std::string> open(
+            AviMetadata metadata, bool loopAtEnd = false);
+
         void stop() noexcept;
 
         [[nodiscard]] std::expected<Status, std::string> feedToFrame(

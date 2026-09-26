@@ -138,8 +138,32 @@ namespace
             "truncated child propagates physical chunk bounds error");
         result = SequenceChildSchedule::read(owned(chunk(6, DataBytes(12))), 1);
         expect(!result && std::holds_alternative<SequenceError>(result.error()) &&
+            std::get<SequenceError>(result.error()).code == SequenceErrorCode::FixedRecordTruncated,
+            "video child missing its ten playback bytes reports malformed payload");
+        result = SequenceChildSchedule::read(owned(chunk(8, DataBytes(12))), 1);
+        expect(!result && std::holds_alternative<SequenceError>(result.error()) &&
             std::get<SequenceError>(result.error()).code == SequenceErrorCode::UnsupportedRecord,
-            "unported video child is refused even before its scheduled start");
+            "unsupported model type 8 remains explicitly rejected");
+        DataBytes videoPayload;
+        word(videoPayload, 5); // child begins at parent time 5
+        word(videoPayload, 0x0100'0078U); // duration 120, cadence 1
+        word(videoPayload, 1); // Stop
+        const DataBytes videoFields{std::byte{1}, std::byte{0}, std::byte{255},
+            std::byte{1}, std::byte{1}, std::byte{0}, std::byte{0},
+            std::byte{0}, std::byte{0}, std::byte{0}};
+        append(videoPayload, videoFields);
+        result = SequenceChildSchedule::read(owned(chunk(6, videoPayload)), 1);
+        expect(result && result->records().size() == 1 &&
+            std::holds_alternative<SequenceVideoData>(result->records()[0].data),
+            "complete video child is decoded into the existing schedule");
+        if (result)
+        {
+            auto selected = result->select(std::nullopt, 4);
+            expect(selected && selected->empty(), "video child waits for its scheduled start");
+            selected = result->select(4, 5);
+            expect(selected && *selected == std::vector<std::size_t>{0},
+                "video child is selected on its exact scheduled start");
+        }
         result = SequenceChildSchedule::read(owned(chunk(0, {})), 1);
         expect(!result, "null sentinel is not silently accepted as an attribute");
         result = SequenceChildSchedule::read(owned(chunk(40, {})), 1, 0);

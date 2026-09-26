@@ -543,6 +543,9 @@ target_sources(
     src/VoiceChatLegacyContract.cpp
     src/VideoRuntime.cpp
     src/SequenceVideoRuntime.cpp
+    src/VideoDecoder.cpp
+    src/VideoPresentation.cpp
+    src/OpeningMovies.cpp
     src/MoneyFormat.cpp
     src/FontRuntime.cpp
     src/UDSoundRuntime.cpp
@@ -3400,6 +3403,45 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(MonopolyVideoDecoderTests
+        tests/VideoDecoderTests.cpp src/VideoDecoder.cpp)
+    target_include_directories(MonopolyVideoDecoderTests PRIVATE src tests)
+    target_link_libraries(MonopolyVideoDecoderTests PRIVATE SDL3::SDL3)
+    add_test(NAME Monopoly.VideoDecoder COMMAND MonopolyVideoDecoderTests)
+    set_tests_properties(Monopoly.VideoDecoder PROPERTIES TIMEOUT 90)
+
+    add_executable(MonopolyOpeningMoviesTests
+        tests/OpeningMoviesTests.cpp src/OpeningMovies.cpp)
+    target_include_directories(MonopolyOpeningMoviesTests PRIVATE src tests)
+    target_link_libraries(MonopolyOpeningMoviesTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.OpeningMovies COMMAND MonopolyOpeningMoviesTests)
+
+    add_executable(MonopolySavedGameResumeTests
+        tests/SavedGameResumeTests.cpp
+        src/Messaging.cpp src/LocalPlayers.cpp src/RuleSave.cpp
+        src/RuleArchive.cpp src/RuleOptions.cpp src/RuleResync.cpp
+        src/BoardRules.cpp src/PhaseStack.cpp src/RuleTurnActions.cpp
+        src/RuleEconomy.cpp src/RuleAuction.cpp src/RuleRandom.cpp
+        src/RuleStartingOrder.cpp src/RulePrediction.cpp src/RuleLifecycle.cpp
+        src/RuleCoreActions.cpp src/RuleBuildings.cpp src/RuleSynchronization.cpp
+        src/RuleTrade.cpp src/CardDeckRuntime.cpp src/RuleGameStart.cpp
+        src/RuleInitialDeal.cpp src/CardDecks.cpp src/RuleConfiguration.cpp)
+    target_include_directories(MonopolySavedGameResumeTests PRIVATE src tests)
+    add_test(NAME Monopoly.SavedGameResume COMMAND MonopolySavedGameResumeTests)
+
+    add_executable(MonopolySequenceVideoPresentationTests
+        tests/SequenceVideoPresentationTests.cpp
+        src/VideoDecoder.cpp src/VideoPresentation.cpp
+        src/VideoRuntime.cpp src/SequenceVideoRuntime.cpp)
+    target_include_directories(MonopolySequenceVideoPresentationTests PRIVATE src tests)
+    target_link_libraries(MonopolySequenceVideoPresentationTests PRIVATE MonopolyGPU3DCore)
+    target_compile_definitions(MonopolySequenceVideoPresentationTests PRIVATE
+        MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
+    add_test(NAME Monopoly.SequenceVideoPresentation COMMAND MonopolySequenceVideoPresentationTests)
+    set_tests_properties(Monopoly.SequenceVideoPresentation PROPERTIES TIMEOUT 90)
+endif()
+
+if(BUILD_TESTING)
     add_executable(MonopolyDice2DPlaybackTests tests/Dice2DPlaybackTests.cpp
         src/DiceDisplay.cpp src/DiceIngress.cpp)
     target_include_directories(MonopolyDice2DPlaybackTests PRIVATE src tests)
@@ -3460,7 +3502,7 @@ if(BUILD_TESTING)
         src/OptionsCustomBoardPlayback.cpp src/OptionsCustomBoardRuntime.cpp src/FontRuntime.cpp)
     add_executable(MonopolyPlayerSelectionPlaybackTests tests/PlayerSelectionPlaybackTests.cpp
         src/PlayerSelectionPlayback.cpp src/PlayerSelectionHistory.cpp
-        src/PlayerSetupFlow.cpp src/RuleOptions.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
+        src/PlayerSetupFlow.cpp src/PlayerSetupSound.cpp src/RuleOptions.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
     add_executable(MonopolyStatsTextPlaybackTests tests/StatsTextPlaybackTests.cpp
         src/StatsTextPlayback.cpp src/StatsDeedPlayback.cpp src/StatsUI.cpp
         src/StatsCalculatorUI.cpp src/StatsCalculatorLogic.cpp src/AIUtility.cpp
