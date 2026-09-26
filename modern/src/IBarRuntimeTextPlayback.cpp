@@ -151,8 +151,15 @@ namespace monopoly::ibar
                     if (!created) return std::unexpected(created.error());
                     surfaces_[i] = *created;
                 }
-                const auto updated = playback.runtimeBitmaps().update(surfaces_[i], std::move(*images[i]));
+                const auto updated = playback.runtimeBitmaps().update(
+                    surfaces_[i], std::move(*images[i]));
                 if (!updated) return std::unexpected(updated.error());
+                if (shown_[i] && desired[i])
+                {
+                    const auto forced =
+                        playback.forceRedraw(surfaces_[i], Priorities[i]);
+                    if (!forced) return forced;
+                }
             }
             if (desired[i] == shown_[i]) continue;
             if (desired[i])

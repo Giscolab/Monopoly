@@ -118,6 +118,7 @@ namespace monopoly::auctionui
         engine::SequencePlayback& playback)
     {
         std::vector<Published> desired;
+        std::vector<data::DataId> changedSurfaces;
         if (desiredView != display::Screen2D::Auction)
         {
             if (currentObjects_.empty()) return {};
@@ -162,6 +163,7 @@ namespace monopoly::auctionui
                         *currentBidSurface_, std::move(image)); !updated)
                     return updated;
                 currentBidCache_ = currentKey;
+                changedSurfaces.push_back(*currentBidSurface_);
             }
             desired.push_back({*currentBidSurface_,
                 static_cast<std::uint16_t>(AuctionPropertyPriority + 1),
@@ -190,6 +192,7 @@ namespace monopoly::auctionui
                             *nameSurfaces_[index], std::move(image)); !updated)
                         return updated;
                     nameCache_[index] = name;
+                    changedSurfaces.push_back(*nameSurfaces_[index]);
                 }
 
                 const auto bid = money::format(
@@ -204,6 +207,7 @@ namespace monopoly::auctionui
                             *bidSurfaces_[index], std::move(image)); !updated)
                         return updated;
                     bidCache_[index] = *bid;
+                    changedSurfaces.push_back(*bidSurfaces_[index]);
                 }
 
                 const auto cash = money::format(
@@ -219,6 +223,7 @@ namespace monopoly::auctionui
                             *cashSurfaces_[index], std::move(image)); !updated)
                         return updated;
                     cashCache_[index] = *cash;
+                    changedSurfaces.push_back(*cashSurfaces_[index]);
                 }
 
                 desired.push_back({*nameSurfaces_[index], priority,
@@ -230,7 +235,18 @@ namespace monopoly::auctionui
             }
         }
 
-        if (desired == currentObjects_) return {};
+        if (desired == currentObjects_)
+        {
+            for (const auto id : changedSurfaces)
+            {
+                const auto object = std::find_if(desired.begin(), desired.end(),
+                    [id](const auto& value) { return value.id == id; });
+                if (object == desired.end()) continue;
+                const auto forced = playback.forceRedraw(id, object->priority);
+                if (!forced) return forced;
+            }
+            return {};
+        }
 
         std::vector<std::shared_ptr<const sequence::SequenceProgram>> programs;
         programs.reserve(desired.size());

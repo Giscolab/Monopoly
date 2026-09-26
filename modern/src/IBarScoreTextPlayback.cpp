@@ -120,7 +120,9 @@ namespace monopoly::ibar
             const std::string key = name + '\n' + *cash + '\n' +
                 (large ? "L" : "S") + (wideCurrency ? "W" : "N");
 
-            if (!cache_[player] || *cache_[player] != key)
+            const bool contentChanged =
+                !cache_[player] || *cache_[player] != key;
+            if (contentChanged)
             {
                 FontSettingsGuard guard(*fontRuntime);
                 fontRuntime->setUnderline(false);
@@ -172,6 +174,12 @@ namespace monopoly::ibar
                 if (!playback.commands().enqueue(sequence::makeMoveXY(
                         *surfaces_[player], TextPriority, next.x, next.y)))
                     return std::unexpected("IBar score text move command rejected");
+            }
+            else if (contentChanged)
+            {
+                const auto forced = playback.forceRedraw(
+                    *surfaces_[player], TextPriority);
+                if (!forced) return forced;
             }
             published_[player] = next;
         }
