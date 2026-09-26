@@ -10,45 +10,6 @@ namespace monopoly::optionsui
 {
     namespace
     {
-        [[nodiscard]] std::string toUtf8(std::u16string_view text)
-        {
-            std::string output;
-            output.reserve(text.size());
-            for (std::size_t index = 0; index < text.size(); ++index)
-            {
-                std::uint32_t cp = static_cast<std::uint16_t>(text[index]);
-                if (cp >= 0xD800U && cp <= 0xDBFFU && index + 1U < text.size())
-                {
-                    const auto low = static_cast<std::uint16_t>(text[index + 1U]);
-                    if (low >= 0xDC00U && low <= 0xDFFFU)
-                    {
-                        cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
-                        ++index;
-                    }
-                }
-                if (cp <= 0x7FU) output.push_back(static_cast<char>(cp));
-                else if (cp <= 0x7FFU)
-                {
-                    output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else if (cp <= 0xFFFFU)
-                {
-                    output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-                else
-                {
-                    output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
-                    output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
-                }
-            }
-            return output;
-        }
-
 
         data::LegacyBitmapRGBA8 blank(int width, int height)
         {
@@ -63,7 +24,9 @@ namespace monopoly::optionsui
                 return std::unexpected("Options text language catalog unavailable");
             const auto text = resources->language()->catalog->message(id);
             if (!text) return std::unexpected(text.error().detail);
-            return toUtf8(**text);
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(**text));
+            if (!encoded) return std::unexpected(encoded.error().detail);
+            return *encoded;
         }
         std::expected<void, std::string> draw(data::LegacyBitmapRGBA8& image,
             fonts::Runtime& font, std::string_view text, int y, std::uint32_t color = 0x00FFFFFFU)
