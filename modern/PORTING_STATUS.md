@@ -16,14 +16,11 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
-## Travaux prioritaires et fermeture du code
+## Code à terminer
 
 | ID | Travail | Critère de fermeture |
 |---|---|---|
-| C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; résultat de validation du HEAD courant à confirmer. Voir [usage](NETWORK_GAME.md). |
-| C02 | FullHelp portable raccordé : conversion HLP → HTML asynchrone puis ouverture navigateur. | Exporteur externe `winhlp` requis ; conversion réelle, sujets/images et plateformes à qualifier. Voir [aide complète](FULL_HELP.md). |
 | C03 | Actes Europe dynamiques : porter UDPENNY_CreateDeed et raccorder les 28 rectos/28 versos aux consommateurs. | Userifce.cpp les régénère au démarrage et au chargement selon langue, plateau et devise ; les propriétaires modernes utilisent encore les ressources statiques. Chemin Europe distinct de D01. |
-| D01 | Six références Europe d’historique absentes du corpus livré ; aucune valeur inventée. | Les appels sont dans les branches Europe de `UDIBar.cpp`, désactivées par `USA_VERSION=1` dans le build source livré. Les définitions/données Europe restent nécessaires pour cette édition ; l’achat utilise déjà LANG 3178. |
 
 QuickHelp n’est plus bloqué par les accents hors Windows : son décodage CP1252 vers UTF-8 est explicite et testé. Les fichiers fournis sont compatibles avec ce choix ; leur contenu ne permet pas de distinguer CP1252 de Latin-1 pour les octets qu’ils emploient.
 
@@ -44,6 +41,19 @@ Ces points remplacent les anciennes mentions vagues « partiel » ou « futur »
 | A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. |
 
 MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint/UIMG0/ground/envmap sont commentés dans `hmdload.cpp`. Le chemin `NewMesh` alternatif n’est pas celui sélectionné par les appelants actifs. Ces éléments ne sont pas des tâches actives sans nouvelle preuve contraire. Les sept modules exclus et leurs justifications figurent dans la matrice.
+
+## Code implémenté : validations restantes
+
+| ID | Code présent | Validation attendue |
+|---|---|---|
+| C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; résultat de validation du HEAD courant à confirmer. Voir [usage](NETWORK_GAME.md). |
+| C02 | FullHelp portable raccordé : conversion HLP → HTML asynchrone puis ouverture navigateur. | Exporteur externe `winhlp` requis ; conversion réelle, sujets/images et plateformes à qualifier. Voir [aide complète](FULL_HELP.md). |
+
+## Données manquantes
+
+| ID | Données | Périmètre et condition de résolution |
+|---|---|---|
+| D01 | Six références Europe d’historique absentes du corpus livré ; aucune valeur inventée. | Les appels sont dans les branches Europe de `UDIBar.cpp`, désactivées par `USA_VERSION=1` dans le build source livré. Les définitions/données Europe restent nécessaires pour cette édition ; l’achat utilise déjà LANG 3178. |
 
 ## Qualification sur données et plateformes réelles
 
