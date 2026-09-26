@@ -758,6 +758,160 @@ namespace monopoly::data
     }
 
 
+    std::expected<std::size_t, DataError> LegacyDataArchive::readRaw(
+        DataTag tag,
+        std::span<std::byte> destination,
+        std::uint32_t startOffset)
+    {
+        std::scoped_lock lock(mutex_);
+
+        if (!open_)
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::ArchiveClosed,
+                path_,
+                "cannot read raw bytes from a closed archive",
+                tag));
+        }
+
+        if (static_cast<std::size_t>(tag) >= items_.size())
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::TagOutOfRange,
+                path_,
+                "DataTag is outside this archive index",
+                tag));
+        }
+
+        const auto& item = items_[tag];
+        if (!item.present())
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::EmptyItem,
+                path_,
+                "DataTag identifies an empty DAT slot",
+                tag));
+        }
+
+        if (destination.empty() || startOffset >= item.uncompressedSize)
+            return std::size_t{0};
+
+        const auto amount = std::min<std::size_t>(
+            destination.size(),
+            static_cast<std::size_t>(item.uncompressedSize - startOffset));
+
+        std::vector<Bytef> compressed(item.compressedSize);
+        stream_.clear();
+        stream_.seekg(
+            static_cast<std::streamoff>(item.offset),
+            std::ios::beg);
+
+        if (!stream_ ||
+            !readExact(
+                stream_,
+                std::as_writable_bytes(std::span(compressed))))
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::ReadFailed,
+                path_,
+                "unable to read the complete compressed DAT item",
+                tag));
+        }
+
+        z_stream inflater{};
+        inflater.next_in = compressed.data();
+        inflater.avail_in = static_cast<uInt>(compressed.size());
+        if (inflateInit(&inflater) != Z_OK)
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::DecompressionFailed,
+                path_,
+                "zlib inflate initialization failed",
+                tag));
+        }
+
+        struct InflateGuard
+        {
+            z_stream* stream{};
+            ~InflateGuard()
+            {
+                if (stream) inflateEnd(stream);
+            }
+        } guard{&inflater};
+
+        std::array<std::byte, 64U * 1024U> block{};
+        std::uint64_t producedTotal{};
+        std::size_t copied{};
+        const std::uint64_t wantedStart = startOffset;
+        const std::uint64_t wantedEnd =
+            wantedStart + static_cast<std::uint64_t>(amount);
+
+        while (copied < amount)
+        {
+            inflater.next_out =
+                reinterpret_cast<Bytef*>(block.data());
+            inflater.avail_out = static_cast<uInt>(block.size());
+
+            const int result = inflate(&inflater, Z_NO_FLUSH);
+            if (result != Z_OK && result != Z_STREAM_END)
+            {
+                return std::unexpected(makeError(
+                    DataErrorCode::DecompressionFailed,
+                    path_,
+                    "zlib inflate failed during raw slice read",
+                    tag));
+            }
+
+            const auto produced = block.size() - inflater.avail_out;
+            const std::uint64_t blockStart = producedTotal;
+            const std::uint64_t blockEnd =
+                producedTotal + static_cast<std::uint64_t>(produced);
+
+            if (blockEnd > wantedStart && blockStart < wantedEnd)
+            {
+                const auto overlapStart =
+                    std::max(blockStart, wantedStart);
+                const auto overlapEnd =
+                    std::min(blockEnd, wantedEnd);
+                const auto sourceOffset =
+                    static_cast<std::size_t>(overlapStart - blockStart);
+                const auto copyCount =
+                    static_cast<std::size_t>(overlapEnd - overlapStart);
+                std::memcpy(
+                    destination.data() + copied,
+                    block.data() + sourceOffset,
+                    copyCount);
+                copied += copyCount;
+            }
+
+            producedTotal = blockEnd;
+
+            if (result == Z_STREAM_END)
+                break;
+
+            if (produced == 0 && inflater.avail_in == 0)
+            {
+                return std::unexpected(makeError(
+                    DataErrorCode::DecompressedSizeMismatch,
+                    path_,
+                    "compressed DAT item ended before the requested raw slice",
+                    tag));
+            }
+        }
+
+        if (copied != amount)
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::DecompressedSizeMismatch,
+                path_,
+                "decompressed DAT item ended before the requested raw slice",
+                tag));
+        }
+
+        return copied;
+    }
+
+
     std::expected<bool, DataError> LegacyDataArchive::unload(DataTag tag)
     {
         std::scoped_lock lock(mutex_);
@@ -905,6 +1059,24 @@ namespace monopoly::data
         }
 
         return (*mounted)->load(dataTag(id));
+    }
+
+
+    std::expected<std::size_t, DataError>
+    DataBankRegistry::readRaw(
+        DataId id,
+        std::span<std::byte> destination,
+        std::uint32_t startOffset) const
+    {
+        if (isEmptyDataId(id))
+            return std::size_t{0};
+
+        auto mounted = archive(dataGroup(id));
+        if (!mounted)
+            return std::unexpected(mounted.error());
+
+        return (*mounted)->readRaw(
+            dataTag(id), destination, startOffset);
     }
 
 
