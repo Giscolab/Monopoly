@@ -24,7 +24,7 @@ env:
 
 concurrency:
   group: porting-audit-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   audit:
