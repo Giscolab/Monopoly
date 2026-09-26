@@ -32,9 +32,9 @@ namespace monopoly::optionsui
             fonts::Runtime& font, std::string_view text, int y, std::uint32_t color = 0x00FFFFFFU)
         {
             if (text.empty()) return {};
-            const auto rendered = font.render(text, color);
-            if (!rendered) return std::unexpected(rendered.error().detail);
-            return data::blitStraightRGBA8(image, *rendered, 0, y, data::BitmapBlitMode::SourceOver);
+            const auto blitted = font.blitText(image, text, 0, y, color);
+            if (!blitted) return std::unexpected(blitted.error().detail);
+            return {};
         }
         struct RestoreFont
         {
