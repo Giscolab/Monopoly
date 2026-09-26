@@ -171,10 +171,65 @@ namespace
             tag(cornerVictory->instructions[0]) == TokenMoveAnimationBaseTag + 10,
             "victory starting on a corner uses one ten-square approach and no redundant spin");
 
-        expect(!planOffBoardMove(rules::MaxTokens, 0, OffBoardOutcome::Bankrupt) &&
-            !planOffBoardMove(0, 40, OffBoardOutcome::Victory),
-            "off-board planner rejects invalid token and non-board source square");
+        expect(!planOffBoardMove(rules::MaxTokens, 0, OffBoardOutcome::Bankrupt),
+            "off-board planner rejects an invalid token");
+        for (const auto outcome : {OffBoardOutcome::Bankrupt, OffBoardOutcome::Victory})
+            for (const auto square : {-1, 41, 42})
+            {
+                const auto invalid = planOffBoardMove(0, square, outcome);
+                expect(!invalid && invalid.error() == PieceMovePlanError::InvalidSquare,
+                    "off-board planner rejects off-board and invalid source squares");
+            }
     }
+    void testOffBoardFromPrison()
+    {
+        constexpr std::uint8_t token = 2;
+        constexpr auto tokenBase = TokenMoveAnimationBaseTag + token * AnimationsPerToken;
+        const auto bankrupt = planOffBoardMove(token, 40, OffBoardOutcome::Bankrupt);
+        expect(bankrupt && bankrupt->special == PieceMoveSpecial::OffBoardBankrupt &&
+            bankrupt->sourceSquare == 40 && bankrupt->destinationSquare == 41 &&
+            bankrupt->instructions.size() == 4,
+            "prison bankruptcy produces the complete off-board animation plan");
+        if (bankrupt && bankrupt->instructions.size() == 4)
+        {
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                const auto& step = bankrupt->instructions[i];
+                expect(!step.cameraOnly && step.startSquare == 40 && step.landingSquare == 40 &&
+                    step.corner == false && step.camera == BoardCameraView::CornerJail &&
+                    tag(step) == tokenBase + (i == 2 ? 8 : 0) && isThreeD(step),
+                    "prison bankruptcy preserves jail placement and idle/idle/blast order");
+            }
+            const auto& final = bankrupt->instructions[3];
+            expect(final.cameraOnly && final.camera == BoardCameraView::TopDownSoccer &&
+                final.startSquare == 41 && final.landingSquare == 41,
+                "prison bankruptcy finishes on the source off-board overview");
+        }
+
+        const auto victory = planOffBoardMove(token, 40, OffBoardOutcome::Victory);
+        expect(victory && victory->special == PieceMoveSpecial::OffBoardVictory &&
+            victory->sourceSquare == 40 && victory->destinationSquare == 41 &&
+            victory->instructions.size() == 5 && victory->loopBegin == 1 && victory->loopEnd == 5,
+            "prison victory preserves the ten-square approach and four-segment loop");
+        if (victory && victory->instructions.size() == 5)
+        {
+            const auto& approach = victory->instructions[0];
+            expect(approach.startSquare == 40 && approach.landingSquare == 40 &&
+                approach.camera == BoardCameraView::CornerJail && approach.corner == false &&
+                tag(approach) == tokenBase + 10,
+                "prison victory starts at the jail pose without a synthetic corner spin");
+            for (std::size_t i = 1; i < 5; ++i)
+            {
+                const auto square = static_cast<std::int32_t>((i - 1) * 10);
+                const auto& step = victory->instructions[i];
+                expect(step.startSquare == square && step.landingSquare == square &&
+                    step.camera == pickCameraFor15Squares(square) && step.corner == false &&
+                    tag(step) == tokenBase + 10 && isThreeD(step),
+                    "prison victory follows source loop origins GO, Jail, Free Parking, Go To Jail");
+            }
+        }
+    }
+
     void testValidation()
     {
         expect(!planTokenMove(actions::Type::NotifyMoveForwards,
@@ -199,6 +254,7 @@ int main()
     testStraightForwardAndAnimationToggle();
     testCornerCrossingAndRandomChoices();
     testOffBoardPlans();
+    testOffBoardFromPrison();
     testValidation();
     std::cout << (failures ? "Piece move-plan tests FAILED\n" :
         "Piece move-plan tests passed\n");

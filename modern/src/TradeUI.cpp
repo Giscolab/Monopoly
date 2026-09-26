@@ -2,6 +2,8 @@
 
 #include "IBarLayout.hpp"
 
+#include <SDL3/SDL_scancode.h>
+
 #include <algorithm>
 #include <limits>
 
@@ -78,6 +80,48 @@ namespace monopoly::tradeui
                 state.cashDesired[2] + state.cashDesired[3];
             state.cashDesired[1] = gameState.players[state.playerB].cash -
                 state.cashDesired[3] + state.cashDesired[2];
+        }
+
+        void refreshRetainedOfferProjection(
+            State& state, const rules::GameState& gameState) noexcept
+        {
+            // UDTrade_ProcessEverything rebuilds these fields from the retained
+            // items after a counteroffer swaps the two displayed participants.
+            state.cashDesired[2] = 0;
+            state.cashDesired[3] = 0;
+            updateJailCards(state, gameState);
+            for (const auto& item : state.items)
+            {
+                if (item.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Cash))
+                {
+                    if (item.numberA == state.playerA) state.cashDesired[2] = item.numberD;
+                    else if (item.numberA == state.playerB) state.cashDesired[3] = item.numberD;
+                }
+                else if (item.numberC == static_cast<std::int64_t>(rules::TradeItemKind::JailCard) &&
+                         item.numberD >= 0 &&
+                         item.numberD < static_cast<std::int64_t>(gameState.cards.size()))
+                {
+                    const auto deck = static_cast<std::size_t>(item.numberD);
+                    const auto owner = gameState.cards[deck].jailOwner;
+                    if (owner == state.playerA) state.jailCardDesired[deck] = 1u << 2u;
+                    else if (owner == state.playerB) state.jailCardDesired[deck] = 1u << 3u;
+                }
+            }
+            recomputeCash(state, gameState);
+        }
+
+        [[nodiscard]] bool pressedKey(
+            const uimsg::Message& message, SDL_Scancode key) noexcept
+        {
+            return message.type == uimsg::Type::KeyboardPressed && message.numberA == key;
+        }
+
+        [[nodiscard]] std::optional<int> textDigit(const uimsg::Message& message) noexcept
+        {
+            if (message.type != uimsg::Type::TextInput || message.text.empty() ||
+                message.text.front() < '0' || message.text.front() > '9')
+                return std::nullopt;
+            return message.text.front() - '0';
         }
 
         [[nodiscard]] bool inEither(const Rect& a, const Rect& b, int x, int y) noexcept
@@ -394,16 +438,12 @@ namespace monopoly::tradeui
                 (message.type == uimsg::Type::TextInput ||
                  message.type == uimsg::Type::KeyboardPressed))
             {
-                int key = -1;
-                if (message.type == uimsg::Type::TextInput && !message.text.empty())
-                    key = static_cast<unsigned char>(message.text.front());
-                else if (message.type == uimsg::Type::KeyboardPressed)
-                    key = static_cast<int>(message.numberA);
-                if (key == 8)
+                if (pressedKey(message, SDL_SCANCODE_BACKSPACE))
                     state.contractAmount /= 10;
-                else if (key >= '0' && key <= '9' && state.contractAmount < 10)
-                    state.contractAmount = state.contractAmount * 10 + (key - '0');
-                else if (key == 13)
+                else if (const auto digit = textDigit(message); digit && state.contractAmount < 10)
+                    state.contractAmount = state.contractAmount * 10 + *digit;
+                else if (pressedKey(message, SDL_SCANCODE_RETURN) ||
+                         pressedKey(message, SDL_SCANCODE_KP_ENTER))
                 {
                     if (state.contractAmount <= 0) closeContractDialog(state);
                     else state.contractDialogMode = 3;
@@ -717,15 +757,10 @@ namespace monopoly::tradeui
             return std::nullopt;
         }
 
-        int choice = -1;
-        if (message.type == uimsg::Type::TextInput && !message.text.empty())
-            choice = static_cast<unsigned char>(message.text.front()) - '0';
-        else if (message.type == uimsg::Type::KeyboardPressed)
-            choice = static_cast<int>(message.numberA) - '0';
-
-        if (choice < 1 || choice > static_cast<int>(rules::MaxPlayers))
+        const auto choice = textDigit(message);
+        if (!choice || *choice < 1 || *choice > static_cast<int>(rules::MaxPlayers))
             return std::nullopt;
-        const auto player = static_cast<rules::PlayerNumber>(choice - 1);
+        const auto player = static_cast<rules::PlayerNumber>(*choice - 1);
         return partnerEligible(state, gameState, player)
             ? std::optional<rules::PlayerNumber>{player}
             : std::nullopt;
@@ -1096,17 +1131,12 @@ namespace monopoly::tradeui
                 return result;
             }
 
-            int key = -1;
-            if (message.type == uimsg::Type::TextInput && !message.text.empty())
-                key = static_cast<unsigned char>(message.text.front());
-            else if (message.type == uimsg::Type::KeyboardPressed)
-                key = static_cast<int>(message.numberA);
-
-            if (key == 8)
+            if (pressedKey(message, SDL_SCANCODE_BACKSPACE))
                 commitAmount(state.cashTradeAmount / 10);
-            else if (key >= '0' && key <= '9' && state.cashTradeAmount < 100000)
-                commitAmount(state.cashTradeAmount * 10 + (key - '0'));
-            else if (key == 13)
+            else if (const auto digit = textDigit(message); digit && state.cashTradeAmount < 100000)
+                commitAmount(state.cashTradeAmount * 10 + *digit);
+            else if (pressedKey(message, SDL_SCANCODE_RETURN) ||
+                     pressedKey(message, SDL_SCANCODE_KP_ENTER))
             {
                 state.cashDesired[state.cashDialogSide + 2u] = state.cashTradeAmount;
                 state.cashDesired[(1u - state.cashDialogSide) + 2u] = 0;
@@ -1640,7 +1670,10 @@ namespace monopoly::tradeui
                     state.desiredTradePanels =
                         static_cast<int>(state.playerA) * 10 + state.playerB;
                     state.editMode = true;
-                    state.showPropose = false;
+                    refreshRetainedOfferProjection(state, gameState);
+                    // Retail rearms Propose/Cancel in its next Trade frame.
+                    // Modern projection must publish that editable state here.
+                    state.showPropose = true;
                     result.requestedBackdrop = display::Screen2D::Trade;
                 }
                 else

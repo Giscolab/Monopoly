@@ -142,6 +142,42 @@ namespace
             "off-board move is bankrupt while another active token remains");
     }
 
+    void testPrisonBankruptcyThenVictory()
+    {
+        PieceMoveIngress ingress([] { return std::uint8_t{0}; });
+        auto state = stateWithPlayer(41);
+        state.players[1].currentSquare = 40;
+        state.players[1].token = 1;
+        state.players[2].currentSquare = 40;
+        state.players[2].token = 2;
+
+        const auto bankrupt = ingress.process(state,
+            moveMessage(actions::Type::NotifyJumpToSquare, 41, 1), true);
+        const auto bankruptcyPlan = ingress.takePlan();
+        expect(bankrupt && bankrupt->special == PieceMoveSpecial::OffBoardBankrupt &&
+            bankrupt->planQueued && bankrupt->projectionUpdated && bankrupt->sourceQueueLockRequired &&
+            state.players[1].currentSquare == 41 && bankruptcyPlan &&
+            bankruptcyPlan->sourceSquare == 40 && bankruptcyPlan->instructions.size() == 4,
+            "prison bankruptcy queues presentation and projects removal before the winner notification");
+
+        const auto victory = ingress.process(state,
+            moveMessage(actions::Type::NotifyJumpToSquare, 41, 2), true);
+        const auto victoryPlan = ingress.takePlan();
+        expect(victory && victory->special == PieceMoveSpecial::OffBoardVictory &&
+            victory->planQueued && victory->projectionUpdated && victory->sourceQueueLockRequired &&
+            state.players[2].currentSquare == 41 && victoryPlan &&
+            victoryPlan->sourceSquare == 40 && victoryPlan->instructions.size() == 5 &&
+            victoryPlan->loopBegin == 1 && victoryPlan->loopEnd == 5,
+            "remaining prisoner is correctly classified as winner after prior prison bankruptcy");
+
+        const auto duplicate = ingress.process(state,
+            moveMessage(actions::Type::NotifyJumpToSquare, 41, 2), true);
+        expect(!duplicate && duplicate.error().code == PieceMoveIngressErrorCode::PlannerFailure &&
+            duplicate.error().planner == PieceMovePlanError::InvalidSquare &&
+            state.players[2].currentSquare == 41 && !ingress.hasPendingPlan(),
+            "duplicate removal of an already off-board token creates no new presentation");
+    }
+
     void testValidation()
     {
         PieceMoveIngress ingress([] { return std::uint8_t{0}; });
@@ -166,6 +202,7 @@ int main()
     testJailSpecials();
     testJailSpecialAnimationsOff();
     testOffBoardOutcomeUsesOldProjection();
+    testPrisonBankruptcyThenVictory();
     testValidation();
     std::cout << (failures ? "Piece move-ingress tests FAILED\n" :
         "Piece move-ingress tests passed\n");

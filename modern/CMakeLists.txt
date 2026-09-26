@@ -3630,3 +3630,13 @@ if(BUILD_TESTING)
     add_test(NAME Monopoly.GameSessionIntegration COMMAND MonopolyGameSessionIntegrationTests)
     set_tests_properties(Monopoly.GameSessionIntegration PROPERTIES TIMEOUT 60)
 endif()
+
+# Trade's input contract uses SDL scancodes even in the pure editor tests.
+# These targets need the header constants, not an SDL runtime dependency.
+get_property(MONOPOLY_INPUT_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(MONOPOLY_INPUT_TARGET IN LISTS MONOPOLY_INPUT_TARGETS)
+    get_target_property(MONOPOLY_INPUT_SOURCES ${MONOPOLY_INPUT_TARGET} SOURCES)
+    if("src/TradeUI.cpp" IN_LIST MONOPOLY_INPUT_SOURCES)
+        target_link_libraries(${MONOPOLY_INPUT_TARGET} PRIVATE SDL3::Headers)
+    endif()
+endforeach()

@@ -24,6 +24,7 @@
 
 #include <SDL3/SDL_scancode.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <filesystem>
@@ -329,7 +330,7 @@ namespace
         drain();
     }
 
-    void pressHumanMain(ibar::RuleMode expectedMode, actions::Type expectedAction, bool keyboard = false)
+    ibar::RuleActionHitState prepareHumanInput(ibar::RuleMode expectedMode)
     {
         const auto& projection = userinterface::iBarRuleStateReadOnly();
         const auto player = ibar::resolveRulePlayer(projection.player);
@@ -345,12 +346,21 @@ namespace
         inputs.rulePlayer = player;
         inputs.gameInProgress = runtime::state().gameInProgress;
         inputs.rollDiceDesired = userinterface::dicePromptState().currentStartTurn;
+        inputs.tradeEligible = ui::localplayers::tradeSourcePlayer(
+            userinterface::ruleStateReadOnly(), player) < rules::MaxPlayers;
         const auto hit = ibar::ruleActionHitState(
             display::isIBarVisible(inputs.desired2DView), player, inputs);
-        require((hit.activeSlots & ibar::layout::actionButtonBit(ibar::layout::ActionButtonSlot::Main)) != 0,
-            "production IBar planner exposes the human Main button");
         ibar::show();
         ibar::setRuleActionHitState(hit.layout, hit.activeSlots, mode, player, false);
+        return hit;
+    }
+
+    void pressHumanMain(ibar::RuleMode expectedMode, actions::Type expectedAction, bool keyboard = false,
+        ibar::layout::ActionButtonSlot slot = ibar::layout::ActionButtonSlot::Main)
+    {
+        const auto hit = prepareHumanInput(expectedMode);
+        require((hit.activeSlots & ibar::layout::actionButtonBit(slot)) != 0,
+            "production IBar planner exposes the requested human button");
         const auto index = static_cast<std::size_t>(expectedAction);
         const auto sentBefore = observed[index];
         const auto acceptedBefore = acceptedActions[index];
@@ -359,10 +369,10 @@ namespace
                 "real UI dispatch accepts the Space shortcut");
         else
         {
-            const auto rect = ibar::layout::actionButtonRect(ibar::layout::ActionButtonSlot::Main, hit.layout);
+            const auto rect = ibar::layout::actionButtonRect(slot, hit.layout);
             require(userinterface::processUIMessage({uimsg::Type::MouseLeftDown,
                 (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2}),
-                "real UI dispatch accepts the Main button click");
+                "real UI dispatch accepts the IBar button click");
         }
         drain();
         serviceHumanIdleTick();
@@ -386,6 +396,99 @@ namespace
         drain();
         require(acceptedActions[static_cast<std::size_t>(actions::Type::SetGameState)] == acceptedBefore + 1,
             "RULE accepts the continuation archive from its actual local player");
+    }
+
+    void testHumanCounterOffer()
+    {
+        auto saved = rules::state();
+        saved.currentPlayer = 0;
+        saved.players[0].cash = saved.players[1].cash = 1000;
+        saved.squares[1].owner = 0;
+        saved.squares[1].mortgaged = false;
+        saved.squares[1].houses = 0;
+        saved.numberOfPendingPhases = 1;
+        saved.phaseStack = {};
+        saved.phaseStack[0].phase = rules::GamePhase::WaitEndTurn;
+        loadHumanState(saved);
+
+        const auto click = [](const auto& rect)
+        {
+            require(userinterface::processUIMessage({uimsg::Type::MouseLeftDown,
+                (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2}),
+                "trade click traverses the production UI dispatcher");
+            drain();
+        };
+        const auto hit = prepareHumanInput(ibar::RuleMode::DoneTurn);
+        require((hit.activeSlots & ibar::layout::actionButtonBit(ibar::layout::ActionButtonSlot::Trade)) != 0,
+            "live human turn exposes the Trade button");
+        click(ibar::layout::actionButtonRect(ibar::layout::ActionButtonSlot::Trade, hit.layout));
+        require(displayState.desired2DView == display::Screen2D::Trade &&
+            userinterface::tradeStateReadOnly().playerA == 0 && userinterface::tradeStateReadOnly().playerB == 1,
+            "IBar opens a real two-human trade editor");
+
+        const auto propertyLayout = tradeui::projectProperties(
+            userinterface::tradeStateReadOnly(), userinterface::ruleStateReadOnly());
+        click(propertyLayout.hitRects[0][1]);
+        click(tradeui::CashTradeBT1);
+        require(userinterface::tradeStateReadOnly().cashDialogVisible,
+            "recipient opens the cash offer dialog");
+        for (const char digit : std::string_view("1500"))
+        {
+            uimsg::Message text;
+            text.type = uimsg::Type::TextInput;
+            text.text.assign(1, digit);
+            require(userinterface::processUIMessage(text), "cash digits traverse the real text-input route");
+        }
+        require(userinterface::processUIMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_BACKSPACE}) &&
+            userinterface::tradeStateReadOnly().cashTradeAmount == 150,
+            "SDL Backspace edits the actual cash offer");
+        require(userinterface::processUIMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_RETURN}) &&
+            !userinterface::tradeStateReadOnly().cashDialogVisible,
+            "SDL Return accepts the cash offer");
+        // Only the popup's closing animation is instantaneous in this fixture.
+        userinterface::tradeState().cashDialogClosing = false;
+        userinterface::tradeState().cashDialogFeedback = tradeui::CashDialogFeedback::None;
+
+        const auto proposalsBefore = acceptedActions[static_cast<std::size_t>(actions::Type::StartTradeEditing)];
+        click(tradeui::ProposeRect);
+        require(acceptedActions[static_cast<std::size_t>(actions::Type::StartTradeEditing)] == proposalsBefore + 1 &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::TradeAcceptance,
+            "UI submits the property-for-cash offer and RULE asks for acceptance");
+        pressHumanMain(ibar::RuleMode::Trading, actions::Type::TradeAccept, false,
+            ibar::layout::ActionButtonSlot::General2);
+        const auto& counter = userinterface::tradeStateReadOnly();
+        require(counter.editMode && !counter.proposed && counter.showPropose &&
+            counter.playerA == 1 && counter.playerB == 0 && counter.tradeFrom == 1,
+            "Counter returns to a usable editor owned by the other human");
+
+        click(tradeui::CashTradeAT1);
+        require(userinterface::tradeStateReadOnly().cashOriginalOffers[0] == 150 &&
+            userinterface::tradeStateReadOnly().cashOriginalOffers[1] == 0,
+            "counter-offer cash dialog uses the new A/B sides without reversing payment");
+        click(tradeui::Rect{129, 368, 179, 384}); // Cancel on the left cash popup.
+        userinterface::tradeState().cashDialogClosing = false;
+        userinterface::tradeState().cashDialogFeedback = tradeui::CashDialogFeedback::None;
+        const auto& items = userinterface::tradeStateReadOnly().items;
+        const auto cash = std::find_if(items.begin(), items.end(), [](const auto& item)
+            { return item.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Cash); });
+        require(cash != items.end() && cash->numberA == 1 && cash->numberB == 0 && cash->numberD == 150,
+            "cancelling the cash popup preserves the payer, recipient and amount");
+        click(tradeui::ProposeRect);
+        require(acceptedActions[static_cast<std::size_t>(actions::Type::StartTradeEditing)] == proposalsBefore + 2 &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::TradeAcceptance,
+            "the second human can submit the retained counter-offer to RULE");
+        pressHumanMain(ibar::RuleMode::Trading, actions::Type::TradeAccept, false,
+            ibar::layout::ActionButtonSlot::General3);
+        require(rules::state().squares[1].owner == 1 &&
+            rules::state().players[0].cash == 1150 && rules::state().players[1].cash == 850 &&
+            userinterface::ruleStateReadOnly().squares[1].owner == 1 &&
+            userinterface::ruleStateReadOnly().players[0].cash == 1150 &&
+            userinterface::ruleStateReadOnly().players[1].cash == 850 &&
+            !rules::state().tradeInProgress &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::WaitEndTurn &&
+            displayState.desired2DView == display::Screen2D::Main,
+            "accepted counter-offer transfers the actual deed/cash and resumes the interrupted turn");
+        std::cout << "[PASS] human property-for-cash counter-offer survives popup Cancel and completes through RULE\n";
     }
 
     void testHumanGameInput()
@@ -480,6 +583,7 @@ namespace
             rules::state().squares[1].mortgaged,
             "Done closes the mortgage decision without changing the retained mortgage");
         std::cout << "[PASS] real human clicks/Space complete turns, dismiss cards and finish mortgage decisions\n";
+        testHumanCounterOffer();
         rules::shutdown();
         ibar::shutdown();
         messaging::shutdown();

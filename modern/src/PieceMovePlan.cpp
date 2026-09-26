@@ -235,7 +235,8 @@ namespace monopoly::pieces
     {
         if (token >= rules::MaxTokens)
             return std::unexpected(PieceMovePlanError::InvalidToken);
-        if (before < 0 || before >= 40)
+        // Prison (40) is a live token position in the legacy off-board branch.
+        if (before < 0 || before >= OffBoard)
             return std::unexpected(PieceMovePlanError::InvalidSquare);
 
         PieceMovePlan plan{};

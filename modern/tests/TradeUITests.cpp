@@ -3,6 +3,8 @@
 
 #include "IBarLayout.hpp"
 
+#include <SDL3/SDL_scancode.h>
+
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -96,7 +98,15 @@ namespace
 
         uimsg::Message key{};
         key.type = uimsg::Type::KeyboardPressed;
-        key.numberA = '4';
+        for (const auto scancode : {SDL_SCANCODE_4, SDL_SCANCODE_APOSTROPHE,
+                                   SDL_SCANCODE_J, SDL_SCANCODE_RETURN})
+        {
+            key.numberA = scancode;
+            expect(!tradeui::planPartnerSelection(state, game, display::Screen2D::Trade, key),
+                "partner selection does not interpret SDL scancodes as typed digits");
+        }
+        key.type = uimsg::Type::TextInput;
+        key.text = "4";
         expect(tradeui::planPartnerSelection(
                     state, game, display::Screen2D::Trade, key) ==
                     rules::PlayerNumber{3},
@@ -295,6 +305,116 @@ namespace
             "NotifyTradeFinished preserves active non-traded contracts");
     }
 
+    void testCounterOfferCanBeEditedAndProposed()
+    {
+        using namespace monopoly;
+        for (const auto view : {display::Screen2D::Trade, display::Screen2D::Main})
+        {
+            auto game = gameWithPlayers(2);
+            game.squares[6].owner = 1;
+            game.cards[0].jailOwner = 0;
+            game.cards[1].jailOwner = 1;
+            tradeui::State state{};
+            actions::Message started{};
+            started.action = actions::Type::NotifyTradeStarted;
+            started.numberA = 0;
+            (void)tradeui::processRuleMessage(state, game, started, display::Screen2D::Main, 0b10);
+            const std::array offered{
+                tradeItem(0, 1, rules::TradeItemKind::Cash, 150),
+                tradeItem(1, 0, rules::TradeItemKind::Square, 6),
+                tradeItem(0, 1, rules::TradeItemKind::JailCard, 0)
+            };
+            for (const auto& item : offered)
+                (void)tradeui::processRuleMessage(state, game, item, display::Screen2D::Trade, 0b10);
+            actions::Message counter{};
+            counter.action = actions::Type::NotifyTradeFinished;
+            counter.numberA = -1;
+            const auto update = tradeui::processRuleMessage(state, game, counter, view, 0b10);
+            expect(update.requestedBackdrop == display::Screen2D::Trade && state.showPropose &&
+                    state.editMode && !state.proposed && state.tradeFrom == 1 &&
+                    state.playerA == 1 && state.playerB == 0,
+                "local counteroffer rearms its editor and returns to Trade from either visible screen");
+            expect(state.cashDesired == std::array<std::int64_t, 4>{1650, 1350, 0, 150} &&
+                    state.jailCardDesired[0] == (1u << 3u) && state.jailCardDesired[1] == (1u << 0u),
+                "counteroffer reprojects cash and offered/unoffered jail cards for the swapped sides");
+
+            uimsg::Message click{};
+            click.type = uimsg::Type::MouseLeftDown;
+            click.numberA = tradeui::ProposeRect.left + 1;
+            click.numberB = tradeui::ProposeRect.top + 1;
+            expect(tradeui::processInput(state, game, display::Screen2D::Main, click).outgoing.empty(),
+                "retained counteroffer cannot be submitted from a hidden Trade screen");
+
+            click.numberA = tradeui::CashTradeAT1.left + 1;
+            click.numberB = tradeui::CashTradeAT1.top + 1;
+            (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+            expect(state.cashDialogVisible &&
+                    state.cashOriginalOffers == std::array<std::int64_t, 2>{0, 150},
+                "counteroffer cash popup remembers the real offer direction");
+            click.numberA = 134;
+            click.numberB = 368;
+            (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+            expect(!state.cashDialogVisible && state.cashDialogClosing &&
+                    state.cashDialogFeedback == tradeui::CashDialogFeedback::Cancel &&
+                    state.items.size() == offered.size() && state.items[0].numberA == 0 &&
+                    state.items[0].numberB == 1 && state.items[0].numberD == 150,
+                "cancelling the swapped-side cash popup preserves sender, receiver and amount");
+            // As in the existing cash tests, finish the presentation-only dying
+            // feedback; its playback completion has a separate test target.
+            state.cashDialogClosing = false;
+            state.cashDialogFeedback = tradeui::CashDialogFeedback::None;
+            click.numberA = tradeui::ProposeRect.left + 1;
+            click.numberB = tradeui::ProposeRect.top + 1;
+            const auto propose = tradeui::processInput(state, game, display::Screen2D::Trade, click);
+            expect(propose.consumed && !propose.proposeMissingOffer && propose.outgoing.size() == 1 &&
+                    propose.outgoing[0].action == actions::Type::StartTradeEditing &&
+                    propose.outgoing[0].fromPlayer == 1 && propose.outgoing[0].toPlayer == rules::BankPlayer &&
+                    propose.outgoing[0].numberA == 1,
+                "Propose click submits the retained counteroffer as the new local proposer");
+
+            actions::Message accepted{};
+            accepted.action = actions::Type::NotifyActionCompleted;
+            accepted.numberA = static_cast<std::int64_t>(actions::Type::StartTradeEditing);
+            accepted.numberB = 1;
+            (void)tradeui::processRuleMessage(state, game, accepted, display::Screen2D::Trade, 0b10);
+            actions::Message editor{};
+            editor.action = actions::Type::NotifyTradeEditor;
+            editor.numberA = 1;
+            (void)tradeui::processRuleMessage(state, game, editor, display::Screen2D::Trade, 0b10);
+            const auto submission = tradeui::planEditorSubmission(state, 1, 0b10);
+            bool retained = submission.size() == offered.size() + 1;
+            for (std::size_t index = 0; retained && index < offered.size(); ++index)
+                retained = submission[index].action == actions::Type::TradeItem &&
+                    submission[index].fromPlayer == 1 && submission[index].toPlayer == rules::BankPlayer &&
+                    submission[index].numberA == offered[index].numberA &&
+                    submission[index].numberB == offered[index].numberB &&
+                    submission[index].numberC == offered[index].numberC &&
+                    submission[index].numberD == offered[index].numberD;
+            expect(retained && submission.back().action == actions::Type::TradeEditingDone &&
+                    submission.back().fromPlayer == 1 && submission.back().numberA == 0 &&
+                    submission.back().numberB == 1 && !state.showPropose,
+                "accepted editor sends preserved counteroffer items followed by private editing-done");
+            expect(tradeui::planEditorSubmission(state, 1, 0b01).empty(),
+                "other clients cannot submit the local counteroffer item batch");
+        }
+
+        auto game = gameWithPlayers(2);
+        tradeui::State remote{};
+        actions::Message started{};
+        started.action = actions::Type::NotifyTradeStarted;
+        started.numberA = 0;
+        (void)tradeui::processRuleMessage(remote, game, started, display::Screen2D::Main, 0b01);
+        const auto cash = tradeItem(0, 1, rules::TradeItemKind::Cash, 150);
+        (void)tradeui::processRuleMessage(remote, game, cash, display::Screen2D::Trade, 0b01);
+        actions::Message counter{};
+        counter.action = actions::Type::NotifyTradeFinished;
+        counter.numberA = -1;
+        const auto update = tradeui::processRuleMessage(remote, game, counter, display::Screen2D::Trade, 0b01);
+        expect(update.requestedBackdrop == display::Screen2D::Main && !remote.showPropose &&
+                remote.items.empty() && remote.tradeFrom == rules::MaxPlayers,
+            "remote counteroffer clears the local viewer instead of enabling its Propose button");
+    }
+
     void testRestartedRemoteTradeClearsStaleEditorItems()
     {
         using namespace monopoly;
@@ -432,6 +552,80 @@ namespace
         expect(state.cashDesired[2] == 0 && state.items.size() == 1 &&
                 state.items[0].numberD == 0 && state.cashDesired[0] == 1500,
             "after-A cash remove hotspot zeroes the existing item without removing its slot");
+    }
+
+    void testCashAndContractScancodes()
+    {
+        using namespace monopoly;
+        for (const bool contract : {false, true})
+        {
+            for (const auto enter : {SDL_SCANCODE_RETURN, SDL_SCANCODE_KP_ENTER})
+            {
+                auto game = gameWithPlayers(2);
+                game.options.futureRentTradingAllowed = true;
+                game.squares[5].owner = 1;
+                tradeui::State state{};
+                expect(tradeui::beginLocalTrade(state, game, 0), "SDL numeric input fixture initializes");
+                uimsg::Message click{};
+                click.type = uimsg::Type::MouseLeftDown;
+                if (contract)
+                {
+                    click.numberA = tradeui::FutureNewRect.left + 1;
+                    click.numberB = tradeui::FutureNewRect.top + 1;
+                    (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+                    click.numberA = 10; click.numberB = 230;
+                    (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+                    const auto projection = tradeui::projectProperties(state, game);
+                    const auto deed = projection.hitRects[1][5];
+                    click.numberA = (deed.left + deed.right) / 2;
+                    click.numberB = (deed.top + deed.bottom) / 2;
+                    (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+                    click.numberA = tradeui::ContractOkayRect.left + 1;
+                    click.numberB = tradeui::ContractOkayRect.top + 1;
+                }
+                else
+                {
+                    click.numberA = tradeui::CashTradeAT1.left + 1;
+                    click.numberB = tradeui::CashTradeAT1.top + 1;
+                }
+                (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+                expect(contract ? state.contractDialogMode == 2 : state.cashDialogVisible,
+                    "real popup clicks reach a numeric input surface");
+                const auto amount = [&]() { return contract ? state.contractAmount : state.cashTradeAmount; };
+                uimsg::Message key{};
+                key.type = uimsg::Type::KeyboardPressed;
+                key.numberA = SDL_SCANCODE_1;
+                (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+                expect(amount() == 0, "digit keydown waits for its text event");
+                key.type = uimsg::Type::TextInput;
+                key.text = "1";
+                (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+                key.text = "2";
+                (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+                expect(amount() == 12, "TextInput supplies digits exactly once");
+                key.type = uimsg::Type::KeyboardPressed;
+                key.text.clear();
+                for (const auto scancode : {SDL_SCANCODE_J, SDL_SCANCODE_E,
+                        SDL_SCANCODE_RIGHTBRACKET, SDL_SCANCODE_APOSTROPHE, SDL_SCANCODE_CAPSLOCK})
+                {
+                    key.numberA = scancode;
+                    (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+                    expect(amount() == 12 &&
+                            (contract ? state.contractDialogMode == 2 : state.cashDialogVisible),
+                        "letter and punctuation scancodes cannot edit or confirm numeric fields");
+                }
+                key.numberA = SDL_SCANCODE_BACKSPACE;
+                (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+                expect(amount() == 1, "real SDL Backspace removes the final digit");
+                key.numberA = enter;
+                (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
+                expect(contract ? state.contractDialogMode == 3
+                                : (!state.cashDialogVisible && state.cashDialogClosing &&
+                                   state.cashDialogFeedback == tradeui::CashDialogFeedback::Okay &&
+                                   state.items.size() == 1 && state.items[0].numberD == 1),
+                    "Return and keypad Enter confirm the current amount through normal dialog flow");
+            }
+        }
     }
 
     void testPropertyProjectionLayoutAndPriority()
@@ -609,7 +803,7 @@ namespace
             "future/immunity count input is capped to the legacy two-digit 1..99 field");
         key.type = uimsg::Type::KeyboardPressed;
         key.text.clear();
-        key.numberA = 13;
+        key.numberA = SDL_SCANCODE_RETURN;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
         expect(state.contractDialogMode == 3,
             "Enter from count entry advances to the historical confirmation mode");
@@ -661,7 +855,7 @@ namespace
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
         key.type = uimsg::Type::KeyboardPressed;
         key.text.clear();
-        key.numberA = 13;
+        key.numberA = SDL_SCANCODE_KP_ENTER;
         (void)tradeui::processInput(state, game, display::Screen2D::Trade, key);
         click.numberA = tradeui::ContractOkayRect.left + 1;
         click.numberB = tradeui::ContractOkayRect.top + 1;
@@ -857,9 +1051,11 @@ int main()
     testTradeItemListSemantics();
     testUiImmunityProjection();
     testRuleProjectionAndCounterOffer();
+    testCounterOfferCanBeEditedAndProposed();
     testRestartedRemoteTradeClearsStaleEditorItems();
     testInvalidRuleItemIsTransactional();
     testCashDialogAndOuterCashControls();
+    testCashAndContractScancodes();
     testPropertyProjectionLayoutAndPriority();
     testPropertySetsMortgageAndAfterProjection();
     testPropertyClicksAddRemoveAndMortgage();
