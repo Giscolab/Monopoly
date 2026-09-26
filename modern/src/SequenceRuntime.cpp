@@ -48,6 +48,38 @@ namespace monopoly::sequence
             return result;
         }
 
+        struct SequenceAudioState
+        {
+            std::uint16_t pitch{};
+            std::uint8_t volume{100};
+            std::int8_t panning{};
+        };
+
+        SequenceAudioState initialAudioState(
+            const data::LegacySequenceRecord& record,
+            const data::LegacySequenceAttributes& attributes) noexcept
+        {
+            SequenceAudioState result;
+            if (!std::holds_alternative<data::SequenceSoundData>(record.data) &&
+                !std::holds_alternative<data::SequenceVideoData>(record.data))
+                return result;
+
+            for (const auto& attribute : attributes.values)
+            {
+                if (const auto* pitch =
+                    std::get_if<data::SequenceSoundPitchAttribute>(&attribute))
+                    result.pitch = pitch->pitch;
+                else if (const auto* volume =
+                    std::get_if<data::SequenceSoundVolumeAttribute>(&attribute))
+                    result.volume = std::min<std::uint8_t>(volume->volume, 100U);
+                else if (const auto* pan =
+                    std::get_if<data::SequenceSoundPanningAttribute>(&attribute))
+                    result.panning = std::clamp<std::int8_t>(
+                        pan->panning, -100, 100);
+            }
+            return result;
+        }
+
         std::uint8_t initialSequenceLabel(
             const data::LegacySequenceRecord& record,
             const data::LegacySequenceAttributes& attributes) noexcept
@@ -458,7 +490,9 @@ namespace monopoly::sequence
         SequenceMeshChoice3D meshChoice{};
         float cameraFieldOfView{};
         std::uint8_t labelNumber{};
+        std::uint16_t pitch{};
         std::uint8_t volume{100};
+        std::int8_t panning{};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -516,6 +550,10 @@ namespace monopoly::sequence
         node->cameraFieldOfView = initialCameraFieldOfView(
             def.record, def.attributes, initial.dimensionality);
         node->labelNumber = initialSequenceLabel(def.record, def.attributes);
+        const auto audio = initialAudioState(def.record, def.attributes);
+        node->pitch = audio.pitch;
+        node->volume = audio.volume;
+        node->panning = audio.panning;
         if (labelOverride != 0)
             node->labelNumber = labelOverride;
         if (node->labelNumber != 0)
@@ -978,7 +1016,9 @@ namespace monopoly::sequence
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
         view.meshChoice = node->meshChoice;
+        view.pitch = node->pitch;
         view.volume = node->volume;
+        view.panning = node->panning;
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }
@@ -1062,7 +1102,8 @@ namespace monopoly::sequence
                     std::holds_alternative<data::SequenceSoundData>(definition.record.data))
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
-                        node->clock.endingAction(), node->volume});
+                        node->clock.endingAction(), node->pitch,
+                        node->volume, node->panning});
                 self(self, node->children);
             }
         };
@@ -1091,7 +1132,8 @@ namespace monopoly::sequence
                         videoBoundingBox(definition.attributes),
                         std::get<Matrix2D>(node->worldTransform),
                         node->clock.endingAction(), definition.binkDoubleSize,
-                        node->clock.elapsedParentClock(), node->volume});
+                        node->clock.elapsedParentClock(), node->pitch,
+                        node->volume, node->panning});
                 }
                 self(self, node->children);
             }
