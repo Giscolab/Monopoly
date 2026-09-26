@@ -458,6 +458,7 @@ namespace monopoly::sequence
         SequenceMeshChoice3D meshChoice{};
         float cameraFieldOfView{};
         std::uint8_t labelNumber{};
+        std::uint8_t volume{100};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -691,6 +692,23 @@ namespace monopoly::sequence
         forceAncestors(*node);
         return {};
     }
+
+    std::expected<void, RuntimeError> SequenceRuntime::setVolume(
+        SequenceNodeId id, std::uint8_t volume)
+    {
+        events_.clear();
+        auto* node = find(id);
+        if (!node)
+            return std::unexpected(error(
+                RuntimeErrorCode::InvalidHandle, 0, 0,
+                "node no longer exists"));
+
+        const auto& data = node->definition().record.data;
+        if (std::holds_alternative<data::SequenceSoundData>(data) ||
+            std::holds_alternative<data::SequenceVideoData>(data))
+            node->volume = std::min<std::uint8_t>(volume, 100U);
+        return {};
+    }
     std::expected<void, RuntimeError> SequenceRuntime::birthChildren(Node& node,
         std::optional<std::int32_t> previous)
     {
@@ -903,6 +921,26 @@ namespace monopoly::sequence
         }
         return matches.size();
     }
+
+    std::size_t SequenceRuntime::setVolumeMatching(
+        data::DataId id, std::uint16_t priority,
+        std::uint8_t volume, bool wholeTree)
+    {
+        events_.clear();
+        const auto matches = matching(id, priority, wholeTree);
+        const auto clamped = std::min<std::uint8_t>(volume, 100U);
+        for (const auto match : matches)
+        {
+            auto* node = find(match);
+            if (!node) continue;
+            const auto& payload = node->definition().record.data;
+            if (std::holds_alternative<data::SequenceSoundData>(payload) ||
+                std::holds_alternative<data::SequenceVideoData>(payload))
+                node->volume = clamped;
+        }
+        return matches.size();
+    }
+
     std::size_t SequenceRuntime::moveMatching(data::DataId id,
         std::uint16_t priority, const SequenceTransform& transform, bool wholeTree)
     {
@@ -940,6 +978,7 @@ namespace monopoly::sequence
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
         view.meshChoice = node->meshChoice;
+        view.volume = node->volume;
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }
@@ -1010,7 +1049,8 @@ namespace monopoly::sequence
                 if (definition.contentsDataId &&
                     std::holds_alternative<data::SequenceSoundData>(definition.record.data))
                     result.push_back({node->id, *definition.contentsDataId,
-                        node->priority, node->clock.clock(), node->clock.endingAction()});
+                        node->priority, node->clock.clock(),
+                        node->clock.endingAction(), node->volume});
                 self(self, node->children);
             }
         };
@@ -1039,7 +1079,7 @@ namespace monopoly::sequence
                         videoBoundingBox(definition.attributes),
                         std::get<Matrix2D>(node->worldTransform),
                         node->clock.endingAction(), definition.binkDoubleSize,
-                        node->clock.elapsedParentClock()});
+                        node->clock.elapsedParentClock(), node->volume});
                 }
                 self(self, node->children);
             }
