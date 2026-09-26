@@ -96,6 +96,24 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::startXYSR(
+        data::DataId id, std::uint16_t priority,
+        std::int32_t x, std::int32_t y,
+        float scale, float rotate)
+    {
+        auto program = loadProgram(id);
+        if (!program) return std::unexpected(program.error());
+        const auto queued = commands_.enqueue(sequence::StartSequenceCommand{
+            *program, priority, {},
+            sequence::SequenceTransform(
+                sequence::moveXYSRTransform(x, y, scale, rotate))});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue capacity exceeded");
+        return {};
+    }
+
+
     std::expected<void, std::string> SequencePlayback::transitionXY(
         std::optional<data::DataId> previousId, data::DataId id,
         std::uint16_t priority, std::int32_t x, std::int32_t y,
