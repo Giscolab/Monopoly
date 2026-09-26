@@ -8,6 +8,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace monopoly::audio
@@ -127,6 +128,13 @@ namespace monopoly::audio
         [[nodiscard]] std::expected<void, std::string> play(
             PlaybackKey key,
             data::DataId waveDataId,
+            float gain = 1.0F,
+            bool loop = false,
+            std::uint32_t pitchHertz = 0U,
+            std::int32_t panPercentage = 0);
+        [[nodiscard]] std::expected<void, std::string> playFile(
+            PlaybackKey key,
+            std::string_view relativePath,
             float gain = 1.0F,
             bool loop = false,
             std::uint32_t pitchHertz = 0U,

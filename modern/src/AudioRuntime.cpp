@@ -318,6 +318,113 @@ namespace monopoly::audio
         return {};
     }
 
+    std::expected<void, std::string> Runtime::playFile(
+        PlaybackKey key,
+        std::string_view relativePath,
+        float gain,
+        bool loop,
+        std::uint32_t pitchHertz,
+        std::int32_t panPercentage)
+    {
+        if (!resources_)
+            return std::unexpected(
+                "audio runtime has no resource snapshot");
+        if (relativePath.empty())
+            return std::unexpected(
+                "external audio filename is empty");
+
+        const auto ready = ensureAudio();
+        if (!ready)
+            return ready;
+
+        const auto resolved = resources_->paths().resolve(relativePath);
+        if (!resolved)
+            return std::unexpected(dataFailure(resolved.error()));
+
+        const auto pathBytes = resolved->u8string();
+        const std::string path(
+            reinterpret_cast<const char*>(pathBytes.data()),
+            pathBytes.size());
+
+        SDL_AudioSpec spec{};
+        Uint8* decoded{};
+        Uint32 decodedLength{};
+        if (!SDL_LoadWAV(
+                path.c_str(), &spec, &decoded, &decodedLength))
+            return std::unexpected(
+                std::string("SDL_LoadWAV: ") + SDL_GetError());
+
+        std::vector<Uint8> pcm(decoded, decoded + decodedLength);
+        SDL_free(decoded);
+        if (pcm.empty())
+            return std::unexpected(
+                "decoded external Wave contains no PCM data");
+        if (pcm.size() > static_cast<std::size_t>(INT_MAX))
+            return std::unexpected(
+                "decoded external Wave exceeds SDL stream limits");
+
+        SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(
+            SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+            &spec,
+            nullptr,
+            nullptr);
+        if (stream == nullptr)
+            return std::unexpected(
+                std::string("SDL_OpenAudioDeviceStream: ") +
+                SDL_GetError());
+
+        auto voice = std::make_unique<Voice>();
+        voice->key = key;
+        voice->waveDataId = data::EmptyDataId;
+        voice->stream = stream;
+        voice->pcm = std::move(pcm);
+        voice->sourceFrequency = spec.freq > 0
+            ? static_cast<std::uint32_t>(spec.freq)
+            : 0U;
+        voice->gain = clampedGain(gain);
+        voice->pan.set(panPercentage);
+        voice->loop = loop;
+
+        if (!SDL_SetAudioStreamGain(stream, voice->gain))
+            return std::unexpected(
+                std::string("SDL_SetAudioStreamGain: ") +
+                SDL_GetError());
+        if (!SDL_SetAudioStreamFrequencyRatio(
+                stream,
+                legacyPitchFrequencyRatio(
+                    pitchHertz, voice->sourceFrequency)))
+            return std::unexpected(
+                std::string("SDL_SetAudioStreamFrequencyRatio: ") +
+                SDL_GetError());
+        if (!installStereoPan(stream, voice->pan))
+            return std::unexpected(
+                std::string("SDL_SetAudioPostmixCallback: ") +
+                SDL_GetError());
+
+        const int bytes =
+            static_cast<int>(voice->pcm.size());
+        const int copies = loop ? 3 : 1;
+        for (int copy = 0; copy < copies; ++copy)
+            if (!SDL_PutAudioStreamData(
+                    stream, voice->pcm.data(), bytes))
+                return std::unexpected(
+                    std::string("SDL_PutAudioStreamData: ") +
+                    SDL_GetError());
+
+        if (!loop && !SDL_FlushAudioStream(stream))
+            return std::unexpected(
+                std::string("SDL_FlushAudioStream: ") +
+                SDL_GetError());
+        if (!SDL_ResumeAudioStreamDevice(stream))
+            return std::unexpected(
+                std::string("SDL_ResumeAudioStreamDevice: ") +
+                SDL_GetError());
+
+        stop(key);
+        voices_.push_back(std::move(voice));
+        return {};
+    }
+
     void Runtime::stop(PlaybackKey key) noexcept
     {
         const auto found = std::find_if(

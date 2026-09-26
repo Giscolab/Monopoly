@@ -175,6 +175,7 @@ namespace monopoly::sequence
         std::uint8_t volume{100};
         std::int8_t panning{};
         std::optional<std::int32_t> screenCenterX2D;
+        std::string fileName;
     };
     struct SequenceVideoInstanceView
     {

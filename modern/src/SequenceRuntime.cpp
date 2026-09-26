@@ -595,9 +595,15 @@ namespace monopoly::sequence
             else if (const auto* model = std::get_if<data::SequenceModelData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     model->modelDataId, currentId);
-            else if (const auto* sound = std::get_if<data::SequenceSoundData>(&record->data))
-                contentsDataId = data::resolveSequenceDataId(record->header,
-                    sound->soundDataId, currentId);
+            else if (const auto* sound =
+                std::get_if<data::SequenceSoundData>(&record->data))
+            {
+                // L_Seqncr checks the raw ID before relative remapping:
+                // EmptyItem means stream from the last FILE_NAME_1..5.
+                if (sound->soundDataId != data::EmptyDataId)
+                    contentsDataId = data::resolveSequenceDataId(
+                        record->header, sound->soundDataId, currentId);
+            }
             else if (const auto* preloader =
                 std::get_if<data::SequencePreloaderData>(&record->data))
             {
@@ -1417,8 +1423,8 @@ namespace monopoly::sequence
             for (const auto& node : nodes)
             {
                 const auto& definition = node->definition();
-                if (definition.contentsDataId &&
-                    std::holds_alternative<data::SequenceSoundData>(definition.record.data))
+                if (std::holds_alternative<data::SequenceSoundData>(
+                        definition.record.data))
                 {
                     std::optional<std::int32_t> centerX;
                     if (node->dimensionality == 2 &&
@@ -1426,10 +1432,19 @@ namespace monopoly::sequence
                         centerX = soundCenterX2D(
                             definition.attributes,
                             std::get<Matrix2D>(node->worldTransform));
-                    result.push_back({node->id, *definition.contentsDataId,
-                        node->priority, node->clock.clock(),
-                        node->clock.endingAction(), node->dimensionality,
-                        node->pitch, node->volume, node->panning, centerX});
+                    result.push_back({
+                        node->id,
+                        definition.contentsDataId.value_or(
+                            data::EmptyDataId),
+                        node->priority,
+                        node->clock.clock(),
+                        node->clock.endingAction(),
+                        node->dimensionality,
+                        node->pitch,
+                        node->volume,
+                        node->panning,
+                        centerX,
+                        externalFileName(definition.attributes)});
                 }
                 self(self, node->children);
             }

@@ -1509,9 +1509,22 @@ namespace monopoly::engine
                 static_cast<float>(effectiveVolume) / 100.0F;
             if (!known)
             {
-                const auto started = output->play(
-                    key, instance.contentsDataId, gain,
-                    instance.endingAction == 3, instance.pitch, pan);
+                std::expected<void, std::string> started =
+                    instance.contentsDataId != data::EmptyDataId
+                        ? output->play(
+                            key,
+                            instance.contentsDataId,
+                            gain,
+                            instance.endingAction == 3,
+                            instance.pitch,
+                            pan)
+                        : output->playFile(
+                            key,
+                            instance.fileName,
+                            gain,
+                            instance.endingAction == 3,
+                            instance.pitch,
+                            pan);
                 if (!started)
                     return std::unexpected(started.error());
             }
