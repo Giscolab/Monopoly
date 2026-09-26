@@ -68,10 +68,10 @@ namespace monopoly::optionsui
                 images[slot] = blankSlot();
                 const auto index = state.pageOffset + slot;
                 if (index >= state.entries.size()) continue;
-                const auto rendered = font->render(state.entries[index].displayName,0x00FFFFFFU);
-                if (!rendered) return std::unexpected(rendered.error().detail);
-                const auto copied = data::blitStraightRGBA8(images[slot],*rendered,13,8,data::BitmapBlitMode::SourceOver);
-                if (!copied) return copied;
+                const auto copied = font->blitText(
+                    images[slot], state.entries[index].displayName,
+                    13, 8, 0x00FFFFFFU);
+                if (!copied) return std::unexpected(copied.error().detail);
             }
             if (const auto restored = font->restoreSettings(0); !restored) return std::unexpected(restored.error().detail);
             constexpr std::array<std::uint32_t, 4> ids{933,932,3170,3169};
