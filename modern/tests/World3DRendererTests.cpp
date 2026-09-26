@@ -14,6 +14,7 @@
 #include <iostream>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 #ifndef MONOPOLY_SHADER_DIR
 #error MONOPOLY_SHADER_DIR must identify generated World3D shader assets
@@ -50,7 +51,8 @@ namespace
             {{{-2.0F, -2.0F, 10.0F}}, {{0, 0, 1}}, {{0.0F, 0.0F}}},
             {{{ 2.0F, -2.0F, 10.0F}}, {{0, 0, 1}}, {{1.0F, 0.0F}}},
             {{{ 0.0F,  2.0F, 10.0F}}, {{0, 0, 1}}, {{0.0F, 1.0F}}}};
-        render->indices = {0U, 1U, 2U};
+        // Viewport Y inversion makes this order clockwise on screen.
+        render->indices = {0U, 2U, 1U};
 
         data::MeshMaterial material;
         material.rawDiffuse = textured ? 0x00FFFFFFU : 0x000000FFU;
@@ -568,6 +570,10 @@ namespace
             expect(playback.start(sequenceId, 7).has_value() && playback.update(0).has_value(),
                 "real sequence runtime publishes HMD geometry through render data and slot 1");
             auto camera = makeSlot().view()->camera;
+            // The shared HMD fixture faces +Z. Observe it from that side;
+            // preserve its authored indices and the production HMD loader.
+            camera.location = {0, 0, 20};
+            camera.forward = {0, 0, -1};
             expect(playback.world().configureView(
                 display::worldViewport(display::Viewport3D::Main), camera).has_value(),
                 "playback uses DISPLAY Main logical viewport");
@@ -704,6 +710,66 @@ namespace
             expect(shadowRead && darkenedPixels > 0U,
                 "retail ZERO/SRC_ALPHA shadow pipeline darkens the white destination");
         }
+
+        // With camera +Z/up +Y, viewport Y inversion makes 0,2,1 clockwise
+        // on screen (the retail front); 0,1,2 is its counter-clockwise back.
+        // Check the actual indexed draw in both the normal and shadow pipelines.
+        for (const bool shadow : {false, true})
+            for (const bool front : {true, false})
+            {
+                const auto id = shadow
+                    ? data::packDataId(data::LegacyGroupId::ThreeD, front ? 0x00B4 : 0x00B5)
+                    : data::packDataId(8, front ? 0x0070 : 0x0071);
+                auto facingSlot = makeSlot(shadow, false, id, shadow);
+                auto asset = std::make_shared<data::MeshRuntimeAsset>(
+                    *facingSlot.find(1)->asset);
+                auto render = std::make_shared<data::MeshRenderData>(*asset->renderData);
+                render->indices = front ? std::vector<std::uint32_t>{0, 2, 1}
+                    : std::vector<std::uint32_t>{0, 1, 2};
+                asset->renderData = std::move(render);
+                sequence::SequenceMeshRenderItem item;
+                item.node = 1;
+                item.contentsDataId = id;
+                item.worldTransform = sequence::identity3D();
+                item.asset = std::move(asset);
+                expect(facingSlot.sync({item}).has_value(),
+                    "winding fixture changes indexed order without changing vertex positions");
+                auto* command = SDL_AcquireGPUCommandBuffer(device);
+                const float background = shadow ? 1.0F : 0.0F;
+                expect(command && clearTarget(command, target,
+                    {background, background, background, 1.0F}),
+                    "face-culling regression starts from a known background");
+                if (!command) continue;
+                const auto drawn = renderer->render(command, target, 64U, 64U, viewport, facingSlot);
+                pixels.fill(0);
+                const bool read = drawn && downloadTarget(device, command, target, pixels);
+                if (!drawn) (void)SDL_CancelGPUCommandBuffer(command);
+                constexpr std::size_t inside = (34U * 64U + 32U) * 4U;
+                if (front)
+                {
+                    if (shadow)
+                        expect(read && pixels[inside] >= 36U && pixels[inside] <= 40U &&
+                            pixels[inside + 1U] == pixels[inside] &&
+                            pixels[inside + 2U] == pixels[inside] && pixels[inside + 3U] == 255U,
+                            "clockwise front shadow darkens the destination");
+                    else
+                        expect(read && pixels[inside] > 100U && pixels[inside + 1U] == 0U &&
+                            pixels[inside + 2U] == 0U && pixels[inside + 3U] == 255U,
+                            "clockwise front face paints the material color");
+                }
+                else
+                {
+                    const std::uint8_t expected = shadow ? 255U : 0U;
+                    bool untouched = read;
+                    for (std::size_t i = 0; i < pixels.size(); i += 4U)
+                        untouched = untouched && pixels[i] == expected &&
+                            pixels[i + 1U] == expected && pixels[i + 2U] == expected &&
+                            pixels[i + 3U] == 255U;
+                    expect(untouched, shadow
+                        ? "counter-clockwise shadow back face leaves every destination pixel untouched"
+                        : "counter-clockwise normal back face leaves every background pixel untouched");
+                }
+            }
 
         // The exact same uploaded 2x2 red/green texture is drawn three times.
         // Point sampling can only select an unmixed texel; bilinear sampling

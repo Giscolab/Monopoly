@@ -1972,25 +1972,27 @@ namespace
         actions::Message finished{};
         finished.action = actions::Type::NotifyTradeFinished;
         finished.toPlayer = rules::AllPlayers;
-        finished.numberA = -1;
-        finished.numberB = 1;
-        userinterface::processRuleMessage(finished);
-        expect(iBarRestoreCount == 1 && iBarInspectCount == 0 &&
-                userinterface::iBarRuleStateReadOnly().mode == ibar::RuleMode::Nothing &&
-                userinterface::iBarRuleStateReadOnly().player == 1,
-            "TradeFinished resumes RULE tracking only when retail numberB matches CurrentPlayer");
-
+        // RULE leaves numberB zero, including during a nonzero player's turn.
         finished.numberB = 0;
-        userinterface::processRuleMessage(finished);
-        expect(iBarRestoreCount == 1 && iBarInspectCount == 1 &&
-                inspectedIBarPlayer == 1,
-            "TradeFinished otherwise forces retail OtherPlayer inspection of CurrentPlayer");
+        int expectedRestores = 0;
+        for (const int result : {1, 0, -1})
+        {
+            finished.numberA = result;
+            userinterface::processRuleMessage(finished);
+            ++expectedRestores;
+            expect(iBarRestoreCount == expectedRestores && iBarInspectCount == 0 &&
+                    userinterface::iBarRuleStateReadOnly().mode == ibar::RuleMode::Nothing &&
+                    userinterface::iBarRuleStateReadOnly().player == 1,
+                "accepted, rejected and countered trades restore RULE tracking for nonzero current player");
+        }
 
         uiState.currentPlayer = 2;
         userinterface::processRuleMessage(finished);
-        expect(iBarInspectCount == 2 && inspectedIBarPlayer == 2 &&
+        expect(iBarRestoreCount == expectedRestores + 1 && iBarInspectCount == 0 &&
+                inspectedIBarPlayer == rules::NobodyPlayer &&
+                userinterface::iBarRuleStateReadOnly().mode == ibar::RuleMode::Nothing &&
                 userinterface::iBarRuleStateReadOnly().player == 2,
-            "TradeFinished forwards a remote current player to the IBar inspection override");
+            "TradeFinished restores RULE tracking for a remote current player without an inspection override");
 
         localPlayerMask = localHumanMask = 0x3Fu;
         iBarRestoreCount = 0;

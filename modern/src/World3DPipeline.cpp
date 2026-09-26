@@ -126,9 +126,10 @@ namespace monopoly::engine
         info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-        // No explicit D3DCULL state exists in the historical initialization.
-        // Until the inherited D3D7 default is audited, do not invent culling.
-        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        // D3DDevice::SetInitialRenderingStates leaves CULLMODE at the
+        // IDirect3DDevice3 default D3DCULL_CCW: clockwise fronts survive.
+        // The shadow pipeline inherits this same rasterizer state below.
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
         info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
         info.rasterizer_state.enable_depth_clip = true;
         info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;

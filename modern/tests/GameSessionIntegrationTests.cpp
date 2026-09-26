@@ -645,16 +645,18 @@ namespace
         std::cout << "[PASS] twelve stale decisions, wrong players and refused pauses recover through RULE/FIFO/IBar\n";
     }
 
-    void testHumanCounterOffer()
+    void testHumanCounterOffer(rules::PlayerNumber turnPlayer, bool acceptTrade)
     {
+        const auto otherPlayer = static_cast<rules::PlayerNumber>(1 - turnPlayer);
         auto saved = rules::state();
-        saved.currentPlayer = 0;
+        saved.currentPlayer = turnPlayer;
         saved.players[0].cash = saved.players[1].cash = 1000;
-        saved.squares[1].owner = 0;
+        saved.squares[1].owner = turnPlayer;
         saved.squares[1].mortgaged = false;
         saved.squares[1].houses = 0;
         saved.numberOfPendingPhases = 1;
         saved.phaseStack = {};
+        saved.phaseUndo = {};
         saved.phaseStack[0].phase = rules::GamePhase::WaitEndTurn;
         loadHumanState(saved);
 
@@ -670,7 +672,8 @@ namespace
             "live human turn exposes the Trade button");
         click(ibar::layout::actionButtonRect(ibar::layout::ActionButtonSlot::Trade, hit.layout));
         require(displayState.desired2DView == display::Screen2D::Trade &&
-            userinterface::tradeStateReadOnly().playerA == 0 && userinterface::tradeStateReadOnly().playerB == 1,
+            userinterface::tradeStateReadOnly().playerA == turnPlayer &&
+            userinterface::tradeStateReadOnly().playerB == otherPlayer,
             "IBar opens a real two-human trade editor");
 
         const auto propertyLayout = tradeui::projectProperties(
@@ -705,7 +708,7 @@ namespace
             ibar::layout::ActionButtonSlot::General2);
         const auto& counter = userinterface::tradeStateReadOnly();
         require(counter.editMode && !counter.proposed && counter.showPropose &&
-            counter.playerA == 1 && counter.playerB == 0 && counter.tradeFrom == 1,
+            counter.playerA == otherPlayer && counter.playerB == turnPlayer && counter.tradeFrom == otherPlayer,
             "Counter returns to a usable editor owned by the other human");
 
         click(tradeui::CashTradeAT1);
@@ -718,24 +721,36 @@ namespace
         const auto& items = userinterface::tradeStateReadOnly().items;
         const auto cash = std::find_if(items.begin(), items.end(), [](const auto& item)
             { return item.numberC == static_cast<std::int64_t>(rules::TradeItemKind::Cash); });
-        require(cash != items.end() && cash->numberA == 1 && cash->numberB == 0 && cash->numberD == 150,
+        require(cash != items.end() && cash->numberA == otherPlayer && cash->numberB == turnPlayer && cash->numberD == 150,
             "cancelling the cash popup preserves the payer, recipient and amount");
         click(tradeui::ProposeRect);
         require(acceptedActions[static_cast<std::size_t>(actions::Type::StartTradeEditing)] == proposalsBefore + 2 &&
             rules::phases::current(rules::state()).phase == rules::GamePhase::TradeAcceptance,
             "the second human can submit the retained counter-offer to RULE");
         pressHumanMain(ibar::RuleMode::Trading, actions::Type::TradeAccept, false,
-            ibar::layout::ActionButtonSlot::General3);
-        require(rules::state().squares[1].owner == 1 &&
-            rules::state().players[0].cash == 1150 && rules::state().players[1].cash == 850 &&
-            userinterface::ruleStateReadOnly().squares[1].owner == 1 &&
-            userinterface::ruleStateReadOnly().players[0].cash == 1150 &&
-            userinterface::ruleStateReadOnly().players[1].cash == 850 &&
+            acceptTrade ? ibar::layout::ActionButtonSlot::General3 : ibar::layout::ActionButtonSlot::Main);
+        const auto expectedOwner = acceptTrade ? otherPlayer : turnPlayer;
+        const auto sellerCash = acceptTrade ? 1150 : 1000;
+        const auto buyerCash = acceptTrade ? 850 : 1000;
+        require(rules::state().squares[1].owner == expectedOwner &&
+            rules::state().players[turnPlayer].cash == sellerCash &&
+            rules::state().players[otherPlayer].cash == buyerCash &&
+            userinterface::ruleStateReadOnly().squares[1].owner == expectedOwner &&
+            userinterface::ruleStateReadOnly().players[turnPlayer].cash == sellerCash &&
+            userinterface::ruleStateReadOnly().players[otherPlayer].cash == buyerCash &&
             !rules::state().tradeInProgress &&
             rules::phases::current(rules::state()).phase == rules::GamePhase::WaitEndTurn &&
             displayState.desired2DView == display::Screen2D::Main,
-            "accepted counter-offer transfers the actual deed/cash and resumes the interrupted turn");
-        std::cout << "[PASS] human property-for-cash counter-offer survives popup Cancel and completes through RULE\n";
+            "accepted or rejected counter-offer settles the actual deed/cash and resumes the interrupted turn");
+        require(ibar::resolveRuleMode(userinterface::iBarRuleStateReadOnly().mode,
+                    userinterface::iBarRuleStateReadOnly().player) == ibar::RuleMode::DoneTurn &&
+                ibar::resolveRulePlayer(userinterface::iBarRuleStateReadOnly().player) == turnPlayer,
+            "trade completion restores the resolved IBar decision even when the current player is not slot zero");
+        pressHumanMain(ibar::RuleMode::DoneTurn, actions::Type::EndTurn);
+        require(rules::state().currentPlayer == otherPlayer,
+            "the human can really finish the interrupted turn by clicking after the trade closes");
+        std::cout << "[PASS] human counter-offer for slot " << static_cast<unsigned>(turnPlayer)
+            << (acceptTrade ? " accepted" : " rejected") << "; next turn reached through the IBar click\n";
     }
 
     void testHumanGameInput()
@@ -830,7 +845,9 @@ namespace
             rules::state().squares[1].mortgaged,
             "Done closes the mortgage decision without changing the retained mortgage");
         std::cout << "[PASS] real human clicks/Space complete turns, dismiss cards and finish mortgage decisions\n";
-        testHumanCounterOffer();
+        testHumanCounterOffer(0, true);
+        testHumanCounterOffer(1, true);
+        testHumanCounterOffer(1, false);
         testHumanRejectedActions();
         rules::shutdown();
         ibar::shutdown();

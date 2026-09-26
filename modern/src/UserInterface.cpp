@@ -951,21 +951,12 @@ namespace monopoly::userinterface
 
         if (message.action == actions::Type::NotifyTradeFinished)
         {
-            // UDTrade.cpp records Nothing/CurrentPlayer as the RULE baseline,
-            // then only restores tracking when CurrentPlayer == numberB.
-            // Otherwise it explicitly shows the current player through the
-            // local OtherPlayer/OtherPlayerRemote override.
+            // UDTrade.cpp first sets Nothing/CurrentPlayer through
+            // UDIBAR_setIBarRulesState, which replaces IBarLastRulePlayer.
+            // Its following comparison therefore always restores tracking.
             iBarRuleProjection.mode = ibar::RuleMode::Nothing;
             iBarRuleProjection.player = uiRuleState.currentPlayer;
-            if (message.numberB ==
-                static_cast<std::int64_t>(uiRuleState.currentPlayer))
-            {
-                ibar::restoreRuleTracking();
-            }
-            else
-            {
-                ibar::inspectPlayer(uiRuleState.currentPlayer);
-            }
+            ibar::restoreRuleTracking();
         }
 
         completeLoadedGameIBarSetup();
