@@ -23,7 +23,7 @@ namespace monopoly::statsui
             int monetarySystem,
             display::Screen2D desiredView,
             fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool deedPopupVisible = false);
 
         void reset() noexcept;
 

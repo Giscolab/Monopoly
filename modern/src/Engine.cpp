@@ -838,7 +838,8 @@ namespace monopoly::engine
                         if (auto* output = audioPlayback())
                         {
                             const auto announcement = penny::squareAnnouncementWave(
-                                output->boardEdition(), display::stateReadOnly().city, square);
+                                output->boardEdition(), output->language(),
+                                display::stateReadOnly().city, square);
                             if (announcement)
                             {
                                 const auto spoken = playPennybagsSpecific(*announcement,
@@ -1742,16 +1743,19 @@ namespace monopoly::engine
             if (!statsDeedSync)
                 return SDL_SetError("UDStats Deed playback: %s",
                     statsDeedSync.error().c_str());
+            const bool calculatorDeedPopupVisible =
+                userinterface::statsCalculatorStateReadOnly().picker == statsui::CalculatorPicker::Deed;
             const auto statsDeedFloaterSync = statsDeedFloaterPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
-                displayState.city, displayState.desired2DView, *session);
+                displayState.city, displayState.desired2DView, *session,
+                calculatorDeedPopupVisible);
             if (!statsDeedFloaterSync)
                 return SDL_SetError("UDStats Deed floater playback: %s",
                     statsDeedFloaterSync.error().c_str());
             const auto statsDeedFloaterTextSync = statsDeedFloaterTextPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.system, displayState.desired2DView,
-                fontPlayback(), *session);
+                fontPlayback(), *session, calculatorDeedPopupVisible);
             if (!statsDeedFloaterTextSync)
                 return SDL_SetError("UDStats Deed floater text playback: %s",
                     statsDeedFloaterTextSync.error().c_str());

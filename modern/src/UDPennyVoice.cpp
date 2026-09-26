@@ -410,7 +410,8 @@ namespace monopoly::penny
     }
 
     std::optional<data::DataId> squareAnnouncementWave(
-        data::BoardEdition edition, int city, std::uint8_t square) noexcept
+        data::BoardEdition edition, data::LanguageId language,
+        int city, std::uint8_t square) noexcept
     {
         if (square >= PropertyAnnouncementIndex.size() ||
             PropertyAnnouncementIndex[square] < 0)
@@ -424,11 +425,15 @@ namespace monopoly::penny
             return data::packDataId(data::LegacyGroupId::LanguageDialog, tag);
         }
 
-        if (city < 0)
-            return std::nullopt;
+        // Source/monopoly/Udpenny.cpp:1443-1450 substitutes the installation
+        // language only for custom city -1, then clamps the city at zero.
+        if (city == -1)
+            city = static_cast<int>(language) -
+                static_cast<int>(data::LanguageId::EnglishUk);
+        const auto normalizedCity = city < 0 ? 0 : city;
         const auto tag = static_cast<data::DataTag>(0x2137u +
             static_cast<std::uint32_t>(PropertyAnnouncementIndex[square]) +
-            static_cast<std::uint32_t>(city) * 28u);
+            static_cast<std::uint32_t>(normalizedCity) * 28u);
         return data::packDataId(data::LegacyGroupId::Board, tag);
     }
 

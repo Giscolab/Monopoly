@@ -1,4 +1,5 @@
 #include "StatsDeedFloaterPlayback.hpp"
+#include "StatsCalculatorDeedPickerPlayback.hpp"
 #include "SyntheticSequenceResources.hpp"
 
 #include <iostream>
@@ -28,6 +29,50 @@ namespace
         for (std::size_t i = 0; i < rules::SquareCount; ++i)
             state.deedOrder[i] = static_cast<std::uint8_t>(i);
         return state;
+    }
+
+    void testCalculatorPopupSuppressesNormalFloater()
+    {
+        rules::GameState game{};
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback sequence(resources.service.snapshot());
+        statsui::DeedFloaterPlayback floater;
+        statsui::CalculatorDeedPickerPlayback picker;
+        statsui::CalculatorUIState calculator;
+        auto state = deedState(245, 250);
+        const auto frame = data::packDataId(
+            data::LegacyGroupId::Main, statsui::DeedFloaterFrameTag);
+        const auto sync = [&] {
+            return floater.sync(state, game, {}, 0, display::Screen2D::Portfolio,
+                sequence, calculator.picker == statsui::CalculatorPicker::Deed);
+        };
+        require(sync().has_value() && sequence.update(0).has_value() &&
+                sequence.runtime().matching(frame, statsui::DeedFloaterPriority).size() == 1,
+            "overlapping 245,250 normal deed hover initially publishes its floater");
+        calculator.picker = statsui::CalculatorPicker::Deed;
+        calculator.hoveredDeed = 1;
+        require(picker.sync(calculator, 0, display::Screen2D::Portfolio, sequence).has_value() &&
+                sync().has_value() && sequence.update(1).has_value(),
+            "opening calculator deed picker removes the prior normal floater");
+        require(sequence.runtime().matching(frame, statsui::DeedFloaterPriority).empty() &&
+                sequence.world2D().size() == 30,
+            "popup contains only its background, 28 cards and actual corner preview");
+        const auto preview = data::packDataId(data::LegacyGroupId::LanguageGraphics,
+            statsui::DeedFloaterCardBaseTag);
+        const auto roots = sequence.runtime().matching(preview, statsui::CalculatorDeedPickerPriority);
+        require(roots.size() == 1, "calculator retains its actual large deed preview");
+        const auto* object = sequence.world2D().find(roots.front());
+        require(object && object->worldTransform.values[6] == 600.0F &&
+                object->worldTransform.values[7] == -2.0F,
+            "calculator corner preview stays at source 600,-2 position");
+        require(sync().has_value() && sequence.commands().pendingCount() == 0,
+            "stationary overlapping hover cannot recreate hidden normal floater");
+        calculator.picker = statsui::CalculatorPicker::None;
+        require(picker.sync(calculator, 0, display::Screen2D::Portfolio, sequence).has_value() &&
+                sync().has_value() && sequence.update(2).has_value() &&
+                sequence.world2D().size() == 2 &&
+                sequence.runtime().matching(frame, statsui::DeedFloaterPriority).size() == 1,
+            "closing picker restores normal frame and deed without a new mouse move");
     }
 
     void testFloaterSidesAndTeardown()
@@ -97,6 +142,7 @@ int main()
     try
     {
         testFloaterSidesAndTeardown();
+        testCalculatorPopupSuppressesNormalFloater();
     }
     catch (const std::exception& error)
     {

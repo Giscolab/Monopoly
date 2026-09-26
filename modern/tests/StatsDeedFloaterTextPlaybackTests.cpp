@@ -132,6 +132,39 @@ namespace
             "deed floater text Stop removes runtime overlay");
     }
 
+    void testPopupHideAndRestore()
+    {
+        SyntheticTextResources resources(texts());
+        fonts::Runtime font;
+        loadRealTestArial(font);
+        require(font.saveSettings(0).has_value(), "save popup-test font defaults");
+        engine::SequencePlayback playback(resources.service.snapshot());
+        statsui::DeedFloaterTextPlayback owner;
+        auto state = deedState(245, 250);
+        const auto rules = game();
+        require(owner.sync(state, rules, {}, 13, display::Screen2D::Portfolio,
+                &font, playback).has_value() && playback.update(0).has_value(),
+            "normal deed text exists before overlapping calculator popup opens");
+        const auto* before = at(playback, 410, 220);
+        require(before && before->asset, "normal floater has a real rasterized surface");
+        const auto surfaceId = before->asset->dataId;
+        const auto pixels = before->asset->image.pixels;
+        require(owner.sync(state, rules, {}, 13, display::Screen2D::Portfolio,
+                nullptr, playback, true).has_value() && playback.update(1).has_value() &&
+                playback.world2D().size() == 0,
+            "opening popup stops normal text even without a ready font");
+        require(owner.sync(state, rules, {}, 13, display::Screen2D::Portfolio,
+                nullptr, playback, true).has_value() && playback.commands().pendingCount() == 0,
+            "stationary popup hover keeps normal text hidden");
+        require(owner.sync(state, rules, {}, 13, display::Screen2D::Portfolio,
+                &font, playback, false).has_value() && playback.update(2).has_value(),
+            "closing popup restores normal text without another mouse move");
+        const auto* after = at(playback, 410, 220);
+        require(after && after->asset && after->asset->dataId == surfaceId &&
+                after->asset->image.pixels == pixels && playback.runtimeBitmaps().size() == 1,
+            "restored normal text reuses its surface and preserves rasterized content");
+    }
+
     void testFailures()
     {
         SyntheticTextResources resources(texts());
@@ -178,6 +211,7 @@ int main()
     {
         testTextLifecycle();
         testFailures();
+        testPopupHideAndRestore();
         std::cout << "Stats Deed floater text playback tests passed\n";
         return 0;
     }

@@ -41,12 +41,13 @@ namespace monopoly::statsui
         const State& state, const rules::GameState& gameState,
         const PlayerPlaybackInputs& inputs, int city,
         display::Screen2D desiredView,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool deedPopupVisible)
     {
         data::DataId desiredDeed = data::EmptyDataId;
         int desiredFrameX = 0;
         int desiredDeedX = 0;
-        if (desiredView == display::Screen2D::Portfolio &&
+        // UDStats.cpp: normal hover is disabled while IsPopUpIDOn.
+        if (!deedPopupVisible && desiredView == display::Screen2D::Portfolio &&
             state.screen == Screen::Deed && state.mouseKnown)
         {
             auto grid = planDeedGrid(state, gameState, inputs);

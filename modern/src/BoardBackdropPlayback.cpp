@@ -285,6 +285,39 @@ namespace monopoly::boarddisplay
     std::expected<void, std::string> BoardBackdropPlayback::sync(
         const BoardBackdropInputs& inputs, engine::SequencePlayback& playback)
     {
+        // UDBoard.cpp selects these full-screen backgrounds independently of
+        // the board's 2D/3D mode, city and camera (including custom boards).
+        data::DataId staticBackdrop = data::EmptyDataId;
+        switch (inputs.view)
+        {
+        case display::Screen2D::PlayerSelect:
+            staticBackdrop = data::packDataId(data::LegacyGroupId::LanguageGraphics, 0x0003);
+            break;
+        case display::Screen2D::PlayerSelectRules:
+        case display::Screen2D::Options:
+            staticBackdrop = data::packDataId(data::LegacyGroupId::Patterns, 0x0002);
+            break;
+        case display::Screen2D::Auction:
+            staticBackdrop = data::packDataId(data::LegacyGroupId::Patterns, 0x0000);
+            break;
+        default: break;
+        }
+        if (staticBackdrop != data::EmptyDataId)
+        {
+            if (activeBackdrop_ == staticBackdrop && currentView_ == inputs.view)
+                return {};
+            const auto previous = activeBackdrop_ == data::EmptyDataId
+                ? std::optional<data::DataId>{} : std::optional{activeBackdrop_};
+            const auto transitioned = playback.transitionXY(
+                previous, staticBackdrop, BoardBackdropPriority, 0, 0, false);
+            if (!transitioned) return transitioned;
+            activeBackdrop_ = staticBackdrop;
+            currentView_ = inputs.view;
+            currentCity_.reset();
+            currentCamera_.reset();
+            currentCustomRoot_.clear();
+            return {};
+        }
         const bool shouldRun = display::isBoardVisible(inputs.view) && !inputs.game3DOn;
         if (!shouldRun)
         {

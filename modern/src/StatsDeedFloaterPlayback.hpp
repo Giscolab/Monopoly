@@ -23,7 +23,7 @@ namespace monopoly::statsui
             const State& state, const rules::GameState& gameState,
             const PlayerPlaybackInputs& inputs, int city,
             display::Screen2D desiredView,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool deedPopupVisible = false);
         void reset() noexcept
         {
             currentDeed_ = data::EmptyDataId;

@@ -32,6 +32,43 @@ namespace
     {
         return {view, game3DOn, city, camera, tick};
     }
+    // Isolated UAP archives for UDBoard's BMP-named static screen tags. Colours identify
+    // the selected source bank/tag; they are explicitly synthetic artwork.
+    struct StaticBackdropResources : SyntheticSequenceResources
+    {
+        explicit StaticBackdropResources(bool includeOptions = true)
+        {
+            using namespace monopoly::data;
+            service.shutdown();
+            const auto bitmap = [](std::uint8_t red) {
+                DataBytes bytes;
+                const auto append = [&](std::uint32_t value, unsigned count) {
+                    for (unsigned i = 0; i < count; ++i)
+                        bytes.push_back(static_cast<std::byte>((value >> (8 * i)) & 255U));
+                };
+                // NEWBITMAPHEADER: 2x2, origin0, alpha palette with two entries.
+                append(2, 2); append(2, 2); append(0, 2); append(0, 2);
+                append(2, 4); append(2, 2); append(2, 2);
+                append(0, 4); append(0, 4); // transparent index0.
+                append(static_cast<std::uint32_t>(red) << 16, 4); append(255, 4);
+                // One-byte indices, rows padded to four bytes, visible index1.
+                for (const auto index : {1, 1, 0, 0, 1, 1, 0, 0})
+                    bytes.push_back(static_cast<std::byte>(index));
+                return ArchiveBuildItem{LegacyDataType::Uap, std::move(bytes)};
+            };
+            std::vector<ArchiveBuildItem> patterns(3);
+            patterns[0] = bitmap(31);
+            if (includeOptions) patterns[2] = bitmap(79);
+            std::vector<ArchiveBuildItem> languageGraphics(4);
+            languageGraphics[3] = bitmap(127);
+            if (!writeLegacyDataArchive(directory / "Dat_Mon/dat_pat.dat", patterns) ||
+                !writeLegacyDataArchive(directory / "Dat_Mon/dat_lm01.dat", languageGraphics))
+                throw std::runtime_error("static backdrop UAP fixture write failed");
+            const auto paths = ResourcePaths::create(std::array{directory});
+            if (!paths || !service.initialize(*paths))
+                throw std::runtime_error("static backdrop resource fixture failed");
+        }
+    };
     void testMainBuffersAndPlayback()
     {
         using namespace monopoly;
@@ -287,6 +324,118 @@ namespace
             playback.runtimeBitmaps().size() == 5,
             "3D switch removes visible backdrop but retains permanent runtime buffers");
     }
+    void testStaticBackdropScreensAndTransitions()
+    {
+        using namespace monopoly;
+        StaticBackdropResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        boarddisplay::BoardBackdropPlayback backdrop;
+        struct ScreenCase { display::Screen2D view; data::LegacyGroupId group; data::DataTag tag; std::uint8_t red; };
+        // UDBoard.cpp:932-950, BMP_sybkgrnd, BMP_rnbacknd, BMP_auctiona.
+        const std::array cases{
+            ScreenCase{display::Screen2D::PlayerSelect, data::LegacyGroupId::LanguageGraphics, 3, 127},
+            ScreenCase{display::Screen2D::PlayerSelectRules, data::LegacyGroupId::Patterns, 2, 79},
+            ScreenCase{display::Screen2D::Auction, data::LegacyGroupId::Patterns, 0, 31},
+            ScreenCase{display::Screen2D::Options, data::LegacyGroupId::Patterns, 2, 79}};
+        std::uint32_t tick = 1;
+        for (const auto& item : cases)
+        {
+            auto requested = input(item.view, true, pieces::BoardCameraView::Count, tick++, -1);
+            const auto previous = backdrop.activeBackdrop();
+            const auto id = data::packDataId(item.group, item.tag);
+            expect(backdrop.sync(requested, playback).has_value() && backdrop.activeBackdrop() == id &&
+                playback.commands().pendingCount() == (previous == data::EmptyDataId ? 1 : 2),
+                "static screen selects its exact source bitmap even with 3D/custom city and invalid board camera");
+            expect(playback.update(requested.tick).has_value(), "static background transition executes");
+            const auto* visible = only2D(playback);
+            expect(visible && visible->contentsDataId == id && visible->priority == 10 &&
+                visible->worldTransform.values[6] == 0.0F && visible->worldTransform.values[7] == 0.0F &&
+                visible->asset->image.width == 2 && visible->asset->image.height == 2 &&
+                visible->asset->image.pixels[0] == item.red,
+                "real UAP decoder publishes the selected static pixels at priority10 and viewport origin");
+            const auto roots = playback.runtime().matching(id, 10);
+            const auto asset = visible ? visible->asset : nullptr;
+            requested.game3DOn = false; requested.city = 999;
+            requested.camera = pieces::BoardCameraView::TopDownSoccer;
+            requested.tick = tick++;
+            expect(backdrop.sync(requested, playback).has_value() && playback.commands().pendingCount() == 0 &&
+                playback.runtime().matching(id, 10) == roots && only2D(playback) && only2D(playback)->asset == asset &&
+                playback.runtimeBitmaps().size() == 0,
+                "unchanged static view ignores board-only settings and preserves its existing root and asset");
+        }
+        expect(backdrop.sync(input(display::Screen2D::Main, false,
+            pieces::BoardCameraView::TopDownSoccer, tick++), playback).has_value() &&
+            playback.commands().pendingCount() == 2,
+            "static Options transitions to the compiled Main2D board with one stop and start");
+        expect(playback.update(tick).has_value() && only2D(playback) &&
+            only2D(playback)->asset->image.width == boarddisplay::MainBoardWidth,
+            "Main2D replaces the static bitmap with the actual compiled camera surface");
+        expect(backdrop.sync(input(display::Screen2D::Auction, true,
+            pieces::BoardCameraView::Count, tick++, -1), playback).has_value() && playback.update(tick).has_value(),
+            "static Auction also replaces an active Main2D board");
+        expect(backdrop.sync(input(display::Screen2D::Main, true,
+            pieces::BoardCameraView::Count, tick++, -1), playback).has_value() &&
+            backdrop.activeBackdrop() == data::EmptyDataId && playback.commands().pendingCount() == 1,
+            "Main3D stops a static backdrop without resolving a 2D camera or custom directory");
+        expect(playback.update(tick).has_value() && playback.runtime().bitmapInstances().empty(),
+            "Main3D leaves no static bitmap root");
+        expect(backdrop.sync(input(display::Screen2D::PlayerSelect, false,
+            pieces::BoardCameraView::Count, tick++, -1), playback).has_value() && playback.update(tick).has_value(),
+            "PlayerSelect starts again after Main3D");
+        expect(backdrop.sync(input(display::Screen2D::Black, false,
+            pieces::BoardCameraView::Count, tick++, -1), playback).has_value() &&
+            backdrop.activeBackdrop() == data::EmptyDataId && playback.commands().pendingCount() == 1,
+            "Black removes the active static screen");
+        expect(playback.update(tick).has_value() && playback.runtime().bitmapInstances().empty(),
+            "Black executes the static backdrop stop");
+    }
+
+    void testStaticBackdropFailuresPreserveOldScreen()
+    {
+        using namespace monopoly;
+        StaticBackdropResources missing(false);
+        engine::SequencePlayback playback(missing.service.snapshot());
+        boarddisplay::BoardBackdropPlayback backdrop;
+        const auto playerSelect = input(display::Screen2D::PlayerSelect, true, pieces::BoardCameraView::Count, 1, -1);
+        const auto options = input(display::Screen2D::Options, true, pieces::BoardCameraView::Count, 2, -1);
+        expect(backdrop.sync(playerSelect, playback).has_value() && playback.update(1).has_value(),
+            "resource-failure fixture begins with visible PlayerSelect");
+        const auto retainedId = backdrop.activeBackdrop();
+        const auto retainedRoots = playback.runtime().matching(retainedId, 10);
+        const auto* visible = only2D(playback);
+        const auto retainedAsset = visible ? visible->asset : nullptr;
+        expect(!backdrop.sync(options, playback) && backdrop.activeBackdrop() == retainedId &&
+            playback.commands().pendingCount() == 0 && playback.runtime().matching(retainedId, 10) == retainedRoots &&
+            only2D(playback) && only2D(playback)->asset == retainedAsset,
+            "missing static UAP fails before stopping or replacing the previous published screen");
+        expect(backdrop.sync(playerSelect, playback).has_value() && playback.commands().pendingCount() == 0,
+            "failed static resource transition does not mutate the prior view identity");
+
+        StaticBackdropResources complete;
+        engine::SequencePlayback full(complete.service.snapshot());
+        boarddisplay::BoardBackdropPlayback queued;
+        expect(queued.sync(playerSelect, full).has_value() && full.update(1).has_value(),
+            "queue-failure fixture begins with visible PlayerSelect");
+        const auto oldId = queued.activeBackdrop();
+        const auto oldRoots = full.runtime().matching(oldId, 10);
+        const auto* oldVisible = only2D(full);
+        const auto oldAsset = oldVisible ? oldVisible->asset : nullptr;
+        bool filled = true;
+        for (std::size_t i = 0; i < sequence::SequenceCommandQueue::Capacity - 1; ++i)
+            filled = full.commands().enqueue(sequence::StopSequenceCommand{data::EmptyDataId, 999}).has_value() && filled;
+        expect(filled, "unrelated commands fill the bounded queue");
+        const auto pending = full.commands().pendingCount();
+        expect(!queued.sync(options, full) && full.commands().pendingCount() == pending &&
+            queued.activeBackdrop() == oldId && full.runtime().matching(oldId, 10) == oldRoots &&
+            only2D(full) && only2D(full)->asset == oldAsset,
+            "one spare queue slot cannot partially enqueue a two-command static transition");
+        expect(full.update(2).has_value() && only2D(full) && only2D(full)->asset == oldAsset,
+            "draining unrelated FIFO commands preserves the old static screen");
+        expect(queued.sync(options, full).has_value() && full.commands().pendingCount() == 2 &&
+            full.update(3).has_value() && only2D(full) && only2D(full)->contentsDataId ==
+                data::packDataId(data::LegacyGroupId::Patterns, 2),
+            "retry after queue capacity recovers publishes the requested Options bitmap");
+    }
     void testFailuresAreTransactional()
     {
         using namespace monopoly;
@@ -344,6 +493,8 @@ int main()
     testTradePortfolioAndStop();
     testFailuresAreTransactional();
     testCustomBackdropRoots();
+    testStaticBackdropScreensAndTransitions();
+    testStaticBackdropFailuresPreserveOldScreen();
     std::cout << "Board backdrop failures: " << failures << '\n';
     return failures == 0 ? 0 : 1;
 }

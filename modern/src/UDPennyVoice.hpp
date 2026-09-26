@@ -79,8 +79,10 @@ namespace monopoly::penny
         const rules::GameState& state, rules::PlayerNumber player,
         std::uint8_t square, std::uint32_t random100) noexcept;
 
+    // European custom city -1 uses the install language, as UDPenny.cpp does.
     [[nodiscard]] std::optional<data::DataId> squareAnnouncementWave(
-        data::BoardEdition edition, int city, std::uint8_t square) noexcept;
+        data::BoardEdition edition, data::LanguageId language,
+        int city, std::uint8_t square) noexcept;
     [[nodiscard]] std::optional<data::DataId> cardReadWave(
         data::BoardEdition edition, std::uint8_t cardIndex) noexcept;
     [[nodiscard]] std::optional<data::DataId> cardReadWave(

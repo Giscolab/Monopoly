@@ -878,6 +878,7 @@ if(BUILD_TESTING)
         tests/OptionsCustomBoardRuntimeTests.cpp
         src/OptionsCustomBoardRuntime.cpp
     )
+    target_link_libraries(MonopolyOptionsCustomBoardRuntimeTests PRIVATE MonopolyDataCore)
     target_include_directories(
         MonopolyOptionsCustomBoardRuntimeTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -1167,6 +1168,7 @@ if(BUILD_TESTING)
     add_executable(
         MonopolyStatsDeedFloaterPlaybackTests
         tests/StatsDeedFloaterPlaybackTests.cpp
+        src/StatsCalculatorDeedPickerPlayback.cpp
         src/StatsDeedFloaterPlayback.cpp
         src/StatsDeedPlayback.cpp
         src/IBarLayout.cpp

@@ -51,7 +51,7 @@ void testCalculatorInteractionAndDeedFloater() {
     p=f.plan(); require(p && surface(*p,501).text[0].text=="LANG2003","player picker instruction comes from LANG2003");
     input.numberA=520; input.numberB=85; require(statsui::processCalculatorInput(f.calc,f.game,display::Screen2D::Portfolio,input),"choose player zero");
     p=f.plan(); require(p && f.calc.result && surface(*p,502).text[0].text=="1234" && surface(*p,502).text[0].alignment==statsui::TextAlignment::Right,"public calculator input computes and renders actual net worth");
-    f.calc.result=statsui::CalculatorResult{statsui::CalculatorResultKind::Percentage,12.25}; p=f.plan(); require(p && surface(*p,502).text[0].text=="12.2","percentage follows source fixed one decimal without percent suffix");
+    f.calc.result=statsui::CalculatorResult{statsui::CalculatorResultKind::Percentage,12.25}; p=f.plan(); require(p && surface(*p,502).text[0].text=="12.2%","percentage follows source fixed one decimal and percent suffix");
     f.calc.result->value=std::numeric_limits<double>::infinity(); require(!f.plan(),"nonfinite result rejected"); f.calc={};
     f.state.screen=statsui::Screen::Deed; f.state.activeSort=0; f.state.deedMetric[1]=60; f.state.mouseKnown=true; f.state.mouseX=23; f.state.mouseY=235;
     f.game.squares[1].owner=0; f.game.squares[1].gameEarnings=19;
@@ -60,6 +60,29 @@ void testCalculatorInteractionAndDeedFloater() {
     const auto& floater=surface(*p,300); require(floater.x==410 && floater.width==400 && floater.height==235 && floater.blackRect && floater.text[1].text=="Alice" && floater.text[5].text=="19" && floater.text[3].text==floater.text[7].text,"floater owner earnings and source repeated-rent future field");
     fonts::Runtime font; loadRealTestArial(font); const auto image=statsui::renderStatsTextSurface(floater,font);
     require(image && image->pixels[(10*400+200)*4+3]==255 && image->pixels[(10*400+200)*4]==0 && image->pixels[3]==0,"floater black mask is opaque only inside source rectangle");
+}
+void testCalculatorPopupSuppressesFloaterText() {
+    Fixture f; f.state.screen=statsui::Screen::Deed; f.state.activeSort=1;
+    f.state.mouseKnown=true; f.state.mouseX=245; f.state.mouseY=250;
+    auto before=f.plan(); require(before && before->size()==1 && before->front().key==300,"overlapping normal deed hover plans one floater text surface");
+    const auto expected=before->front();
+    fonts::Runtime font; loadRealTestArial(font);
+    engine::SequencePlayback sequence(f.resources.service.snapshot()); statsui::TextPlayback playback;
+    const auto sync=[&](fonts::Runtime* runtime){return playback.sync(f.state,f.game,f.inputs,f.calc,f.future,f.accounts,0,13,display::Screen2D::Portfolio,runtime,sequence);};
+    require(sync(&font).has_value() && sequence.update(0).has_value() && sequence.world2D().size()==1,"normal text publishes before calculator popup");
+    const auto oldNode=sequence.world2D().order().front();
+    const auto surfaceId=sequence.world2D().find(oldNode)->asset->dataId;
+    f.calc.picker=statsui::CalculatorPicker::Deed;
+    auto popup=f.plan(); require(popup && popup->empty(),"deed picker suppresses normal text even if calculator visibility has not synchronized");
+    require(sync(nullptr).has_value() && sequence.update(1).has_value() && sequence.world2D().size()==0,"popup stops existing normal text without rerasterizing it");
+    f.state.activeSort=0; popup=f.plan();
+    require(popup && !popup->empty() && std::none_of(popup->begin(),popup->end(),[](const auto& s){return s.key==300;}),"popup keeps deed metrics while suppressing only normal floater text");
+    f.state.activeSort=1; f.calc.picker=statsui::CalculatorPicker::None;
+    auto after=f.plan(); require(after && surface(*after,300)==expected,"closing picker restores exact normal text plan at unchanged pointer");
+    require(sync(&font).has_value() && sequence.update(2).has_value() && sequence.world2D().size()==1 && sequence.runtimeBitmaps().size()==1,"normal text restores using one cached runtime surface");
+    require(sequence.world2D().find(sequence.world2D().order().front())->asset->dataId==surfaceId,"normal text reuses its original surface after popup dismissal");
+    f.calc.picker=statsui::CalculatorPicker::Player;
+    require(f.plan() && surface(*f.plan(),300)==expected,"player picker does not hide normal deed hover");
 }
 void testWrappedHistoryViewport() {
     Fixture f; f.state.screen=statsui::Screen::Bank; f.state.activeSort=3;
@@ -93,4 +116,4 @@ void testPublicationAndFailures() {
     SyntheticSequenceResources incomplete; auto failed=statsui::planStatsTextSurfaces(f.state,f.game,f.inputs,{}, {}, {},0,13,display::Screen2D::Portfolio,*incomplete.service.snapshot()); require(!failed,"missing real LANG labels fail explicitly");
 }
 }
-int main(){try{testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

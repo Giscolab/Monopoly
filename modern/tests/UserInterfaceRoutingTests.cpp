@@ -12,6 +12,8 @@
 #include "LocalPlayers.hpp"
 #include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
+#include "OptionsSaveRuntime.hpp"
+#include "SyntheticSavedCustomBoard.hpp"
 
 #include <iostream>
 #include <optional>
@@ -47,6 +49,7 @@ namespace
     monopoly::rules::PlayerNumber selectedLocalUIPlayer = monopoly::rules::NobodyPlayer;
     std::size_t simulatedQueuedActions = 0;
     bool acceptMessaging = true;
+    bool routingServerMode = true;
     std::vector<monopoly::actions::Message> capturedMessages;
     std::optional<monopoly::auctionui::BidRequest> plannedAuctionBid;
     monopoly::actions::Message capturedAuctionAction{};
@@ -55,6 +58,7 @@ namespace
     monopoly::display::Screen2D requestedBackdrop =
         monopoly::display::Screen2D::Invalid;
     std::vector<std::string_view> route;
+    std::shared_ptr<const monopoly::data::ResourceSnapshot> routingResources;
 
     std::size_t routeCount(std::string_view value)
     {
@@ -184,7 +188,7 @@ namespace monopoly::startup
 {
     std::shared_ptr<const data::ResourceSnapshot> resources() noexcept
     {
-        return {};
+        return routingResources;
     }
 }
 
@@ -383,6 +387,7 @@ namespace monopoly::auctionui
 
 namespace monopoly::messaging
 {
+    bool serverMode() { return routingServerMode; }
     bool networkMode()
     {
         return false;
@@ -515,6 +520,169 @@ namespace monopoly::userinterface
 
 namespace
 {
+    struct SavedFileBackup
+    {
+        std::filesystem::path path;
+        std::optional<monopoly::data::DataBytes> original;
+        explicit SavedFileBackup(std::filesystem::path file) : path(std::move(file))
+        {
+            if (!std::filesystem::exists(path)) return;
+            std::ifstream input(path, std::ios::binary | std::ios::ate);
+            if (!input || input.tellg() < 0) throw std::runtime_error("cannot back up test save slot");
+            original.emplace(static_cast<std::size_t>(input.tellg()));
+            input.seekg(0);
+            if (!original->empty()) input.read(reinterpret_cast<char*>(original->data()),
+                static_cast<std::streamsize>(original->size()));
+            if (!input) throw std::runtime_error("cannot read test save-slot backup");
+        }
+        ~SavedFileBackup()
+        {
+            if (original) SyntheticSavedCustomBoard::write(path, *original);
+            else { std::error_code ignored; std::filesystem::remove(path, ignored); }
+        }
+    };
+
+    void testSavedCustomBoardRouting()
+    {
+        using namespace monopoly;
+        constexpr std::size_t slot = optionsui::SaveSlotCount - 1;
+        SavedFileBackup blobBackup(optionsui::gameBlobPath(slot));
+        SavedFileBackup metadataBackup(optionsui::gameMetadataPath(slot));
+        const data::DataBytes bytes{std::byte{'M'},std::byte{'O'},std::byte{'N'},std::byte{'O'},
+            std::byte{'P'},std::byte{'O'},std::byte{'L'},std::byte{'Y'},std::byte{1},std::byte{2},std::byte{3},std::byte{4}};
+        SyntheticSavedCustomBoard::write(optionsui::gameBlobPath(slot), bytes);
+        uimsg::Message enter{};
+        enter.type = uimsg::Type::KeyboardPressed;
+        enter.numberA = SDL_SCANCODE_RETURN;
+        for (const bool europe : {false, true})
+        {
+            SyntheticSavedCustomBoard fixture(europe);
+            routingResources = fixture.resources;
+            runtime::reset();
+            userinterface::resetRuleProjection();
+            routingIBarState = {};
+            localPlayerMask = 1;
+            localHumanMask = 1;
+            acceptMessaging = true;
+            acceptRecipient = true;
+            userinterface::ruleState().numberOfPlayers = 1;
+            const int currency = europe ? 5 : 13;
+            const auto prepareLoad = [&]()
+            {
+                auto& state = userinterface::optionsSaveState();
+                state = {};
+                state.dialog = optionsui::FileDialogMode::Load;
+                state.selectedSlot = static_cast<int>(slot);
+                state.slots[slot].occupied = true;
+                state.slots[slot].metadata.city = -1;
+                state.slots[slot].metadata.system = currency;
+                state.slots[slot].metadata.customBoardName = fixture.savedName();
+                state.slots[slot].metadata.squareGameEarnings[1] = 987;
+                userinterface::optionsState().active = true;
+                userinterface::optionsState().currentScreen = optionsui::Screen::LoadGame;
+                routingDisplayState.desired2DView = display::Screen2D::Options;
+                capturedMessages.clear();
+                simulatedQueuedActions = 0;
+                route.clear();
+            };
+            prepareLoad();
+            expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 1 &&
+                capturedMessages.front().action == actions::Type::SetGameState &&
+                capturedMessages.front().numberB == 1 && capturedMessages.front().numberC == 1 &&
+                capturedMessages.front().binaryDataA.size() == bytes.size(),
+                "load dialog dispatches the actual saved blob only after custom-board preflight");
+            expect(routingDisplayState.city == -1 && routingDisplayState.customBoardPath == fixture.root &&
+                routingDisplayState.system == currency && userinterface::ruleState().squares[1].gameEarnings == 987 &&
+                !userinterface::optionsStateReadOnly().active && requestedBackdrop == display::Screen2D::Main,
+                "USA/European saved custom board keeps its root and saved currency while restoring metadata");
+
+            prepareLoad();
+            userinterface::ruleState().numberOfPlayers = 0;
+            localPlayerMask = 0;
+            routingServerMode = true;
+            expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 1 &&
+                capturedMessages.front().fromPlayer == rules::NobodyPlayer &&
+                routingDisplayState.city == -1 && routingDisplayState.customBoardPath == fixture.root,
+                "empty local player-selection game loads a saved custom board with the unassigned sender accepted by RuleSave");
+            prepareLoad();
+            routingServerMode = false;
+            routingDisplayState.city = 4;
+            expect(userinterface::processUIMessage(enter) && capturedMessages.empty() &&
+                routingDisplayState.city == 4 &&
+                userinterface::optionsSaveStateReadOnly().dialog == optionsui::FileDialogMode::Load,
+                "an empty connecting client cannot use the local-startup load exception");
+            userinterface::ruleState().numberOfPlayers = 1;
+            expect(userinterface::processUIMessage(enter) && capturedMessages.empty() &&
+                routingDisplayState.city == 4,
+                "a client spectator without a local player cannot dispatch a saved-game load");
+            routingServerMode = true;
+            localPlayerMask = 1;
+
+            prepareLoad();
+            routingDisplayState.city = 4;
+            routingDisplayState.system = 12;
+            routingDisplayState.customBoardPath = fixture.stock.directory / "Previous";
+            userinterface::ruleState().squares[1].gameEarnings = 77;
+            acceptMessaging = false;
+            expect(userinterface::processUIMessage(enter) && capturedMessages.empty() &&
+                routingDisplayState.city == 4 && routingDisplayState.system == 12 &&
+                routingDisplayState.customBoardPath == fixture.stock.directory / "Previous" &&
+                userinterface::ruleState().squares[1].gameEarnings == 77 &&
+                userinterface::optionsSaveStateReadOnly().dialog == optionsui::FileDialogMode::Load &&
+                userinterface::optionsStateReadOnly().active,
+                "rejected SetGameState leaves the prior board, earnings and load dialog unchanged");
+            acceptMessaging = true;
+            std::filesystem::remove(fixture.root / "2DBoards/2DVIEW39.BMP");
+            expect(userinterface::processUIMessage(enter) && capturedMessages.empty() &&
+                routingDisplayState.city == 4 && routingDisplayState.system == 12 &&
+                userinterface::ruleState().squares[1].gameEarnings == 77 &&
+                userinterface::optionsSaveStateReadOnly().dialog == optionsui::FileDialogMode::Load,
+                "partial custom camera set emits no load action and preserves projected state");
+            SyntheticSavedCustomBoard::write(fixture.root / "2DBoards/2DVIEW39.BMP",
+                SyntheticSequenceResources::bitmap24());
+            std::filesystem::remove(fixture.root / "2DBoards/2DVIEW01.BMP");
+            expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 1 &&
+                routingDisplayState.city == (europe ? 1 : 0) && routingDisplayState.system == currency &&
+                routingDisplayState.customBoardPath.empty() && routeCount("warning") > 0,
+                "deleted first camera takes the explicit source fallback and clears stale custom root");
+
+            prepareLoad();
+            userinterface::optionsSaveState().slots[slot].metadata.city = 2;
+            routingDisplayState.customBoardPath = fixture.root;
+            expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 1 &&
+                routingDisplayState.city == 2 && routingDisplayState.customBoardPath.empty(),
+                "loading a stock save clears a previous custom-board path");
+
+            auto& save = userinterface::optionsSaveState();
+            save = {};
+            save.dialog = optionsui::FileDialogMode::Save;
+            save.selectedSlot = static_cast<int>(slot);
+            save.draftDescription = u"Custom board routing fixture";
+            routingDisplayState.city = -1;
+            routingDisplayState.system = currency;
+            routingDisplayState.customBoardPath = fixture.root;
+            expect(userinterface::processUIMessage(enter) && save.pendingSaveSlot == slot &&
+                save.pendingMetadata.customBoardName == fixture.savedName(),
+                "save routing forwards the actual custom root instead of an empty custom-board name");
+            actions::Message saved{};
+            saved.action = actions::Type::NotifyGameStateForSave;
+            saved.fromPlayer = rules::BankPlayer;
+            saved.toPlayer = 0;
+            for (const auto byte : bytes) saved.binaryDataA.push_back(std::to_integer<std::uint8_t>(byte));
+            userinterface::processRuleMessage(saved);
+            optionsui::SaveRuntimeState reloaded;
+            const auto refreshed = optionsui::refreshSaveSlots(reloaded, optionsui::FileDialogMode::Load);
+            expect(refreshed && reloaded.slots[slot].metadata.customBoardName == fixture.savedName(),
+                "real save sidecar persists the custom root through RULE notification and disk reload");
+            routingResources.reset();
+        }
+        userinterface::resetRuleProjection();
+        localPlayerMask = localHumanMask = 0x3F;
+        acceptMessaging = true;
+        routingServerMode = true;
+        runtime::reset();
+    }
+
     void testUiModuleOrder()
     {
         using namespace monopoly;
@@ -2062,6 +2230,7 @@ int main()
 
     testUiModuleOrder();
     testOptionsEntryAndCancelRouting();
+    testSavedCustomBoardRouting();
     testOptionsSupportedToggleRouting();
     testOptionsMusicPreviewRollbackAndExitConsumption();
     testAuctionBidRouting();

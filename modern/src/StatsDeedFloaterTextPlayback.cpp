@@ -235,10 +235,11 @@ namespace monopoly::statsui
         int monetarySystem,
         display::Screen2D desiredView,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool deedPopupVisible)
     {
         std::optional<int> square;
-        if (desiredView == display::Screen2D::Portfolio)
+        // Match UDStats normal-hover !IsPopUpIDOn; the picker owns its preview.
+        if (!deedPopupVisible && desiredView == display::Screen2D::Portfolio)
         {
             const auto hovered = hoveredSquare(state, gameState, inputs);
             if (!hovered) return std::unexpected(hovered.error());

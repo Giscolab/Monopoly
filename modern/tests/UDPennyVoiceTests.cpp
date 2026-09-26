@@ -67,27 +67,56 @@ namespace
     }
     void testSquareAnnouncements()
     {
-        const auto usa = monopoly::penny::squareAnnouncementWave(
-            monopoly::data::BoardEdition::Usa, 0, 1);
-        require(usa && monopoly::data::dataGroup(*usa) ==
-                monopoly::data::legacyGroupValue(monopoly::data::LegacyGroupId::LanguageDialog) &&
-                monopoly::data::dataTag(*usa) == 0x0969,
-            "USA property announcement uses city-specific DAT_LANGDIALOG square tag");
+        using namespace monopoly;
+        using data::BoardEdition;
+        using data::LanguageId;
+        using data::LegacyGroupId;
+        const auto expectWave = [](BoardEdition edition, LanguageId language,
+            int city, std::uint8_t square, LegacyGroupId group,
+            data::DataTag tag, std::string_view description)
+        {
+            const auto wave = penny::squareAnnouncementWave(edition, language, city, square);
+            require(wave && *wave == data::packDataId(group, tag), description);
+        };
+        expectWave(BoardEdition::Usa, LanguageId::EnglishUs, 0, 1,
+            LegacyGroupId::LanguageDialog, 0x0969,
+            "USA property announcement preserves DAT_LANGDIALOG WAV_s_010001");
+        expectWave(BoardEdition::Usa, LanguageId::French, -1, 1,
+            LegacyGroupId::LanguageDialog, 0x0969,
+            "USA custom city remains clamped to zero independently of install language");
+        expectWave(BoardEdition::Usa, LanguageId::Norwegian, 1, 39,
+            LegacyGroupId::LanguageDialog, 0x09B8,
+            "USA named city preserves 41-square stride and WAV_s_010139");
 
-        const auto europe = monopoly::penny::squareAnnouncementWave(
-            monopoly::data::BoardEdition::Europe, 1, 39);
-        require(europe && monopoly::data::dataGroup(*europe) ==
-                monopoly::data::legacyGroupValue(monopoly::data::LegacyGroupId::Board) &&
-                monopoly::data::dataTag(*europe) == 0x216E,
-            "Europe property announcement uses propconv index in DAT_BOARD");
-        require(!monopoly::penny::squareAnnouncementWave(
-                monopoly::data::BoardEdition::Usa, 0, 2),
-            "non-property square has no property-name announcement");
-        require(!monopoly::penny::squareAnnouncementWave(
-                monopoly::data::BoardEdition::Europe, -1, 1),
-            "Europe custom board waits for a real install-language owner");
+        expectWave(BoardEdition::Europe, LanguageId::EnglishUk, 1, 39,
+            LegacyGroupId::Board, 0x216E,
+            "Europe explicit city overrides install language and selects WAV_s_010339");
+        expectWave(BoardEdition::Europe, LanguageId::EnglishUk, -1, 1,
+            LegacyGroupId::Board, 0x2137,
+            "Europe custom English board selects WAV_s_010201 via language minus two");
+        expectWave(BoardEdition::Europe, LanguageId::French, -1, 1,
+            LegacyGroupId::Board, 0x2153,
+            "Europe custom French board selects DAT_BORDE WAV_s_010301");
+        expectWave(BoardEdition::Europe, LanguageId::French, -1, 39,
+            LegacyGroupId::Board, 0x216E,
+            "Europe custom French last property uses propconv27 within the same city");
+        expectWave(BoardEdition::Europe, LanguageId::Norwegian, -1, 1,
+            LegacyGroupId::Board, 0x2217,
+            "Europe custom Norwegian board selects DAT_BORDE WAV_s_011001");
+        expectWave(BoardEdition::Europe, LanguageId::Norwegian, -1, 39,
+            LegacyGroupId::Board, 0x2232,
+            "Europe custom Norwegian last property selects DAT_BORDE WAV_s_011039");
+        expectWave(BoardEdition::Europe, LanguageId::EnglishUs, -1, 1,
+            LegacyGroupId::Board, 0x2137,
+            "Europe source max(tempCity,0) clamps a below-UK install language");
+        expectWave(BoardEdition::Europe, LanguageId::Norwegian, -2, 1,
+            LegacyGroupId::Board, 0x2137,
+            "only city minus one invokes install language; other negatives clamp to zero");
+        for (const auto edition : {BoardEdition::Usa, BoardEdition::Europe})
+            for (const std::uint8_t square : {0, 2, 4, 7, 10, 17, 20, 22, 30, 33, 36, 38, 40, 41, 42, 255})
+                require(!penny::squareAnnouncementWave(edition, LanguageId::French, -1, square),
+                    "custom announcement still rejects non-property and out-of-range squares");
     }
-
     void testCardReadWave()
     {
         const auto first = monopoly::penny::cardReadWave(

@@ -1,9 +1,12 @@
 #pragma once
 #include "OptionsUI.hpp"
+#include "ResourceRuntime.hpp"
 #include <array>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 namespace monopoly::optionsui
 {
@@ -54,4 +57,11 @@ namespace monopoly::optionsui
         std::uint32_t installedSecurityVersion);
     [[nodiscard]] std::expected<CustomBoardSelection, std::string> validateSelectedCustomBoard(
         const CustomBoardState& state);
+    // SetUpLoadedGame restores the saved asset directory, without requiring
+    // the original .brd ownership file or editor registry. A missing first
+    // camera means the board was removed and requests the retail stock fallback.
+    // Other errors fail before the caller publishes any loaded-game state.
+    [[nodiscard]] std::expected<std::optional<std::filesystem::path>, std::string>
+    restoreSavedCustomBoard(std::string_view savedAssetRoot,
+        const data::ResourceSnapshot& resources, int monetarySystem);
 }

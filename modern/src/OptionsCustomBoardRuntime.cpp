@@ -1,4 +1,6 @@
 #include "OptionsCustomBoardRuntime.hpp"
+#include "BoardTextureRuntime.hpp"
+#include "LegacyBitmap.hpp"
 #include <algorithm>
 #include <fstream>
 #ifdef _WIN32
@@ -179,5 +181,65 @@ namespace monopoly::optionsui
         const auto version = readCustomBoardSecurityVersion();
         if (!version) return std::unexpected(version.error());
         return validateCustomBoardFile(state.directory, state.entries[static_cast<std::size_t>(state.selectedIndex)].fileName, *version);
+    }
+
+    std::expected<std::optional<std::filesystem::path>, std::string>
+    restoreSavedCustomBoard(std::string_view savedAssetRoot,
+        const data::ResourceSnapshot& resources, int monetarySystem) try
+    {
+        if (savedAssetRoot.empty()) return std::optional<std::filesystem::path>{};
+        if (savedAssetRoot.find('\0') != std::string_view::npos)
+            return std::unexpected("saved custom-board path contains NUL");
+        const std::filesystem::path savedPath(
+            std::u8string(savedAssetRoot.begin(), savedAssetRoot.end()));
+        auto paths = savedPath.is_absolute()
+            ? data::ResourcePaths::create(std::array{savedPath})
+            : data::ResourcePaths::create(resources.paths().roots());
+        if (!paths) return std::unexpected(paths.error().detail);
+        std::string firstName = "2dboards/2dview01.bmp";
+        if (!savedPath.is_absolute())
+            firstName = utf8Name(savedPath / firstName);
+        const auto first = paths->resolve(firstName);
+        if (!first)
+        {
+            if (first.error().code == data::DataErrorCode::ResourceNotFound)
+                return std::optional<std::filesystem::path>{};
+            return std::unexpected(first.error().detail);
+        }
+        const auto root = first->parent_path().parent_path();
+        const data::BoardTextureContext context{resources.context().board,
+            resources.context().language, -1, monetarySystem, root};
+        // UDUTILS_Load2DBoardSet expects all 39 cameras. Decode them before
+        // accepting the save, including views other than the current camera.
+        for (const auto name : data::twoDimensionalBoardTextureNames())
+        {
+            const auto path = data::resolveBoardTexturePath(resources.paths(),
+                data::BoardMeshKind::CityMedium, data::TextureLocation::CustomBoard2D,
+                name, context);
+            if (!path) return std::unexpected(path.error());
+            std::ifstream input(*path, std::ios::binary | std::ios::ate);
+            if (!input) return std::unexpected("cannot open saved custom-board camera");
+            const auto size = input.tellg();
+            if (size < 0 || static_cast<std::uint64_t>(size) > 4U * 1024U * 1024U)
+                return std::unexpected("saved custom-board camera exceeds file budget");
+            std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+            input.seekg(0, std::ios::beg);
+            if (!bytes.empty()) input.read(reinterpret_cast<char*>(bytes.data()),
+                static_cast<std::streamsize>(bytes.size()));
+            if (!input) return std::unexpected("cannot read saved custom-board camera");
+            const auto decoded = data::decodeLegacyBitmapRGBA8(bytes, 800U * 450U);
+            if (!decoded) return std::unexpected(decoded.error().detail);
+        }
+        const auto recipe = context.edition == data::BoardEdition::Usa
+            ? data::buildUsaTextureRecipe(data::BoardMeshKind::CityMedium, data::TextureResolution::Pixels128)
+            : data::buildEuropeanTextureRecipe(data::BoardMeshKind::CityMedium, data::TextureResolution::Pixels128);
+        if (!recipe) return std::unexpected(std::string(recipe.error().detail));
+        const auto textures = data::loadBoardTextureImages(resources.paths(), *recipe, context);
+        if (!textures) return std::unexpected(textures.error());
+        return std::optional<std::filesystem::path>{root};
+    }
+    catch (const std::filesystem::filesystem_error& error)
+    {
+        return std::unexpected(std::string("invalid saved custom-board path: ") + error.what());
     }
 }

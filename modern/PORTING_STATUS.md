@@ -4,6 +4,112 @@ Cette matrice est la carte unique du port moderne. La source originale reste
 l'autorite semantique; les statuts ci-dessous decrivent uniquement le code
 effectivement present sous `modern/`.
 
+## Audit fonctionnel du 26 septembre 2026 — référence 580b543
+
+Cette relecture remplace les anciennes priorités pour le pilotage courant.
+La matrice contient bien **43 entrées partielles** : 42 statuts sont entourés
+de backticks, celui de UDStats ne l'est pas. Les 67 % structurels et les 75 %
+fonctionnels historiques ne sont pas une mesure du parcours jouable actuel.
+Aucun nouveau pourcentage fonctionnel n'est déduit de ce comptage.
+
+L'inventaire ci-dessous couvre les 43 entrées. Il classe le **reste documenté**,
+non la totalité des fonctions de chaque module. `Qualification` signifie que
+le raccord nommé existe ; ce n'est pas une certification de parité retail.
+`Audit` signifie que la consommation ou la sémantique reste à démontrer.
+Les lignes qui partagent une dépendance ne sont pas des chantiers distincts.
+Bilan de cette relecture : **12 entrées avec du code actif manquant,
+1 avec des écarts Stats démontrés, 13 de qualification et 17 d'audit ciblé**.
+
+| # | Entrée de la matrice | Classe | Impact et preuve / prochaine action |
+|---:|---|---|---|
+| 1 | GameInc | Code | Démarrage : USE_OPENING_MOVIES=1 (`GameInc.h:51`), mais entrée directe en PlayerSelect. Décodage et orchestration des trois films manquent. |
+| 2 | Mess | Code | Partie distante : `TcpMessageTransport` accepte la voix spectateur, sans attribution des joueurs. GIS-8 voix reste distinct du lobby/ownership gameplay. |
+| 3 | Rule | Audit | Les 50 actions sont routées ; comparer les branches internes des handlers et phases sur scénarios de partie, sans refaire le dispatcher. |
+| 4 | trade | Qualification | `TradeUI::planSendItems` et UserInterface transmettent déjà la transaction et TradeEditingDone. Qualifier la boucle UI/RULE/notifications. |
+| 5 | Ai | Qualification | Achat, enchère, dette, tour et sauvegarde sont distribués par AIMessageIngress. Qualifier les parcours complets et reprises. |
+| 6 | Ai_trade | Qualification | AITradeIngress, contre-propositions et émissions Start/Done existent. Qualifier échanges multi-IA, refus et reprises. |
+| 7 | Ai_util | Audit | Comparer chaque helper consommé au source ; les fonctions liquidité/fortune existent déjà dans AIUtility. |
+| 8 | Lang | Audit | Les consommateurs UI actuels utilisent LANG. Inventorier les formats et divergences précis ; aucun nouveau service LANG à créer. |
+| 9 | display | Code | Fonds de sélection, règles, Options et enchère : Display ne conserve que des commentaires ; même dépendance que UDBoard. |
+| 10 | Userifce | Code | LoadGame force le plateau stock pour city<0 malgré le chargeur custom existant. Restaurer la racine sauvegardée et prévalider avant mutation. |
+| 11 | UDBoard | Code | `UDBoard.cpp:935/939/943/949` sélectionne LanguageGraphics:3, Patterns:2 ou Patterns:0. Publier ces fonds dans BoardBackdropPlayback ; le fond 3D est distinct. |
+| 12 | UDIBar | Audit | Stocks Banque, nom, score et message dynamique ont leurs owners. Comparer les transitions de boutons/notifications encore non auditées. |
+| 13 | UDOpts | Code | Credits, Help et dialogue custom existent ; le manque démontré est la restauration custom commune à Userifce, puis qualification des parcours. |
+| 14 | UDPieces | Audit | Mouvement, prison, repos, ombres et dés existent. Remplacer les mentions génériques par les callbacks source précis restant à comparer. |
+| 15 | UDPsel | Audit | Catalogue, rendu et historique existent. Auditer par phase les interactions, erreurs et transitions ; le réseau dépend de Mess. |
+| 16 | UDSound | Audit | Les noms de morceaux sont rendus dans OptionsVisualPlayback. Relever les appels vocaux source effectivement non couverts ; séparer audio physique. |
+| 17 | UDStats | Fidélité | À (245,250), le sélecteur Deed du calculateur laisse apparaître le floater normal, contrairement au garde !IsPopUpIDOn source. Odds omet le % ajouté par UDStats_CalculateOdds. Bank/Account History et fond noir du popup existent déjà. |
+| 18 | UDTrade | Qualification | Cash, noms, panneaux et Future/Immunity sont raccordés dans Engine. Qualifier les cycles ; le rightpanel n'est plus à porter. |
+| 19 | UDChat | Audit | ChatTextPlayback rend wrap, alpha et Fluff. Comparer les branches et hit-tests non audités ; la voix distante possède son chantier de qualification. |
+| 20 | UDPenny | Code | Une propriété custom Europe ne parle pas : squareAnnouncementWave rejette city<0 ; `UDPenny.cpp:1444–1450` utilise langue−2 pour city==-1. |
+| 21 | UDUtils | Code | Le resolver custom et les 39 vues ont leurs owners. Réutiliser ces chemins lors du LoadGame, sans second resolver. |
+| 22 | L_UIMsg | Audit | VideoJump existe déjà et Engine transmet les notices. Établir les callers actifs des autres événements/callbacks avant ajout. |
+| 23 | L_Data | Audit | Runtime bitmaps, fichiers custom et éviction explicite existent. Établir le contrat de budget/LRU consommé, sans doubler DATA. |
+| 24 | GRAFIX/Rend2D/Sprite | Code | Surfaces, blits et GPU existent ; manque concret des fonds statiques UDBoard. Les écarts de clipping doivent être prouvés séparément. |
+| 25 | L_Rend3D | Qualification | World3DSlot → scène → GPU actif. Le source ne remonte pas le culling au sequenceur ; qualifier les assets retail. |
+| 26 | L_Seqncr | Code | Les intentions vidéo sont décodées et transmises au bridge ; images/audio ne sont pas encore produits. Même dépendance que L_Video. |
+| 27 | L_Fonts/L_Print | Audit | measure/wrap/render et leurs consommateurs existent. Comparer seulement les métriques divergentes reproductibles après les écarts fonctionnels. |
+| 28 | Sound/MIDI | Audit | PCM/GSM, politiques vocales et feuilles Sound existent. Prouver la consommation des attributs avancés/MIDI avant de les porter. |
+| 29 | L_Video | Code | À ce HEAD, AVI metadata/timeline seulement ; enableAudio attend sans sink. Fournir décodage, présentation, horloge, EOF et interruption. |
+| 30 | Caméras/viewports/background PC3D | Audit | Projection/FOV/viewport présents. Identifier les transitions précises non couvertes ; ne pas confondre fonds 2D et background3D. |
+| 31 | Meshes/scenes/materials | Qualification | Le chemin USE_OLD_FRAME et les substitutions BMP existent. Aucun autre type actif prouvé par GIS-10. |
+| 32 | Décodeur HMD | Qualification | Les cases actives de hmdload sont couvertes ; primitives supplémentaires et reset/joint sont commentés. Attendre une preuve de contenu/caller. |
+| 33 | DATA lifecycle/ownership | Audit | Même politique de budget à établir que L_Data ; snapshots, leases, runtime et custom existent. |
+| 34 | CRC DAT | Qualification | Ignore reproduit le runtime source ; Verify existe. La convention du writer exige une vraie banque, pas une fonction de jeu supplémentaire. |
+| 35 | Parseurs CNK | Audit | Le record vidéo 6 est accepté. Établir la présence de preloader/attributs inconnus dans le contenu consommé avant d'ajouter des effets. |
+| 36 | Arbre/runtime | Code | Bitmap/mesh/camera/sound et intentions vidéo existent ; lecture vidéo effective encore absente à ce HEAD. |
+| 37 | Commandes sequenceur | Qualification | Start/Stop/Move/Camera/Redraw existent ; aucun chain ID dans les callers Monopoly audités. Qualifier le sous-ensemble consommé. |
+| 38 | Transformations/tweekers | Audit | Transformations 2D/3D existent. Distinguer feuilles Sound, tweekers audio et callbacks effectivement consommés ; préserver scrollingWorld. |
+| 39 | MESHX runtime | Qualification | Poses/diff/normales/substitutions existent ; les autres primitives non consommées ne sont pas un chantier actif. |
+| 40 | Render data sequence | Qualification | Les slots consomment bitmap/mesh avec assets partagés. Qualifier le contenu ; suivre la vidéo séparément. |
+| 41 | Sequence → render slots | Qualification | World3D et Overlay2D sont reliés aux renderers. Le retour de culling n'est pas requis par le source. |
+| 42 | LANG core | Audit | Les adaptateurs UI existent. Comparer les usages de formatting et les politiques Unicode précis, sans déclarer un raccord global absent. |
+| 43 | BMP runtime | Qualification | Feuilles bitmap et substitutions mesh fonctionnent via leurs owners. Vérifier formats et assets retail. |
+
+### Première fermeture issue de cet audit
+
+Les fonds statiques sont maintenant publiés par BoardBackdropPlayback avec
+les IDs et la priorité 10 du source, indépendamment du mode 3D et de la ville.
+Le calculateur masque le floater normal et son texte pendant son sélecteur de
+titres, puis les restaure sans exiger un nouveau mouvement ; Odds affiche %.
+Le chargement custom prévalide les 39 vues et textures, conserve la devise
+Europe et ne revient au stock que si la première image manque. La sauvegarde
+écrit sa vraie racine ; un serveur local peut charger depuis zéro joueur.
+L'annonce de propriété custom Europe suit désormais la langue−2 du source.
+
+Qualification Windows/MSVC Debug du 26 septembre : **8/8 suites ciblées
+passent en 6,48 s**, après compilation des huit cibles (exit 0). Suites :
+UDPennyVoice, StatsDeedFloaterPlayback, StatsDeedFloaterTextPlayback,
+StatsTextPlayback, StatsCalculatorDeedPickerPlayback, BoardBackdropPlayback,
+OptionsCustomBoardRuntime et UserInterfaceRouting. Logs locaux :
+`build/ui-audit-build-20260926-3.log`, `build/ui-audit-ctest-20260926.log`.
+La réparation de l'environnement Visual Studio n'a modifié aucune source.
+Cette qualification ne couvre pas encore l'application complète ni le nouveau
+lot vidéo. Les fixtures UAP/BMP sont explicitement synthétiques ; les tests
+Load vérifient le routage et la persistance, pas une partie retail complète.
+
+### Ordre d'exécution après cette relecture
+
+1. Fermer les défauts visibles démontrés : fonds 2D, masquage du floater
+   derrière le popup calculateur et suffixe %, sauvegarde/restauration custom,
+   annonce des propriétés custom Europe. Qualifier les changements ensemble.
+2. Achever la lecture vidéo réelle puis l'intro : trademark >540 ticks,
+   HLogo/ALogo/MIntro, préférence Bink/AVI source, audio, EOF, skip et cleanup.
+   Les deux modifications locales SequenceVideoRuntime préexistantes sont
+   conservées ; un helper de rectangle non appelé ne prouve pas une lecture.
+3. Poursuivre les audits sémantiques ciblés des 17 entrées non tranchées.
+   Le journal Europe nécessite encore six libellés absents des headers fournis :
+   aucune invention d'identifiant LANG. Le réseau gameplay reste distinct de GIS-8.
+4. GIS-8 : deux processus, puis deux machines et audio physique. GIS-9 et custom :
+   vrais assets USA/Europe/devise/langue et Board Editor, avec invariance des UV.
+   GIS-10 reste clos sans nouveau caller ou contenu HMD prouvé.
+
+Les qualifications physiques et retail ne peuvent pas être remplacées par
+une fixture, une compilation ou le seul pourcentage structurel. Les chapitres
+antérieurs ci-dessous conservent leurs constats datés ; leurs restes génériques
+sont remplacés par cet inventaire. Les résultats des changements postérieurs
+à 580b543 sont consignés séparément après exécution des tests.
+
 ## Campagne du 20 septembre 2026 - GIS-8 / GIS-9 / GIS-10
 
 Les compilations et tests ont ete explicitement reautorises. Sept sous-agents

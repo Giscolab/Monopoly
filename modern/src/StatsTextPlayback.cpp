@@ -151,7 +151,9 @@ namespace monopoly::statsui
                         0, 0, 52, 13, 8, 500, 0xC8C8C8, TextAlignment::Right);
                     result.push_back(std::move(surface));
                 }
-                if (!state.mouseKnown || state.mouseX < item.x || state.mouseX >= item.x + 36 ||
+                // The calculator popup owns its separate deed preview (IsPopUpIDOn).
+                if (calculator.picker == CalculatorPicker::Deed ||
+                    !state.mouseKnown || state.mouseX < item.x || state.mouseX >= item.x + 36 ||
                     state.mouseY < item.y || state.mouseY >= item.y + 42) continue;
                 TextSurface surface{300, state.mouseX > 400 ? 10 : 410, 220, 400, 235, 601};
                 surface.blackRect = Rect{193, 5, 393, 235};
@@ -266,7 +268,7 @@ namespace monopoly::statsui
                 {
                     std::ostringstream output; output.imbue(std::locale::classic());
                     output << std::fixed << std::setprecision(1) << std::setw(3) << value;
-                    text = output.str();
+                    text = output.str() + "%";
                 }
                 else text = money(static_cast<std::int64_t>(value));
                 TextSurface surface{502, 515, 54, 73, 14, 100, true};

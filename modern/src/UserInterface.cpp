@@ -1391,13 +1391,53 @@ namespace monopoly::userinterface
         }
 
         bool loadGameDispatched = false;
+        bool retainLoadDialog = false;
         if (saveInput.requestLoad)
         {
             const auto blob = optionsui::readSelectedGameBlob(optionsSaveProjection);
             const auto localPlayer = ui::localplayers::anyLocalPlayer(uiRuleState);
             bool sent = false;
-            if (blob && localPlayer < rules::MaxPlayers)
+            int loadedCity = display::stateReadOnly().city;
+            int loadedSystem = display::stateReadOnly().system;
+            std::filesystem::path loadedCustomRoot;
+            bool customBoardRemoved = false;
+            bool boardReady = true;
+            // RuleSave accepts an unassigned sender on an empty local/server
+            // game, including Load from player selection before a slot exists.
+            const bool mayLoad = localPlayer < rules::MaxPlayers ||
+                (uiRuleState.numberOfPlayers == 0 && messaging::serverMode());
+            if (blob && mayLoad)
             {
+                const auto& metadata = optionsSaveProjection.slots[
+                    static_cast<std::size_t>(optionsSaveProjection.selectedSlot)].metadata;
+                loadedCity = metadata.city;
+                loadedSystem = metadata.system;
+                if (loadedCity < 0)
+                {
+                    const auto resources = startup::resources();
+                    if (!resources) boardReady = false;
+                    else
+                    {
+                        const bool usa = resources->context().board == data::BoardEdition::Usa;
+                        if (usa) loadedSystem = 13;
+                        const auto restored = optionsui::restoreSavedCustomBoard(
+                            metadata.customBoardName, *resources, loadedSystem);
+                        boardReady = restored.has_value();
+                        if (restored && *restored)
+                        {
+                            loadedCity = -1;
+                            loadedCustomRoot = **restored;
+                        }
+                        else if (restored)
+                        {
+                            // SetUpLoadedGame falls back only when the saved
+                            // first camera is missing (the board was removed).
+                            const int language = static_cast<int>(resources->context().language);
+                            loadedCity = usa || language < 2 || language > 10 ? 0 : language - 2;
+                            customBoardRemoved = true;
+                        }
+                    }
+                }
                 actions::Message action{};
                 action.action = actions::Type::SetGameState;
                 action.fromPlayer = localPlayer;
@@ -1405,7 +1445,7 @@ namespace monopoly::userinterface
                 action.numberB = 1; // retail load-game marker
                 action.numberC = 1; // immunity/future save version
                 action.binaryDataA = *blob;
-                sent = messaging::sendAction(action);
+                if (boardReady) sent = messaging::sendAction(action);
             }
             if (sent)
             {
@@ -1418,23 +1458,12 @@ namespace monopoly::userinterface
                 {
                     engine::playWarningSound();
                 }
-                else if (const auto resources = startup::resources();
-                         resources && displayState.city < 0)
+                else
                 {
-                    // No external custom-board owner exists yet. Retail falls
-                    // back to the language's stock board when that board path
-                    // cannot be resolved.
-                    if (resources->context().board == data::BoardEdition::Usa)
-                    {
-                        displayState.city = 0;
-                        displayState.system = 13;
-                    }
-                    else
-                    {
-                        const int language = static_cast<int>(resources->context().language);
-                        displayState.city = language >= 2 && language <= 10
-                            ? language - 2 : 0;
-                    }
+                    displayState.city = loadedCity;
+                    displayState.system = loadedSystem;
+                    displayState.customBoardPath = std::move(loadedCustomRoot);
+                    if (customBoardRemoved) engine::playWarningSound();
                 }
                 // SetUpLoadedGame() leaves Options immediately; the RULE resync
                 // that follows completes the loaded-game projection.
@@ -1444,6 +1473,7 @@ namespace monopoly::userinterface
             else
             {
                 engine::playWarningSound();
+                retainLoadDialog = true;
             }
         }
 
@@ -1451,9 +1481,11 @@ namespace monopoly::userinterface
         {
             const auto localPlayer = ui::localplayers::anyLocalPlayer(uiRuleState);
             const auto& displayState = display::stateReadOnly();
+            const auto customPath = displayState.customBoardPath.u8string();
             const auto prepared = optionsui::beginPendingSave(
                 optionsSaveProjection, uiRuleState,
-                displayState.city, displayState.system, {});
+                displayState.city, displayState.system,
+                std::string(reinterpret_cast<const char*>(customPath.data()), customPath.size()));
             const bool sent = prepared && localPlayer < rules::MaxPlayers &&
                 messaging::sendAction(actions::Type::GetGameStateForSave,
                     localPlayer, rules::BankPlayer);
@@ -1465,7 +1497,7 @@ namespace monopoly::userinterface
             }
         }
 
-        if (saveInput.closeDialog)
+        if (saveInput.closeDialog && !retainLoadDialog)
         {
             optionsui::closeSaveDialog(optionsSaveProjection);
             if (!loadGameDispatched)

@@ -1,4 +1,5 @@
 #include "OptionsCustomBoardRuntime.hpp"
+#include "SyntheticSavedCustomBoard.hpp"
 
 #include <algorithm>
 #include <array>
@@ -231,6 +232,43 @@ namespace
             state.selectedIndex == -1,
             "missing custbrds directory opens an empty retail-compatible dialog");
     }
+    void testSavedAssetRestoration()
+    {
+        using namespace monopoly;
+        for (const bool europe : {false, true})
+        {
+            SyntheticSavedCustomBoard fixture(europe);
+            const int currency = europe ? 5 : 13;
+            const auto restored = optionsui::restoreSavedCustomBoard(
+                fixture.savedName(), *fixture.resources, currency);
+            expect(restored && *restored && **restored == fixture.root,
+                "saved custom assets restore for USA and Europe without a .brd or registry ownership check");
+            const auto relative = optionsui::restoreSavedCustomBoard(
+                "Saved board", *fixture.resources, currency);
+            expect(relative && *relative && **relative == fixture.root,
+                "relative saved paths resolve through the explicit retail resource roots");
+            std::filesystem::remove(fixture.root / "2DBoards/2DVIEW39.BMP");
+            expect(!optionsui::restoreSavedCustomBoard(fixture.savedName(), *fixture.resources, currency),
+                "a missing later camera rejects a partial set instead of selecting a stock board");
+            SyntheticSavedCustomBoard::write(fixture.root / "2DBoards/2DVIEW39.BMP",
+                SyntheticSequenceResources::bitmap24());
+            std::ofstream(fixture.root / "2DBoards/2DVIEW02.BMP", std::ios::trunc) << "invalid";
+            expect(!optionsui::restoreSavedCustomBoard(fixture.savedName(), *fixture.resources, currency),
+                "malformed camera bytes fail complete-set preflight");
+            SyntheticSavedCustomBoard::write(fixture.root / "2DBoards/2DVIEW02.BMP",
+                SyntheticSequenceResources::bitmap24());
+            std::filesystem::remove(fixture.root / "Photos/CT01_128.BMP");
+            expect(!optionsui::restoreSavedCustomBoard(fixture.savedName(), *fixture.resources, currency),
+                "missing 3D texture rejects restoration before publication even with complete 2D cameras");
+            std::filesystem::remove(fixture.root / "2DBoards/2DVIEW01.BMP");
+            const auto removed = optionsui::restoreSavedCustomBoard(
+                fixture.savedName(), *fixture.resources, currency);
+            expect(removed && !*removed,
+                "only absent first camera requests the source deleted-board fallback");
+            expect(!optionsui::restoreSavedCustomBoard("../escape", *fixture.resources, currency),
+                "relative saved path traversal is an error rather than a deleted-board fallback");
+        }
+    }
 }
 
 int main()
@@ -241,6 +279,7 @@ int main()
     testEnumerationAndPaging();
     testValidation();
     testMissingDirectory();
+    testSavedAssetRestoration();
 
     std::cout << "Custom-board runtime failures: "
               << failures << '\n';
