@@ -98,114 +98,90 @@ namespace monopoly::playerselection
                 y < bottom;
         }
 
-        bool addCharacterToName(wchar_t character)
+        bool addCharacterToName(std::uint32_t character)
         {
-            // udpsel_NameScreen_AddLetterToNameField().
-
-            if (character < 32 ||
-                (character >= 128 && character < 160))
-            {
+            // udpsel_NameScreen_AddLetterToNameField(): retain the native
+            // wide-character limit, but never insert half a UTF-16 pair.
+            if (character < 32 || (character >= 128 && character < 160))
                 return false;
-            }
 
-            std::wstring& name =
-                globalState.playerInfo.name;
-
-            if (name.empty())
-            {
-                name = L"_";
-            }
-
-            const std::size_t currentLength =
-                name.size();
-
-            // Le curseur "_" utilise lui-même une position.
-            if ((currentLength - 1) >=
-                EnterNameMaximumLength)
-            {
+            auto& name = globalState.playerInfo.name;
+            const std::size_t length = name.size() -
+                (!name.empty() && name.back() == L'_' ? 1u : 0u);
+            const std::size_t units = sizeof(wchar_t) == 2 && character > 0xFFFFu ? 2u : 1u;
+            if (length + units > EnterNameMaximumLength)
                 return false;
-            }
 
-            if (name.back() == L'_')
+            name.resize(length);
+            if constexpr (sizeof(wchar_t) == 2)
             {
-                name.back() = character;
-                name.push_back(L'_');
+                if (character > 0xFFFFu)
+                {
+                    character -= 0x10000u;
+                    name.push_back(static_cast<wchar_t>(0xD800u + (character >> 10u)));
+                    name.push_back(static_cast<wchar_t>(0xDC00u + (character & 0x3FFu)));
+                }
+                else name.push_back(static_cast<wchar_t>(character));
             }
-            else
-            {
-                name.push_back(character);
-                name.push_back(L'_');
-            }
-
+            else name.push_back(static_cast<wchar_t>(character));
+            name.push_back(L'_');
             return true;
         }
 
         void addTextToName(std::string_view utf8)
         {
-            if (utf8.empty())
+            // Decode bounded input as scalars, as in ChatRuntime. Invalid UTF-8
+            // must not introduce surrogate code points or overlong characters.
+            for (std::size_t i = 0; i < utf8.size();)
             {
-                return;
-            }
-
-            char* converted =
-                SDL_iconv_string(
-                    "WCHAR_T",
-                    "UTF-8",
-                    utf8.data(),
-                    utf8.size() + 1
-                );
-
-            if (converted == nullptr)
-            {
-                return;
-            }
-
-            const wchar_t* wideText =
-                reinterpret_cast<const wchar_t*>(
-                    converted
-                );
-
-            for (const wchar_t* p = wideText;
-                 *p != L'\0';
-                 ++p)
-            {
-                if (!addCharacterToName(*p))
+                const auto first = static_cast<std::uint8_t>(utf8[i]);
+                std::uint32_t code{};
+                std::size_t count{};
+                if (first < 0x80u) { code = first; count = 1; }
+                else if ((first & 0xE0u) == 0xC0u) { code = first & 0x1Fu; count = 2; }
+                else if ((first & 0xF0u) == 0xE0u) { code = first & 0x0Fu; count = 3; }
+                else if ((first & 0xF8u) == 0xF0u) { code = first & 0x07u; count = 4; }
+                else { ++i; continue; }
+                if (i + count > utf8.size()) break;
+                bool valid = true;
+                for (std::size_t j = 1; j < count; ++j)
                 {
-                    break;
+                    const auto continuation = static_cast<std::uint8_t>(utf8[i + j]);
+                    if ((continuation & 0xC0u) != 0x80u) { valid = false; break; }
+                    code = (code << 6u) | (continuation & 0x3Fu);
                 }
+                if (!valid) { ++i; continue; }
+                const bool overlong = (count == 2 && code < 0x80u) ||
+                    (count == 3 && code < 0x800u) || (count == 4 && code < 0x10000u);
+                if (overlong || code > 0x10FFFFu || (code >= 0xD800u && code <= 0xDFFFu))
+                { i += count; continue; }
+                if (!addCharacterToName(code)) break;
+                i += count;
             }
-
-            SDL_free(converted);
         }
 
         bool removeCharacterFromName()
         {
-            // udpsel_NameScreen_RemoveLetterFromNameField().
-
-            std::wstring& name =
-                globalState.playerInfo.name;
-
+            auto& name = globalState.playerInfo.name;
             if (name.empty() || name == L"_")
             {
                 name = L"_";
                 return false;
             }
 
-            if (name.size() <= 2)
+            std::size_t length = name.size() - (name.back() == L'_' ? 1u : 0u);
+            --length;
+            if constexpr (sizeof(wchar_t) == 2)
             {
-                name = L"_";
-                return true;
+                const auto last = static_cast<std::uint32_t>(name[length]);
+                if (length > 0 && last >= 0xDC00u && last <= 0xDFFFu)
+                {
+                    const auto previous = static_cast<std::uint32_t>(name[length - 1]);
+                    if (previous >= 0xD800u && previous <= 0xDBFFu) --length;
+                }
             }
-
-            if (name.back() == L'_')
-            {
-                name.erase(name.size() - 2, 1);
-            }
-            else
-            {
-                name.back() = L'_';
-            }
-
+            name.resize(length);
+            name.push_back(L'_');
             return true;
         }
 

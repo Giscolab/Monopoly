@@ -3618,17 +3618,34 @@ if(BUILD_TESTING)
         src/RuleCards.cpp src/RuleJail.cpp src/LocalPlayers.cpp src/AuctionUI.cpp src/IBar.cpp)
     list(REMOVE_DUPLICATES MONOPOLY_SESSION_INTEGRATION_SOURCES)
     add_executable(MonopolyGameSessionIntegrationTests tests/GameSessionIntegrationTests.cpp
-        ${MONOPOLY_SESSION_INTEGRATION_SOURCES})
+        ${MONOPOLY_SESSION_INTEGRATION_SOURCES} src/TcpMessageTransport.cpp)
     target_include_directories(MonopolyGameSessionIntegrationTests PRIVATE src tests)
     target_compile_definitions(MonopolyGameSessionIntegrationTests PRIVATE
         MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}")
     target_link_libraries(MonopolyGameSessionIntegrationTests PRIVATE
         MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     if(WIN32)
-        target_link_libraries(MonopolyGameSessionIntegrationTests PRIVATE Advapi32)
+        target_link_libraries(MonopolyGameSessionIntegrationTests PRIVATE Advapi32 ws2_32)
     endif()
     add_test(NAME Monopoly.GameSessionIntegration COMMAND MonopolyGameSessionIntegrationTests)
     set_tests_properties(Monopoly.GameSessionIntegration PROPERTIES TIMEOUT 60)
+
+    add_executable(MonopolyPlayerSelectionTests tests/PlayerSelectionTests.cpp
+        src/PlayerSelection.cpp src/PlayerSetupFlow.cpp src/PlayerSetupSound.cpp
+        src/PlayerSelectionHistory.cpp src/RuleOptions.cpp)
+    target_include_directories(MonopolyPlayerSelectionTests PRIVATE src tests)
+    target_link_libraries(MonopolyPlayerSelectionTests PRIVATE MonopolyDataCore SDL3::SDL3)
+    add_test(NAME Monopoly.PlayerSelection COMMAND MonopolyPlayerSelectionTests)
+
+    add_executable(MonopolyUDSoundRuntimeTests tests/UDSoundRuntimeTests.cpp
+        src/UDSoundRuntime.cpp src/TokenVoiceCatalog.cpp src/PennybagsCatalog.cpp)
+    target_include_directories(MonopolyUDSoundRuntimeTests PRIVATE src tests)
+    target_link_libraries(MonopolyUDSoundRuntimeTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.UDSoundRuntime COMMAND MonopolyUDSoundRuntimeTests)
+    if(MSVC)
+        target_compile_options(MonopolyPlayerSelectionTests PRIVATE /W4 /permissive-)
+        target_compile_options(MonopolyUDSoundRuntimeTests PRIVATE /W4 /permissive-)
+    endif()
 endif()
 
 # Trade's input contract uses SDL scancodes even in the pure editor tests.

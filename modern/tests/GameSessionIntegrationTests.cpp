@@ -1,3 +1,15 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #include "AIMessageIngress.hpp"
 #include "AuctionUI.hpp"
 #include "BoardRules.hpp"
@@ -19,6 +31,7 @@
 #include "RulesEngine.hpp"
 #include "RuntimeState.hpp"
 #include "TimeStep.hpp"
+#include "TcpMessageTransport.hpp"
 #include "TokenVoiceCatalog.hpp"
 #include "UserInterface.hpp"
 
@@ -26,11 +39,14 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 // Production RULE, FIFO, notification projection, IBar input, local ownership and AI are
 // linked. Only presentation, wall-clock pacing and player-setup widgets are
@@ -649,6 +665,225 @@ namespace
         ibar::shutdown();
         messaging::shutdown();
     }
+
+    struct LoopbackSockets
+    {
+        LoopbackSockets()
+        {
+#ifdef _WIN32
+            WSADATA data{};
+            require(WSAStartup(MAKEWORD(2, 2), &data) == 0, "initialize network fixture sockets");
+#endif
+        }
+        ~LoopbackSockets()
+        {
+#ifdef _WIN32
+            WSACleanup();
+#endif
+        }
+
+        static std::uint16_t unusedPort()
+        {
+            const auto socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#ifdef _WIN32
+            require(socket != INVALID_SOCKET, "create ephemeral-port probe");
+#else
+            require(socket >= 0, "create ephemeral-port probe");
+#endif
+            sockaddr_in address{};
+            address.sin_family = AF_INET;
+            address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            const auto bound = ::bind(socket, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
+#ifdef _WIN32
+            int length = sizeof(address);
+#else
+            socklen_t length = sizeof(address);
+#endif
+            const auto named = getsockname(socket, reinterpret_cast<sockaddr*>(&address), &length);
+#ifdef _WIN32
+            closesocket(socket);
+#else
+            ::close(socket);
+#endif
+            require(bound == 0 && named == 0, "reserve an ephemeral loopback port");
+            return ntohs(address.sin_port);
+        }
+    };
+
+    void testNetworkGame()
+    {
+        // These are real TCP peers in one process. The host runs the production
+        // RULE/UI/FIFO; peer input is scripted at the public transport boundary.
+        LoopbackSockets sockets;
+        observed.fill(0);
+        acceptedActions.fill(0);
+        delivered = 0;
+        initialStatePublished = false;
+        require(messaging::initialize(), "network fixture FIFO initializes");
+        userinterface::resetRuleProjection();
+        ui::localplayers::reset();
+        ai::resetMessageIngress();
+        require(ai::initializeMessageIngressProfiles(
+            std::filesystem::path(MONOPOLY_LEGACY_SOURCE_DIR) / "monopoly").has_value(),
+            "replacement AI profiles load");
+        require(ibar::initialize() && rules::initialize(), "network IBar and RULE initialize");
+        drain(false);
+        require(ui::localplayers::requestAddLocalPlayer(
+            userinterface::ruleStateReadOnly(), L"Host", 0, 0, 0, false), "host registers locally");
+        drain(false);
+
+        std::uint16_t port{};
+        std::unique_ptr<messaging::Transport> host;
+        for (unsigned attempt = 0; attempt < 8 && !host; ++attempt)
+        {
+            port = LoopbackSockets::unusedPort();
+            auto opened = messaging::openTcpTransport(true, "127.0.0.1", port,
+                messaging::TcpSessionMode::Gameplay);
+            if (opened) host = std::move(*opened);
+        }
+        require(host && messaging::startNetwork(std::move(host)), "MESS owns the real gameplay listener");
+        auto openPeer = [port]
+        {
+            auto opened = messaging::openTcpTransport(false, "127.0.0.1", port,
+                messaging::TcpSessionMode::Gameplay);
+            require(opened.has_value(), "open a real gameplay client");
+            return std::move(*opened);
+        };
+        auto client = openPeer();
+        auto observer = openPeer();
+        std::vector<actions::Message> clientMessages, observerMessages;
+        auto receive = [](messaging::Transport& peer, auto& messages)
+        {
+            peer.pump();
+            actions::Message message;
+            while (peer.receive(message)) messages.push_back(std::move(message));
+        };
+        auto pump = [&]
+        {
+            if (client) client->pump();
+            observer->pump();
+            drain();
+            if (client) receive(*client, clientMessages);
+            receive(*observer, observerMessages);
+        };
+        auto until = [&](auto done, std::string_view description)
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!done())
+            {
+                require(std::chrono::steady_clock::now() < deadline, description);
+                pump();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        };
+        auto count = [](const auto& messages, actions::Type type)
+        {
+            return std::count_if(messages.begin(), messages.end(),
+                [type](const auto& message) { return message.action == type; });
+        };
+        until([&] { return count(clientMessages, actions::Type::NotifyClientResyncInfo) != 0 &&
+            count(observerMessages, actions::Type::NotifyClientResyncInfo) != 0; },
+            "both peers receive actual RULE admission snapshots");
+        const auto remoteSource = client->localSourceId();
+        require(remoteSource != 0 && remoteSource != observer->localSourceId(),
+            "connections receive distinct host-assigned identities");
+        actions::Message name;
+        name.action = actions::Type::NamePlayer;
+        name.fromPlayer = rules::SpectatorPlayer;
+        name.toPlayer = rules::BankPlayer;
+        name.numberA = rules::NobodyPlayer;
+        name.numberC = name.numberD = 1;
+        constexpr std::wstring_view remoteName = L"Remote";
+        std::copy(remoteName.begin(), remoteName.end(), name.stringA.begin());
+        require(client->send(name), "remote player registration crosses TCP");
+        until([&] { return rules::state().numberOfPlayers == 2; }, "RULE registers the remote human");
+        require(messaging::playerOwner(1) == remoteSource && messaging::playerOwner(0) == 0 &&
+            ui::localplayers::humanCount() == 1 && !ui::localplayers::slotIsLocalPlayer(1),
+            "registration preserves the distinction between host and remote ownership");
+
+        // mt19937 seed 1 puts the second registered player first. This exercises
+        // the ordinary random-order path, independently of the dice-order path.
+        rules::random::seed(1);
+        require(messaging::sendAction(actions::Type::StartGame, 0, rules::BankPlayer), "host starts the game");
+        auto options = rules::state().options;
+        options.cheatingAllowed = true; // Deterministic public dice action below.
+        options.aiTakesTimeToThink = false;
+        actions::Message accept;
+        require(rules::configuration::acceptedConfigurationMessage(options, 0, false, accept) &&
+            messaging::sendAction(accept), "host accepts game options");
+        drain(false);
+        serviceHumanIdleTick();
+        require(rules::state().players[0].name == remoteName && rules::state().players[1].name == L"Host",
+            "ordinary game start really changes the slot order");
+        require(messaging::playerOwner(0) == remoteSource && messaging::playerOwner(1) == 0,
+            "randomized player records retain their actual TCP owner");
+        require(ui::localplayers::slotIsLocalHumanPlayer(1) && !ui::localplayers::slotIsLocalPlayer(0),
+            "host UI follows reordered names without taking the remote slot");
+        until([&] { return count(clientMessages, actions::Type::NotifyGameStarting) == 1 &&
+            count(observerMessages, actions::Type::NotifyGameStarting) == 1; },
+            "game start reaches both TCP peers");
+
+        auto remoteAction = [](actions::Type action, std::int64_t a = 0, std::int64_t b = 0)
+        {
+            actions::Message message;
+            message.action = action;
+            message.fromPlayer = 0;
+            message.toPlayer = rules::BankPlayer;
+            message.numberA = a;
+            message.numberB = b;
+            return message;
+        };
+        const auto privateBefore = count(clientMessages, actions::Type::NotifyClientResyncInfo);
+        const auto otherPrivateBefore = count(observerMessages, actions::Type::NotifyClientResyncInfo);
+        require(client->send(remoteAction(actions::Type::ResyncClient, 0)),
+            "owner requests a private client-state refresh");
+        until([&] { return count(clientMessages, actions::Type::NotifyClientResyncInfo) > privateBefore; },
+            "private refresh reaches its actual owner");
+        require(count(observerMessages, actions::Type::NotifyClientResyncInfo) == otherPrivateBefore,
+            "private client state is not delivered to another connection");
+
+        const auto rollIndex = static_cast<std::size_t>(actions::Type::CheatRollDice);
+        const auto rollsReceived = observed[rollIndex];
+        const auto rollsAccepted = acceptedActions[rollIndex];
+        require(observer->send(remoteAction(actions::Type::CheatRollDice, 1, 2)),
+            "other peer submits an action claiming the remote player's slot");
+        until([&] { return observed[rollIndex] > rollsReceived; }, "claimed action reaches host dispatch");
+        require(acceptedActions[rollIndex] == rollsAccepted && rules::state().players[0].currentSquare == 0,
+            "a different connection cannot move the active player's token");
+        require(client->send(remoteAction(actions::Type::CheatRollDice, 1, 2)),
+            "actual owner rolls through the same TCP action path");
+        until([&] { return rules::phases::current(rules::state()).phase == rules::GamePhase::AuctionOrBuyDecision; },
+            "remote roll reaches the property decision");
+        require(rules::state().players[0].currentSquare == 3 && acceptedActions[rollIndex] == rollsAccepted + 1,
+            "the reordered remote player can move legitimately");
+        require(client->send(remoteAction(actions::Type::BuyOrAuctionDecision, 1)),
+            "remote player buys the landed property");
+        until([&] { return rules::state().squares[3].owner == 0 &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::WaitEndTurn; },
+            "remote purchase completes through authoritative RULE");
+        until([&] { return std::any_of(observerMessages.begin(), observerMessages.end(), [](const auto& message)
+            { return message.action == actions::Type::NotifySquareOwnership && message.numberA == 3 && message.numberB == 0; }); },
+            "public ownership change reaches the other peer");
+        require(rules::state().players[0].cash == options.initialCash - 60 &&
+            userinterface::ruleStateReadOnly().players[0].cash == options.initialCash - 60,
+            "host and authoritative state agree on the remote purchase");
+
+        const auto endTurnsBefore = acceptedActions[static_cast<std::size_t>(actions::Type::EndTurn)];
+        client.reset();
+        until([&] { return rules::state().players[0].aiPlayerLevel == 3 && messaging::playerOwner(0) == 0; },
+            "connection loss transfers the reordered remote slot to the host AI");
+        require(ui::localplayers::slotIsLocalAIPlayer(0) && ui::localplayers::slotIsLocalHumanPlayer(1),
+            "only the departed player's slot is taken over locally");
+        serviceHumanIdleTick();
+        require(acceptedActions[static_cast<std::size_t>(actions::Type::EndTurn)] > endTurnsBefore &&
+            rules::state().currentPlayer == 1,
+            "replacement AI completes the disconnected player's pending turn");
+        std::cout << "[PASS] real TCP admission, shuffled ownership, private routing, remote purchase and AI takeover\n";
+        observer.reset();
+        rules::shutdown();
+        ibar::shutdown();
+        messaging::shutdown();
+    }
 }
 
 int main()
@@ -659,6 +894,7 @@ int main()
         testJailRollPrompt(true);
         testHumanGameInput();
         testComputerGame();
+        testNetworkGame();
     }
     catch (const std::exception& failure)
     {

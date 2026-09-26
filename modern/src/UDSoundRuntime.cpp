@@ -24,18 +24,22 @@ namespace monopoly::udsound
         inline constexpr audio::PlaybackKey SirenKey{audio::PlaybackDomain::Interface, 7};
         inline constexpr audio::PlaybackKey SaveFailureKey{audio::PlaybackDomain::Interface, 8};
         inline constexpr audio::PlaybackKey MusicKey{audio::PlaybackDomain::Music, 1};
+        // C_ArtLib.h:525 initializes sounds without SetVolume at 32 percent.
+        // These direct audio helpers bypass that sequencer initialization, so
+        // carry the same per-sound gain into SDL (no global volume adjustment).
+        inline constexpr float DefaultEffectGain = 0.32F;
         inline constexpr float PennybagsGain = 0.70F;
     }
     std::expected<void, std::string> Runtime::warning(audio::Runtime& audio)
-    { return audio.play(WarningKey, mainData(WarningTag)); }
+    { return audio.play(WarningKey, mainData(WarningTag), DefaultEffectGain); }
     std::expected<void, std::string> Runtime::click(audio::Runtime& audio)
     { return audio.play(ClickKey, mainData(ClickTag), 0.25F); }
     std::expected<void, std::string> Runtime::build(audio::Runtime& audio)
-    { return audio.play(BuildKey, mainData(BuildTag)); }
+    { return audio.play(BuildKey, mainData(BuildTag), DefaultEffectGain); }
     std::expected<void, std::string> Runtime::unbuild(audio::Runtime& audio)
-    { return audio.play(UnbuildKey, mainData(UnbuildTag)); }
+    { return audio.play(UnbuildKey, mainData(UnbuildTag), DefaultEffectGain); }
     std::expected<void, std::string> Runtime::saveFailure(audio::Runtime& audio)
-    { return audio.play(SaveFailureKey, mainData(SaveFailureTag)); }
+    { return audio.play(SaveFailureKey, mainData(SaveFailureTag), DefaultEffectGain); }
     std::expected<void, std::string> Runtime::siren(
         audio::Runtime& audio, std::uint8_t variant)
     {
@@ -45,9 +49,9 @@ namespace monopoly::udsound
             SirenBaseTag + variant)), 0.74F);
     }
     std::expected<void, std::string> Runtime::cashUp(audio::Runtime& audio)
-    { return audio.play(CashUpKey, mainData(CashUpTag)); }
+    { return audio.play(CashUpKey, mainData(CashUpTag), DefaultEffectGain); }
     std::expected<void, std::string> Runtime::cashDown(audio::Runtime& audio)
-    { return audio.play(CashDownKey, mainData(CashDownTag)); }
+    { return audio.play(CashDownKey, mainData(CashDownTag), DefaultEffectGain); }
 
     std::expected<void, std::string> Runtime::syncCash(
         audio::Runtime& audio, ibar::ScoreCashChange change)

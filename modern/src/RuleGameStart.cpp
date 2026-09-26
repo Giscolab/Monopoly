@@ -157,6 +157,13 @@ namespace monopoly::rules::gamestart
                             state.players[otherNo],
                             state.players[otherNo + 1]
                         );
+                        // Retail reorders each player's network address with
+                        // the record. Modern connection ownership must follow.
+                        const auto first = static_cast<PlayerNumber>(otherNo);
+                        const auto second = static_cast<PlayerNumber>(otherNo + 1);
+                        const auto owner = messaging::playerOwner(first);
+                        messaging::setPlayerOwner(first, messaging::playerOwner(second));
+                        messaging::setPlayerOwner(second, owner);
                     }
                 }
             }
