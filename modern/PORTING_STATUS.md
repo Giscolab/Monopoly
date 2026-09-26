@@ -34,8 +34,8 @@ Ces points remplacent les anciennes mentions vagues « partiel » ou « futur »
 | A02 | IA / trade | Décisions, évaluations et transitions des échanges. `Trade_SendItems` est déjà raccordé. |
 | A03 | UI / audio / Penny | Notifications, animations, transitions et surfaces résiduelles effectivement consommées ; ne pas rouvrir les propriétaires de texte déjà portés. |
 | A04 | LANG / FONTS / GRAFIX | 96 DPI d’origine raccordés ; formatage, UTF-16, métriques et clipping encore à comparer. |
-| A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Bitmaps runtime, fichiers externes, snapshots et leases existent déjà ; LRU global des blocs DAT ajouté, autres caches à comparer. |
-| A06 | Séquenceur | Préchargement consommé raccordé ; modèle, attributs audio avancés, tweekers, labels et callbacks à comparer selon les usages C++ ou DAT. L’absence d’appel C++ seule n’exclut pas un usage par données. |
+| A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Le LRU des blocs DAT et la libération des bitmaps/meshes CPU et GPU sont raccordés ; les scènes actives et substitutions de textures restent possédées. Comparaison des autres contrats à poursuivre. |
+| A06 | Séquenceur | Préchargement, attributs après enfants, sélection et persistance des tweekers, événements de fin et callback souris consommé sont raccordés. Labels et autres usages C++ ou DAT restent à comparer. Model est le type 4, Preloader le type 8 ; le renderer source actif n’accepte pas Model. L’absence d’appel C++ seule n’exclut pas un usage par données. |
 | A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. |
 
 MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint/UIMG0/ground/envmap sont commentés dans `hmdload.cpp`. Le chemin `NewMesh` alternatif n’est pas celui sélectionné par les appelants actifs. Ces éléments ne sont pas des tâches actives sans nouvelle preuve contraire. Les sept modules exclus et leurs justifications figurent dans la matrice.
@@ -76,13 +76,17 @@ Les onze branches `assistant/*` sont intégrées (dix têtes distinctes). Elles 
 
 Les commits `ee9621d`, `57321a8` et `cf1ba45` corrigent ensuite les parcours de tours humains et IA, l’annulation des phases, les séquences sonores, les contre-offres, la sortie du plateau depuis la prison, les commandes SDL, les noms Unicode et la conservation des propriétaires réseau lors du choix de l’ordre. Le démarrage expose aussi les ressources manquantes et accepte un répertoire explicite. Les tests intégrés passent par RULE, FIFO, projection UI et commandes IBar ; deux parties IA successives atteignent leur fin. Les présentations graphiques de ces scénarios sont simulées : cette preuve ne remplace pas une partie avec les ressources retail.
 
+Les commits `a697c17`, `cc251ce` et `0646b5e` corrigent le rendu Gouraud et ses uniformes partagés avec la 2D, la lecture des cartes après leur apparition, la répétition de la voix de victoire, les événements de fin, les attributs et effets persistants des séquences. Les caches libèrent les bitmaps et modèles arrêtés, y compris les animations partagées quand la vue 3D est masquée ; les textures personnalisées survivent à la reconstruction du modèle. Les refus de phase/joueur renvoient désormais l’erreur ciblée puis republient la décision attendue, avec l’exception des commandes internes de la banque. Douze commandes tardives sont exercées à travers RULE, FIFO et IBar ; les dettes collectives et faillites en chaîne de cartes passent aussi par ces interfaces. La compilation et les tests restent distincts de la qualification retail Q01–Q05.
+
+Le commit `7aab3c0` rétablit la décision IBar après les échanges pendant le tour d’un joueur autre que le premier : les scénarios acceptés et refusés terminent réellement le tour par clic. Le rendu élimine les faces arrière, y compris pour les ombres. Un contrôle de l’API `IDirect3DDevice3` en 32 bits confirme le réglage initial `D3DCULL_CCW` des périphériques HAL et RGB ; les tests GPU vérifient les deux orientations sans modifier les indices HMD de production.
+
 ## Validation de référence
 
-Validation de référence : **140/140 suites CTest passées** — code `cf1ba45`, Windows/MSVC Debug, 27 septembre 2026.
+Validation de référence : **140/140 suites CTest passées** — code `7aab3c0`, Windows/MSVC Debug, 27 septembre 2026.
 
-Application compilée ; CTest global réussi en 8,49 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios de parties humaines/IA, la régression TCP et les nouveaux tests de saisie et de gains audio ; elle ne remplace pas Q01–Q05.
+Application compilée ; CTest global réussi en 8,25 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios humains/IA et TCP, les refus d’actions, les cartes et faillites, les régressions de séquences et de caches, ainsi que les lectures de pixels GPU ; elle ne remplace pas Q01–Q05.
 
-Les journaux locaux de cette référence sont `modern/build/tcp-name-sound-final-build.log` et `modern/build/tcp-name-sound-final-tests.log`. Les exécutions CI et leurs logs restent la preuve de validation distante ; la référence ci-dessus n’est pas une affirmation sur le dernier run GitHub.
+Les journaux locaux de cette référence sont `modern/build/trade-return-culling-final-build.log` et `modern/build/trade-return-culling-final-tests.log`. Les exécutions CI et leurs logs restent la preuve de validation distante ; la référence ci-dessus n’est pas une affirmation sur le dernier run GitHub.
 
 ## Suivi automatique et maintenance
 
