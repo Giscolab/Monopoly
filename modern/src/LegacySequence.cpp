@@ -59,6 +59,7 @@ namespace monopoly::data
             case 5: return 16; // Sound
             case 6: return 22; // Video: header + ten one-byte playback fields
             case 7: return 21; // Camera: header + near/far + packed label
+            case 8: return 16; // Preloader: header + preload DataID
             case 9: return 16; // Mesh
             case 10: return 13; // Tweeker (common header + interpolation ID)
             default: return 0;
@@ -382,6 +383,9 @@ namespace monopoly::data
         case 7:
             record.data = SequenceCameraData{readF32(*mapped, 12),
                 readF32(*mapped, 16), std::to_integer<std::uint8_t>((*mapped)[20])};
+            break;
+        case 8:
+            record.data = SequencePreloaderData{readU32(*mapped, 12)};
             break;
         case 9:
             record.data = SequenceMeshData{ readU32(*mapped, 12) };

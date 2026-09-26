@@ -144,7 +144,9 @@ namespace monopoly::sequence
         std::uint8_t parentDimensionality) noexcept
     {
         std::uint8_t dimensionality{};
-        if (std::holds_alternative<data::SequenceTweekerData>(record.data)) dimensionality = 0;
+        if (std::holds_alternative<data::SequenceTweekerData>(record.data) ||
+            std::holds_alternative<data::SequencePreloaderData>(record.data))
+            dimensionality = 0;
         else if (std::holds_alternative<data::SequenceBitmapData>(record.data) ||
             std::holds_alternative<data::SequenceVideoData>(record.data)) dimensionality = 2;
         else if (std::holds_alternative<data::SequenceModelData>(record.data) ||

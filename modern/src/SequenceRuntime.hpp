@@ -52,8 +52,9 @@ namespace monopoly::sequence
     // Immutable, bounded description DAG. Shared sublists are not expanded
     // exponentially; cycles are rejected by (DATA ID, chunk offset). Every
     // CNK lease needed by the supported tree is acquired before publication.
-    // Currently executable: grouping/indirect, 2D bitmap, sound, video, 3D mesh,
-    // 3D camera and transform/FOV tweekers. Attributes are immutable input.
+    // Currently executable: grouping/indirect, 2D bitmap, sound, video,
+    // preloader, 3D mesh, 3D camera and transform/FOV/audio tweekers.
+    // Attributes are immutable input.
     // Other decoded kinds and attributes fail explicitly; no fake renderer.
     class SequenceProgram final
     {

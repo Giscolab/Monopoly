@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <utility>
@@ -138,7 +139,7 @@ namespace monopoly::sequence
             return result;
         }
 
-        std::string videoFileName(
+        std::string externalFileName(
             const data::LegacySequenceAttributes& attributes)
         {
             std::string result;
@@ -147,6 +148,48 @@ namespace monopoly::sequence
                     std::get_if<data::SequenceFileNameAttribute>(&attribute))
                     result = file->fileName;
             return result;
+        }
+
+        std::expected<data::SharedDataBytes, RuntimeError> preloadExternalFile(
+            const data::ResourceSnapshot& resources,
+            std::string_view fileName,
+            data::DataId ownerId,
+            std::size_t recordOffset)
+        {
+            const auto path = resources.paths().resolve(fileName);
+            if (!path)
+                return std::unexpected(caused(
+                    RuntimeErrorCode::DataFailure,
+                    ownerId, recordOffset, path.error()));
+
+            std::ifstream input(*path, std::ios::binary | std::ios::ate);
+            if (!input)
+                return std::unexpected(error(
+                    RuntimeErrorCode::DataFailure,
+                    ownerId, recordOffset,
+                    "cannot open preloader external file"));
+
+            const auto end = input.tellg();
+            if (end < 0)
+                return std::unexpected(error(
+                    RuntimeErrorCode::DataFailure,
+                    ownerId, recordOffset,
+                    "cannot size preloader external file"));
+
+            auto bytes = std::make_shared<data::DataBytes>(
+                static_cast<std::size_t>(end));
+            input.seekg(0, std::ios::beg);
+            if (!bytes->empty() &&
+                !input.read(
+                    reinterpret_cast<char*>(bytes->data()),
+                    static_cast<std::streamsize>(bytes->size())))
+                return std::unexpected(error(
+                    RuntimeErrorCode::DataFailure,
+                    ownerId, recordOffset,
+                    "cannot read preloader external file"));
+
+            return std::shared_ptr<const data::DataBytes>(
+                std::move(bytes));
         }
 
         std::optional<data::Sequence2DBoundingBoxAttribute> boundingBox2D(
@@ -521,10 +564,11 @@ namespace monopoly::sequence
             if (record->chunk.id != 1 && record->chunk.id != 2 &&
                 record->chunk.id != 3 && record->chunk.id != 5 &&
                 record->chunk.id != 6 && record->chunk.id != 7 &&
-                record->chunk.id != 9 && record->chunk.id != 10)
+                record->chunk.id != 8 && record->chunk.id != 9 &&
+                record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect, 2D bitmap, sound, video intent, camera, 3D mesh and tweeker records only"));
+                    "runtime currently executes grouping, indirect, 2D bitmap, sound, video intent, camera, preloader, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -551,6 +595,13 @@ namespace monopoly::sequence
             else if (const auto* sound = std::get_if<data::SequenceSoundData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     sound->soundDataId, currentId);
+            else if (const auto* preloader =
+                std::get_if<data::SequencePreloaderData>(&record->data))
+            {
+                if (preloader->preloadDataId != data::EmptyDataId)
+                    contentsDataId = data::resolveSequenceDataId(
+                        record->header, preloader->preloadDataId, currentId);
+            }
             else if (const auto* mesh = std::get_if<data::SequenceMeshData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     mesh->modelDataId, currentId);
@@ -671,6 +722,7 @@ namespace monopoly::sequence
         std::uint16_t pitch{};
         std::uint8_t volume{100};
         std::int8_t panning{};
+        data::SharedDataBytes preloadedData;
         bool scrollingOnScreen{true};
         bool scrollingHibernating{};
         const SequenceDescription& definition() const
@@ -722,6 +774,36 @@ namespace monopoly::sequence
         const auto world = composeSequenceWorld(initial.local, initial.dimensionality,
             parent ? parent->worldTransform : SequenceTransform(std::monostate{}),
             parent ? parent->dimensionality : 0);
+
+        data::SharedDataBytes preloadedData;
+        if (std::holds_alternative<data::SequencePreloaderData>(def.record.data))
+        {
+            if (const auto resources = program->resources())
+            {
+                if (def.contentsDataId)
+                {
+                    auto loaded = resources->banks().load(*def.contentsDataId);
+                    if (!loaded)
+                        return std::unexpected(caused(
+                            RuntimeErrorCode::DataFailure,
+                            *def.contentsDataId, offset, loaded.error()));
+                    preloadedData = *loaded;
+                }
+                else
+                {
+                    const auto fileName = externalFileName(def.attributes);
+                    if (!fileName.empty())
+                    {
+                        auto loaded = preloadExternalFile(
+                            *resources, fileName, id, offset);
+                        if (!loaded)
+                            return std::unexpected(loaded.error());
+                        preloadedData = *loaded;
+                    }
+                }
+            }
+        }
+
         auto node = std::make_unique<Node>(Node{nextId_++, parent, std::move(program),
             description, priority, *clock, def.children, {}, true, true, false,
             initial.dimensionality, initial.explicitlyPositioned,
@@ -734,6 +816,7 @@ namespace monopoly::sequence
         node->pitch = audio.pitch;
         node->volume = audio.volume;
         node->panning = audio.panning;
+        node->preloadedData = std::move(preloadedData);
         if (labelOverride != 0)
             node->labelNumber = labelOverride;
         if (node->labelNumber != 0)
@@ -1369,7 +1452,7 @@ namespace monopoly::sequence
                         node->priority,
                         node->clock.clock(),
                         std::get<data::SequenceVideoData>(definition.record.data),
-                        videoFileName(definition.attributes),
+                        externalFileName(definition.attributes),
                         boundingBox2D(definition.attributes),
                         std::get<Matrix2D>(node->worldTransform),
                         node->clock.endingAction(), definition.binkDoubleSize,

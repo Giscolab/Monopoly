@@ -93,6 +93,7 @@ namespace monopoly::data
         float farClipPlaneDistance{5000.0F};
         std::uint8_t cameraLabel{};
     };
+    struct SequencePreloaderData { DataId preloadDataId{}; };
     struct SequenceMeshData { DataId modelDataId{}; };
     struct SequenceTweekerData { std::uint8_t interpolationType{}; };
 
@@ -104,6 +105,7 @@ namespace monopoly::data
         SequenceSoundData,
         SequenceVideoData,
         SequenceCameraData,
+        SequencePreloaderData,
         SequenceMeshData,
         SequenceTweekerData>;
 
@@ -209,8 +211,8 @@ namespace monopoly::data
         std::size_t maximumAttributes = 256);
 
     // Descend au prochain chunk et decode uniquement sa partie fixe prouvee :
-    // grouping(1), indirect(2), bitmap(3), model(4), sound(5), camera(7), mesh(9),
-    // tweeker(10).
+    // grouping(1), indirect(2), bitmap(3), model(4), sound(5), video(6),
+    // camera(7), preloader(8), mesh(9), tweeker(10).
     // En succes, le reader reste dans ce chunk au debut des sous-chunks.
     // En erreur, position/niveau/ownership du reader sont inchanges.
     // Le resultat contient des valeurs, sans vue empruntee. La possession du
