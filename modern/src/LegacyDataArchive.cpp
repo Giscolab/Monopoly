@@ -909,6 +909,65 @@ namespace monopoly::data
 
 
     std::expected<void, DataError>
+    DataBankRegistry::unload(DataId id) const
+    {
+        if (isEmptyDataId(id))
+            return {};
+
+        auto mounted = archive(dataGroup(id));
+        if (!mounted)
+            return std::unexpected(mounted.error());
+
+        const auto removed = (*mounted)->unload(dataTag(id));
+        if (!removed)
+            return std::unexpected(removed.error());
+
+        // LE_DATA_Unload succeeds when the item is already out of memory.
+        // The bool returned by LegacyDataArchive::unload only reports whether
+        // cache ownership was actually removed during this call.
+        return {};
+    }
+
+
+    void DataBankRegistry::clearCaches() noexcept
+    {
+        std::vector<std::shared_ptr<LegacyDataArchive>> archives;
+        {
+            std::scoped_lock lock(mutex_);
+            archives.reserve(archives_.size());
+            for (const auto& [group, archive] : archives_)
+            {
+                static_cast<void>(group);
+                archives.push_back(archive);
+            }
+        }
+
+        for (const auto& archive : archives)
+            archive->clearCache();
+    }
+
+
+    std::size_t DataBankRegistry::cachedItemCount() const noexcept
+    {
+        std::vector<std::shared_ptr<LegacyDataArchive>> archives;
+        {
+            std::scoped_lock lock(mutex_);
+            archives.reserve(archives_.size());
+            for (const auto& [group, archive] : archives_)
+            {
+                static_cast<void>(group);
+                archives.push_back(archive);
+            }
+        }
+
+        std::size_t total{};
+        for (const auto& archive : archives)
+            total += archive->cachedItemCount();
+        return total;
+    }
+
+
+    std::expected<void, DataError>
     DataBankRegistry::unmount(std::uint16_t group)
     {
         std::shared_ptr<LegacyDataArchive> removed;

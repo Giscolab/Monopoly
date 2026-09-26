@@ -257,6 +257,18 @@ namespace monopoly::data
         [[nodiscard]] std::expected<SharedDataBytes, DataError>
         load(DataId id) const;
 
+        // LE_DATA_Unload at registry scope. Already-unloaded items are a
+        // successful no-op. Existing SharedDataBytes leases remain valid;
+        // only registry/cache ownership is retired.
+        [[nodiscard]] std::expected<void, DataError>
+        unload(DataId id) const;
+
+        // Drop cache ownership for every mounted archive without unmounting
+        // the banks themselves. Outstanding leases keep their bytes alive.
+        void clearCaches() noexcept;
+
+        [[nodiscard]] std::size_t cachedItemCount() const noexcept;
+
         [[nodiscard]] std::expected<void, DataError>
         unmount(std::uint16_t group);
 
