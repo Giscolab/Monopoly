@@ -54,11 +54,9 @@ namespace monopoly::ibar
             int y)
         {
             if (text.empty()) return {};
-            const auto rendered = fontRuntime.render(text, Black);
-            if (!rendered) return std::unexpected(rendered.error().detail);
-            const auto blitted = data::blitStraightRGBA8(
-                destination, *rendered, x, y, data::BitmapBlitMode::SourceOver);
-            if (!blitted) return std::unexpected(blitted.error());
+            const auto blitted = fontRuntime.blitText(
+                destination, text, x, y, Black);
+            if (!blitted) return std::unexpected(blitted.error().detail);
             return {};
         }
     }
