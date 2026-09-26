@@ -65,6 +65,75 @@ namespace
         'v', 'o', 'l', 'm', 4, 0, 0, 0, 50, 0, 0, 0};
     const Bytes Stop{'S', 'T', 'O', 'P', 0, 0, 0, 0};
 
+    void appendU16(Bytes& bytes, std::uint16_t value)
+    {
+        bytes.push_back(static_cast<std::uint8_t>(value));
+        bytes.push_back(static_cast<std::uint8_t>(value >> 8U));
+    }
+
+    void appendU32(Bytes& bytes, std::uint32_t value)
+    {
+        for (unsigned shift = 0; shift < 32; shift += 8)
+            bytes.push_back(static_cast<std::uint8_t>(value >> shift));
+    }
+
+    Bytes legacyDurationWave(
+        std::uint32_t averageBytesPerSecond,
+        std::uint32_t dataBytes,
+        bool oddJunk = false)
+    {
+        Bytes bytes{'R','I','F','F',0,0,0,0,'W','A','V','E'};
+        if (oddJunk)
+        {
+            bytes.insert(bytes.end(), {'J','U','N','K'});
+            appendU32(bytes, 1U);
+            bytes.push_back(0x5AU);
+            bytes.push_back(0U); // RIFF pad byte.
+        }
+
+        bytes.insert(bytes.end(), {'f','m','t',' '});
+        appendU32(bytes, 16U);
+        appendU16(bytes, 1U);      // PCM
+        appendU16(bytes, 1U);      // mono
+        appendU32(bytes, 44'100U); // sample rate is irrelevant to legacy duration
+        appendU32(bytes, averageBytesPerSecond);
+        appendU16(bytes, 1U);
+        appendU16(bytes, 8U);
+
+        bytes.insert(bytes.end(), {'d','a','t','a'});
+        appendU32(bytes, dataBytes);
+        bytes.insert(bytes.end(), dataBytes, 0x80U);
+        if (dataBytes & 1U) bytes.push_back(0U);
+
+        const auto riffSize = static_cast<std::uint32_t>(bytes.size() - 8U);
+        for (unsigned shift = 0; shift < 32; shift += 8)
+            bytes[4U + shift / 8U] =
+                static_cast<std::uint8_t>(riffSize >> shift);
+        return bytes;
+    }
+
+    void testLegacyWaveDuration()
+    {
+        const auto sixTicks = legacyDurationWave(44'100U, 4'410U, true);
+        require(audio::legacyWaveDurationTicks(sixTicks) == 6U,
+            "LE_SOUND_GetSoundDuration uses data bytes and nAvgBytesPerSec at 60 Hz");
+
+        const auto subTick = legacyDurationWave(44'100U, 1U);
+        require(audio::legacyWaveDurationTicks(subTick) == 1U,
+            "non-empty sub-tick WAV duration preserves the retail minimum of one");
+
+        auto malformed = sixTicks;
+        malformed[0] = 'X';
+        require(audio::legacyWaveDurationTicks(malformed) == 0U,
+            "non-RIFF input preserves retail failure value zero");
+        malformed = sixTicks;
+        malformed.resize(20U);
+        require(audio::legacyWaveDurationTicks(malformed) == 0U,
+            "truncated RIFF is rejected before walking chunk payloads");
+        require(audio::legacyWaveDurationTicks(sixTicks, 0U) == 0U,
+            "zero clock rate is rejected instead of dividing invalid timing");
+    }
+
     Bytes syntheticPcm()
     {
         Bytes samples(3200);
@@ -312,6 +381,8 @@ int main()
     {
         // Select dummy before any SDL audio initialization. Override prevents
         // a user environment hint from accidentally selecting physical audio.
+        testLegacyWaveDuration();
+        std::cout << "[PASS] retail RIFF/WAVE duration contract and malformed input handling\n";
         require(SDL_WasInit(SDL_INIT_AUDIO) == 0, "audio has not been initialized before driver selection");
         require(SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "dummy", SDL_HINT_OVERRIDE),
             "select SDL dummy audio explicitly");
