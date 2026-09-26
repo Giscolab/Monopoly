@@ -1,6 +1,7 @@
 #include "SequencePlayback.hpp"
 #include "SyntheticSequenceResources.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <string_view>
 
@@ -76,6 +77,41 @@ namespace
             "same DataId/priority roots retain independent StartXY transforms");
     }
 
+    void testStartXYSR()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto raw = data::packDataId(data::LegacyGroupId::Main, 0x00A2);
+        constexpr float halfPi = 1.57079632679489661923F;
+
+        expect(playback.startXYSR(raw, 77, 10, 20, 2.0F, halfPi).has_value(),
+            "StartCXYSR equivalent queues translation, scale and rotation atomically");
+        expect(playback.update(0).has_value(),
+            "StartCXYSR executes through SequencePlayback");
+        const auto roots = playback.runtime().matching(raw, 77, false);
+        const auto view = roots.empty() ? std::nullopt :
+            playback.runtime().inspect(roots.front());
+        const auto* matrix = view ?
+            std::get_if<sequence::Matrix2D>(&view->localTransform) : nullptr;
+        const auto near = [](float a, float b)
+        { return std::fabs(a - b) < 0.0001F; };
+        expect(matrix &&
+            near(matrix->values[0], 0.0F) &&
+            near(matrix->values[1], 2.0F) &&
+            near(matrix->values[3], -2.0F) &&
+            near(matrix->values[4], 0.0F) &&
+            near(matrix->values[6], 10.0F) &&
+            near(matrix->values[7], 20.0F),
+            "StartCXYSR preserves ArtLib rotate-scale-translate matrix order");
+
+        const auto instances = playback.runtime().bitmapInstances();
+        expect(instances.size() == 1 &&
+            near(instances.front().worldTransform.values[6], 10.0F) &&
+            near(instances.front().worldTransform.values[7], 20.0F),
+            "StartCXYSR transform reaches the active 2D render intent");
+    }
+
     void testFixedAndBobbingDice2D()
     {
         using namespace monopoly;
@@ -123,7 +159,7 @@ int main()
 {
     std::cout << "Monopoly SequencePlayback 2D tests\n"
               << "==================================\n";
-    try { testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testFixedAndBobbingDice2D(); }
+    try { testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testFixedAndBobbingDice2D(); }
     catch (const std::exception& e)
     {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << '\n';
