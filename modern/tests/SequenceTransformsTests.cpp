@@ -71,13 +71,17 @@ namespace
         for (float value : std::array{10.F, 20.F, 30.F, 1.F, 2.F, 3.F,
             .1F, .2F, .3F, 2.F, 3.F, 4.F}) real(osrt, value);
         append(contents, chunk(135, osrt));
+        append(contents, chunk(141, DataBytes{
+            std::byte{0x22}, std::byte{0x56}})); // 22050 Hz.
+        append(contents, chunk(142, DataBytes{std::byte{70}}));
+        append(contents, chunk(143, DataBytes{std::byte{231}})); // -25.
         append(contents, sequence()); // attribute scan must stop here
         LegacyChunkReader reader(std::make_shared<const DataBytes>(sequence(contents)));
         auto record = readLegacySequenceRecord(reader);
         auto attributes = record ? readLegacySequenceAttributes(reader) :
             std::expected<LegacySequenceAttributes, SequenceError>(
                 std::unexpected(record.error()));
-        expect(attributes && attributes->values.size() == 2,
+        expect(attributes && attributes->values.size() == 5,
             "attribute parser stops before the first child sequence");
         const auto* dim = attributes ? std::get_if<SequenceDimensionalityAttribute>(
             &attributes->values[0]) : nullptr;
@@ -86,6 +90,16 @@ namespace
         expect(dim && dim->value == 3 && decoded && near(decoded->offsetX, 10.F) &&
             near(decoded->yaw, .3F) && near(decoded->scaleZ, 4.F),
             "packed dimensionality and 3D OSRT fields decode in source order");
+        const auto* pitch = attributes ?
+            std::get_if<SequenceSoundPitchAttribute>(&attributes->values[2]) : nullptr;
+        const auto* volume = attributes ?
+            std::get_if<SequenceSoundVolumeAttribute>(&attributes->values[3]) : nullptr;
+        const auto* pan = attributes ?
+            std::get_if<SequenceSoundPanningAttribute>(&attributes->values[4]) : nullptr;
+        expect(pitch && pitch->pitch == 22050 &&
+            volume && volume->volume == 70 &&
+            pan && pan->panning == -25,
+            "packed sequence pitch volume and panning attributes decode exactly");
 
         DataBytes shortOffset(11, std::byte{});
         LegacyChunkReader truncated(std::make_shared<const DataBytes>(
