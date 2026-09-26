@@ -166,6 +166,57 @@ namespace
         (void)optionsui::processInput(state,display::Screen2D::Options,click(cancel.left,cancel.top));
         require(!state.quickHelpVisible && state.active && state.currentScreen==optionsui::Screen::Help,"quick-help Cancel restores Help menu");
     }
+    void testPortableQuickHelpDecoding()
+    {
+        // Byte excerpts/characters verified in the supplied qhelp03..10 files.
+        const std::string western = "D\xE9marrer\r\n\xDF \xA1 \xE1 \xF1 \xEB \xD6 \xE4 \xE5 \xF6 \xD8 \xE6 \xF8";
+        const std::string utf8 = "D\xC3\xA9marrer\r\n\xC3\x9F \xC2\xA1 \xC3\xA1 \xC3\xB1 \xC3\xAB \xC3\x96 \xC3\xA4 \xC3\xA5 \xC3\xB6 \xC3\x98 \xC3\xA6 \xC3\xB8";
+        const auto decoded=optionsui::decodeQuickHelpText(western);
+        require(decoded && *decoded==utf8,
+            "western quick-help accents decode identically without a platform ACP");
+        const auto bounds=optionsui::decodeQuickHelpText("\x7F\x80\x9F\xA0\xFF");
+        require(bounds && *bounds=="\x7F\xE2\x82\xAC\xC5\xB8\xC2\xA0\xC3\xBF",
+            "portable CP1252 maps C1-table boundaries and Latin1 range correctly");
+        for (const auto invalid : {0x81,0x8D,0x8F,0x90,0x9D})
+            require(!optionsui::decodeQuickHelpText(std::string(1,static_cast<char>(invalid))),
+                "undefined CP1252 bytes are rejected explicitly");
+        require(!optionsui::decodeQuickHelpText(std::string("a\0b",3)),
+            "embedded NUL is rejected instead of silently truncating help");
+        require(optionsui::decodeQuickHelpText("").value().empty() &&
+            optionsui::decodeQuickHelpText("ASCII\ttext\r\n").value()=="ASCII\ttext\r\n",
+            "empty and ASCII help preserve text and layout controls");
+
+        SyntheticTextResources resources(texts());
+        optionsui::State state{};
+        state.quickHelpText="previous text";
+        state.quickHelpLines={"previous row"};
+        state.quickHelpFirstLine=7;
+        state.quickHelpVisible=true;
+        state.quickHelpPageOffsets={0,7};
+        state.quickHelpPageIndex=1;
+        state.quickHelpInitialPage=false;
+        const auto write = [&](const std::string& bytes) {
+            std::ofstream file(resources.directory/"qhelp01.txt",std::ios::binary|std::ios::trunc);
+            file.write(bytes.data(),static_cast<std::streamsize>(bytes.size()));
+            require(static_cast<bool>(file),"write explicit quick-help encoding fixture");
+        };
+        for (const auto& invalid : {std::string("valid prefix\x81"),std::string("a\0b",3)})
+        {
+            write(invalid);
+            require(!optionsui::openQuickHelp(state,*resources.service.snapshot()) &&
+                state.quickHelpText=="previous text" && state.quickHelpLines==std::vector<std::string>{"previous row"} &&
+                state.quickHelpFirstLine==7 && state.quickHelpVisible &&
+                state.quickHelpPageOffsets==std::vector<std::size_t>{0,7} &&
+                state.quickHelpPageIndex==1 && !state.quickHelpInitialPage,
+                "failed decoding preserves the complete currently displayed help state");
+        }
+        write(western);
+        require(optionsui::openQuickHelp(state,*resources.service.snapshot()).has_value() &&
+            state.quickHelpText==utf8 && state.quickHelpLines.empty() &&
+            state.quickHelpFirstLine==0 && state.quickHelpVisible &&
+            state.quickHelpPageOffsets.empty() && state.quickHelpPageIndex==0 && state.quickHelpInitialPage,
+            "real ResourcePaths/file opening publishes decoded UTF8 and resets page history");
+    }
     void testFailures()
     {
         optionsui::State state{}; state.active=true; state.currentScreen=optionsui::Screen::Option;
@@ -181,6 +232,6 @@ namespace
 }
 int main()
 {
-    try { testVisuals(); testHelp(); testFailures(); return 0; }
+    try { testVisuals(); testHelp(); testPortableQuickHelpDecoding(); testFailures(); return 0; }
     catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }
 }
