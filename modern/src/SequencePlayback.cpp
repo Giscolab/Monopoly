@@ -130,6 +130,18 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::setVolume(
+        data::DataId id, std::uint16_t priority, std::uint8_t volume)
+    {
+        const auto queued = commands_.enqueue(sequence::SetSequenceVolumeCommand{
+            id, priority, volume, false});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue rejected volume change");
+        return {};
+    }
+
+
     std::expected<void, std::string> SequencePlayback::startMoved(
         data::DataId id, std::uint16_t priority,
         sequence::SequenceTransform transform)
