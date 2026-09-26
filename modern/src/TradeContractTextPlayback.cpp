@@ -3,6 +3,7 @@
 #include "FontRuntime.hpp"
 #include "IBarLayout.hpp"
 #include "LanguageResources.hpp"
+#include "LegacyTextFormat.hpp"
 #include "RuntimeBitmapSurface.hpp"
 #include "SequenceTransforms.hpp"
 
@@ -29,21 +30,59 @@ namespace monopoly::tradeui
         constexpr std::uint32_t SelectedTextColour = 0x00FFFFFFU;
         constexpr std::uint32_t SelectedColour = 0x00B40000U; // COLORREF: (0,0,180).
 
-        [[nodiscard]] std::expected<std::string, std::string> messageText(
+        [[nodiscard]] std::expected<std::u16string, std::string> messageText16(
             const data::LanguageCatalog& catalog, std::uint32_t id)
         {
             const auto text = catalog.message(id);
             if (!text) return std::unexpected(text.error().detail);
-            const auto encoded = fonts::transcodeUtf8(std::u16string_view(**text));
+            return **text;
+        }
+
+        [[nodiscard]] std::expected<std::string, std::string> messageText(
+            const data::LanguageCatalog& catalog, std::uint32_t id)
+        {
+            const auto text = messageText16(catalog, id);
+            if (!text) return std::unexpected(text.error());
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(*text));
             if (!encoded) return std::unexpected(encoded.error().detail);
             return *encoded;
+        }
+
+        [[nodiscard]] std::expected<std::u16string, std::string> squareName16(
+            const data::LanguageCatalog& catalog, int square,
+            int city, data::BoardEdition edition)
+        {
+            if (square < 0 || square >= static_cast<int>(rules::SquareCount))
+                return std::unexpected("Trade square-name index is out of range");
+
+            if (city == -1 && edition == data::BoardEdition::Europe)
+                city = static_cast<int>(catalog.language()) - 2;
+
+            const auto id64 = static_cast<std::uint64_t>(SquareNameBase) +
+                42ULL * static_cast<std::uint32_t>(std::max(city, 0)) +
+                static_cast<std::uint32_t>(square);
+            if (id64 > std::numeric_limits<std::uint32_t>::max())
+                return std::unexpected("Trade property-name index is out of range");
+
+            auto text = catalog.lookup(static_cast<std::uint32_t>(id64));
+            if (!text) return std::unexpected(text.error().detail);
+            if (!*text) return std::unexpected("Trade property name is missing from LANG");
+            if (!(**text)->empty() && (**text)->front() == u'*')
+            {
+                text = catalog.lookup(
+                    SquareNameBase + static_cast<std::uint32_t>(square));
+                if (!text) return std::unexpected(text.error().detail);
+                if (!*text)
+                    return std::unexpected(
+                        "Trade base property name is missing from LANG");
+            }
+            return ***text;
         }
 
         [[nodiscard]] std::expected<std::string, std::string> propertyName(
             const data::LanguageCatalog& catalog, std::uint32_t properties,
             int city, data::BoardEdition edition)
         {
-            // RULE_BitSetToProperty uses the first property, or SQ_OFF_BOARD.
             int square = OffBoardSquare;
             for (int candidate = 0; candidate < OffBoardSquare; ++candidate)
                 if ((ibar::layout::propertyBit(candidate) & properties) != 0)
@@ -51,74 +90,82 @@ namespace monopoly::tradeui
                     square = candidate;
                     break;
                 }
-            // Rule.cpp::InitialisePredefinedData: the Europe custom-board
-            // baseline uses language-2; a leading '*' refers to the base set.
-            if (city == -1 && edition == data::BoardEdition::Europe)
-                city = static_cast<int>(catalog.language()) - 2;
-            const auto id = SquareNameBase +
-                42ULL * static_cast<std::uint32_t>(std::max(city, 0)) +
-                static_cast<std::uint32_t>(square);
-            if (id > std::numeric_limits<std::uint32_t>::max())
-                return std::unexpected("Trade property-name index is out of range");
-            auto text = catalog.lookup(static_cast<std::uint32_t>(id));
-            if (!text) return std::unexpected(text.error().detail);
-            if (!*text) return std::unexpected("Trade property name is missing from LANG");
-            if (!(**text)->empty() && (**text)->front() == u'*')
-            {
-                text = catalog.lookup(SquareNameBase + static_cast<std::uint32_t>(square));
-                if (!text) return std::unexpected(text.error().detail);
-                if (!*text) return std::unexpected("Trade base property name is missing from LANG");
-            }
-            const auto encoded = fonts::transcodeUtf8(std::u16string_view(***text));
+
+            const auto text = squareName16(catalog, square, city, edition);
+            if (!text) return std::unexpected(text.error());
+            const auto encoded = fonts::transcodeUtf8(std::u16string_view(*text));
             if (!encoded) return std::unexpected(encoded.error().detail);
             return *encoded;
         }
 
-        [[nodiscard]] std::expected<std::string, std::string> confirmationText(
-            std::string_view pattern, std::int32_t amount,
-            rules::PlayerNumber recipient, std::string_view name,
-            const rules::GameState& gameState, const data::LanguageCatalog& catalog)
+        [[nodiscard]] std::expected<std::u16string, std::string> propertySetNames16(
+            const data::LanguageCatalog& catalog, std::uint32_t properties,
+            int city, data::BoardEdition edition)
         {
-            // The two mode-3 callers of FormatErrorNotification define only
-            // numberB (count) and numberC (recipient). Never interpret names
-            // inserted here as another template or as a printf format.
-            std::string output;
-            for (std::size_t i = 0; i < pattern.size(); ++i)
+            std::u16string output;
+            auto remaining = properties;
+            for (int candidate = 0;
+                 candidate < OffBoardSquare && remaining != 0; ++candidate)
             {
-                if (pattern[i] != '^') { output.push_back(pattern[i]); continue; }
-                if (++i == pattern.size()) break;
-                switch (pattern[i])
-                {
-                case '1': output += std::to_string(amount); break;
-                case '2': output += std::to_string(recipient); break;
-                case 'P': case 'p': output += name; break;
-                case 'Q': case 'q':
-                    if (amount >= 0 && amount < rules::MaxPlayers)
-                    {
-                        const auto encoded = fonts::transcodeUtf8(std::wstring_view(
-                            gameState.players[static_cast<std::size_t>(amount)].name));
-                        if (!encoded) return std::unexpected(encoded.error().detail);
-                        output += *encoded;
-                    }
-                    else
-                    {
-                        const auto playerText = messageText(catalog,
-                            amount == rules::BankPlayer ? 900U :
-                            amount == rules::NobodyPlayer ? 902U : 901U);
-                        if (!playerText) return std::unexpected(playerText.error());
-                        output += *playerText;
-                    }
-                    break;
-                case '3': case '4': case 'A': case 'a':
-                case 'S': case 's': case 'T': case 't':
-                    return std::unexpected("Trade confirmation refers to an undefined argument");
-                default:
-                    // FormatErrorNotification's default copies two carets.
-                    output += "^^";
-                    break;
-                }
+                const auto bit = ibar::layout::propertyBit(candidate);
+                if (bit == 0 || (remaining & bit) == 0) continue;
+
+                const auto name = squareName16(catalog, candidate, city, edition);
+                if (!name) return std::unexpected(name.error());
+                if (!output.empty()) output += u", ";
+                output += *name;
+                remaining &= ~bit;
             }
+            if (remaining != 0) output += u"...";
             return output;
+        }
+
+        [[nodiscard]] std::expected<std::u16string, std::string> playerName16(
+            const rules::GameState& gameState,
+            const data::LanguageCatalog& catalog,
+            rules::PlayerNumber player)
+        {
+            if (player < rules::MaxPlayers)
+                return language::wideToUtf16(
+                    std::wstring_view(gameState.players[player].name));
+
+            return messageText16(catalog,
+                player == rules::BankPlayer ? 900U :
+                player == rules::NobodyPlayer ? 902U : 901U);
+        }
+
+        [[nodiscard]] std::expected<std::string, std::string> confirmationText(
+            std::u16string_view pattern, std::int32_t amount,
+            rules::PlayerNumber recipient,
+            const rules::GameState& gameState,
+            const data::LanguageCatalog& catalog,
+            int city, data::BoardEdition edition)
+        {
+            const language::LegacyFormatArguments arguments{
+                amount, recipient, 0, 0, {}};
+            language::LegacyFormatResolvers resolvers;
+            resolvers.playerName = [&](rules::PlayerNumber player)
+            {
+                return playerName16(gameState, catalog, player);
+            };
+            resolvers.squareName = [&](std::int64_t square)
+            {
+                return squareName16(
+                    catalog, static_cast<int>(square), city, edition);
+            };
+            resolvers.propertySetNames = [&](std::uint32_t properties)
+            {
+                return propertySetNames16(
+                    catalog, properties, city, edition);
+            };
+
+            const auto formatted = language::formatLegacyMessage(
+                pattern, arguments, resolvers);
+            if (!formatted) return std::unexpected(formatted.error());
+            const auto encoded = fonts::transcodeUtf8(
+                std::u16string_view(*formatted));
+            if (!encoded) return std::unexpected(encoded.error().detail);
+            return *encoded;
         }
 
         void fillRect(data::LegacyBitmapRGBA8& image, Rect rect,
@@ -212,8 +259,13 @@ namespace monopoly::tradeui
             (mode == 1 ? state.contractDialogSide : 0U);
         const auto heading = messageText(catalog, headingId);
         if (!heading) return std::unexpected(heading.error());
-        auto prompt = messageText(catalog, promptId);
-        if (!prompt) return std::unexpected(prompt.error());
+        const auto promptPattern = messageText16(catalog, promptId);
+        if (!promptPattern) return std::unexpected(promptPattern.error());
+        const auto promptEncoded = fonts::transcodeUtf8(
+            std::u16string_view(*promptPattern));
+        if (!promptEncoded)
+            return std::unexpected(promptEncoded.error().detail);
+        std::string prompt = *promptEncoded;
         const auto okay = messageText(catalog, OkayMessageId);
         if (!okay) return std::unexpected(okay.error());
         std::string playerName;
@@ -229,9 +281,11 @@ namespace monopoly::tradeui
             playerName = *encodedPlayerName;
             if (mode == 3)
             {
-                prompt = confirmationText(*prompt, state.contractAmount, player,
-                    playerName, gameState, catalog);
-                if (!prompt) return std::unexpected(prompt.error());
+                const auto formatted = confirmationText(
+                    *promptPattern, state.contractAmount, player,
+                    gameState, catalog, city, edition);
+                if (!formatted) return std::unexpected(formatted.error());
+                prompt = *formatted;
                 playerName.clear();
             }
         }
@@ -282,7 +336,7 @@ namespace monopoly::tradeui
         std::string key = std::to_string(mode) + ':' +
             std::to_string(static_cast<int>(edition)) + ':';
         appendKey(key, firstListText);
-        for (const auto& text : {*heading, *prompt, *okay, playerName, amount})
+        for (const auto& text : {*heading, prompt, *okay, playerName, amount})
             appendKey(key, text);
         for (std::size_t row = 0; row < rows.size(); ++row)
         {
@@ -299,7 +353,7 @@ namespace monopoly::tradeui
             image.pixels.assign(PanelWidth * PanelHeight * 4U, 0U);
             const auto titleLines = fontRuntime->wrap(*heading, WrapWidth);
             if (!titleLines) return std::unexpected(titleLines.error().detail);
-            const auto promptLines = fontRuntime->wrap(*prompt, WrapWidth);
+            const auto promptLines = fontRuntime->wrap(prompt, WrapWidth);
             if (!promptLines) return std::unexpected(promptLines.error().detail);
             const auto metrics = fontRuntime->measure(
                 titleLines->empty() ? std::string_view{} : std::string_view(titleLines->front()));
