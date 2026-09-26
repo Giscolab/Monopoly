@@ -998,6 +998,18 @@ namespace monopoly::sequence
         return result;
     }
 
+    bool SequenceRuntime::isSequenceFinished(
+        data::DataId id, std::uint16_t priority, bool wholeTree) const
+    {
+        const auto matches = matching(id, priority, wholeTree);
+        if (matches.empty()) return true;
+
+        const auto* node = find(matches.front());
+        if (!node) return true;
+        return node->clock.clock() >= node->clock.endTime();
+    }
+
+
     std::optional<Matrix3D> SequenceRuntime::childMeshWorldMatrix(
         data::DataId id, std::uint16_t priority) const
     {
