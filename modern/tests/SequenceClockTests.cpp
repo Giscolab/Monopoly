@@ -267,13 +267,13 @@ namespace
     }
     void testErrors()
     {
-        for (auto id : std::array<std::uint8_t, 3>{0, 5, 8})
+        for (auto id : std::array<std::uint8_t, 3>{0, 11, 255})
         {
             auto unsupported = record();
             unsupported.chunk.id = id;
             const auto result = SequenceClock::start(unsupported);
             expect(!result && result.error() == ClockError::UnsupportedSequenceType,
-                "unsupported and hardware-clock sequence types are refused");
+                "chunk IDs outside the ten supported sequence types are refused");
         }
         auto camera = record();
         auto video = record(1, true);
@@ -309,8 +309,15 @@ namespace
         auto invalid = record();
         invalid.header.scrollingWorld = true;
         auto result = SequenceClock::start(invalid);
-        expect(!result && result.error() == ClockError::UnsupportedScrollingWorld,
-            "visibility-driven scrolling clocks are not approximated");
+        expect(result.has_value(), "scrolling sequences accept explicit runtime visibility control");
+        if (result)
+        {
+            result->hibernateScrollingWorld(100);
+            expect(result->clock() == -4, "offscreen scrolling clock is held one cadence before zero");
+            const auto awake = result->update(104);
+            expect(awake && awake->clock == 0,
+                "explicitly awakened scrolling clock reaches zero before birthing children");
+        }
         invalid.header.scrollingWorld = false;
         invalid.header.timeMultiple = 0;
         result = SequenceClock::start(invalid);
@@ -355,6 +362,43 @@ namespace
             "runtime errors expose stable diagnostic names");
     }
 
+    void testSoundMediaClock()
+    {
+        auto source = record(1, true);
+        source.chunk.id = 5;
+        source.data = SequenceSoundData{42};
+        auto clock = SequenceClock::start(source).value();
+        (void)clock.update(0);
+        expect(clock.update(100)->clock == 0,
+            "sound stalls do not borrow time from the parent clock");
+        expect(clock.supplySoundClock(3).has_value() && clock.update(104)->clock == 3,
+            "sound time follows consumed PCM even when slower than parent time");
+        (void)clock.setPaused(true, 104);
+        (void)clock.supplySoundClock(7);
+        expect(clock.update(108)->clock == 3, "paused sound ignores pending hardware advance");
+        expect(clock.update(108, true)->clock == 7,
+            "forced paused reevaluation samples hardware time as in retail UpdateSequenceClock");
+        (void)clock.setPaused(false, 108);
+        (void)clock.seek(2, 108);
+        expect(clock.update(112)->clock == 2, "sound seek discards stale supplied media time");
+        (void)clock.supplySoundClock(11);
+        const auto end = clock.update(116);
+        expect(end && end->clock == 12 && end->stopped && end->notifyEnd,
+            "sound end-minus-one rounds up and publishes completion");
+
+        source.header.endingAction = 3;
+        auto loop = SequenceClock::start(source).value();
+        (void)loop.update(0);
+        (void)loop.supplySoundClock(11);
+        const auto boundary = loop.update(4);
+        expect(boundary && boundary->clock == 12 && boundary->hitEnd && !boundary->restartChildren,
+            "looping sound never synthesizes a rewind from its nominal duration");
+        (void)loop.supplySoundClock(2);
+        const auto wrapped = loop.update(8);
+        expect(wrapped && wrapped->clock == 2 && wrapped->restartChildren,
+            "real hardware loop wrap restarts sound children at consumed position");
+    }
+
     void testSeekAndEndingCommand()
     {
         auto loop = SequenceClock::start(record(3, false)).value();
@@ -397,6 +441,7 @@ int main()
     testStartAndOverrides();
     testPauseAndForce();
     testVideoMediaClock();
+    testSoundMediaClock();
     testErrors();
     testSeekAndEndingCommand();
     return failures == 0 ? 0 : 1;

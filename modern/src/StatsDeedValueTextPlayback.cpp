@@ -144,6 +144,15 @@ namespace monopoly::statsui
                     "sequence command queue cannot fit UDStats Deed value-text transition");
         }
 
+        if (!layoutChanged)
+        {
+            std::size_t redraws{};
+            for (std::size_t index = 0; index < rows.size(); ++index)
+                if (index >= content_.size() || content_[index] != rows[index].text) ++redraws;
+            if (redraws > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
+                return std::unexpected("sequence command queue cannot fit deed value redraws");
+        }
+
         if (rows.empty())
         {
             if (!layoutChanged) return {};

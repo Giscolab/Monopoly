@@ -1174,6 +1174,81 @@ namespace
     }
     ResourcePaths paths(const std::filesystem::path& root)
     { return ResourcePaths::create(std::array{root}).value(); }
+    void testRawWaveAndSoundClock()
+    {
+        Fixture fixture;
+        expect(writeResourceSet(fixture.root, u'A', sequence(0, 0, 2, 0, true)),
+            "sound clock snapshot resource banks are created");
+        DataBytes wave;
+        for (const auto value : {0x46464952U, 6036U, 0x45564157U, 0x20746d66U,
+                16U, 0x00010001U, 6000U, 6000U, 0x00080001U, 0x61746164U, 6000U})
+            word(wave, value);
+        wave.insert(wave.end(), 6000, std::byte{128});
+        const auto waveId = packDataId(2, 0);
+        auto inherited = dimensionality(2);
+        append(inherited, indirect(waveId, true));
+        const std::array items{
+            ArchiveBuildItem{LegacyDataType::Wave, wave},
+            ArchiveBuildItem{LegacyDataType::Chunky, sequence(0, 0, 2, 0, true, inherited)},
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sound(waveId, true, 0, sequence(0, 0, 2, 0, true))}};
+        expect(writeLegacyDataArchive(fixture.root / "Dat_Mon" / "dat_main.dat", items).has_value(),
+            "synthetic Wave and indirect sound records are written");
+        ResourceRuntime resources;
+        expect(resources.initialize(paths(fixture.root)).has_value(), "sound resource snapshot initializes");
+        const auto direct = SequenceProgram::load(resources.snapshot(), waveId);
+        expect(direct.has_value(), "raw Wave DataID loads as a sound sequence");
+        if (!direct) return;
+        SequenceRuntime runtime;
+        const auto root = runtime.start(*direct, 1).value();
+        auto info = runtime.inspect(root);
+        expect(info && info->endTime == 60 && info->timeMultiple == 15 && info->dimensionality == 0 &&
+            info->contentsDataId == waveId && runtime.soundInstances().front().endingAction == 1,
+            "raw Wave synthesizes retail cadence, Stop, inherited dimension and real duration");
+        const auto nonzero = SequenceProgram::load(resources.snapshot(), waveId, 1);
+        expect(!nonzero && nonzero.error().code == RuntimeErrorCode::DecodeFailure,
+            "raw Wave rejects nonzero offsets explicitly");
+        (void)runtime.update(0);
+        (void)runtime.update(600);
+        expect(runtime.inspect(root)->clock == 0, "raw sound survives parent time while audio has not played");
+        (void)runtime.requestSoundClock(root, 59);
+        (void)runtime.update(615);
+        expect(!runtime.inspect(root), "consumed sound clock ends and destroys raw sound sequence");
+
+        const auto indirectProgram = SequenceProgram::load(resources.snapshot(), packDataId(2, 1));
+        expect(indirectProgram.has_value(), "indirect description resolves raw Wave child");
+        if (!indirectProgram) return;
+        SequenceRuntime indirectRuntime;
+        (void)indirectRuntime.start(*indirectProgram, 2);
+        (void)indirectRuntime.update(0);
+        const auto sounds = indirectRuntime.soundInstances();
+        expect(sounds.size() == 1 && sounds.front().contentsDataId == waveId && sounds.front().dimensionality == 2,
+            "indirect raw Wave inherits its 2D parent and exposes real playback intent");
+
+        SequenceRuntime looping;
+        const auto loopProgram = SequenceProgram::load(resources.snapshot(), packDataId(2, 2)).value();
+        ClockStartOptions options; options.endingAction = 3;
+        const auto loop = looping.start(loopProgram, 3, options).value();
+        (void)looping.update(0);
+        const auto originalChild = looping.inspect(loop)->children.front();
+        (void)looping.requestSoundClock(loop, 59);
+        (void)looping.update(4);
+        expect(looping.inspect(loop)->clock == 60 && looping.inspect(originalChild).has_value(),
+            "sound loop boundary preserves children until actual audio wrap");
+        (void)looping.requestSoundClock(loop, 2);
+        (void)looping.update(8);
+        expect(!looping.inspect(originalChild) && looping.inspect(loop)->children.size() == 1 &&
+            looping.inspect(loop)->clock == 2, "audio wrap rebuilds children from the new media clock");
+        (void)looping.seek(loop, 10);
+        expect(looping.soundInstances().front().seekGeneration > 0,
+            "explicit sound seeks expose a generation for the audio consumer");
+        const auto sibling = looping.start(*direct, 10).value();
+        expect(looping.requestSoundFailure(loop).has_value(), "failed audio marks only its own sound node");
+        (void)looping.update(12);
+        expect(!looping.inspect(loop) && looping.inspect(sibling).has_value(),
+            "audio failure deletes held or looping sounds with children and preserves unrelated roots");
+    }
+
     void testSnapshotReplacementLifetime()
     {
         Fixture fixture;
@@ -1226,6 +1301,7 @@ int main()
         testProgramCyclesDepthAndAttributes();
         testRawUapStartContract();
         testRawHmdStartContract();
+        testRawWaveAndSoundClock();
         testSnapshotReplacementLifetime();
     }
     catch (const std::exception& exception)

@@ -120,7 +120,7 @@ namespace
 
     void testFixedRecords()
     {
-        for (const auto id : std::array<std::uint8_t, 9>{ 1, 2, 3, 4, 5, 6, 7, 9, 10 })
+        for (const auto id : std::array<std::uint8_t, 10>{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
         {
             DataBytes payload = CommonHeader;
             if (id == 10)
@@ -208,6 +208,10 @@ namespace
                     "camera near/far planes and packed label decode from the 21-byte record");
                 break;
             }
+            case 8:
+                expect(std::get<SequencePreloaderData>(record->data).preloadDataId ==
+                    0x1234'BCDEU, "preloader preserves its exact target DataID");
+                break;
             case 9:
                 expect(std::get<SequenceMeshData>(record->data).modelDataId ==
                     0x1234'BCDEU, "MESHX sequence retains its model DataID");
@@ -262,7 +266,7 @@ namespace
             reader.currentOffset() == position && reader.level() == 1,
             "end-of-parent error is preserved without changing traversal state");
 
-        for (const auto id : std::array<std::uint8_t, 3>{ 8, 20, 129 })
+        for (const auto id : std::array<std::uint8_t, 3>{ 11, 20, 129 })
         {
             const auto unsupportedBytes = chunk(id, CommonHeader);
             LegacyChunkReader unsupportedReader(unsupportedBytes);
@@ -270,7 +274,7 @@ namespace
             expect(!unsupported && unsupported.error().code ==
                 SequenceErrorCode::UnsupportedRecord &&
                 unsupportedReader.level() == 0 && unsupportedReader.currentOffset() == 0,
-                "unsupported model type 8 and non-sequence records remain explicitly rejected");
+                "non-sequence record IDs remain explicitly rejected");
         }
 
         auto overrunBytes = bytes;

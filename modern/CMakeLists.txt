@@ -224,6 +224,7 @@ add_library(
     src/DataBanks.cpp
     src/LegacyDataArchive.cpp
     src/LegacyDataArchiveBuilder.cpp
+    src/LegacyWave.cpp
     src/LegacyChunk.cpp
     src/LegacySequence.cpp
     src/SequenceClock.cpp
@@ -771,6 +772,7 @@ if(BUILD_TESTING)
         MonopolyResourceConfigurationTests
         tests/ResourceConfigurationTests.cpp
         src/UDUtils.cpp
+        src/StartupResources.cpp
     )
     target_link_libraries(
         MonopolyResourceConfigurationTests PRIVATE MonopolyDataCore SDL3::SDL3
@@ -794,11 +796,22 @@ if(BUILD_TESTING)
         COMMAND MonopolyResourceConfigurationTests
     )
 
+    add_executable(MonopolyResourceStartupCliTests tests/ResourceStartupCliTests.cpp)
+    target_link_libraries(MonopolyResourceStartupCliTests PRIVATE MonopolyDataCore SDL3::SDL3)
+    add_dependencies(MonopolyResourceStartupCliTests MonopolyModern)
+    if(MSVC)
+        target_compile_options(MonopolyResourceStartupCliTests PRIVATE /W4 /permissive-)
+    endif()
+    add_test(NAME Monopoly.ResourceStartupCli
+        COMMAND MonopolyResourceStartupCliTests $<TARGET_FILE:MonopolyModern>)
+    set_tests_properties(Monopoly.ResourceStartupCli PROPERTIES TIMEOUT 30)
+
 endif()
 
 target_sources(
     MonopolyModern
     PRIVATE
+    src/StartupResources.cpp
     src/UIMessages.cpp
     src/ChatRuntime.cpp
     src/ChatRecipientPlayback.cpp
@@ -3511,7 +3524,8 @@ if(BUILD_TESTING)
         src/BoardRules.cpp src/IBarLayout.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
     add_executable(MonopolyStatsAccountRuntimeTests tests/StatsAccountRuntimeTests.cpp
         src/RuleCards.cpp src/CardDeckRuntime.cpp src/RuleEconomy.cpp src/RuleLifecycle.cpp
-        src/PhaseStack.cpp src/Messaging.cpp src/BoardRules.cpp src/RuleOptions.cpp)
+        src/PhaseStack.cpp src/Messaging.cpp src/BoardRules.cpp src/RuleOptions.cpp
+        src/RuleResync.cpp src/RuleArchive.cpp)
     foreach(UI_TEST IN ITEMS ChatTextPlayback OptionsVisualPlayback OptionsCustomBoardPlayback
             PlayerSelectionPlayback StatsTextPlayback StatsAccountRuntime)
         target_include_directories(Monopoly${UI_TEST}Tests PRIVATE src tests)
@@ -3570,4 +3584,49 @@ endif()
 if(MSVC)
     set_source_files_properties(src/EuropeanDeed.cpp tests/EuropeanDeedTests.cpp
         PROPERTIES COMPILE_OPTIONS /utf-8)
+endif()
+
+if(BUILD_TESTING)
+    # Exercise the same RULE modules through their FIFO/notification boundary.
+    get_target_property(MONOPOLY_RULE_INTEGRATION_SOURCES MonopolySavedGameResumeTests SOURCES)
+    list(REMOVE_ITEM MONOPOLY_RULE_INTEGRATION_SOURCES
+        tests/SavedGameResumeTests.cpp src/LocalPlayers.cpp)
+    add_executable(MonopolyRulePhaseUndoTests tests/RulePhaseUndoTests.cpp
+        ${MONOPOLY_RULE_INTEGRATION_SOURCES})
+    target_include_directories(MonopolyRulePhaseUndoTests PRIVATE src tests)
+    add_test(NAME Monopoly.RulePhaseUndo COMMAND MonopolyRulePhaseUndoTests)
+
+    get_target_property(MONOPOLY_AI_INTEGRATION_SOURCES MonopolyAITradeIngressTests SOURCES)
+    list(REMOVE_ITEM MONOPOLY_AI_INTEGRATION_SOURCES tests/AITradeIngressTests.cpp)
+    set(MONOPOLY_ECONOMIC_INTEGRATION_SOURCES
+        ${MONOPOLY_RULE_INTEGRATION_SOURCES} ${MONOPOLY_AI_INTEGRATION_SOURCES})
+    list(REMOVE_DUPLICATES MONOPOLY_ECONOMIC_INTEGRATION_SOURCES)
+    add_executable(MonopolyAIEconomicContinuationTests tests/AIEconomicContinuationTests.cpp
+        ${MONOPOLY_ECONOMIC_INTEGRATION_SOURCES})
+    target_include_directories(MonopolyAIEconomicContinuationTests PRIVATE src tests)
+    target_compile_definitions(MonopolyAIEconomicContinuationTests PRIVATE
+        MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}")
+    add_test(NAME Monopoly.AIEconomicContinuation COMMAND MonopolyAIEconomicContinuationTests)
+
+    get_target_property(MONOPOLY_UI_INTEGRATION_SOURCES MonopolyUserInterfaceRoutingTests SOURCES)
+    list(REMOVE_ITEM MONOPOLY_UI_INTEGRATION_SOURCES tests/UserInterfaceRoutingTests.cpp)
+    get_target_property(MONOPOLY_IBAR_INTEGRATION_SOURCES MonopolyIBarBackdropPlaybackTests SOURCES)
+    list(REMOVE_ITEM MONOPOLY_IBAR_INTEGRATION_SOURCES tests/IBarBackdropPlaybackTests.cpp)
+    set(MONOPOLY_SESSION_INTEGRATION_SOURCES ${MONOPOLY_ECONOMIC_INTEGRATION_SOURCES}
+        ${MONOPOLY_UI_INTEGRATION_SOURCES} ${MONOPOLY_IBAR_INTEGRATION_SOURCES}
+        src/RulesEngine.cpp src/RuleStartupActions.cpp src/RulePlayers.cpp
+        src/RuleCards.cpp src/RuleJail.cpp src/LocalPlayers.cpp src/AuctionUI.cpp src/IBar.cpp)
+    list(REMOVE_DUPLICATES MONOPOLY_SESSION_INTEGRATION_SOURCES)
+    add_executable(MonopolyGameSessionIntegrationTests tests/GameSessionIntegrationTests.cpp
+        ${MONOPOLY_SESSION_INTEGRATION_SOURCES})
+    target_include_directories(MonopolyGameSessionIntegrationTests PRIVATE src tests)
+    target_compile_definitions(MonopolyGameSessionIntegrationTests PRIVATE
+        MONOPOLY_LEGACY_SOURCE_DIR="${MONOPOLY_LEGACY_SOURCE_ROOT}")
+    target_link_libraries(MonopolyGameSessionIntegrationTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+    if(WIN32)
+        target_link_libraries(MonopolyGameSessionIntegrationTests PRIVATE Advapi32)
+    endif()
+    add_test(NAME Monopoly.GameSessionIntegration COMMAND MonopolyGameSessionIntegrationTests)
+    set_tests_properties(Monopoly.GameSessionIntegration PROPERTIES TIMEOUT 60)
 endif()

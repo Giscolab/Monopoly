@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "StatsFutureImmunityTextPlayback.hpp"
 #include "SyntheticTextResources.hpp"
 
@@ -105,18 +106,21 @@ namespace
                 [](std::uint8_t value) { return value != 0; }),
             "title, column labels and rows produce real font pixels");
 
+        const auto rootsBeforeRefresh = playback.runtime().roots();
         state.scrollIndex = 1;
+        require(textRefreshRejectsFullQueue(playback, [&] { return owner.sync(state, rules, display::Screen2D::Portfolio, 0, &font, playback); }),
+            "saturated refresh preserves old pixels and roots for a later retry");
         require(owner.sync(state, rules, display::Screen2D::Portfolio,
                 0, &font, playback).has_value(),
             "scrolling rerasterizes the same runtime surface");
-        require(playback.commands().pendingCount() == 0,
+        require(playback.commands().pendingCount() == 1,
             "scroll refresh does not restart the sequence root");
         const auto refreshedAsset =
             playback.runtimeBitmaps().asset(firstAsset->dataId);
         require(refreshedAsset && refreshedAsset != firstAsset,
             "scroll refresh publishes an immutable bitmap revision");
 
-        require(playback.update(1).has_value(),
+        require(textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "next tick refreshes active Overlay2D bitmap revision");
         const auto* refreshed = at(playback,
             statsui::FutureImmunityPopupRect.left,
@@ -127,7 +131,8 @@ namespace
         state.kind = statsui::FutureImmunityKind::Immunity;
         require(owner.sync(state, rules, display::Screen2D::Portfolio,
                 0, &font, playback).has_value() &&
-                playback.commands().pendingCount() == 0,
+                playback.commands().pendingCount() == 1 &&
+                textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "Future-to-Immunity title change stays on the live surface");
 
         state.open = false;

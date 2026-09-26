@@ -1485,7 +1485,11 @@ namespace monopoly::engine
     {
         auto* output = audioPlayback();
         if (output == nullptr)
+        {
+            for (const auto& instance : session.runtime().soundInstances())
+                (void)session.runtime().requestSoundFailure(instance.node);
             return {};
+        }
 
         const auto instances = session.runtime().soundInstances();
         std::vector<sequence::SequenceNodeId> next;
@@ -1535,6 +1539,18 @@ namespace monopoly::engine
                 output->setPanning(key, pan);
                 output->setLooping(key, instance.endingAction == 3);
             }
+            const auto synchronized = output->synchronizeSequence(key,
+                instance.clock, false, instance.seekGeneration);
+            // Retail SEQCMD_Pause gates the sequence clock, while the sound
+            // hardware continues playing (L_Rend0D::FeedAudioStream).
+            if (!synchronized) return synchronized;
+            if (const auto position = output->positionTicks(key))
+            {
+                const auto supplied = session.runtime().requestSoundClock(instance.node, *position);
+                if (!supplied) return std::unexpected(std::string("sequence sound clock failed"));
+            }
+            else
+                (void)session.runtime().requestSoundFailure(instance.node);
             next.push_back(instance.node);
         }
 
@@ -1670,7 +1686,7 @@ namespace monopoly::engine
         // display.cpp original charge le fond 3D pendant
         // DISPLAY_initialize().
         //
-        // Ce bitmap n'est pas indispensable au démarrage :
+        // Ce bitmap n'est pas indispensable au dÃ©marrage :
         // en cas d'absence on conserve simplement un fond noir.
         if (!legacyassets::initialize(gpuDevice))
         {
@@ -1686,8 +1702,8 @@ namespace monopoly::engine
 
     bool runCyclicFunctions()
     {
-        // Le vieux timer Windows tournait indépendamment à 60 Hz.
-        // Notre implémentation moderne rattrape ici les ticks écoulés.
+        // Le vieux timer Windows tournait indÃ©pendamment Ã  60 Hz.
+        // Notre implÃ©mentation moderne rattrape ici les ticks Ã©coulÃ©s.
         timers::pump();
 
         messaging::pumpNetwork();
@@ -1732,7 +1748,7 @@ namespace monopoly::engine
             }
         }
 
-        // Ensuite viendront les équivalents de :
+        // Ensuite viendront les Ã©quivalents de :
         // LI_SEQNCR_TimerTick()
         // LI_ANIM3D_TickScene()
 
@@ -2387,7 +2403,6 @@ namespace monopoly::engine
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             publishSequenceLifecycleEvents(*session);
 
-            if (!audioDisabled)
             {
                 const auto audioSync = syncSequenceAudio(*session);
                 if (!audioSync)

@@ -7,6 +7,7 @@
 #include "MousePointer.hpp"
 #include "ChatRuntime.hpp"
 #include "TcpMessageTransport.hpp"
+#include "StartupResources.hpp"
 #include "UIMessages.hpp"
 
 #include <SDL3/SDL.h>
@@ -18,6 +19,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace
 {
@@ -136,28 +138,39 @@ namespace monopoly
     {
         int result = 0;
 
+        std::vector<std::string_view> arguments;
+        for (int index = 1; index < argc; ++index) arguments.emplace_back(argv[index]);
+        const auto resourceOptions = startup::parseResourceArguments(arguments);
+        if (!resourceOptions)
+        {
+            std::cerr << resourceOptions.error() << '\n';
+            return 1;
+        }
+        const auto& networkArguments = resourceOptions->remaining;
+
         bool networkRequested = false;
         bool networkHost = false;
         bool gameplayRequested = false;
         std::string networkAddress;
         std::uint16_t networkPort = 0;
-        if (argc > 1)
+        if (!networkArguments.empty())
         {
-            const std::string_view mode(argv[1]);
+            const auto mode = networkArguments[0];
             const auto usage = []
             {
-                std::cerr << "Usage: MonopolyModern [--voice-host IPv4:port | "
+                std::cerr << "Usage: MonopolyModern [--data-root <absolute folder>] "
+                    "[--check-resources] [--voice-host IPv4:port | "
                     "--voice-connect IPv4:port | --network-host IPv4:port | "
                     "--network-connect IPv4:port]\n"
                     "Network menu without arguments hosts on 0.0.0.0:28799.\n";
             };
-            if (argc != 3 || (mode != "--voice-host" && mode != "--voice-connect" &&
+            if (networkArguments.size() != 2 || (mode != "--voice-host" && mode != "--voice-connect" &&
                 mode != "--network-host" && mode != "--network-connect"))
             {
                 usage();
                 return 1;
             }
-            const std::string_view endpoint(argv[2]);
+            const auto endpoint = networkArguments[1];
             const auto colon = endpoint.rfind(':');
             if (colon == std::string_view::npos || colon == 0 || colon + 1 == endpoint.size())
             {
@@ -180,10 +193,33 @@ namespace monopoly
             networkPort = static_cast<std::uint16_t>(port);
         }
 
+        if (resourceOptions->dataRoot)
+        {
+            const auto selected = startup::selectResourceRoot(*resourceOptions->dataRoot);
+            if (!selected)
+            {
+                std::cerr << "Invalid --data-root: " << selected.error() << '\n';
+                return 1;
+            }
+        }
+        if (resourceOptions->checkOnly)
+        {
+            const auto checked = startup::prepareResources(false);
+            SDL_Quit();
+            return checked == startup::ResourceSetupResult::Ready ? 0 : 1;
+        }
+
         if (!SDL_Init(SDL_INIT_VIDEO))
         {
             std::cerr << "SDL_Init failed: " << SDL_GetError() << '\n';
             return 1;
+        }
+
+        const auto setup = startup::prepareResources(true);
+        if (setup != startup::ResourceSetupResult::Ready)
+        {
+            SDL_Quit();
+            return setup == startup::ResourceSetupResult::Cancelled ? 0 : 1;
         }
 
         SDL_Window* window = SDL_CreateWindow(

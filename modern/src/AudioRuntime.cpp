@@ -71,6 +71,10 @@ namespace monopoly::audio
         float gain{1.0F};
         StereoPanState pan;
         bool loop{};
+        bool paused{};
+        std::uint32_t bytesPerFrame{};
+        std::uint64_t submittedBytes{};
+        std::optional<std::uint64_t> seekGeneration;
 
         ~Voice()
         {
@@ -100,78 +104,6 @@ namespace monopoly::audio
             return std::clamp(gain, 0.0F, 4.0F);
         }
 
-        [[nodiscard]] constexpr std::uint32_t readLe32(
-            std::span<const std::uint8_t> bytes, std::size_t offset) noexcept
-        {
-            return static_cast<std::uint32_t>(bytes[offset]) |
-                (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
-                (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
-                (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
-        }
-
-        [[nodiscard]] constexpr bool fourCC(
-            std::span<const std::uint8_t> bytes, std::size_t offset,
-            char a, char b, char c, char d) noexcept
-        {
-            return bytes[offset] == static_cast<std::uint8_t>(a) &&
-                bytes[offset + 1U] == static_cast<std::uint8_t>(b) &&
-                bytes[offset + 2U] == static_cast<std::uint8_t>(c) &&
-                bytes[offset + 3U] == static_cast<std::uint8_t>(d);
-        }
-    }
-
-    std::uint32_t legacyWaveDurationTicks(
-        std::span<const std::uint8_t> riffWave,
-        std::uint32_t ticksPerSecond) noexcept
-    {
-        if (riffWave.size() < 12U || ticksPerSecond == 0U ||
-            !fourCC(riffWave, 0U, 'R', 'I', 'F', 'F') ||
-            !fourCC(riffWave, 8U, 'W', 'A', 'V', 'E'))
-            return 0U;
-
-        const std::uint64_t riffEnd64 =
-            8ULL + static_cast<std::uint64_t>(readLe32(riffWave, 4U));
-        if (riffEnd64 > riffWave.size() || riffEnd64 < 12U)
-            return 0U;
-        const auto riffEnd = static_cast<std::size_t>(riffEnd64);
-
-        std::uint32_t averageBytesPerSecond{};
-        std::uint32_t dataBytes{};
-        std::size_t offset = 12U;
-        while (offset + 8U <= riffEnd)
-        {
-            const std::uint32_t chunkSize = readLe32(riffWave, offset + 4U);
-            const std::uint64_t payloadEnd64 =
-                static_cast<std::uint64_t>(offset) + 8ULL + chunkSize;
-            if (payloadEnd64 > riffEnd)
-                return 0U;
-
-            if (fourCC(riffWave, offset, 'f', 'm', 't', ' '))
-            {
-                if (chunkSize < 12U)
-                    return 0U;
-                averageBytesPerSecond = readLe32(riffWave, offset + 16U);
-            }
-            else if (fourCC(riffWave, offset, 'd', 'a', 't', 'a'))
-                dataBytes = chunkSize;
-
-            const std::uint64_t next64 = payloadEnd64 + (chunkSize & 1U);
-            if (next64 > riffEnd)
-                return 0U;
-            offset = static_cast<std::size_t>(next64);
-        }
-
-        if (averageBytesPerSecond == 0U || dataBytes == 0U)
-            return 0U;
-
-        const std::uint64_t duration =
-            static_cast<std::uint64_t>(dataBytes) * ticksPerSecond /
-            averageBytesPerSecond;
-        if (duration == 0U)
-            return 1U;
-        return static_cast<std::uint32_t>(
-            std::min<std::uint64_t>(duration,
-                std::numeric_limits<std::uint32_t>::max()));
     }
 
     Runtime::Runtime(
@@ -287,6 +219,7 @@ namespace monopoly::audio
         voice->gain = clampedGain(gain);
         voice->pan.set(panPercentage);
         voice->loop = loop;
+        voice->bytesPerFrame = static_cast<std::uint32_t>(SDL_AUDIO_FRAMESIZE(spec));
 
         if (!SDL_SetAudioStreamGain(stream, voice->gain))
             return std::unexpected(
@@ -307,6 +240,7 @@ namespace monopoly::audio
                 return std::unexpected(
                     std::string("SDL_PutAudioStreamData: ") + SDL_GetError());
 
+        voice->submittedBytes = static_cast<std::uint64_t>(bytes) * copies;
         if (!loop && !SDL_FlushAudioStream(stream))
             return std::unexpected(
                 std::string("SDL_FlushAudioStream: ") + SDL_GetError());
@@ -384,6 +318,7 @@ namespace monopoly::audio
         voice->gain = clampedGain(gain);
         voice->pan.set(panPercentage);
         voice->loop = loop;
+        voice->bytesPerFrame = static_cast<std::uint32_t>(SDL_AUDIO_FRAMESIZE(spec));
 
         if (!SDL_SetAudioStreamGain(stream, voice->gain))
             return std::unexpected(
@@ -411,6 +346,7 @@ namespace monopoly::audio
                     std::string("SDL_PutAudioStreamData: ") +
                     SDL_GetError());
 
+        voice->submittedBytes = static_cast<std::uint64_t>(bytes) * copies;
         if (!loop && !SDL_FlushAudioStream(stream))
             return std::unexpected(
                 std::string("SDL_FlushAudioStream: ") +
@@ -467,8 +403,104 @@ namespace monopoly::audio
 
     void Runtime::setLooping(PlaybackKey key, bool loop) noexcept
     {
-        if (auto* voice = find(key))
-            voice->loop = loop;
+        auto* voice = find(key);
+        if (!voice || voice->loop == loop) return;
+        // Freeze the device before sampling its cursor. Removing prequeued
+        // repeats must preserve the current iteration, including after wrap.
+        if (!SDL_PauseAudioStreamDevice(voice->stream)) { stop(key); return; }
+        const auto queued = SDL_GetAudioStreamQueued(voice->stream);
+        if (queued < 0 || voice->pcm.empty()) { stop(key); return; }
+        auto offset = voice->submittedBytes -
+            std::min(voice->submittedBytes, static_cast<std::uint64_t>(queued));
+        if (voice->loop) offset %= voice->pcm.size();
+        else offset = std::min(offset, static_cast<std::uint64_t>(voice->pcm.size()));
+        voice->loop = loop;
+        if (loop) offset %= voice->pcm.size();
+        if (!queueVoiceFromByte(*voice, offset)) stop(key);
+    }
+
+    std::optional<std::int32_t> Runtime::positionTicks(PlaybackKey key) const noexcept
+    {
+        const auto* voice = find(key);
+        if (!voice || !voice->stream || voice->sourceFrequency == 0 ||
+            voice->bytesPerFrame == 0 || voice->pcm.empty()) return std::nullopt;
+        const auto queued = SDL_GetAudioStreamQueued(voice->stream);
+        if (queued < 0) return std::nullopt;
+        auto consumed = voice->submittedBytes -
+            std::min(voice->submittedBytes, static_cast<std::uint64_t>(queued));
+        if (voice->loop) consumed %= voice->pcm.size();
+        else consumed = std::min(consumed, static_cast<std::uint64_t>(voice->pcm.size()));
+        const auto ticks = consumed * 60U /
+            (static_cast<std::uint64_t>(voice->bytesPerFrame) * voice->sourceFrequency);
+        return static_cast<std::int32_t>(std::min<std::uint64_t>(ticks,
+            std::numeric_limits<std::int32_t>::max()));
+    }
+
+    std::expected<void, std::string> Runtime::seekVoice(Voice& voice, std::int32_t tick)
+    {
+        if (tick < 0 || voice.bytesPerFrame == 0 || voice.pcm.size() < voice.bytesPerFrame)
+            return std::unexpected("invalid audio seek");
+        auto offset = static_cast<std::uint64_t>(tick) * voice.sourceFrequency / 60U * voice.bytesPerFrame;
+        if (voice.loop) offset %= voice.pcm.size();
+        else offset = std::min(offset, static_cast<std::uint64_t>(
+            voice.pcm.size() - voice.bytesPerFrame));
+        return queueVoiceFromByte(voice, offset);
+    }
+
+    std::expected<void, std::string> Runtime::queueVoiceFromByte(Voice& voice, std::uint64_t offset)
+    {
+        if (!SDL_PauseAudioStreamDevice(voice.stream) || !SDL_ClearAudioStream(voice.stream))
+            return std::unexpected(std::string("audio seek: ") + SDL_GetError());
+        voice.submittedBytes = offset;
+        const auto tail = voice.pcm.size() - static_cast<std::size_t>(offset);
+        if (tail && !SDL_PutAudioStreamData(voice.stream,
+                voice.pcm.data() + offset, static_cast<int>(tail)))
+            return std::unexpected(std::string("audio seek data: ") + SDL_GetError());
+        voice.submittedBytes += tail;
+        if (voice.loop)
+        {
+            for (int copy = 0; copy < 2; ++copy)
+            {
+                if (!SDL_PutAudioStreamData(voice.stream, voice.pcm.data(),
+                        static_cast<int>(voice.pcm.size())))
+                    return std::unexpected(std::string("audio loop data: ") + SDL_GetError());
+                voice.submittedBytes += voice.pcm.size();
+            }
+        }
+        else if (!SDL_FlushAudioStream(voice.stream))
+            return std::unexpected(std::string("audio seek flush: ") + SDL_GetError());
+        if (!voice.paused && !SDL_ResumeAudioStreamDevice(voice.stream))
+            return std::unexpected(std::string("audio seek resume: ") + SDL_GetError());
+        return {};
+    }
+
+    std::expected<void, std::string> Runtime::synchronizeSequence(
+        PlaybackKey key, std::int32_t position, bool paused, std::uint64_t seekGeneration)
+    {
+        auto* voice = find(key);
+        if (!voice) return std::unexpected("sequence audio voice is absent");
+        // A new voice was already queued at sample zero by play/playFile.
+        // Do not clear and replay that buffer on its first synchronization.
+        if (!voice->seekGeneration && position == 0 && !paused)
+        {
+            voice->seekGeneration = seekGeneration;
+            return {};
+        }
+        const bool pauseChanged = voice->paused != paused;
+        voice->paused = paused;
+        if (voice->seekGeneration != seekGeneration)
+        {
+            const auto sought = seekVoice(*voice, position);
+            if (!sought) return sought;
+            voice->seekGeneration = seekGeneration;
+        }
+        else if (pauseChanged)
+        {
+            const bool ok = paused ? SDL_PauseAudioStreamDevice(voice->stream) :
+                SDL_ResumeAudioStreamDevice(voice->stream);
+            if (!ok) return std::unexpected(std::string("audio pause: ") + SDL_GetError());
+        }
+        return {};
     }
 
     void Runtime::update() noexcept
@@ -492,6 +524,7 @@ namespace monopoly::audio
                         static_cast<int>(voice->pcm.size())))
                     break;
                 current += voice->pcm.size();
+                voice->submittedBytes += voice->pcm.size();
             }
         }
     }

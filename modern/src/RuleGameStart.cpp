@@ -8,6 +8,7 @@
 #include "PhaseStack.hpp"
 #include "RuleRandom.hpp"
 #include "RuleConfiguration.hpp"
+#include "RuleResync.hpp"
 
 #include <array>
 #include <cstddef>
@@ -253,13 +254,9 @@ namespace monopoly::rules::gamestart
             state.freeParkingJackpotAmount = 0;
 
 
-            // MESS_UpdateLobbyGameStarted() et
-            // SendClientResyncGameState() sont des fonctions
-            // de transport réseau.
-            //
-            // Notre MESS actuel est volontairement local :
-            // on ne fabrique pas de faux transport ici.
-
+            // Rule.cpp::StartGameInitialisation publishes the initial cash,
+            // board and tokens before GAME_STARTING, including local games.
+            resync::sendClientState(state, AllPlayers, resync::Cause::GameStart);
 
             messaging::sendAction(
                 actions::Type::NotifyGameStarting,

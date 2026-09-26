@@ -4,13 +4,13 @@
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
 #include "RuleEconomy.hpp"
+#include "RuleResync.hpp"
 #include "RuleSynchronization.hpp"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <optional>
 
 namespace monopoly::rules::buildings
 {
@@ -18,10 +18,6 @@ namespace monopoly::rules::buildings
     {
         constexpr std::uint8_t BoardwalkSquare = 39;
         constexpr std::uint8_t OffBoardSquare = 41;
-
-        std::optional<GameState>
-            hotelDecompositionSnapshot;
-
 
         void sendRestart()
         {
@@ -252,7 +248,7 @@ namespace monopoly::rules::buildings
 
     void resetTransientState()
     {
-        hotelDecompositionSnapshot.reset();
+        // Undo state is owned by GameState and reset with that state.
     }
 
 
@@ -1242,8 +1238,7 @@ namespace monopoly::rules::buildings
             );
 
 
-            hotelDecompositionSnapshot =
-                state;
+            phases::saveCurrent(state);
 
 
             sendRestart();
@@ -1362,8 +1357,6 @@ namespace monopoly::rules::buildings
                 houseCount <=
                 state.options.maximumHouses)
             {
-                hotelDecompositionSnapshot.reset();
-
                 popAndRestart(state);
             }
             else
@@ -1425,26 +1418,9 @@ namespace monopoly::rules::buildings
         );
 
 
-        if (
-            hotelDecompositionSnapshot
-                .has_value())
+        if (phases::restoreCurrent(state))
         {
-            const std::uint64_t duration =
-                state.gameDurationInSeconds;
-
-
-            state =
-                *hotelDecompositionSnapshot;
-
-
-            // La restauration originale retransmet l'état,
-            // mais le temps de partie ne doit pas reculer
-            // pendant le dialogue utilisateur.
-            state.gameDurationInSeconds =
-                duration;
-
-
-            hotelDecompositionSnapshot.reset();
+            resync::sendClientState(state, AllPlayers, resync::Cause::UndoHotelDecomposition);
         }
 
 

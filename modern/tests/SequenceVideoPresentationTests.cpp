@@ -48,6 +48,16 @@ void testSourcePresentationGeometryAndAlpha() {
     require(image.pixels[3]==255 && image.pixels[7]==255,"drawSolid bypasses alpha and the green key");
     frame.rgba.pop_back();require(!video::prepareVideoFrame(frame,options),"truncated decoded RGBA is rejected before publication");
 }
+void testFirstFrameAnchorsSilentClock(const test::VideoDecoderFixture& movie) {
+    video::Presentation presentation; checked(presentation.open(movie.file(),false,decoderOptions()));
+    // Deterministically model a decoder frame arriving between pump's empty
+    // snapshot and frameAt: publish before any pump can anchor the timeline.
+    until([&]{return presentation.snapshot().queuedVideoFrames>0;},"first queued frame before clock anchoring");
+    const auto first=take(presentation.frameAt(0));
+    require(first && red(first->rgba),"first frame is presented before clock anchoring pump");
+    const auto clock=take(presentation.pump(1250000));
+    require(clock.elapsedMicroseconds==1250000,"first-frame publication anchors silent time without losing the next parent interval");
+}
 void testSilentPresentation(const test::VideoDecoderFixture& movie,bool expectedAudio) {
     video::Presentation presentation; checked(presentation.open(movie.file(),false,decoderOptions()));
     std::optional<video::DecodedVideoFrame> current;
@@ -310,6 +320,7 @@ int main() {
         require(std::string(SDL_GetCurrentAudioDriver())=="dummy","physical audio devices are never selected by this fixture");
         testSourcePresentationGeometryAndAlpha();std::cout<<"[PASS] source destination geometry, flip and alpha\n";
         test::VideoDecoderFixture audio(true),silent(false);
+        testFirstFrameAnchorsSilentClock(silent);
         testSilentPresentation(audio,true);testSilentPresentation(silent,false);std::cout<<"[PASS] actual compressed frames, no-audio paths, seek and EOF\n";
         testAudioClockAndAbsentAudio(audio,silent);std::cout<<"[PASS] SDL dummy consumed PCM clock, pause and EOF\n";
         testFiniteAudioSequenceLifecycle(audio);std::cout<<"[PASS] finite CNK probe/audio clock and natural Stop EOF lifecycle\n";

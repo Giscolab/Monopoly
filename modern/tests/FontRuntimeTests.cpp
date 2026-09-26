@@ -144,19 +144,19 @@ namespace
             "empty text has no fabricated glyph surface");
 
         const std::string utf8Accent = "\xC3\xA9";
-        const auto encoded16 = fonts::transcodeUtf8(std::u16string_view(u"é"));
-        const auto encodedWide = fonts::transcodeUtf8(std::wstring_view(L"é"));
+        const auto encoded16 = fonts::transcodeUtf8(std::u16string_view(u"\u00E9"));
+        const auto encodedWide = fonts::transcodeUtf8(std::wstring_view(L"\u00E9"));
         require(encoded16 && encodedWide &&
             *encoded16 == utf8Accent && *encodedWide == utf8Accent,
             "shared Unicode transcoder produces the same UTF-8 from UTF-16 and wchar text");
         const auto utf8Metrics = take(font.measure(utf8Accent), "measure UTF-8 accent");
-        const auto utf16Metrics = take(font.measure(std::u16string_view(u"é")),
+        const auto utf16Metrics = take(font.measure(std::u16string_view(u"\u00E9")),
             "measure UTF-16 accent");
         require(utf8Metrics.width == utf16Metrics.width &&
             utf8Metrics.height == utf16Metrics.height,
             "UTF-16 language text reaches the same SDL_ttf metrics as UTF-8");
 
-        const auto utf16Image = take(font.render(std::u16string_view(u"é"), 0x00FFFFFFu),
+        const auto utf16Image = take(font.render(std::u16string_view(u"\u00E9"), 0x00FFFFFFu),
             "render UTF-16 accent");
         require(utf16Image.width == static_cast<std::uint32_t>(utf16Metrics.width) &&
             utf16Image.height == static_cast<std::uint32_t>(utf16Metrics.height),
@@ -209,14 +209,24 @@ namespace
                     const auto sourceOffset =
                         (static_cast<std::size_t>(y + 1U) * image.width +
                             x + 1U) * 4U;
-                    require(std::equal(
-                        destination.pixels.begin() +
-                            static_cast<std::ptrdiff_t>(destinationOffset),
-                        destination.pixels.begin() +
-                            static_cast<std::ptrdiff_t>(destinationOffset + 4U),
-                        image.pixels.begin() +
-                            static_cast<std::ptrdiff_t>(sourceOffset)),
-                        "negative offsets clip to the exact rendered source pixels");
+                    // SDL may retain RGB values behind a zero-alpha glyph
+                    // mask. A transparent source leaves the destination intact;
+                    // it must not copy those invisible RGB bytes.
+                    if (image.pixels[sourceOffset + 3U] == 0)
+                        require(std::all_of(
+                            destination.pixels.begin() + static_cast<std::ptrdiff_t>(destinationOffset),
+                            destination.pixels.begin() + static_cast<std::ptrdiff_t>(destinationOffset + 4U),
+                            [](std::uint8_t value) { return value == 0; }),
+                            "transparent glyph pixels preserve the clipped destination");
+                    else
+                        require(std::equal(
+                            destination.pixels.begin() +
+                                static_cast<std::ptrdiff_t>(destinationOffset),
+                            destination.pixels.begin() +
+                                static_cast<std::ptrdiff_t>(destinationOffset + 4U),
+                            image.pixels.begin() +
+                                static_cast<std::ptrdiff_t>(sourceOffset)),
+                            "negative offsets preserve exact visible glyph pixels");
                 }
                 else
                 {
@@ -237,6 +247,30 @@ namespace
             "ignore fully outside text blit");
         require(destination.pixels == beforeOutside,
             "fully outside text leaves the destination bitmap untouched");
+
+        // The same clipped glyph must also blend over an existing opaque
+        // background. These independent colour values exercise alpha 128/255.
+        for (std::size_t i = 0; i < destination.pixels.size(); i += 4U)
+        {
+            destination.pixels[i] = 10;
+            destination.pixels[i + 1U] = 20;
+            destination.pixels[i + 2U] = 30;
+            destination.pixels[i + 3U] = 255;
+        }
+        checked(font.blitText(destination, "Ag", -1, -1, 0x80563412u),
+            "blend clipped text over an opaque background");
+        for (std::uint32_t y = 0; y < destination.height; ++y)
+            for (std::uint32_t x = 0; x < destination.width; ++x)
+            {
+                const auto offset = (static_cast<std::size_t>(y) * destination.width + x) * 4U;
+                const bool foreground = x + 1U < image.width && y + 1U < image.height &&
+                    image.pixels[(static_cast<std::size_t>(y + 1U) * image.width + x + 1U) * 4U + 3U] != 0;
+                require(destination.pixels[offset] == (foreground ? 14 : 10) &&
+                    destination.pixels[offset + 1U] == (foreground ? 36 : 20) &&
+                    destination.pixels[offset + 2U] == (foreground ? 58 : 30) &&
+                    destination.pixels[offset + 3U] == 255,
+                    "clipped half-alpha text blends its ink and preserves its transparent background");
+            }
         data::LegacyBitmapRGBA8 invalidDestination{8, 8, {}};
         require(!font.blitText(invalidDestination, "Ag", 0, 0, 0x80563412u),
             "invalid destination storage is rejected before writing pixels");

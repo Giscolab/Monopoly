@@ -142,8 +142,16 @@ namespace
             "video child missing its ten playback bytes reports malformed payload");
         result = SequenceChildSchedule::read(owned(chunk(8, DataBytes(12))), 1);
         expect(!result && std::holds_alternative<SequenceError>(result.error()) &&
-            std::get<SequenceError>(result.error()).code == SequenceErrorCode::UnsupportedRecord,
-            "unsupported model type 8 remains explicitly rejected");
+            std::get<SequenceError>(result.error()).code == SequenceErrorCode::FixedRecordTruncated,
+            "preloader child missing its target DataID is rejected as truncated");
+        DataBytes preloaderPayload;
+        word(preloaderPayload, 5); word(preloaderPayload, 0x01000000U);
+        word(preloaderPayload, 2); word(preloaderPayload, 0x12345678U);
+        result = SequenceChildSchedule::read(owned(chunk(8, preloaderPayload)), 1);
+        expect(result && result->records().size() == 1 &&
+            std::get<SequencePreloaderData>(result->records().front().data).preloadDataId == 0x12345678U &&
+            result->select(std::nullopt, 4)->empty() && result->select(4, 5)->size() == 1,
+            "complete preloader child retains its DataID and starts on its exact scheduled boundary");
         DataBytes videoPayload;
         word(videoPayload, 5); // child begins at parent time 5
         word(videoPayload, 0x0100'0078U); // duration 120, cadence 1

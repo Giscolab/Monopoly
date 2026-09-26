@@ -15,6 +15,9 @@ namespace monopoly::rules::resync
     };
 
 
+    // Only the compact mutable client state; no identity/configuration or restart.
+    void sendClientState(const GameState& state, PlayerNumber toPlayer, Cause cause);
+
     void sendAll(
         const GameState& state,
         PlayerNumber toPlayer,

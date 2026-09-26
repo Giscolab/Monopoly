@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "ChatTextPlayback.hpp"
 #include "SyntheticTextResources.hpp"
 #include "Messaging.hpp"
@@ -67,10 +68,14 @@ void testSurfacesAndAlpha() {
     require(selected->image.pixels[(18*selected->image.width+6)*4+3]==127,"selection background alpha is applied once");
     require(sequence.update(0).has_value(),"drain chat starts");
     const auto stable=playback.surfaceId(1); require(playback.sync(s,g,0,&font,sequence).has_value() && sequence.commands().pendingCount()==0 && playback.surfaceId(1)==stable,"unchanged chat reuses leases and emits no transition");
+    const auto rootsBeforeRefresh=sequence.runtime().roots();
     s.textAlphaIndex=0; require(playback.sync(s,g,0,&font,sequence).has_value(),"transparent text update");
     const auto transparent=sequence.runtimeBitmaps().asset(*playback.surfaceId(1));
     for(unsigned y=18;y<40;++y) for(unsigned x=6;x<250;++x) require(transparent->image.pixels[(y*transparent->image.width+x)*4+3]==0,"zero body text alpha does not become opaque via legacy COLORREF");
+    require(sequence.commands().pendingCount()==4 && textRefreshPreservesRoots(sequence,rootsBeforeRefresh,1),"chat alpha refresh preserves every active root and executes only redraw commands");
+    require(sequence.world2D().find(rootsBeforeRefresh[1]) != nullptr,"refreshed chat root remains published");
     s.boxActive=false; require(playback.sync(s,g,0,nullptr,sequence).has_value() && sequence.commands().pendingCount()==4,"closing chat needs no font and stops all roots");
+    require(sequence.update(2).has_value() && sequence.runtime().roots().empty(),"chat close consumes its stops and removes all roots");
 }
 void testFailures() {
     SyntheticTextResources r; fonts::Runtime font; loadRealTestArial(font); auto g=game(); chat::State s; s.boxActive=true; s.count=1; s.history[0].from=rules::SpectatorPlayer;

@@ -22,10 +22,13 @@ namespace monopoly::ai
 
         struct EconomicRuntimeState
         {
+            rules::PlayerNumber controlOwner = rules::NobodyPlayer;
+            bool decompositionControl{};
             std::array<decision::EconomicActionPlan, rules::MaxPlayers> pendingControlAction{};
             std::array<bool, rules::MaxPlayers> hasPendingControlAction{};
             std::array<bool, rules::MaxPlayers> controlRequestInFlight{};
             std::array<bool, rules::MaxPlayers> actionInFlight{};
+            std::array<bool, rules::MaxPlayers> controlRestartInFlight{};
             std::array<bool, rules::MaxPlayers> controlReleaseInFlight{};
         };
 
@@ -44,6 +47,10 @@ namespace monopoly::ai
         enum class PendingTurnPrompt : std::uint8_t { None = 0, RollDice, EndTurn };
         std::array<PendingTurnPrompt, rules::MaxPlayers> pendingTurnPrompt{};
         std::array<bool, rules::MaxPlayers> turnActionInFlight{};
+        std::array<bool, rules::MaxPlayers> turnPromptPaused{};
+        std::array<rules::board::SquareType, rules::MaxPlayers> lastBuildingAction{};
+        bool housingShortageOn{};
+        bool buildingPlacementOn{};
         std::array<bool, rules::MaxPlayers> configurationAcceptInFlight{};
         std::array<bool, rules::MaxPlayers> cardSeenInFlight{};
         rules::PlayerNumber purchasingPlayer = rules::NobodyPlayer;
@@ -59,6 +66,7 @@ namespace monopoly::ai
             return static_cast<int>(economicRuntime.hasPendingControlAction[player]) +
                 economicRuntime.controlRequestInFlight[player] +
                 economicRuntime.actionInFlight[player] +
+                economicRuntime.controlRestartInFlight[player] +
                 economicRuntime.controlReleaseInFlight[player] +
                 jailDecisionInFlight[player] + taxDecisionInFlight[player] +
                 buyDecisionInFlight[player] +
@@ -82,6 +90,7 @@ namespace monopoly::ai
             economicRuntime.hasPendingControlAction[player] = false;
             economicRuntime.controlRequestInFlight[player] = false;
             economicRuntime.actionInFlight[player] = false;
+            economicRuntime.controlRestartInFlight[player] = false;
             economicRuntime.controlReleaseInFlight[player] = false;
             jailDecisionInFlight[player] = false;
             taxDecisionInFlight[player] = false;
@@ -94,6 +103,13 @@ namespace monopoly::ai
             freeUnmortgageDoneInFlight[player] = false;
             pendingTurnPrompt[player] = PendingTurnPrompt::None;
             turnActionInFlight[player] = false;
+            turnPromptPaused[player] = false;
+            lastBuildingAction[player] = rules::board::SquareType::Count;
+            if (economicRuntime.controlOwner == player)
+            {
+                economicRuntime.controlOwner = rules::NobodyPlayer;
+                economicRuntime.decompositionControl = false;
+            }
             configurationAcceptInFlight[player] = false;
             cardSeenInFlight[player] = false;
 
@@ -127,6 +143,12 @@ namespace monopoly::ai
             auctionBidInFlight = false;
             auctionBiddingPlayer = rules::NobodyPlayer;
             auctionOn = false;
+            housingShortageOn = false;
+            buildingPlacementOn = false;
+            economicRuntime.controlOwner = rules::NobodyPlayer;
+            economicRuntime.decompositionControl = false;
+            economicRuntime.controlRestartInFlight.fill(false);
+            turnPromptPaused.fill(true);
             purchasingPlayer = rules::NobodyPlayer;
             purchasingProperty = rules::board::SquareType::Count;
 
@@ -138,6 +160,67 @@ namespace monopoly::ai
 
         void updateRuntimeFlags(const actions::Message& message) noexcept
         {
+            // A quick debt sale can enter decomposition without an underlying
+            // BSSM phase. Its next decision notification is the only public
+            // evidence that this temporary control has ended.
+            if (economicRuntime.decompositionControl &&
+                (message.action == actions::Type::NotifyPleasePay ||
+                 message.action == actions::Type::NotifyPleaseRollDice ||
+                 message.action == actions::Type::NotifyEndTurn ||
+                 message.action == actions::Type::NotifyFreeUnmortgaging ||
+                 message.action == actions::Type::NotifyPlaceBuilding ||
+                 message.action == actions::Type::NotifyJailExitChoice ||
+                 message.action == actions::Type::NotifyFlatOrFractionTaxDecision ||
+                 message.action == actions::Type::NotifyBuyOrAuctionDecision ||
+                 message.action == actions::Type::NotifyPickedUpCard ||
+                 (message.action == actions::Type::NotifyActionCompleted &&
+                  message.numberA == static_cast<std::int64_t>(actions::Type::NotifyPleasePay))))
+            {
+                if (economicRuntime.controlOwner < rules::MaxPlayers)
+                    economicRuntime.controlRestartInFlight[economicRuntime.controlOwner] = false;
+                economicRuntime.controlOwner = rules::NobodyPlayer;
+                economicRuntime.decompositionControl = false;
+            }
+            // UI clients have no authoritative phase stack. Like Ai.cpp, track
+            // economic ownership and modal decisions from RULE notifications.
+            if ((message.action == actions::Type::NotifyPlayerBuySellMort ||
+                 message.action == actions::Type::NotifyDecomposeSale) &&
+                message.numberA >= 0 &&
+                (message.numberA < rules::MaxPlayers || message.numberA == rules::NobodyPlayer))
+            {
+                economicRuntime.controlOwner =
+                    static_cast<rules::PlayerNumber>(message.numberA);
+                economicRuntime.decompositionControl =
+                    message.action == actions::Type::NotifyDecomposeSale;
+                if (economicRuntime.controlOwner < rules::MaxPlayers)
+                {
+                    economicRuntime.controlRestartInFlight[economicRuntime.controlOwner] = false;
+                    if (message.action == actions::Type::NotifyPlayerBuySellMort)
+                        debtMoneyOwed[economicRuntime.controlOwner] =
+                            message.numberC > 0 ? message.numberC : 0;
+                    turnPromptPaused.fill(true);
+                }
+            }
+            if (message.action == actions::Type::NotifyPleasePay &&
+                message.numberA >= 0 && message.numberA < rules::MaxPlayers)
+                debtMoneyOwed[static_cast<rules::PlayerNumber>(message.numberA)] =
+                    message.numberC > 0 ? message.numberC : 0;
+            if (message.action == actions::Type::NotifyHousingShortage)
+                housingShortageOn = message.numberD != 3;
+            if (message.action == actions::Type::NotifyAuctionGoing)
+                housingShortageOn = false;
+            if (message.action == actions::Type::NotifyPlaceBuilding)
+                buildingPlacementOn = true;
+            else if (message.action == actions::Type::NotifyActionCompleted &&
+                     message.numberA == static_cast<std::int64_t>(actions::Type::BuyHouse))
+                buildingPlacementOn = false;
+            if (message.action == actions::Type::NotifyPleasePay ||
+                message.action == actions::Type::NotifyFreeUnmortgaging ||
+                message.action == actions::Type::NotifyPlaceBuilding ||
+                message.action == actions::Type::NotifyHousingShortage ||
+                message.action == actions::Type::NotifyTradeStarted ||
+                message.action == actions::Type::NotifyNewHighBid)
+                turnPromptPaused.fill(true);
             if (message.action == actions::Type::NotifyNewHighBid)
                 auctionOn = true;
             else if (message.action == actions::Type::NotifyAuctionGoing &&
@@ -461,15 +544,9 @@ namespace monopoly::ai
         }
 
         [[nodiscard]] rules::PlayerNumber buySellMortgagePlayer(
-            const rules::GameState& state) noexcept
+            const rules::GameState&) noexcept
         {
-            if (state.numberOfPendingPhases == 0)
-                return rules::NobodyPlayer;
-            const auto& phase = state.phaseStack[0];
-            if (phase.phase == rules::GamePhase::BuySellMortgage ||
-                phase.phase == rules::GamePhase::DecomposeHotel)
-                return phase.fromPlayer;
-            return rules::NobodyPlayer;
+            return economicRuntime.controlOwner;
         }
 
         [[nodiscard]] bool economicBusy(rules::PlayerNumber player) noexcept
@@ -478,6 +555,7 @@ namespace monopoly::ai
                 (economicRuntime.hasPendingControlAction[player] ||
                  economicRuntime.controlRequestInFlight[player] ||
                  economicRuntime.actionInFlight[player] ||
+                 economicRuntime.controlRestartInFlight[player] ||
                  economicRuntime.controlReleaseInFlight[player]);
         }
 
@@ -512,6 +590,9 @@ namespace monopoly::ai
                     static_cast<std::int64_t>(plan.square)))
                 return false;
             economicRuntime.actionInFlight[player] = true;
+            if (plan.kind == decision::EconomicActionKind::BuyHouse ||
+                plan.kind == decision::EconomicActionKind::SellBuilding)
+                lastBuildingAction[player] = plan.square;
             return true;
         }
 
@@ -543,18 +624,9 @@ namespace monopoly::ai
         }
 
         [[nodiscard]] bool playerPayingDebt(
-            const rules::GameState& state,
-            rules::PlayerNumber player) noexcept
+            const rules::GameState&, rules::PlayerNumber player) noexcept
         {
-            if (state.numberOfPendingPhases == 0)
-                return false;
-            if (state.phaseStack[0].phase == rules::GamePhase::CollectingPayment &&
-                state.phaseStack[0].fromPlayer == player)
-                return true;
-            return state.numberOfPendingPhases >= 2 &&
-                state.phaseStack[0].phase == rules::GamePhase::BuySellMortgage &&
-                state.phaseStack[1].phase == rules::GamePhase::CollectingPayment &&
-                state.phaseStack[1].fromPlayer == player;
+            return player < rules::MaxPlayers && debtMoneyOwed[player] > 0;
         }
 
         struct EconomicDecision
@@ -660,9 +732,24 @@ namespace monopoly::ai
                     }
                 }
                 else if (completed == actions::Type::BuyHouse ||
-                         completed == actions::Type::Mortgaging)
+                         completed == actions::Type::Mortgaging ||
+                         completed == actions::Type::SellBuildings)
                 {
                     economicRuntime.actionInFlight[player] = false;
+                    // Ai.cpp AI_Action_Completed resends the controlling player's
+                    // phase after economic actions, including failed actions.
+                    // The free-unmortgage owner below has its own restart path.
+                    const auto owner = buySellMortgagePlayer(state);
+                    if (ui::localplayers::slotIsLocalAIPlayer(player) &&
+                        owner < state.numberOfPlayers &&
+                        !freeUnmortgageInFlight[player] &&
+                        (completed != actions::Type::BuyHouse || !auctionOn) &&
+                        !economicRuntime.controlRestartInFlight[owner])
+                    {
+                        economicRuntime.controlRestartInFlight[owner] =
+                            messaging::sendAction(
+                                actions::Type::RestartPhase, owner, rules::BankPlayer);
+                    }
                 }
                 else if (completed == actions::Type::PlayerDoneBuySellMort)
                 {
@@ -676,14 +763,19 @@ namespace monopoly::ai
             if (message.numberA == rules::NobodyPlayer)
             {
                 for (rules::PlayerNumber player = 0; player < rules::MaxPlayers; ++player)
+                {
+                    economicRuntime.controlRestartInFlight[player] = false;
                     economicRuntime.controlReleaseInFlight[player] = false;
+                }
                 return;
             }
             if (message.numberA < 0 || message.numberA >= state.numberOfPlayers)
                 return;
 
             const auto player = static_cast<rules::PlayerNumber>(message.numberA);
-            if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
+            economicRuntime.controlRestartInFlight[player] = false;
+            if (buySellMortgagePlayer(state) != player ||
+                !ui::localplayers::slotIsLocalAIPlayer(player) ||
                 !profileRuntime.playerLoaded[player])
                 return;
 
@@ -1020,14 +1112,9 @@ namespace monopoly::ai
                     static_cast<std::uint8_t>(rules::board::SquareType::OffBoard))
                 return true;
 
-            if (state.numberOfPendingPhases != 0)
-            {
-                const auto phase = state.phaseStack[0].phase;
-                if (phase == rules::GamePhase::PlaceBuilding ||
-                    phase == rules::GamePhase::HousingShortageQuestion ||
-                    phase == rules::GamePhase::CollectingPayment)
-                    return true;
-            }
+            if (housingShortageOn || buildingPlacementOn ||
+                freeUnmortgageInFlight[player] || freeUnmortgageDoneInFlight[player])
+                return true;
 
             const auto controlPlayer = buySellMortgagePlayer(state);
             if (controlPlayer != rules::NobodyPlayer && controlPlayer != player)
@@ -1271,6 +1358,8 @@ namespace monopoly::ai
                     static_cast<std::int64_t>(plan.square), 0, 0, 1))
                 return false;
             debtActionInFlight[player] = true;
+            if (plan.kind == decision::EconomicActionKind::SellBuilding)
+                lastBuildingAction[player] = plan.square;
             return true;
         }
 
@@ -1378,17 +1467,10 @@ namespace monopoly::ai
                 const auto player = static_cast<rules::PlayerNumber>(message.numberA);
                 if (!ui::localplayers::slotIsLocalAIPlayer(player) ||
                     !profileRuntime.playerLoaded[player] ||
-                    debtMoneyOwed[player] <= 0 || debtActionInFlight[player] ||
-                    state.numberOfPendingPhases == 0)
+                    debtActionInFlight[player] || economicRuntime.actionInFlight[player])
                     return;
-                const auto& phase = state.phaseStack[0];
-                if (phase.phase != rules::GamePhase::DecomposeHotel ||
-                    phase.fromPlayer != player || phase.amount < 0 ||
-                    phase.amount >= static_cast<std::int64_t>(rules::board::SquareType::InJail))
-                    return;
-
                 const auto plan = decision::planHouseSaleAction(
-                    state, static_cast<rules::board::SquareType>(phase.amount));
+                    state, lastBuildingAction[player]);
                 if (plan.acted())
                     (void)sendDebtEconomicAction(player, plan);
                 return;
@@ -1503,6 +1585,13 @@ namespace monopoly::ai
             if (economicBusy(player) ||
                 tradeIngress.counterRuntime.sending.state != trade::SendingTradeState::Nothing)
                 return;
+            // A queued prompt belongs to the phase that emitted it. Modal
+            // notifications suspend it until RULE emits a fresh turn prompt.
+            if (turnPromptPaused[player] ||
+                buySellMortgagePlayer(state) != rules::NobodyPlayer ||
+                auctionOn || housingShortageOn || buildingPlacementOn ||
+                state.tradeInProgress || playerPayingDebt(state, player))
+                return;
             auto context = makeConfigContext();
             for (rules::PlayerNumber current = 0; current < rules::MaxPlayers; ++current)
                 context.localAIPlayer[current] = context.localAIPlayer[current] &&
@@ -1548,6 +1637,7 @@ namespace monopoly::ai
                 const auto player = static_cast<rules::PlayerNumber>(message.numberA);
                 if (turnActionInFlight[player])
                     return;
+                turnPromptPaused[player] = false;
                 pendingTurnPrompt[player] = message.action == actions::Type::NotifyPleaseRollDice
                     ? PendingTurnPrompt::RollDice : PendingTurnPrompt::EndTurn;
                 attemptPendingTurnPrompt(state, player);
@@ -1736,6 +1826,10 @@ namespace monopoly::ai
         freeUnmortgageDoneInFlight.fill(false);
         pendingTurnPrompt.fill(PendingTurnPrompt::None);
         turnActionInFlight.fill(false);
+        turnPromptPaused.fill(false);
+        lastBuildingAction.fill(rules::board::SquareType::Count);
+        housingShortageOn = false;
+        buildingPlacementOn = false;
         configurationAcceptInFlight.fill(false);
         cardSeenInFlight.fill(false);
         auctionOn = false;

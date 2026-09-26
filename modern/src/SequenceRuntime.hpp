@@ -176,6 +176,8 @@ namespace monopoly::sequence
         std::int8_t panning{};
         std::optional<std::int32_t> screenCenterX2D;
         std::string fileName;
+        bool paused{};
+        std::uint64_t seekGeneration{};
     };
     struct SequenceVideoInstanceView
     {
@@ -246,6 +248,9 @@ namespace monopoly::sequence
             std::uint16_t priority = 0, ClockStartOptions options = {},
             std::optional<SequenceTransform> initialTransform = std::nullopt,
             std::uint8_t labelOverride = 0);
+        [[nodiscard]] std::expected<void, RuntimeError> requestSoundFailure(SequenceNodeId id);
+        [[nodiscard]] std::expected<void, RuntimeError> requestSoundClock(
+            SequenceNodeId id, std::int32_t mediaClock);
         [[nodiscard]] std::expected<void, RuntimeError> requestVideoClock(
             SequenceNodeId node, std::int32_t mediaClock, std::int32_t duration, bool ended);
         [[nodiscard]] std::expected<void, RuntimeError> update(std::int32_t parentClock);

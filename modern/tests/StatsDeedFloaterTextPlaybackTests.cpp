@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "StatsDeedFloaterTextPlayback.hpp"
 #include "SyntheticTextResources.hpp"
 
@@ -99,17 +100,22 @@ namespace
             "deed text overlay contains real rendered pixels");
         const auto firstAsset = right->asset;
 
+        const auto rootsBeforeRefresh = playback.runtime().roots();
         rules.squares[1].gameEarnings = 456;
+        require(textRefreshRejectsFullQueue(playback, [&] { return owner.sync(state, rules, {}, 13, display::Screen2D::Portfolio, &font, playback); }),
+            "saturated refresh preserves old pixels and roots for a later retry");
         require(owner.sync(state, rules, {}, 13,
                 display::Screen2D::Portfolio, &font, playback).has_value() &&
-                playback.commands().pendingCount() == 0,
+                playback.commands().pendingCount() == 1,
             "changing deed earnings rerasterizes without restarting root");
         const auto refreshed =
             playback.runtimeBitmaps().asset(firstAsset->dataId);
         require(refreshed && refreshed != firstAsset,
             "deed earnings update publishes immutable bitmap revision");
-        require(playback.update(1).has_value(),
+        require(textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "active deed text root observes refreshed bitmap revision");
+        require(at(playback, 410, 220) && at(playback, 410, 220)->asset == refreshed,
+            "original deed text node presents the new immutable bitmap");
 
         state.mouseX = 470;
         state.mouseY = 236;

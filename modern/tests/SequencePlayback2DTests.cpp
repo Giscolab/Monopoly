@@ -15,6 +15,34 @@ namespace
         if (!condition) ++failures;
     }
 
+    void testRawWavePlayback()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        resources.service.shutdown();
+        auto wave = SyntheticSequenceResources::words({0x46464952U, 6036U, 0x45564157U,
+            0x20746d66U, 16U, 0x00010001U, 6000U, 6000U, 0x00080001U, 0x61746164U, 6000U});
+        wave.insert(wave.end(), 6000, std::byte{128});
+        const std::array items{data::ArchiveBuildItem{data::LegacyDataType::Wave, wave}};
+        expect(data::writeLegacyDataArchive(resources.directory / "Dat_Mon" / "dat_main.dat", items).has_value(),
+            "playback fixture contains a valid synthetic raw Wave item");
+        const auto paths = data::ResourcePaths::create(std::array{resources.directory}).value();
+        expect(resources.service.initialize(paths).has_value(), "raw Wave playback resources initialize");
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto raw = data::packDataId(data::LegacyGroupId::Main, 0);
+        expect(playback.start(raw, 77).has_value() && playback.update(0).has_value(),
+            "normal SequencePlayback command route starts a raw Wave DataID");
+        const auto sounds = playback.runtime().soundInstances();
+        expect(sounds.size() == 1 && sounds.front().contentsDataId == raw && sounds.front().priority == 77,
+            "raw Wave command publishes an audio consumer instance");
+        if (sounds.empty()) return;
+        expect(playback.update(600).has_value() && playback.runtime().info(raw, 77).has_value(),
+            "playback does not finish sound prematurely using frame time");
+        expect(playback.runtime().requestSoundClock(sounds.front().node, 59).has_value() &&
+            playback.update(615).has_value() && !playback.runtime().info(raw, 77),
+            "consumed audio completion travels through the normal playback update");
+    }
+
     void testRawUapStartAndOrigin()
     {
         using namespace monopoly;
@@ -159,7 +187,7 @@ int main()
 {
     std::cout << "Monopoly SequencePlayback 2D tests\n"
               << "==================================\n";
-    try { testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testFixedAndBobbingDice2D(); }
+    try { testRawWavePlayback(); testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testFixedAndBobbingDice2D(); }
     catch (const std::exception& e)
     {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << '\n';

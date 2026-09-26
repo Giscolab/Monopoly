@@ -97,6 +97,8 @@ namespace monopoly::optionsui
             return std::unexpected("sequence command queue cannot fit Options visual transition");
         std::vector<Object> desired;
         std::vector<data::DataId> changedSurfaces;
+        std::vector<std::pair<data::DataId, data::LegacyBitmapRGBA8>> pendingImages;
+        auto nextCreditY = lastCreditY_;
         auto publishImage = [&](std::size_t index, data::LegacyBitmapRGBA8 image, int x, int y, std::uint16_t priority)
             -> std::expected<void, std::string>
         {
@@ -106,9 +108,7 @@ namespace monopoly::optionsui
                 if (!created) return std::unexpected(created.error());
                 surfaces_[index] = *created;
             }
-            if (const auto updated = playback.runtimeBitmaps().update(
-                    *surfaces_[index], std::move(image)); !updated)
-                return updated;
+            pendingImages.emplace_back(*surfaces_[index], std::move(image));
             changedSurfaces.push_back(*surfaces_[index]);
             desired.push_back({*surfaces_[index], priority, x, y});
             return {};
@@ -198,7 +198,7 @@ namespace monopoly::optionsui
                 return copied;
             if (auto result = publishImage(14, std::move(image), 400 - static_cast<int>(credits_->image.width) / 2, 0, 10); !result)
                 return result;
-            lastCreditY_ = y;
+            nextCreditY = y;
         }
         else if (screen == Screen::Help)
         {
@@ -248,6 +248,15 @@ namespace monopoly::optionsui
                 if (auto result = publishImage(16 + index, std::move(*button), xs[index], 455, 50); !result) return result;
             }
         }
+        const std::size_t requiredCommands = desired == published_
+            ? changedSurfaces.size() : published_.size() + desired.size();
+        if (requiredCommands > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
+            return std::unexpected("sequence command queue cannot fit Options visual update");
+        for (auto& [id, image] : pendingImages)
+            if (auto updated = playback.runtimeBitmaps().update(id, std::move(image)); !updated)
+                return updated;
+        lastCreditY_ = nextCreditY;
+
         if (desired == published_)
         {
             for (const auto id : changedSurfaces)

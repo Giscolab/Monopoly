@@ -236,6 +236,33 @@ namespace monopoly::rules::resync
     }
 
 
+    void sendClientState(const GameState& state, PlayerNumber toPlayer, Cause cause)
+    {
+        actions::Message stateMessage{};
+
+        stateMessage.action =
+            actions::Type::
+                NotifyClientResyncInfo;
+
+        stateMessage.fromPlayer =
+            BankPlayer;
+
+        stateMessage.toPlayer =
+            toPlayer;
+
+        stateMessage.binaryDataA =
+            makeClientState(
+                state,
+                cause
+            );
+
+
+        messaging::sendAction(
+            stateMessage
+        );
+    }
+
+
     void sendAll(
         const GameState& state,
         PlayerNumber toPlayer,
@@ -361,28 +388,7 @@ namespace monopoly::rules::resync
         // Compact game state.
         // ----------------------------------------------------
 
-        actions::Message stateMessage{};
-
-        stateMessage.action =
-            actions::Type::
-                NotifyClientResyncInfo;
-
-        stateMessage.fromPlayer =
-            BankPlayer;
-
-        stateMessage.toPlayer =
-            toPlayer;
-
-        stateMessage.binaryDataA =
-            makeClientState(
-                state,
-                cause
-            );
-
-
-        messaging::sendAction(
-            stateMessage
-        );
+        sendClientState(state, toPlayer, cause);
 
 
         // ----------------------------------------------------

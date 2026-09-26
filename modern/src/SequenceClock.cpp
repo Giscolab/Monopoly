@@ -69,6 +69,7 @@ namespace monopoly::sequence
             return std::unexpected(ClockError::ClockOverflow);
         result.clock_ = static_cast<std::int32_t>(initial);
         result.videoClock_ = record.chunk.id == 6;
+        result.soundClock_ = record.chunk.id == 5;
         result.elapsedParentClock_ = result.clock_;
         result.authoredEndTime_ = result.endTime_;
         return result;
@@ -132,7 +133,19 @@ namespace monopoly::sequence
         if (lastParentClock_ && elapsed < timeMultiple_ && !forceReevaluation)
             return result;
         if (!dropFrames_ && elapsed > timeMultiple_) elapsed = timeMultiple_;
-        const auto next = static_cast<std::int64_t>(clock_) + elapsed;
+        auto next = static_cast<std::int64_t>(clock_) + elapsed;
+        if (soundClock_)
+        {
+            next = clock_;
+            if (pendingSoundClock_)
+            {
+                next = *pendingSoundClock_;
+                // Retail roundoff compensation at the final 60 Hz tick.
+                if (next == endTime_ - 1) next = endTime_;
+                if (lastParentClock_ && next < clock_) result.restartChildren = true;
+                pendingSoundClock_.reset();
+            }
+        }
         if (!fitsClock(next)) return std::unexpected(ClockError::ClockOverflow);
 
         result.updated = true;
@@ -151,7 +164,7 @@ namespace monopoly::sequence
                 // Monopoly C_ArtLib.h:528 enables this source optimization.
                 timeMultiple_ = 255;
             }
-            else
+            else if (!soundClock_)
             {
                 // Natural looping calls GoBackwardsInTime(0), NOT modulo
                 // of the overshoot. Child destruction/rebirth is separate.
@@ -172,6 +185,14 @@ namespace monopoly::sequence
         pendingVideoClock_ = VideoClockInput{mediaClock, duration, ended};
         return {};
     }
+    std::expected<void, ClockError> SequenceClock::supplySoundClock(std::int32_t mediaClock)
+    {
+        if (!soundClock_) return std::unexpected(ClockError::UnsupportedSequenceType);
+        if (mediaClock < 0) return std::unexpected(ClockError::NegativeEndTime);
+        pendingSoundClock_ = mediaClock;
+        return {};
+    }
+
     std::expected<void, ClockError> SequenceClock::setPaused(
         bool paused, std::int32_t parentClock)
     {
@@ -212,6 +233,7 @@ namespace monopoly::sequence
         if (endingAction_ == 3) newTime %= endTime_;
         else if (endingAction_ == 2 && newTime > endTime_) newTime = endTime_;
         clock_ = newTime;
+        pendingSoundClock_.reset();
         if (videoClock_)
         {
             elapsedParentClock_ = newTime;

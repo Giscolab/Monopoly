@@ -10,6 +10,8 @@
 #include "UISound.hpp"
 #include "Timers.hpp"
 
+#include <SDL3/SDL_scancode.h>
+
 #include <array>
 #include <iostream>
 #include <optional>
@@ -25,6 +27,7 @@ namespace test_support
     std::uint64_t tick = 0;
     int clickSoundCount = 0;
     std::vector<monopoly::actions::Message> sent;
+    bool acceptSend = true;
     std::optional<monopoly::rules::PlayerNumber> clickedPlayer;
     std::array<bool, monopoly::rules::MaxPlayers> localHuman{{true, true, true, true, true, true}};
     int cameraCycleCount = 0;
@@ -139,6 +142,7 @@ namespace monopoly::messaging
                     std::int64_t numberD,
                     std::wstring_view stringA)
     {
+        if (!test_support::acceptSend) return false;
         actions::Message message{};
         message.action = action;
         message.fromPlayer = fromPlayer;
@@ -419,6 +423,124 @@ namespace
                 ibar::stateReadOnly().propertyLastMouseOver == 1,
             "moving off property titles clears current hover and preserves previous property");
         ibar::setPropertyHitState(0);
+    }
+
+    void testMainTurnAndCardActions()
+    {
+        struct MainAction
+        {
+            ibar::RuleMode mode;
+            actions::Type action;
+            std::uint8_t pressed;
+        };
+        const std::array cases{
+            MainAction{ibar::RuleMode::StartTurn, actions::Type::RollDice, ibar::RollDiceButtonIndex},
+            MainAction{ibar::RuleMode::DoneTurn, actions::Type::EndTurn, ibar::DoneButtonIndex},
+            MainAction{ibar::RuleMode::ViewingCard, actions::Type::CardSeen, ibar::DoneButtonIndex},
+            MainAction{ibar::RuleMode::FreeUnmortgage, actions::Type::FreeUnmortgageDone, ibar::DoneButtonIndex}
+        };
+        const auto activate = [](bool keyboard)
+        {
+            if (keyboard)
+                ibar::processLibraryMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_SPACE});
+            else
+                click(Slot::Main, Layout::General);
+        };
+        for (const auto& item : cases)
+        {
+            for (const bool keyboard : {false, true})
+            {
+                setHit(item.mode, Layout::General, mask({Slot::Main}));
+                ibar::state().pendingPressedButton.reset();
+                if (item.mode == ibar::RuleMode::ViewingCard)
+                    ibar::state().desiredCardIndex = 3;
+                activate(keyboard);
+                expectSingle(item.action, 0, 0,
+                    "Main click and Space send the exact RULE action for each turn/card phase");
+                require(!ibar::stateReadOnly().pendingPressedButton &&
+                        ibar::stateReadOnly().actionRuleMode == item.mode,
+                    "input waits for RULE before pressed art or phase transition");
+                if (item.mode == ibar::RuleMode::ViewingCard)
+                    require(ibar::stateReadOnly().desiredCardIndex == 3,
+                        "card remains displayed until RULE acknowledges CardSeen");
+                actions::Message completed{};
+                completed.action = actions::Type::NotifyActionCompleted;
+                completed.fromPlayer = rules::BankPlayer;
+                completed.toPlayer = rules::AllPlayers;
+                completed.numberA = static_cast<std::int64_t>(item.action);
+                completed.numberC = 0;
+                ibar::processRuleMessage(completed, item.mode);
+                require(!ibar::stateReadOnly().pendingPressedButton,
+                    "rejected action does not animate an accepted button press");
+                completed.numberB = 1;
+                ibar::processRuleMessage(completed, item.mode);
+                require(ibar::stateReadOnly().pendingPressedButton == item.pressed,
+                    "real completion contract selects RollDice or Done pressed feedback");
+                if (item.mode == ibar::RuleMode::ViewingCard)
+                    require(!ibar::stateReadOnly().desiredCardIndex,
+                        "accepted CardSeen clears the displayed card");
+                ibar::clearPendingPressedButton(item.pressed);
+
+                setHit(item.mode, Layout::General, 0);
+                activate(keyboard);
+                require(test_support::sent.empty(), "inactive Main mask blocks mouse and Space");
+                setHit(item.mode, Layout::General, mask({Slot::Main}), true);
+                activate(keyboard);
+                require(test_support::sent.empty(), "remote Main blocks mouse and Space");
+                setHit(item.mode, Layout::General, mask({Slot::Main}));
+                ibar::setRuleActionHitState(Layout::General, mask({Slot::Main}),
+                    item.mode, rules::BankPlayer, false);
+                activate(keyboard);
+                require(test_support::sent.empty(), "invalid action owner cannot send a Main action");
+                setHit(item.mode, Layout::General, mask({Slot::Main}));
+                ibar::setRuleActionHitState(Layout::General, mask({Slot::Main}),
+                    item.mode, 1, false);
+                activate(keyboard);
+                require(test_support::sent.size() == 1 &&
+                        test_support::sent[0].action == item.action &&
+                        test_support::sent[0].fromPlayer == 1,
+                    "Main action uses the resolved player instead of a fixed local slot");
+                setHit(item.mode, Layout::General, mask({Slot::Main}));
+                test_support::acceptSend = false;
+                activate(keyboard);
+                require(test_support::sent.empty() && !ibar::stateReadOnly().pendingPressedButton &&
+                        ibar::stateReadOnly().actionRuleMode == item.mode,
+                    "full queue leaves Main action available without fake acknowledgement");
+                test_support::acceptSend = true;
+                activate(keyboard);
+                expectSingle(item.action, 0, 0, "Main input retries after queue capacity returns");
+            }
+        }
+    }
+
+    void testSpaceUsesCurrentMainLayout()
+    {
+        struct MainChoice
+        {
+            ibar::RuleMode mode;
+            Layout layout;
+            actions::Type action;
+            std::int64_t choice;
+        };
+        const std::array cases{
+            MainChoice{ibar::RuleMode::BuyAuction, Layout::BuyAuction, actions::Type::BuyOrAuctionDecision, 1},
+            MainChoice{ibar::RuleMode::TaxDecision, Layout::TaxDecision, actions::Type::TaxDecision, 0},
+            MainChoice{ibar::RuleMode::Trading, Layout::Trading, actions::Type::TradeAccept, 0}
+        };
+        for (const auto& item : cases)
+        {
+            setHit(item.mode, item.layout, mask({Slot::Main}));
+            ibar::processLibraryMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_SPACE});
+            expectSingle(item.action, item.choice, 0,
+                "Space selects the Main action in the active special layout");
+        }
+        setHit(ibar::RuleMode::StartTurn, Layout::General, mask({Slot::Main}));
+        ibar::processLibraryMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_RETURN});
+        require(test_support::sent.empty(), "unmapped keys do not trigger Main");
+        test_support::displayState.desired2DView = display::Screen2D::Options;
+        ibar::processLibraryMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_SPACE});
+        require(test_support::sent.empty(), "Space cannot activate a hidden IBar");
+        test_support::displayState.desired2DView = display::Screen2D::Main;
     }
 
     void testBuyAuctionAndTax()
@@ -1035,6 +1157,8 @@ int main()
         testForcedPlayerInspection();
         testBankMouseOverTracking();
         testPropertyMouseOverTracking();
+        testMainTurnAndCardActions();
+        testSpaceUsesCurrentMainLayout();
         testBuyAuctionAndTax();
         testJailVariants();
         testTradeAndSpecialDirectActions();

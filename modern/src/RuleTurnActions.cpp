@@ -1448,6 +1448,7 @@ const PlayerState& player =
 
 
             case GamePhase::WaitMoveRoll:
+            case GamePhase::WaitJailRoll:
             case GamePhase::WaitUtilityRoll:
                 restartWaitMoveRoll(state);
                 return true;

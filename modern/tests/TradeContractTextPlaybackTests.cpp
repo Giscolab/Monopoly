@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "TradeContractTextPlayback.hpp"
 #include "IBarLayout.hpp"
 #include "SyntheticTextResources.hpp"
@@ -143,12 +144,15 @@ namespace
                 [](std::uint8_t value) { return value != 0; }),
             "heading, prompt, button and list produce real pixels");
 
+        const auto rootsBeforeRefresh = playback.runtime().roots();
         state.contractList[0].selected = false;
         state.contractList[0].hitCount = 9;
+        require(textRefreshRejectsFullQueue(playback, [&] { return owner.sync(state, game, display::Screen2D::Trade, 0, &font, playback); }),
+            "saturated refresh preserves old pixels and roots for a later retry");
         require(owner.sync(state, game, display::Screen2D::Trade,
                 0, &font, playback).has_value(),
             "visible list mutation updates the persistent runtime bitmap in place");
-        require(playback.commands().pendingCount() == 0,
+        require(playback.commands().pendingCount() == 1,
             "content-only refresh does not restart the rightpanel sequence");
         const auto changedAsset = playback.runtimeBitmaps().asset(firstAsset->dataId);
         require(changedAsset && changedAsset != firstAsset,
@@ -156,7 +160,7 @@ namespace
         require(countColour(changedAsset->image, {0, 0, 180, 255}) == 0,
             "deselecting the row clears the retail blue highlight");
 
-        require(playback.update(1).has_value(),
+        require(textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "next playback tick republishes the new runtime bitmap revision");
         const auto* refreshed = at(playback, 600, 0);
         require(refreshed && refreshed->asset == changedAsset,
@@ -168,7 +172,8 @@ namespace
         const auto immunityAsset = playback.runtimeBitmaps().asset(firstAsset->dataId);
         require(immunityAsset && immunityAsset != changedAsset,
             "Future-to-Immunity text change publishes another immutable revision");
-        require(playback.commands().pendingCount() == 0,
+        require(playback.commands().pendingCount() == 1 &&
+                textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "Future-to-Immunity content change keeps the active sequence root");
 
         state.contractDialogKind = rules::TradeItemKind::FutureRent;
@@ -179,6 +184,8 @@ namespace
         require(owner.sync(state, game, display::Screen2D::Trade,
                 0, &font, playback).has_value(),
             "mode 3 confirmation expands count and recipient name like FormatErrorNotification");
+        require(textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
+            "confirmation text redraw preserves the same active panel before hiding");
 
         state.contractDialogVisible = false;
         require(owner.sync(state, game, display::Screen2D::Trade,

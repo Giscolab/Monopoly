@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace monopoly::data
 {
@@ -13,6 +14,14 @@ namespace monopoly::data
         BoardEdition board{ BoardEdition::Usa };
         LanguageId language{ LanguageId::EnglishUs };
     };
+
+    // Check every required bank before startup, then validate LANG through the
+    // real runtime. This checks installation structure, not gameplay fidelity.
+    // No live resource snapshot is replaced by this inspection.
+    [[nodiscard]] std::vector<DataError> inspectResourceInstallation(
+        const ResourcePaths& paths,
+        ResourceContext context = {},
+        ArchiveOpenOptions options = {});
 
 
     // Le registre et LANG partagent les memes archives. Les consommateurs

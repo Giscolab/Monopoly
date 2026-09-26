@@ -126,6 +126,7 @@ namespace monopoly::video
         bool anchored{};
         bool tailAnchored{};
         std::uint64_t sequenceOrigin{};
+        std::uint64_t lastSequenceTime{};
         std::uint64_t mediaOrigin{};
         std::uint64_t submitted{};
         std::uint64_t consumed{};
@@ -175,7 +176,7 @@ namespace monopoly::video
         impl_->clearAudio();
         impl_->nextFrame.reset();
         impl_->anchored = false;
-        impl_->sequenceOrigin = impl_->mediaOrigin = impl_->lastElapsed = 0;
+        impl_->sequenceOrigin = impl_->lastSequenceTime = impl_->mediaOrigin = impl_->lastElapsed = 0;
     }
     std::expected<void, std::string> Presentation::seek(
         std::uint64_t timestamp, std::uint64_t sequenceTime)
@@ -183,7 +184,7 @@ namespace monopoly::video
         const auto seeked = impl_->decoder.seek(timestamp);
         if (!seeked) return seeked;
         impl_->mediaOrigin = impl_->lastElapsed = timestamp;
-        impl_->sequenceOrigin = sequenceTime;
+        impl_->sequenceOrigin = impl_->lastSequenceTime = sequenceTime;
         impl_->anchored = true;
         impl_->clearAudio();
         impl_->nextFrame.reset();
@@ -221,6 +222,7 @@ namespace monopoly::video
         std::uint64_t sequenceTime, bool paused)
     {
         auto& state = *impl_;
+        state.lastSequenceTime = sequenceTime;
         auto snapshot = state.decoder.snapshot();
         if (snapshot.phase == DecoderPhase::Failed)
             return std::unexpected(snapshot.error);
@@ -320,6 +322,14 @@ namespace monopoly::video
             if (!state.nextFrame || state.nextFrame->timestampMicroseconds > elapsed) break;
             latest = std::move(state.nextFrame);
             state.nextFrame.reset();
+        }
+        if (latest && !state.anchored)
+        {
+            // The decoder may publish its first frame after pump's empty-queue
+            // snapshot. Anchor when that frame is actually presented, otherwise
+            // the next pump would incorrectly discard all elapsed parent time.
+            state.sequenceOrigin = state.lastSequenceTime;
+            state.anchored = true;
         }
         return latest;
     }

@@ -5,12 +5,12 @@
 #include "Messaging.hpp"
 #include "PhaseStack.hpp"
 #include "RuleLifecycle.hpp"
+#include "RuleResync.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 namespace monopoly::rules::economy
@@ -20,10 +20,6 @@ namespace monopoly::rules::economy
         constexpr std::uint8_t BoardwalkSquare = 39;
         constexpr std::uint8_t InJailSquare = 40;
         constexpr std::uint8_t OffBoardSquare = 41;
-
-
-        std::optional<GameState> debtSnapshot;
-        bool debtStateChanged = false;
 
 
         void sendRestart()
@@ -503,9 +499,6 @@ namespace monopoly::rules::economy
                     debt.amount
                 );
 
-                debtSnapshot.reset();
-                debtStateChanged = false;
-
                 popAndRestart(state);
                 return;
             }
@@ -530,9 +523,6 @@ namespace monopoly::rules::economy
                     debt.toPlayer,
                     debt.amount
                 );
-
-                debtSnapshot.reset();
-                debtStateChanged = false;
 
                 popAndRestart(state);
                 return;
@@ -574,9 +564,6 @@ namespace monopoly::rules::economy
                 );
 
 
-                debtSnapshot.reset();
-                debtStateChanged = false;
-
                 popAndRestart(state);
                 return;
             }
@@ -587,10 +574,9 @@ namespace monopoly::rules::economy
             //
             // SaveGameStateInCurrentPhase() original.
 
-            if (!debtSnapshot.has_value())
+            if (!phases::hasCurrentSnapshot(state))
             {
-                debtSnapshot = state;
-                debtStateChanged = false;
+                phases::saveCurrent(state);
             }
 
 
@@ -853,8 +839,7 @@ namespace monopoly::rules::economy
 
     void resetTransientState()
     {
-        debtSnapshot.reset();
-        debtStateChanged = false;
+        // Undo state is owned by GameState and reset with that state.
     }
 
 
@@ -2190,8 +2175,6 @@ namespace monopoly::rules::economy
             phase ==
                 GamePhase::CollectingPayment)
         {
-            debtStateChanged = true;
-
             sendRestart();
         }
     }
@@ -2332,8 +2315,6 @@ namespace monopoly::rules::economy
             phase ==
                 GamePhase::CollectingPayment)
         {
-            debtStateChanged = true;
-
             sendRestart();
         }
     }
@@ -2343,12 +2324,7 @@ namespace monopoly::rules::economy
         GameState& state,
         const actions::Message& message)
     {
-        // ActionGoBankrupt() :
-        // cœur du comportement original.
-        //
-        // CountHits (futures/immunités) n'existe pas encore
-        // dans notre GameState ; aucun de ces contrats ne peut
-        // donc encore exister et rien n'est à annuler ici.
+        // Restore pre-debt state before transferring bankruptcy assets.
 
         const PlayerNumber player =
             message.fromPlayer;
@@ -2380,6 +2356,10 @@ namespace monopoly::rules::economy
 
             return;
         }
+
+
+        // Defensive legacy fallback when bankruptcy arrives before the prompt.
+        if (!phases::hasCurrentSnapshot(state)) phases::saveCurrent(state);
 
 
         if (
@@ -2423,26 +2403,10 @@ namespace monopoly::rules::economy
         );
 
 
-        // Si le joueur a hypothéqué/vendu depuis la demande
-        // de paiement, revenir exactement à l'état au début
-        // de cette dette.
-        //
-        // C'est l'équivalent moderne de
-        // StackedRulesStates[0].
-
-        const std::uint64_t duration =
-            state.gameDurationInSeconds;
-
-
-        if (
-            debtStateChanged &&
-            debtSnapshot.has_value())
+        const bool undoDone = phases::currentStateChanged(state);
+        if (undoDone && phases::restoreCurrent(state))
         {
-            state =
-                *debtSnapshot;
-
-            state.gameDurationInSeconds =
-                duration;
+            resync::sendClientState(state, AllPlayers, resync::Cause::UndoBankruptcy);
         }
 
 
@@ -2605,7 +2569,8 @@ namespace monopoly::rules::economy
             actions::Type::NotifyErrorMessage,
             BankPlayer,
             AllPlayers,
-            legacy_text::ErrorBankruptTo,
+            undoDone ? legacy_text::ErrorUndoForBankruptcyTo
+                     : legacy_text::ErrorBankruptTo,
             creditor,
             player,
             debt.amount
@@ -2630,10 +2595,6 @@ namespace monopoly::rules::economy
             player
         ].currentSquare =
             OffBoardSquare;
-
-
-        debtSnapshot.reset();
-        debtStateChanged = false;
 
 
         // Si le créancier est un joueur, les propriétés

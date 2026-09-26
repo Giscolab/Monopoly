@@ -1130,8 +1130,7 @@ namespace
             "control acknowledgement waits for retail control notification");
 
         auto controlled = state;
-        controlled.phaseStack[0].phase = rules::GamePhase::BuySellMortgage;
-        controlled.phaseStack[0].fromPlayer = 0;
+        controlled.numberOfPendingPhases = 0;
         actions::Message control{};
         control.action = actions::Type::NotifyPlayerBuySellMort;
         control.toPlayer = rules::AllPlayers;
@@ -1151,8 +1150,13 @@ namespace
         completed.numberA = static_cast<std::int64_t>(actions::Type::BuyHouse);
         completed.numberB = 1;
         ai::processMessage(controlled, completed);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::RestartPhase && queued.fromPlayer == 0 &&
+                messaging::currentQueueSize() == 0,
+            "completed house action requests the real BSSM phase restart");
+        ai::processMessage(controlled, tick);
         require(messaging::currentQueueSize() == 0,
-            "completed house action waits for the restarted BSSM notification");
+            "tick cannot buy again before the restarted control notification");
 
         ai::processMessage(controlled, control);
         require(messaging::receiveAction(queued) &&
@@ -1165,6 +1169,10 @@ namespace
         controlled.players[0].cash = 0;
 
         ai::processMessage(controlled, completed);
+        require(messaging::receiveAction(queued) &&
+                queued.action == actions::Type::RestartPhase &&
+                messaging::currentQueueSize() == 0,
+            "last house completion requests control reconsideration");
         ai::processMessage(controlled, control);
         require(messaging::receiveAction(queued) &&
                 queued.action == actions::Type::PlayerDoneBuySellMort,
@@ -1178,6 +1186,123 @@ namespace
         messaging::shutdown();
         ai::resetMessageIngress();
         localAIPlayer = false;
+    }
+
+    void testEconomicRestartOwnershipAndAuction()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.numberOfPendingPhases = 0;
+        actions::Message control{};
+        control.action = actions::Type::NotifyPlayerBuySellMort;
+        control.toPlayer = rules::AllPlayers;
+        control.numberA = 1;
+        require(messaging::initialize(), "economic restart ownership initializes FIFO");
+        localRecipient = true;
+        localAIPlayer = true;
+        actions::Message completed{};
+        completed.action = actions::Type::NotifyActionCompleted;
+        completed.toPlayer = rules::AllPlayers;
+        completed.numberC = 0;
+        actions::Message queued{};
+        for (const auto action : { actions::Type::BuyHouse, actions::Type::Mortgaging,
+                                   actions::Type::SellBuildings })
+        {
+            for (const auto success : { 0, 1 })
+            {
+                ai::resetMessageIngress();
+                ai::processMessage(state, control);
+                completed.numberA = static_cast<std::int64_t>(action);
+                completed.numberB = success;
+                ai::processMessage(state, completed);
+                require(messaging::receiveAction(queued) &&
+                        queued.action == actions::Type::RestartPhase &&
+                        queued.fromPlayer == 1 && queued.toPlayer == rules::BankPlayer &&
+                        messaging::currentQueueSize() == 0,
+                    "economic completion restarts actual control owner even on failure");
+                ai::processMessage(state, completed);
+                require(messaging::currentQueueSize() == 0,
+                    "repeated completion cannot queue duplicate control restarts");
+            }
+        }
+        ai::resetMessageIngress();
+        ai::processMessage(state, control);
+        actions::Message auction{};
+        auction.action = actions::Type::NotifyNewHighBid;
+        auction.toPlayer = rules::AllPlayers;
+        ai::processMessage(state, auction);
+        completed.numberA = static_cast<std::int64_t>(actions::Type::BuyHouse);
+        ai::processMessage(state, completed);
+        require(messaging::currentQueueSize() == 0,
+            "house completion during an auction leaves auction continuation in charge");
+        ai::resetMessageIngress();
+        ai::processMessage(state, control);
+        localAIPlayer = false;
+        ai::processMessage(state, completed);
+        require(messaging::currentQueueSize() == 0,
+            "human completion does not request an AI economic restart");
+        localAIPlayer = true;
+        control.numberA = rules::NobodyPlayer;
+        ai::processMessage(state, control);
+        ai::processMessage(state, completed);
+        require(messaging::currentQueueSize() == 0,
+            "economic completion without a control owner does not restart");
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+        messaging::shutdown();
+    }
+
+    void testPendingTurnWaitsForPublicPhasePrompt()
+    {
+        auto state = baseState();
+        state.tradeInProgress = false;
+        state.numberOfPendingPhases = 0;
+        state.players[0].cash = 0;
+        state.players[0].aiPlayerLevel = 1;
+        require(messaging::initialize(), "public turn continuation initializes FIFO");
+        ai::resetMessageIngress();
+        require(ai::initializeMessageIngressProfiles(profileDirectory()).has_value(),
+            "public turn continuation loads profiles");
+        localRecipient = true;
+        localAIPlayer = true;
+        actions::Message named{};
+        named.action = actions::Type::NotifyNamePlayer;
+        named.toPlayer = rules::AllPlayers;
+        named.numberA = 0;
+        ai::processMessage(state, named);
+        actions::Message control{};
+        control.action = actions::Type::NotifyPlayerBuySellMort;
+        control.toPlayer = rules::AllPlayers;
+        control.numberA = 1;
+        ai::processMessage(state, control);
+        actions::Message prompt{};
+        prompt.action = actions::Type::NotifyEndTurn;
+        prompt.toPlayer = rules::AllPlayers;
+        prompt.numberA = 0;
+        ai::processMessage(state, prompt);
+        require(messaging::currentQueueSize() == 0,
+            "notified human control blocks an AI turn prompt without private phases");
+        // A later control notification suspends the stale underlying prompt.
+        ai::processMessage(state, control);
+        control.numberA = rules::NobodyPlayer;
+        ai::processMessage(state, control);
+        actions::Message tick{};
+        tick.action = actions::Type::Tick;
+        tick.toPlayer = rules::AllPlayers;
+        ai::processMessage(state, tick);
+        require(messaging::currentQueueSize() == 0,
+            "control release and tick cannot consume the suspended turn prompt");
+        ai::processMessage(state, prompt);
+        actions::Message queued{};
+        require(messaging::receiveAction(queued) && queued.action == actions::Type::EndTurn &&
+                queued.fromPlayer == 0 && messaging::currentQueueSize() == 0,
+            "fresh RULE prompt resumes the AI turn using public state only");
+        ai::processMessage(state, prompt);
+        require(messaging::currentQueueSize() == 0,
+            "repeated public prompt cannot send the turn action twice");
+        ai::resetMessageIngress();
+        localAIPlayer = false;
+        messaging::shutdown();
     }
 
     void testAutonomousEconomicUnmortgageRuntime()
@@ -1232,8 +1357,7 @@ namespace
         ai::processMessage(state, completed);
 
         auto controlled = state;
-        controlled.phaseStack[0].phase = rules::GamePhase::BuySellMortgage;
-        controlled.phaseStack[0].fromPlayer = 0;
+        controlled.numberOfPendingPhases = 0;
         actions::Message control{};
         control.action = actions::Type::NotifyPlayerBuySellMort;
         control.toPlayer = rules::AllPlayers;
@@ -1303,8 +1427,9 @@ namespace
         completed.numberC = 0;
         ai::processMessage(state, completed);
         require(messaging::receiveAction(queued) &&
-                queued.action == actions::Type::RestartPhase,
-            "free-unmortgage completion requests retail phase restart");
+                queued.action == actions::Type::RestartPhase &&
+                messaging::currentQueueSize() == 0,
+            "free-unmortgage completion requests exactly one retail phase restart");
 
         state.squares[static_cast<std::size_t>(reading)].mortgaged = false;
         ai::processMessage(state, free);
@@ -1562,6 +1687,8 @@ int main()
         testJailDecisionRuntime();
         testAutonomousEconomicBssmRuntime();
         testAutonomousEconomicUnmortgageRuntime();
+        testEconomicRestartOwnershipAndAuction();
+        testPendingTurnWaitsForPublicPhasePrompt();
         testTradeFinishAndMessageFilter();
         return 0;
     }

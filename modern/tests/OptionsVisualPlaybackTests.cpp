@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "OptionsVisualPlayback.hpp"
 #include "OptionsHelpRuntime.hpp"
 #include "SyntheticTextResources.hpp"
@@ -81,12 +82,15 @@ namespace
         require(hasColor(at(playback,585,340),128,128,128),"unsupported dithering is visibly disabled");
         const auto oldRect=state.musicChoiceRects[2];
         require(hasColor(at(playback,oldRect.left,oldRect.top),0,0,255),"selected music is source blue");
+        const auto rootsBeforeRefresh=playback.runtime().roots();
         const auto tuneRect=state.musicChoiceRects[4];
         const auto selected=optionsui::processInput(state,display::Screen2D::Options,click(tuneRect.left,tuneRect.top));
         require(selected.pressedMusicTune==4 && state.musicTuneIndex==4,"music measured input selects fifth preview");
-        require(visual.sync(state,display::Screen2D::Options,1,&font,playback).has_value() && playback.commands().pendingCount()==0,
+        require(textRefreshRejectsFullQueue(playback, [&] { return visual.sync(state,display::Screen2D::Options,1,&font,playback); }),
+            "saturated refresh preserves old pixels and roots for a later retry");
+        require(visual.sync(state,display::Screen2D::Options,1,&font,playback).has_value() && playback.commands().pendingCount()==14,
             "music recolor reuses runtime surfaces without duplicate sequence roots");
-        require(playback.update(1).has_value(),"publish recolored music pixels");
+        require(textRefreshPreservesRoots(playback,rootsBeforeRefresh,1),"publish recolored music pixels on the same roots using only redraws");
         require(hasColor(at(playback,tuneRect.left,tuneRect.top),0,0,255) &&
             hasColor(at(playback,oldRect.left,oldRect.top),255,255,255),"preview recolors only the chosen state blue");
         const auto filter=optionsui::optionToggleRect(optionsui::OptionToggle::Filtering,true);

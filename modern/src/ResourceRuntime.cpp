@@ -4,6 +4,59 @@
 
 namespace monopoly::data
 {
+    std::vector<DataError> inspectResourceInstallation(
+        const ResourcePaths& paths, ResourceContext context,
+        ArchiveOpenOptions options)
+    {
+        std::vector<DataError> issues;
+        if (context.board != BoardEdition::Usa &&
+            context.board != BoardEdition::Europe)
+        {
+            issues.push_back({DataErrorCode::InvalidBoardEdition, {},
+                std::nullopt, "board edition must be USA or Europe"});
+            return issues;
+        }
+        const auto* language = findLanguageBankTriplet(context.language);
+        if (!language)
+        {
+            issues.push_back({DataErrorCode::InvalidLanguage, {},
+                std::nullopt, "language ID must be in the source-defined range 1..10"});
+            return issues;
+        }
+
+        const auto inspect = [&](const BankDefinition& bank)
+        {
+            const auto path = paths.resolve(bank.legacyPath);
+            if (!path)
+            {
+                auto error = path.error();
+                error.detail = std::string(bank.legacyPath) + ": " + error.detail;
+                issues.push_back(std::move(error));
+                return;
+            }
+            const auto archive = LegacyDataArchive::open(
+                *path, legacyGroupValue(bank.group), options);
+            if (!archive)
+            {
+                auto error = archive.error();
+                error.detail = std::string(bank.legacyPath) + ": " + error.detail;
+                issues.push_back(std::move(error));
+            }
+        };
+        for (const auto& bank : coreBanks(context.board)) inspect(bank);
+        for (const auto* bank :
+            {&language->text, &language->graphics, &language->dialog})
+            inspect(*bank);
+
+        if (issues.empty())
+        {
+            ResourceRuntime candidate;
+            const auto initialized = candidate.initialize(paths, context, options);
+            if (!initialized) issues.push_back(initialized.error());
+        }
+        return issues;
+    }
+
     ResourceSnapshot::ResourceSnapshot(
         ResourcePaths paths, ResourceContext context)
         : paths_(std::move(paths)), context_(context)

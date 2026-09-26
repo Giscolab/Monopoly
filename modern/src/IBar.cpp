@@ -496,6 +496,26 @@ namespace monopoly::ibar
             using Slot = layout::ActionButtonSlot;
             switch (globalState.actionRuleMode)
             {
+            case RuleMode::StartTurn:
+                if (slot == Slot::Main)
+                    return sendRuleAction(actions::Type::RollDice);
+                break;
+
+            case RuleMode::DoneTurn:
+                if (slot == Slot::Main)
+                    return sendRuleAction(actions::Type::EndTurn);
+                break;
+
+            case RuleMode::ViewingCard:
+                if (slot == Slot::Main)
+                    return sendRuleAction(actions::Type::CardSeen);
+                break;
+
+            case RuleMode::FreeUnmortgage:
+                if (slot == Slot::Main)
+                    return sendRuleAction(actions::Type::FreeUnmortgageDone);
+                break;
+
             case RuleMode::BuyAuction:
                 if (slot == Slot::Main)
                     return sendRuleAction(actions::Type::BuyOrAuctionDecision, 1);
@@ -1012,14 +1032,20 @@ namespace monopoly::ibar
             return;
         }
 
-        if (message.type != uimsg::Type::MouseLeftDown)
+        const bool mainShortcut = message.type == uimsg::Type::KeyboardPressed &&
+            message.numberA == SDL_SCANCODE_SPACE;
+        if (message.type != uimsg::Type::MouseLeftDown && !mainShortcut)
         {
             return;
         }
 
-        const auto action = actionHit(
-            static_cast<int>(message.numberA),
-            static_cast<int>(message.numberB));
+        // UDIBar.cpp maps Space to the Main rectangle for the current layout.
+        // Use the same hit test so disabled and remote actions keep their guards.
+        const auto mainRect = layout::actionButtonRect(
+            layout::ActionButtonSlot::Main, globalState.actionButtonLayout);
+        const int hitX = mainShortcut ? mainRect.left : static_cast<int>(message.numberA);
+        const int hitY = mainShortcut ? mainRect.top : static_cast<int>(message.numberB);
+        const auto action = actionHit(hitX, hitY);
         if (action)
         {
             globalState.actionButtonCurrentMouseOver =
@@ -1031,9 +1057,7 @@ namespace monopoly::ibar
         }
 
         const auto property = layout::propertyHit(
-            static_cast<int>(message.numberA),
-            static_cast<int>(message.numberB),
-            globalState.visiblePropertySlots);
+            hitX, hitY, globalState.visiblePropertySlots);
         if (property)
         {
             globalState.propertyCurrentMouseOver = *property;
@@ -1041,9 +1065,7 @@ namespace monopoly::ibar
             return;
         }
 
-        const int playerOrBank = playerOrBankHit(
-            static_cast<int>(message.numberA),
-            static_cast<int>(message.numberB));
+        const int playerOrBank = playerOrBankHit(hitX, hitY);
         if (playerOrBank >= 0)
             (void)handlePlayerOrBankClick(playerOrBank);
     }

@@ -96,10 +96,15 @@ namespace
             "trademark stops after nine seconds; movie begins on following event");
         controller.update(642, {}, playback);
         assertVideo(playback, controller, "AVI/HLogo.avi", false);
-        require(playback.runtime().update(642).has_value() &&
-            playback.runtime().update(1242).has_value(), "runtime video timeline is executable");
+        // Advance the production command owner as well as its runtime. A
+        // direct runtime.update would leave ExecuteCommands' clock stale when
+        // the controller starts the next movie in this same playback session.
+        require(playback.update(642).has_value(), "runtime video timeline is executable");
+        const auto initialVideo = playback.runtime().videoInstances()[0];
+        require(playback.update(1242).has_value(), "video parent timeline advances");
         const auto waitingVideo = playback.runtime().videoInstances()[0];
-        require(waitingVideo.clock == 0 && waitingVideo.elapsedParentClock == 600,
+        require(initialVideo.clock == 0 && waitingVideo.clock == 0 &&
+            waitingVideo.elapsedParentClock - initialVideo.elapsedParentClock == 600,
             "video media waits for decoder input while its independent parent clock advances");
         controller.update(1'000'000, {}, playback);
         require(controller.movieFile() == "AVI/HLogo.avi",

@@ -21,6 +21,7 @@ inline constexpr std::int64_t AddingPlayers = 78;
     inline constexpr std::int64_t ErrorDebtorBankrupt = 9;
 inline constexpr std::int64_t ErrorBuildingNoBreakdown = 20;
 inline constexpr std::int64_t ErrorBankruptTo = 24;
+inline constexpr std::int64_t ErrorUndoForBankruptcyTo = 25;
 inline constexpr std::int64_t ErrorCollectorBankrupt = 31;
 inline constexpr std::int64_t ErrorMortgagingOnUnowned = 33;
     inline constexpr std::int64_t ErrorMortgageNoCash = 34;

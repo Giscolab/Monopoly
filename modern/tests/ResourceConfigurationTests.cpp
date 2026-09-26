@@ -1,8 +1,10 @@
 #include "UDUtils.hpp"
+#include "StartupResources.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <chrono>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -87,6 +89,27 @@ int main()
     {
         EnvironmentGuard environment;
         Fixture fixture;
+        {
+            const std::array<std::string_view, 5> args{
+                "--network-connect", "127.0.0.1:28799", "--data-root",
+                "C:/My game", "--check-resources"};
+            const auto parsed = startup::parseResourceArguments(args);
+            expect(parsed && parsed->checkOnly &&
+                parsed->dataRoot == "C:/My game" && parsed->remaining ==
+                    std::vector<std::string_view>{"--network-connect", "127.0.0.1:28799"},
+                "resource switches preserve the existing network endpoint");
+            const std::array<std::string_view, 4> duplicate{
+                "--data-root", "C:/one", "--data-root", "C:/two"};
+            expect(!startup::parseResourceArguments(duplicate),
+                "ambiguous resource roots are rejected");
+            const std::array<std::string_view, 2> missing{
+                "--data-root", "--check-resources"};
+            expect(!startup::parseResourceArguments(missing),
+                "a switch cannot be mistaken for an installation folder");
+            const std::array<std::string_view, 2> unknown{"--unknown", "value"};
+            expect(startup::parseResourceArguments(unknown)->remaining.size() == 2,
+                "unknown arguments remain available for application rejection");
+        }
         environment.set(nullptr);
         expect(udutils::generateINIFile(), "real SDL executable root configures");
         const auto* defaults = udutils::resourcePaths();
@@ -110,7 +133,8 @@ int main()
             file.close();
             expect(file.good(), "configuration probe created");
         }
-        environment.set(utf8(explicitRoot).c_str());
+        expect(startup::selectResourceRoot(utf8(explicitRoot)).has_value(),
+            "startup selection accepts an absolute UTF-8 installation folder");
         expect(udutils::generateINIFile(), "real SDL environment accepts UTF-8 resource root");
         const auto* configured = udutils::resourcePaths();
         expect(configured && configured->roots().size() == 1 &&
@@ -125,6 +149,14 @@ int main()
         expect(udutils::searchPaths().size() == 3 &&
             udutils::searchPaths().front() == explicitRoot,
             "legacy path-list accessor follows configured installation");
+        expect(!startup::selectResourceRoot("relative-installation"),
+            "startup selection rejects a relative folder");
+        expect(std::string(SDL_GetEnvironmentVariable(
+            environment.environment, RootVariable)) == utf8(explicitRoot),
+            "invalid selection leaves the prior installation choice intact");
+        expect(startup::prepareResources(false) == startup::ResourceSetupResult::Failed &&
+            SDL_WasInit(SDL_INIT_VIDEO) == 0,
+            "check-only reports missing banks without initializing video or opening a dialog");
 
         for (const char* invalid : {"relative-root", ""})
         {

@@ -346,6 +346,9 @@ namespace monopoly::tradeui
 
         const bool contentChanged =
             !contentKey_ || *contentKey_ != key;
+        if (visible_ && contentChanged && playback.commands().pendingCount() >=
+                sequence::SequenceCommandQueue::Capacity)
+            return std::unexpected("sequence command queue cannot fit text redraw");
         if (contentChanged)
         {
             RestoreDefaultFont restore{*fontRuntime};

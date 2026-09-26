@@ -288,6 +288,9 @@ namespace monopoly::statsui
 
         const bool contentChanged =
             !contentKey_ || *contentKey_ != key;
+        if (visible_ && currentX_ == desiredX && contentChanged &&
+            playback.commands().pendingCount() >= sequence::SequenceCommandQueue::Capacity)
+            return std::unexpected("sequence command queue cannot fit deed text redraw");
         if (contentChanged)
         {
             RestoreFont restore{*fontRuntime};

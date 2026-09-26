@@ -1,11 +1,13 @@
 #pragma once
 
 #include "DataBanks.hpp"
+#include "LegacyWave.hpp"
 #include "ResourceRuntime.hpp"
 
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,12 +15,6 @@
 
 namespace monopoly::audio
 {
-    // Source/artlib/L_Sound.cpp::LE_SOUND_GetSoundDuration.
-    // Invalid/malformed input returns 0 like the retail helper.
-    [[nodiscard]] std::uint32_t legacyWaveDurationTicks(
-        std::span<const std::uint8_t> riffWave,
-        std::uint32_t ticksPerSecond = 60U) noexcept;
-
     // Source/artlib/L_Sound.cpp::LE_SOUND_SetPitchBufSnd.
     // Zero restores the original recording rate; DirectSound 7 clamps
     // explicit frequencies to 100..100000 Hz. SDL additionally constrains
@@ -145,6 +141,11 @@ namespace monopoly::audio
         void setPitch(PlaybackKey key, std::uint32_t hertz) noexcept;
         void setPanning(PlaybackKey key, std::int32_t percentage) noexcept;
         void setLooping(PlaybackKey key, bool loop) noexcept;
+        // Sequence clocks observe PCM consumed by SDL's device stream. Parent
+        // render time is deliberately absent: pitch, stalls and pause affect it.
+        [[nodiscard]] std::optional<std::int32_t> positionTicks(PlaybackKey key) const noexcept;
+        [[nodiscard]] std::expected<void, std::string> synchronizeSequence(
+            PlaybackKey key, std::int32_t position, bool paused, std::uint64_t seekGeneration);
         void update() noexcept;
         [[nodiscard]] bool active(PlaybackKey key) const noexcept;
         [[nodiscard]] data::BoardEdition boardEdition() const noexcept
@@ -159,6 +160,8 @@ namespace monopoly::audio
     private:
         struct Voice;
         [[nodiscard]] std::expected<void, std::string> ensureAudio();
+        [[nodiscard]] std::expected<void, std::string> seekVoice(Voice& voice, std::int32_t tick);
+        [[nodiscard]] std::expected<void, std::string> queueVoiceFromByte(Voice& voice, std::uint64_t offset);
         [[nodiscard]] Voice* find(PlaybackKey key) noexcept;
         [[nodiscard]] const Voice* find(PlaybackKey key) const noexcept;
 

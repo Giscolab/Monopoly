@@ -75,6 +75,9 @@ namespace monopoly::sequence
         // separate parent elapsed clock keeps silent playback progressing.
         [[nodiscard]] std::expected<void, ClockError> supplyVideoClock(
             std::int32_t mediaClock, std::int32_t duration, bool ended);
+        // Source sound time comes from consumed audio, never the parent timer.
+        [[nodiscard]] std::expected<void, ClockError> supplySoundClock(
+            std::int32_t mediaClock);
         [[nodiscard]] std::int32_t elapsedParentClock() const noexcept
         { return videoClock_ ? elapsedParentClock_ : clock_; }
         [[nodiscard]] std::expected<void, ClockError> setPaused(
@@ -110,5 +113,7 @@ namespace monopoly::sequence
         std::int32_t authoredEndTime_{InfiniteEndTime};
         bool videoClock_{};
         bool videoHeld_{};
+        bool soundClock_{};
+        std::optional<std::int32_t> pendingSoundClock_;
     };
 }

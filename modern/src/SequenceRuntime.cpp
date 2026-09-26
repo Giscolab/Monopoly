@@ -553,6 +553,29 @@ namespace monopoly::sequence
             if (program->descriptions_.size() >= limits.maximumDescriptions)
                 return std::unexpected(error(RuntimeErrorCode::DescriptionLimit,
                     currentId, currentOffset, "description count budget exceeded"));
+            const auto currentMetadata = registry.metadata(currentId);
+            if (!currentMetadata) return std::unexpected(caused(RuntimeErrorCode::DataFailure,
+                currentId, currentOffset, currentMetadata.error()));
+            if (currentMetadata->type == data::LegacyDataType::Wave)
+            {
+                if (currentOffset != 0)
+                    return std::unexpected(error(RuntimeErrorCode::DecodeFailure,
+                        currentId, currentOffset, "raw Wave sequence must start at offset zero"));
+                data::LegacySequenceHeader header{};
+                header.timeMultiple = 15;
+                header.endingAction = 1;
+                auto children = SequenceChildSchedule::read({}, currentId);
+                if (!children) return std::unexpected(std::visit([&](const auto& cause) {
+                    return caused(RuntimeErrorCode::DecodeFailure, currentId, 0, cause);
+                }, children.error()));
+                const auto index = program->descriptions_.size();
+                program->descriptions_.push_back({currentId,
+                    {data::ChunkInfo{5, 0, 0, 0, 0}, header,
+                        data::SequenceSoundData{currentId}, 0},
+                    std::move(*children), {}, currentId, {}});
+                visited.emplace(key, Entry{index, false, 1});
+                return index;
+            }
             auto reader = data::openLegacyChunkReader(registry, currentId);
             if (!reader) return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 currentId, currentOffset, reader.error()));
@@ -579,8 +602,31 @@ namespace monopoly::sequence
                     return std::unexpected(error(RuntimeErrorCode::UnsupportedAttribute,
                         currentId, unsupported->chunk.headerOffset,
                         "sequence attribute is decoded but its effect is not executed"));
-            auto schedule = openSequenceChildSchedule(registry, currentId, currentOffset,
-                limits.maximumReferences - references);
+            // A raw Wave referenced by INDIRECT has one synthetic child, just
+            // as StartUpSequence does for a directly started Wave DataID.
+            std::optional<data::DataId> rawSoundChild;
+            if (const auto* indirect = std::get_if<data::SequenceIndirectData>(&record->data))
+            {
+                const auto target = data::resolveSequenceDataId(record->header,
+                    indirect->subsequenceDataId, currentId);
+                if (target != data::EmptyDataId && target != currentId)
+                {
+                    const auto targetMetadata = registry.metadata(target);
+                    if (targetMetadata && targetMetadata->type == data::LegacyDataType::Wave)
+                        rawSoundChild = target;
+                }
+            }
+            auto schedule = [&]() -> std::expected<SequenceChildSchedule, ChildScheduleError> {
+                if (!rawSoundChild)
+                    return openSequenceChildSchedule(registry, currentId, currentOffset,
+                        limits.maximumReferences - references);
+                auto bytes = std::make_shared<data::DataBytes>();
+                for (const auto word : {0x05000014U, 0U, 15U << 24U, 1U, *rawSoundChild})
+                    for (unsigned shift = 0; shift < 32; shift += 8)
+                        bytes->push_back(static_cast<std::byte>((word >> shift) & 255U));
+                return SequenceChildSchedule::read(bytes, *rawSoundChild,
+                    limits.maximumReferences - references);
+            }();
             if (!schedule)
                 return std::unexpected(std::visit([&](const auto& cause) {
                     return caused(RuntimeErrorCode::DecodeFailure, currentId, currentOffset, cause);
@@ -733,6 +779,8 @@ namespace monopoly::sequence
         std::uint8_t volume{100};
         std::int8_t panning{};
         data::SharedDataBytes preloadedData;
+        std::uint64_t seekGeneration{};
+        bool soundFailed{};
         bool scrollingOnScreen{true};
         bool scrollingHibernating{};
         const SequenceDescription& definition() const
@@ -748,7 +796,7 @@ namespace monopoly::sequence
         const auto& def = node.definition();
         events_.push_back({kind, node.id, node.parent ? node.parent->id : 0,
             def.dataId, def.record.chunk.headerOffset, node.priority,
-            node.labelNumber, def.record.chunk.id, node.clock.endingAction(),
+            node.labelNumber, def.record.chunk.id, node.soundFailed ? std::uint8_t{0} : node.clock.endingAction(),
             node.clock.clock()});
     }
     void SequenceRuntime::insert(Nodes& siblings, std::unique_ptr<Node> node)
@@ -1019,6 +1067,32 @@ namespace monopoly::sequence
         erase(*node);
         return {};
     }
+    std::expected<void, RuntimeError> SequenceRuntime::requestSoundFailure(SequenceNodeId id)
+    {
+        auto* node = find(id);
+        if (!node || node->definition().record.chunk.id != 5)
+            return std::unexpected(error(RuntimeErrorCode::InvalidHandle, 0, 0,
+                "failed sound references an inactive sound sequence"));
+        // L_Rend0D marks failed audio feeding as Suicide. Defer destruction to
+        // the regular update so event publication remains a single operation.
+        node->soundFailed = true;
+        forceAncestors(*node);
+        return {};
+    }
+    std::expected<void, RuntimeError> SequenceRuntime::requestSoundClock(
+        SequenceNodeId id, std::int32_t mediaClock)
+    {
+        auto* node = find(id);
+        if (!node) return std::unexpected(error(RuntimeErrorCode::InvalidHandle, 0, 0,
+            "sound clock references an inactive sequence"));
+        const auto supplied = node->clock.supplySoundClock(mediaClock);
+        if (!supplied) return std::unexpected(caused(RuntimeErrorCode::ClockFailure,
+            node->definition().dataId, node->definition().record.chunk.headerOffset, supplied.error()));
+        // Preserve the sound's cadence. Ancestors may otherwise hold it asleep.
+        for (auto* parent = node->parent; parent; parent = parent->parent)
+            parent->reevaluate = true;
+        return {};
+    }
     std::expected<void, RuntimeError> SequenceRuntime::requestVideoClock(
         SequenceNodeId id, std::int32_t mediaClock, std::int32_t duration, bool ended)
     {
@@ -1168,6 +1242,7 @@ namespace monopoly::sequence
         const auto result = node.clock.seek(time, node.parent ? node.parent->clock.clock() : parentClock_);
         if (result.stopped) return false;
         node.reevaluate = true;
+        ++node.seekGeneration;
         emit(SequenceEventKind::Rewound, node);
         const auto rebuilt = rebuildChildren(node);
         if (!rebuilt) return std::unexpected(rebuilt.error());
@@ -1186,6 +1261,11 @@ namespace monopoly::sequence
     }
     std::expected<bool, RuntimeError> SequenceRuntime::updateNode(Node& node, std::int32_t parentClock)
     {
+        if (node.soundFailed)
+        {
+            emit(SequenceEventKind::ReachedEnd, node);
+            return false;
+        }
         node.needsRedraw = node.redrawRequested;
         node.redrawRequested = false;
 
@@ -1568,7 +1648,8 @@ namespace monopoly::sequence
                         node->volume,
                         node->panning,
                         centerX,
-                        externalFileName(definition.attributes)});
+                        externalFileName(definition.attributes),
+                        node->clock.paused(), node->seekGeneration});
                 }
                 self(self, node->children);
             }

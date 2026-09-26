@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <memory>
 
 namespace monopoly::rules
 {
@@ -69,6 +70,8 @@ namespace monopoly::rules
         bool tradedItem = false;
 
         std::int32_t hitCount = 0;
+
+        bool operator==(const CountHitRecord&) const = default;
     };
 
     enum class GamePhase : std::uint8_t
@@ -118,6 +121,8 @@ namespace monopoly::rules
         PlayerNumber fromPlayer = 0;
         PlayerNumber toPlayer = 0;
         std::int64_t amount = 0;
+
+        bool operator==(const PendingPhase&) const = default;
     };
 
     struct VoiceChatOptions
@@ -193,6 +198,8 @@ namespace monopoly::rules
         bool mortgaged = false;
 
         std::int64_t gameEarnings = 0;
+
+        bool operator==(const SquareState&) const = default;
     };
 
     struct PlayerState
@@ -227,6 +234,8 @@ namespace monopoly::rules
             cashGivenInTrade{};
 
         bool tradeAccepted = false;
+
+        bool operator==(const PlayerState&) const = default;
     };
 
     struct AuctionState
@@ -242,6 +251,8 @@ namespace monopoly::rules
         // 40 == SQ_AUCTION_HOUSE.
         // 41 == SQ_AUCTION_HOTEL.
         std::uint8_t propertyBeingAuctioned = 0;
+
+        bool operator==(const AuctionState&) const = default;
     };
 
     struct GameState
@@ -289,6 +300,10 @@ namespace monopoly::rules
 
         std::array<PendingPhase, MaxPendingPhases> phaseStack{};
         std::uint8_t numberOfPendingPhases = 0;
+
+        // Transient phase undo records: deliberately omitted from RuleArchive.
+        // Saved records contain value state only, never further undo records.
+        std::array<std::shared_ptr<const GameState>, MaxPendingPhases> phaseUndo{};
     };
 }
 

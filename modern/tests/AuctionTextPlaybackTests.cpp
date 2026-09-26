@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "AuctionTextPlayback.hpp"
 #include "AuctionPlayback.hpp"
 #include "SyntheticTextResources.hpp"
@@ -101,17 +102,22 @@ namespace
 
         const auto currentId = current->asset->dataId;
         const auto previousAsset = current->asset;
+        const auto rootsBeforeRefresh = playback.runtime().roots();
         state.highestBid = 300;
+        require(textRefreshRejectsFullQueue(playback, [&] { return owner.sync(state, game, display::Screen2D::Auction, 13, &font, playback); }),
+            "saturated refresh preserves old pixels and roots for a later retry");
         require(owner.sync(
                 state, game, display::Screen2D::Auction,
                 13, &font, playback).has_value() &&
-                playback.commands().pendingCount() == 0,
+                playback.commands().pendingCount() == 1,
             "bid change rerasterizes without restarting stable text roots");
         const auto refreshed = playback.runtimeBitmaps().asset(currentId);
         require(refreshed && refreshed != previousAsset,
             "current-bid update publishes a new immutable bitmap revision");
-        require(playback.update(1).has_value(),
+        require(textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "existing current-bid root observes the refreshed bitmap");
+        require(at(playback, 20, 280) && at(playback, 20, 280)->asset == refreshed,
+            "original auction node presents the new immutable bitmap");
 
         require(owner.sync(
                 state, game, display::Screen2D::Main,

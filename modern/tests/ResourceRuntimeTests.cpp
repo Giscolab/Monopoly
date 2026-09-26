@@ -132,6 +132,60 @@ namespace
         return options;
     }
 
+    void testInstallationInspection()
+    {
+        Fixture fixture;
+        if (!fixture.valid) return;
+        const auto paths = pathsFor(fixture.root);
+        auto issues = inspectResourceInstallation(paths);
+        expect(issues.size() == usaFiles.size(),
+            "empty installation reports all eight missing banks at once");
+        for (std::size_t i = 0; i < issues.size() && i < usaFiles.size(); ++i)
+            expect(issues[i].code == DataErrorCode::ResourceNotFound &&
+                issues[i].detail.find(usaFiles[i]) != std::string::npos,
+                "each missing bank is named in the installation report");
+
+        if (!writeSet(fixture.root)) return;
+        ResourceRuntime active;
+        expect(active.initialize(paths).has_value(), "active installation established");
+        const auto original = active.snapshot();
+        expect(inspectResourceInstallation(paths, {}, verified()).empty(),
+            "complete installation passes real DAT and LANG initialization");
+        const auto damaged = fixture.root / "damaged";
+        if (!writeSet(damaged)) return;
+        std::filesystem::resize_file(damaged / "Dat_Mon/dat_main.dat", 4);
+        std::filesystem::resize_file(damaged / "Dat_Mon/dat_pat.dat", 4);
+        issues = inspectResourceInstallation(pathsFor(damaged));
+        expect(issues.size() == 2 &&
+            issues[0].code == DataErrorCode::HeaderTruncated &&
+            issues[1].code == DataErrorCode::HeaderTruncated,
+            "inspection collects multiple corrupt banks instead of stopping at the first");
+        expect(active.snapshot() == original && original->language(),
+            "failed inspection leaves the running installation untouched");
+
+        const auto invalidLang = fixture.root / "invalid-lang";
+        if (!writeSet(invalidLang, usaFiles, u'A', true)) return;
+        issues = inspectResourceInstallation(pathsFor(invalidLang));
+        expect(issues.size() == 1 &&
+            issues.front().code == DataErrorCode::InvalidIndexTable,
+            "eight structurally valid banks still require a valid LANG catalog");
+
+        const auto french = inspectResourceInstallation(paths,
+            {BoardEdition::Europe, LanguageId::French});
+        expect(french.size() == 4 &&
+            french[0].detail.find("dat_borde.dat") != std::string::npos &&
+            french[1].detail.find("dat_ln03.dat") != std::string::npos,
+            "inspection requires the selected edition and language without fallback");
+        expect(inspectResourceInstallation(paths,
+            {static_cast<BoardEdition>(99), LanguageId::EnglishUs}).front().code ==
+                DataErrorCode::InvalidBoardEdition,
+            "invalid edition is rejected before checking files");
+        expect(inspectResourceInstallation(paths,
+            {BoardEdition::Usa, static_cast<LanguageId>(0)}).front().code ==
+                DataErrorCode::InvalidLanguage,
+            "invalid language is rejected before checking files");
+    }
+
     void testStartupAndLifetime()
     {
         Fixture fixture;
@@ -265,6 +319,7 @@ int main()
     try
     {
         testStartupAndLifetime();
+        testInstallationInspection();
         testFailuresAreTransactional();
         testEditionAndReplacement();
     }

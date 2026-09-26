@@ -16,6 +16,7 @@ extern "C"
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <fstream>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -111,6 +112,76 @@ namespace
             bytes[4U + shift / 8U] =
                 static_cast<std::uint8_t>(riffSize >> shift);
         return bytes;
+    }
+
+    void testConsumedAudioClock()
+    {
+        SyntheticSequenceResources fixture;
+        const auto wave = legacyDurationWave(44'100U, 44'100U);
+        const auto file = fixture.directory / "sound-clock.wav";
+        {
+            std::ofstream output(file, std::ios::binary);
+            output.write(reinterpret_cast<const char*>(wave.data()), static_cast<std::streamsize>(wave.size()));
+        }
+        audio::Runtime playback(fixture.service.snapshot());
+        const audio::PlaybackKey key{audio::PlaybackDomain::Sequence, 700};
+        requireReady(playback.playFile(key, "sound-clock.wav", 0.0F, false, 22'050),
+            "start real SDL dummy sound stream at half pitch");
+        requireReady(playback.synchronizeSequence(key, 12, true, 1), "seek and pause real PCM stream");
+        require(playback.positionTicks(key) == 12, "consumed audio clock reports exact sample seek while paused");
+        SDL_Delay(30);
+        require(playback.positionTicks(key) == 12, "paused backend consumes no PCM");
+        requireReady(playback.synchronizeSequence(key, 0, false, 1), "resume without a new seek generation");
+        const auto deadline = SDL_GetTicks() + 2000;
+        while (playback.positionTicks(key).value_or(0) <= 12 && SDL_GetTicks() < deadline)
+            SDL_Delay(10);
+        require(playback.positionTicks(key).value_or(0) > 12,
+            "real device consumption advances media time after resume");
+        requireReady(playback.synchronizeSequence(key, 30, true, 2), "new seek generation repositions PCM");
+        require(playback.positionTicks(key) == 30, "new seek discards stale queued audio");
+        requireReady(playback.synchronizeSequence(key, 60, true, 3), "seek finite PCM to its end");
+        require(playback.positionTicks(key) == 59 && playback.active(key),
+            "held-end seek clamps to the final sample block like retail sound");
+        requireReady(playback.synchronizeSequence(key, 0, false, 3), "resume final PCM sample");
+        const auto endDeadline = SDL_GetTicks() + 2000;
+        while (playback.active(key) && SDL_GetTicks() < endDeadline) SDL_Delay(10);
+        require(playback.positionTicks(key) == 60 && !playback.active(key),
+            "finished stream retains duration for the sequencer completion sample");
+        playback.stop(key);
+        require(!playback.positionTicks(key), "destroyed voice exposes no stale clock");
+
+        requireReady(playback.playFile(key, "sound-clock.wav", 0.0F, true), "start real looping PCM");
+        requireReady(playback.synchronizeSequence(key, 59, true, 1), "seek looping PCM near wrap");
+        require(playback.positionTicks(key) == 59, "loop seek preserves consumed position");
+        requireReady(playback.synchronizeSequence(key, 0, false, 1), "resume looping PCM without rewind");
+        const auto loopDeadline = SDL_GetTicks() + 2000;
+        while (playback.positionTicks(key).value_or(60) >= 30 && SDL_GetTicks() < loopDeadline)
+        {
+            playback.update();
+            SDL_Delay(10);
+        }
+        require(playback.positionTicks(key).value_or(60) < 30 && playback.active(key),
+            "real audio loop reports wrapped position without replacing the voice");
+        const auto middleDeadline = SDL_GetTicks() + 2000;
+        while (playback.positionTicks(key).value_or(0) < 12 && SDL_GetTicks() < middleDeadline)
+        {
+            playback.update();
+            SDL_Delay(10);
+        }
+        // One complete iteration has already been consumed. The old cumulative
+        // counter must not turn Loop->Stop/Hold into an immediate end sample.
+        requireReady(playback.synchronizeSequence(key, 0, true, 1), "pause wrapped loop mid-iteration");
+        const auto beforeModeChange = playback.positionTicks(key);
+        require(beforeModeChange && *beforeModeChange >= 12 && *beforeModeChange < 50,
+            "loop transition fixture is partway through a later iteration");
+        playback.setLooping(key, false);
+        require(playback.positionTicks(key) == beforeModeChange && playback.active(key),
+            "disabling repeat preserves the exact current iteration cursor");
+        requireReady(playback.synchronizeSequence(key, 0, false, 1), "continue final non-looping iteration");
+        const auto finalDeadline = SDL_GetTicks() + 2000;
+        while (playback.active(key) && SDL_GetTicks() < finalDeadline) SDL_Delay(10);
+        require(!playback.active(key) && playback.positionTicks(key) == 60,
+            "disabled loop plays only its remaining tail then reports real EOF");
     }
 
     void testLegacyPitchFrequencyRatio()
@@ -456,6 +527,8 @@ int main()
         require(SDL_GetCurrentAudioDriver() != nullptr &&
             std::string_view(SDL_GetCurrentAudioDriver()) == "dummy",
             "the actual audio backend is dummy before opening capture or playback");
+        testConsumedAudioClock();
+        std::cout << "[PASS] consumed SDL sound clock, pause, seek, EOF and real loop wrap\n";
         testDummyCapture(audio);
         std::cout << "[PASS] dummy capture CHAT, restart STOP, queue failure and recovery\n";
         testDummyReceivers(audio);

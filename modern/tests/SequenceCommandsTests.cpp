@@ -403,8 +403,8 @@ namespace
         expect(commands.enqueue(StartSequenceCommand{program, 444}).has_value() &&
             commands.updateCycle(0).has_value() &&
             runtime.soundInstances().size() == 1 &&
-            runtime.soundInstances().front().volume == 100,
-            "sound command fixture starts at retail volume 100");
+            runtime.soundInstances().front().volume == 32,
+            "sound command fixture starts at Monopoly's retail default volume 32");
 
         expect(commands.collect() == 1,
             "SetVolume can be held by CollectCommands");
@@ -412,7 +412,7 @@ namespace
                 dataId, 444, 25, false}).has_value(),
             "SetVolume command enters the historical FIFO");
         expect(commands.updateCycle(0).has_value() &&
-            runtime.soundInstances().front().volume == 100 &&
+            runtime.soundInstances().front().volume == 32 &&
             commands.pendingCount() == 1,
             "collected SetVolume remains pending");
         expect(commands.execute() == 0 &&

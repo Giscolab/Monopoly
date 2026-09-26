@@ -1,3 +1,4 @@
+#include "TextRefreshProof.hpp"
 #include "StatsDeedValueTextPlayback.hpp"
 #include "SyntheticTextResources.hpp"
 
@@ -81,17 +82,22 @@ namespace
             "deed value contains real gray font pixels");
         const auto firstAsset = first->asset;
 
+        const auto rootsBeforeRefresh = playback.runtime().roots();
         state.deedMetric[1] = 98765;
+        require(textRefreshRejectsFullQueue(playback, [&] { return owner.sync(state, game, {}, 13, display::Screen2D::Portfolio, &font, playback); }),
+            "saturated refresh preserves old pixels and roots for a later retry");
         require(owner.sync(state, game, {}, 13,
                 display::Screen2D::Portfolio, &font, playback).has_value() &&
-                playback.commands().pendingCount() == 0,
+                playback.commands().pendingCount() == 1,
             "value change rerasterizes without restarting stable bar roots");
         const auto refreshed =
             playback.runtimeBitmaps().asset(firstAsset->dataId);
         require(refreshed && refreshed != firstAsset,
             "updated deed value publishes an immutable bitmap revision");
-        require(playback.update(1).has_value(),
+        require(textRefreshPreservesRoots(playback, rootsBeforeRefresh, 1),
             "active value root observes refreshed runtime bitmap");
+        require(at(playback, 64, 247) && at(playback, 64, 247)->asset == refreshed,
+            "original value node presents the new immutable bitmap");
 
         state.activeSort = 1;
         require(owner.sync(state, game, {}, 13,

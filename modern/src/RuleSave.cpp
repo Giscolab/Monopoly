@@ -130,37 +130,8 @@ namespace monopoly::rules::save
         bool unsafeExternalUndoState(
             const GameState& state)
         {
-            // Le source 1999 vérifie StackedRulesStates[].
-            //
-            // Dans notre port, ces snapshots externes existent
-            // actuellement dans CollectingPayment et
-            // DecomposeHotel.
-            //
-            // On interdit donc la sauvegarde dans ces phases
-            // tant qu'ils n'ont pas été intégrés directement
-            // au GameState sérialisable.
-
-            for (std::size_t i = 0;
-                 i <
-                    state.numberOfPendingPhases;
-                 ++i)
-            {
-                const GamePhase phase =
-                    state.phaseStack[i].phase;
-
-
-                if (
-                    phase ==
-                        GamePhase::CollectingPayment ||
-                    phase ==
-                        GamePhase::DecomposeHotel)
-                {
-                    return true;
-                }
-            }
-
-
-            return false;
+            // Legacy checks valid undo records, including beneath nested phases.
+            return phases::hasSnapshots(state);
         }
 
 
@@ -536,6 +507,8 @@ namespace monopoly::rules::save
         // Commit.
         // ----------------------------------------------------
 
+        // Freshly decoded value state has no transient undo records. Commit
+        // clears the previous game's snapshots only after successful validation.
         state =
             std::move(testState);
 

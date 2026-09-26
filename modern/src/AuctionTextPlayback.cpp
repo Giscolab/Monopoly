@@ -119,6 +119,11 @@ namespace monopoly::auctionui
     {
         std::vector<Published> desired;
         std::vector<data::DataId> changedSurfaces;
+        std::vector<std::pair<data::DataId, data::LegacyBitmapRGBA8>> pendingImages;
+        auto nextCurrentBidCache = currentBidCache_;
+        auto nextNameCache = nameCache_;
+        auto nextBidCache = bidCache_;
+        auto nextCashCache = cashCache_;
         if (desiredView != display::Screen2D::Auction)
         {
             if (currentObjects_.empty()) return {};
@@ -159,10 +164,8 @@ namespace monopoly::auctionui
                 if (auto drawn = drawText(image, *fontRuntime,
                         *amount, White, 10, 30); !drawn)
                     return drawn;
-                if (auto updated = playback.runtimeBitmaps().update(
-                        *currentBidSurface_, std::move(image)); !updated)
-                    return updated;
-                currentBidCache_ = currentKey;
+                pendingImages.emplace_back(*currentBidSurface_, std::move(image));
+                nextCurrentBidCache = currentKey;
                 changedSurfaces.push_back(*currentBidSurface_);
             }
             desired.push_back({*currentBidSurface_,
@@ -188,10 +191,8 @@ namespace monopoly::auctionui
                     auto image = blankImage(NameTextWidth, NameTextHeight);
                     if (auto drawn = drawCentered(image, *fontRuntime, name, Black, 0); !drawn)
                         return drawn;
-                    if (auto updated = playback.runtimeBitmaps().update(
-                            *nameSurfaces_[index], std::move(image)); !updated)
-                        return updated;
-                    nameCache_[index] = name;
+                    pendingImages.emplace_back(*nameSurfaces_[index], std::move(image));
+                    nextNameCache[index] = name;
                     changedSurfaces.push_back(*nameSurfaces_[index]);
                 }
 
@@ -203,10 +204,8 @@ namespace monopoly::auctionui
                     auto image = blankImage(AuctionBidTextWidth, AuctionBidTextHeight);
                     if (auto drawn = drawCentered(image, *fontRuntime, *bid, White, 5); !drawn)
                         return drawn;
-                    if (auto updated = playback.runtimeBitmaps().update(
-                            *bidSurfaces_[index], std::move(image)); !updated)
-                        return updated;
-                    bidCache_[index] = *bid;
+                    pendingImages.emplace_back(*bidSurfaces_[index], std::move(image));
+                    nextBidCache[index] = *bid;
                     changedSurfaces.push_back(*bidSurfaces_[index]);
                 }
 
@@ -219,10 +218,8 @@ namespace monopoly::auctionui
                     auto image = blankImage(CashTextWidth, CashTextHeight);
                     if (auto drawn = drawCentered(image, *fontRuntime, *cash, Black, 5); !drawn)
                         return drawn;
-                    if (auto updated = playback.runtimeBitmaps().update(
-                            *cashSurfaces_[index], std::move(image)); !updated)
-                        return updated;
-                    cashCache_[index] = *cash;
+                    pendingImages.emplace_back(*cashSurfaces_[index], std::move(image));
+                    nextCashCache[index] = *cash;
                     changedSurfaces.push_back(*cashSurfaces_[index]);
                 }
 
@@ -234,6 +231,18 @@ namespace monopoly::auctionui
                     center - CashTextWidth / 2, CashTextY});
             }
         }
+
+        const std::size_t requiredCommands = desired == currentObjects_
+            ? changedSurfaces.size() : currentObjects_.size() + desired.size();
+        if (requiredCommands > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
+            return std::unexpected("sequence command queue cannot fit auction text update");
+        for (auto& [id, image] : pendingImages)
+            if (auto updated = playback.runtimeBitmaps().update(id, std::move(image)); !updated)
+                return updated;
+        currentBidCache_ = std::move(nextCurrentBidCache);
+        nameCache_ = std::move(nextNameCache);
+        bidCache_ = std::move(nextBidCache);
+        cashCache_ = std::move(nextCashCache);
 
         if (desired == currentObjects_)
         {
