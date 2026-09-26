@@ -276,6 +276,37 @@ namespace
             "invalid destination storage is rejected before writing pixels");
     }
 
+    void testOneUtf16UnitWrapFallback(const std::filesystem::path& path)
+    {
+        fonts::Runtime font;
+        checked(font.setFont(path, "Arial"), "open actual Arial for one-unit wrap fallback");
+        checked(font.setSize(12), "set one-unit wrapping font size");
+        // UDChat.cpp:1842 tests Windows wcslen after the space scan. A one-unit
+        // prefix restarts character wrapping from the original uncut text.
+        for (const auto& prefix : std::array<std::string, 2>{"I", "\xC3\xA9"})
+        {
+            const auto firstLine = prefix + " WWW";
+            const auto original = prefix + " WWWWWWWW";
+            const int width = take(font.measure(firstLine), "measure one-unit fallback boundary").width;
+            const auto lines = take(font.wrap(original, width), "wrap after one-unit space prefix");
+            require(!lines.empty() && lines.front() == firstLine,
+                "one UTF-16 unit before a space must retry character wrapping on the original text");
+            std::string joined;
+            for (const auto& line : lines) joined += line;
+            require(joined == original,
+                "one-unit fallback keeps the original separator and all trailing characters");
+        }
+        const auto astral = take(fonts::transcodeUtf8(std::u16string_view(u"\U0001F600")),
+            "encode a two-unit UTF-16 scalar for wrapping");
+        for (const auto& prefix : std::array<std::string, 2>{"AB", astral})
+        {
+            const int width = take(font.measure(prefix + " WWW"), "measure two-unit prefix boundary").width;
+            const auto lines = take(font.wrap(prefix + " WWWWWWWW", width), "wrap two-unit space prefix");
+            require(lines.size() > 1 && lines.front() == prefix,
+                "two UTF-16 units retain space wrapping, including one astral Unicode scalar");
+        }
+    }
+
     void testLegacyWrap(const std::filesystem::path& path)
     {
         fonts::Runtime font;
@@ -318,6 +349,8 @@ int main()
         std::cout << "[PASS] actual SDL_ttf metrics, COLORREF alpha and RGBA glyph surfaces\n";
         testLegacyWrap(path);
         std::cout << "[PASS] source-backed CHAT wrap boundaries and Unicode progress\n";
+        testOneUtf16UnitWrapFallback(path);
+        std::cout << "[PASS] source-backed one-unit UTF-16 CHAT wrap fallback\n";
         return 0;
     }
     catch (const std::exception& error)

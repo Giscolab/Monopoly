@@ -58,6 +58,7 @@ namespace monopoly::optionsui
         std::u16string draftDescription;
         std::optional<std::size_t> pendingSaveSlot;
         SaveMetadata pendingMetadata;
+        rules::PlayerNumber pendingSaveRequester{rules::NobodyPlayer};
         std::uint64_t revision{};
     };
 
@@ -92,7 +93,10 @@ namespace monopoly::optionsui
         const rules::GameState& ruleState,
         int city,
         int system,
-        std::string customBoardName);
+        std::string customBoardName,
+        rules::PlayerNumber requester);
+
+    void clearPendingSave(SaveRuntimeState& state) noexcept;
 
     [[nodiscard]] std::expected<void, std::string> persistPendingSave(
         SaveRuntimeState& state,

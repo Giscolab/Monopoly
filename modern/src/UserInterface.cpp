@@ -1,4 +1,5 @@
 #include "UserInterface.hpp"
+#include "LegacyTextIds.hpp"
 #include "UISound.hpp"
 #include "Engine.hpp"
 #include "Display.hpp"
@@ -713,7 +714,9 @@ namespace monopoly::userinterface
         }
 
         if (message.action == actions::Type::NotifyGameStateForSave &&
-            optionsSaveProjection.pendingSaveSlot)
+            message.fromPlayer == rules::BankPlayer &&
+            optionsSaveProjection.pendingSaveSlot &&
+            message.toPlayer == optionsSaveProjection.pendingSaveRequester)
         {
             const auto saved = optionsui::persistPendingSave(
                 optionsSaveProjection, message.binaryDataA);
@@ -729,10 +732,20 @@ namespace monopoly::userinterface
         {
             // A rejected retail save request cannot leave a stale pending slot:
             // no NOTIFY_GAME_STATE_FOR_SAVE will follow this failed action.
-            optionsSaveProjection.pendingSaveSlot.reset();
-            optionsSaveProjection.pendingMetadata = {};
+            if (message.fromPlayer == rules::BankPlayer &&
+                message.numberC == optionsSaveProjection.pendingSaveRequester)
+                optionsui::clearPendingSave(optionsSaveProjection);
             // UDIBar uses WAV_tmpnext here, deliberately not the generic warning.
             engine::playSaveFailureSound();
+        }
+
+        if (message.action == actions::Type::NotifyErrorMessage &&
+            message.fromPlayer == rules::BankPlayer &&
+            message.numberA == legacy_text::ErrorSaveGameFailure &&
+            optionsSaveProjection.pendingSaveSlot &&
+            message.numberC == optionsSaveProjection.pendingSaveRequester)
+        {
+            optionsui::clearPendingSave(optionsSaveProjection);
         }
 
         if (notificationSelectsCurrentUIPlayer(message.action) &&
@@ -1110,6 +1123,9 @@ namespace monopoly::userinterface
                     )
                 );
 
+
+            if (count == 0)
+                optionsui::clearPendingSave(optionsSaveProjection);
 
             const bool initializeProjection = firstNumberOfPlayersNotification ||
                 (count == 0 && (uiRuleState.numberOfPlayers != 0 ||
@@ -1491,14 +1507,16 @@ namespace monopoly::userinterface
             const auto prepared = optionsui::beginPendingSave(
                 optionsSaveProjection, uiRuleState,
                 displayState.city, displayState.system,
-                std::string(reinterpret_cast<const char*>(customPath.data()), customPath.size()));
+                std::string(reinterpret_cast<const char*>(customPath.data()), customPath.size()),
+                localPlayer);
             const bool sent = prepared && localPlayer < rules::MaxPlayers &&
                 messaging::sendAction(actions::Type::GetGameStateForSave,
                     localPlayer, rules::BankPlayer);
             if (!sent)
             {
-                optionsSaveProjection.pendingSaveSlot.reset();
-                optionsSaveProjection.pendingMetadata = {};
+                // A refused duplicate still belongs to the first request.
+                // Only discard metadata prepared for this failed send.
+                if (prepared) optionsui::clearPendingSave(optionsSaveProjection);
                 engine::playWarningSound();
             }
         }

@@ -3629,6 +3629,10 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME Monopoly.GameSessionIntegration COMMAND MonopolyGameSessionIntegrationTests)
     set_tests_properties(Monopoly.GameSessionIntegration PROPERTIES TIMEOUT 60)
+    # These real disk tests share SDL_GetBasePath()/savegame and restore slots.
+    # A concurrent reader/writer would invalidate both the oracle and backup.
+    set_tests_properties(Monopoly.GameSessionIntegration Monopoly.OptionsSaveRuntime
+        Monopoly.UserInterfaceRouting PROPERTIES RESOURCE_LOCK MonopolySaveDirectory)
 
     add_executable(MonopolyPlayerSelectionTests tests/PlayerSelectionTests.cpp
         src/PlayerSelection.cpp src/PlayerSetupFlow.cpp src/PlayerSetupSound.cpp

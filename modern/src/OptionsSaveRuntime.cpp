@@ -433,8 +433,13 @@ namespace monopoly::optionsui
         const rules::GameState& ruleState,
         int city,
         int system,
-        std::string customBoardName)
+        std::string customBoardName,
+        rules::PlayerNumber requester)
     {
+        if (state.pendingSaveSlot)
+            return std::unexpected("a save-game request is already pending");
+        if (requester >= rules::MaxPlayers)
+            return std::unexpected("no local save-game requester exists");
         if (state.dialog != FileDialogMode::Save ||
             state.selectedSlot < 0 ||
             state.selectedSlot >= static_cast<int>(SaveSlotCount))
@@ -457,7 +462,15 @@ namespace monopoly::optionsui
 
         state.pendingSaveSlot = slot;
         state.pendingMetadata = std::move(metadata);
+        state.pendingSaveRequester = requester;
         return {};
+    }
+
+    void clearPendingSave(SaveRuntimeState& state) noexcept
+    {
+        state.pendingSaveSlot.reset();
+        state.pendingMetadata = {};
+        state.pendingSaveRequester = rules::NobodyPlayer;
     }
 
     std::expected<void, std::string> persistPendingSave(
@@ -466,13 +479,11 @@ namespace monopoly::optionsui
     {
         if (!state.pendingSaveSlot || *state.pendingSaveSlot >= SaveSlotCount)
             return std::unexpected("no pending save-game request exists");
-        if (gameBlob.empty())
-            return std::unexpected("RULE returned an empty save-game blob");
-
         const auto slot = *state.pendingSaveSlot;
         const auto metadata = state.pendingMetadata;
-        state.pendingSaveSlot.reset();
-        state.pendingMetadata = {};
+        clearPendingSave(state);
+        if (gameBlob.empty())
+            return std::unexpected("RULE returned an empty save-game blob");
 
         const auto root = saveGameDirectory();
         if (root.empty())

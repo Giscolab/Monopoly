@@ -431,7 +431,12 @@ namespace monopoly::fonts
                 search = space;
             }
 
-            if (cut == std::string::npos)
+            // CHAT_WordWrap retries the original text when the space scan
+            // leaves one Windows wchar_t. One complete UTF-8 scalar of at
+            // most three bytes is one UTF-16 unit; an astral scalar is two.
+            const bool oneUtf16Unit = cut != std::string::npos && cut <= 3 &&
+                cut == nextBoundary(remaining, 0);
+            if (cut == std::string::npos || oneUtf16Unit)
             {
                 std::size_t best{};
                 for (std::size_t end = nextBoundary(remaining, 0);

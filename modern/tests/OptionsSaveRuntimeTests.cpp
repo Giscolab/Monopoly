@@ -93,6 +93,36 @@ namespace
         expect(accepted.playClick, "Enter keeps retail dialog click feedback");
     }
 
+    void testPendingSaveOwnership()
+    {
+        using namespace monopoly;
+        optionsui::SaveRuntimeState save{};
+        save.dialog = optionsui::FileDialogMode::Save;
+        save.selectedSlot = 1;
+        save.draftDescription = u"First request";
+        rules::GameState state{};
+        state.squares[1].gameEarnings = 123;
+        const auto first = optionsui::beginPendingSave(save, state, -1, 7, "FirstBoard", 1);
+        expect(static_cast<bool>(first), "first save request prepares");
+
+        save.selectedSlot = 2;
+        save.draftDescription = u"Second request";
+        state.squares[1].gameEarnings = 999;
+        const auto second = optionsui::beginPendingSave(save, state, -1, 9, "SecondBoard", 2);
+        expect(!second, "another save cannot replace a pending request");
+        expect(save.pendingSaveSlot == 1 && save.pendingSaveRequester == 1 && save.pendingMetadata.description == u"First request" &&
+            save.pendingMetadata.city == -1 && save.pendingMetadata.system == 7 &&
+            save.pendingMetadata.customBoardName == "FirstBoard" &&
+            save.pendingMetadata.squareGameEarnings[1] == 123,
+            "rejected duplicate preserves the first slot and every captured metadata field");
+
+        const auto emptyReply = optionsui::persistPendingSave(save, {});
+        expect(!emptyReply && !save.pendingSaveSlot &&
+            save.pendingMetadata.description.empty() &&
+            save.pendingSaveRequester == rules::NobodyPlayer,
+            "an empty terminal save reply fails but releases the pending request");
+    }
+
     void testPersistence()
     {
         using namespace monopoly;
@@ -112,7 +142,7 @@ namespace
             static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max()) + 42;
 
         const auto prepared = optionsui::beginPendingSave(
-            save, rules, 7, 11, {});
+            save, rules, 7, 11, {}, 0);
         expect(static_cast<bool>(prepared), "pending save metadata prepares");
 
         const std::vector<std::uint8_t> blob{
@@ -172,6 +202,7 @@ int main()
 {
     testGeometry();
     testInput();
+    testPendingSaveOwnership();
     testPersistence();
 
     if (failures != 0)

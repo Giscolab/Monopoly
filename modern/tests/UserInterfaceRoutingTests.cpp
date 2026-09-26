@@ -14,6 +14,7 @@
 #include "PennybagsCatalog.hpp"
 #include "TokenVoiceCatalog.hpp"
 #include "OptionsSaveRuntime.hpp"
+#include "LegacyTextIds.hpp"
 #include "SyntheticSavedCustomBoard.hpp"
 
 #include <iostream>
@@ -719,6 +720,142 @@ namespace
         localPlayerMask = localHumanMask = 0x3F;
         acceptMessaging = true;
         routingServerMode = true;
+        runtime::reset();
+    }
+
+    void testPendingSaveRouting()
+    {
+        using namespace monopoly;
+        constexpr std::size_t firstSlot = optionsui::SaveSlotCount - 2;
+        constexpr std::size_t secondSlot = optionsui::SaveSlotCount - 1;
+        SavedFileBackup firstBlob(optionsui::gameBlobPath(firstSlot));
+        SavedFileBackup firstMetadata(optionsui::gameMetadataPath(firstSlot));
+        SavedFileBackup secondBlob(optionsui::gameBlobPath(secondSlot));
+        SavedFileBackup secondMetadata(optionsui::gameMetadataPath(secondSlot));
+        uimsg::Message enter{};
+        enter.type = uimsg::Type::KeyboardPressed;
+        enter.numberA = SDL_SCANCODE_RETURN;
+        const auto openSave = [&](std::size_t slot, const char16_t* description)
+        {
+            auto& save = userinterface::optionsSaveState();
+            save.dialog = optionsui::FileDialogMode::Save;
+            save.selectedSlot = static_cast<int>(slot);
+            save.draftDescription = description;
+            userinterface::optionsState().active = true;
+            userinterface::optionsState().currentScreen = optionsui::Screen::LoadGame;
+            routingDisplayState.desired2DView = display::Screen2D::Options;
+        };
+        const auto begin = [&]()
+        {
+            runtime::reset();
+            userinterface::resetRuleProjection();
+            routingIBarState = {};
+            routingDisplayState = {};
+            localPlayerMask = localHumanMask = 1u << 1u;
+            acceptMessaging = acceptRecipient = true;
+            simulatedQueuedActions = 0;
+            capturedMessages.clear();
+            userinterface::ruleState().numberOfPlayers = 3;
+            routingDisplayState.city = 3;
+            routingDisplayState.system = 7;
+            openSave(firstSlot, u"First pending save");
+            expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 1 &&
+                capturedMessages.front().action == actions::Type::GetGameStateForSave &&
+                capturedMessages.front().fromPlayer == 1,
+                "save dialog dispatches the first request from local player one");
+        };
+
+        begin();
+        routingDisplayState.city = 4;
+        routingDisplayState.system = 9;
+        openSave(secondSlot, u"Second pending save");
+        expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 1,
+            "a second dialog confirmation does not send another GetGameStateForSave");
+        const auto& pending = userinterface::optionsSaveStateReadOnly();
+        expect(pending.pendingSaveSlot == firstSlot &&
+            pending.pendingMetadata.description == u"First pending save" &&
+            pending.pendingMetadata.city == 3 && pending.pendingMetadata.system == 7,
+            "duplicate save neither replaces nor clears the first request metadata");
+
+        actions::Message blob{};
+        blob.action = actions::Type::NotifyGameStateForSave;
+        blob.fromPlayer = rules::BankPlayer;
+        blob.toPlayer = 0;
+        blob.binaryDataA = {'M','O','N','O','P','O','L','Y',1,2,3,4};
+        localPlayerMask = localHumanMask = 3;
+        userinterface::processRuleMessage(blob);
+        expect(userinterface::optionsSaveStateReadOnly().pendingSaveSlot == firstSlot &&
+            userinterface::optionsSaveStateReadOnly().pendingSaveRequester == 1 &&
+            userinterface::optionsSaveStateReadOnly().pendingMetadata.description == u"First pending save",
+            "a save blob addressed to another local player cannot consume the pending request");
+        blob.toPlayer = 1;
+        userinterface::processRuleMessage(blob);
+        optionsui::SaveRuntimeState loaded;
+        const auto refreshed = optionsui::refreshSaveSlots(loaded, optionsui::FileDialogMode::Load);
+        expect(refreshed && loaded.slots[firstSlot].occupied &&
+            loaded.slots[firstSlot].metadata.description == u"First pending save" &&
+            loaded.slots[firstSlot].metadata.city == 3 && loaded.slots[firstSlot].metadata.system == 7 &&
+            !userinterface::optionsSaveStateReadOnly().pendingSaveSlot &&
+            userinterface::optionsSaveStateReadOnly().pendingSaveRequester == rules::NobodyPlayer,
+            "the delayed first blob is persisted in its original slot with its original metadata");
+
+        for (const bool errorNotification : {false, true})
+        {
+            begin();
+            // Both slots are now local, but only player one requested this save.
+            localPlayerMask = localHumanMask = 3;
+            actions::Message failed{};
+            failed.fromPlayer = rules::BankPlayer;
+            failed.toPlayer = rules::AllPlayers;
+            failed.action = errorNotification ? actions::Type::NotifyErrorMessage
+                : actions::Type::NotifyActionCompleted;
+            failed.numberA = errorNotification ? legacy_text::ErrorSaveGameFailure
+                : static_cast<std::int64_t>(actions::Type::GetGameStateForSave);
+            failed.numberB = 0;
+            failed.numberC = 0;
+            userinterface::processRuleMessage(failed);
+            expect(userinterface::optionsSaveStateReadOnly().pendingSaveSlot == firstSlot &&
+                userinterface::optionsSaveStateReadOnly().pendingMetadata.description == u"First pending save",
+                "another local player's save failure cannot clear the active requester");
+            failed.numberC = 1;
+            userinterface::processRuleMessage(failed);
+            expect(!userinterface::optionsSaveStateReadOnly().pendingSaveSlot &&
+                userinterface::optionsSaveStateReadOnly().pendingMetadata.description.empty() &&
+                userinterface::optionsSaveStateReadOnly().pendingSaveRequester == rules::NobodyPlayer,
+                "the requester's save refusal or ErrorSaveGameFailure releases pending metadata");
+            openSave(secondSlot, u"Retry after failure");
+            expect(userinterface::processUIMessage(enter) && capturedMessages.size() == 2 &&
+                userinterface::optionsSaveStateReadOnly().pendingSaveSlot == secondSlot,
+                "a terminated save allows a new request");
+        }
+
+        begin();
+        actions::Message reset{};
+        reset.action = actions::Type::NotifyNumberOfPlayers;
+        reset.fromPlayer = rules::BankPlayer;
+        reset.toPlayer = rules::AllPlayers;
+        reset.numberA = 0;
+        userinterface::processRuleMessage(reset);
+        expect(!userinterface::optionsSaveStateReadOnly().pendingSaveSlot &&
+            userinterface::optionsSaveStateReadOnly().pendingMetadata.description.empty() &&
+            userinterface::optionsSaveStateReadOnly().pendingSaveRequester == rules::NobodyPlayer,
+            "returning to player selection releases a pending save from the old game");
+
+        userinterface::resetRuleProjection();
+        userinterface::ruleState().numberOfPlayers = 3;
+        localPlayerMask = localHumanMask = 1u << 1u;
+        acceptMessaging = false;
+        openSave(firstSlot, u"Queue refused save");
+        expect(userinterface::processUIMessage(enter) &&
+            !userinterface::optionsSaveStateReadOnly().pendingSaveSlot &&
+            userinterface::optionsSaveStateReadOnly().pendingSaveRequester == rules::NobodyPlayer,
+            "a request that cannot enter the queue releases its newly prepared metadata");
+
+        userinterface::resetRuleProjection();
+        localPlayerMask = localHumanMask = 0x3F;
+        acceptMessaging = true;
+        simulatedQueuedActions = 0;
+        capturedMessages.clear();
         runtime::reset();
     }
 
@@ -2273,6 +2410,7 @@ int main()
     testUiModuleOrder();
     testOptionsEntryAndCancelRouting();
     testSavedCustomBoardRouting();
+    testPendingSaveRouting();
     testOptionsSupportedToggleRouting();
     testOptionsMusicPreviewRollbackAndExitConsumption();
     testAuctionBidRouting();

@@ -22,6 +22,7 @@
 #include "LegacyTextIds.hpp"
 #include "LocalPlayers.hpp"
 #include "Messaging.hpp"
+#include "OptionsSaveRuntime.hpp"
 #include "PhaseStack.hpp"
 #include "PlayerSelection.hpp"
 #include "PennybagsCatalog.hpp"
@@ -43,7 +44,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -468,6 +471,141 @@ namespace
             "RULE accepts the continuation archive from its actual local player");
     }
 
+    void testHumanPendingSave()
+    {
+        // Keep any developer save files intact, including on a failed assertion.
+        // CTest serializes suites that use this shared SDL executable directory.
+        struct SavedFile
+        {
+            std::filesystem::path path;
+            std::optional<std::vector<std::uint8_t>> original;
+
+            static std::optional<std::vector<std::uint8_t>> read(const std::filesystem::path& path)
+            {
+                if (!std::filesystem::exists(path)) return std::nullopt;
+                std::ifstream input(path, std::ios::binary | std::ios::ate);
+                require(input && input.tellg() >= 0, "save fixture can read the existing slot");
+                std::vector<std::uint8_t> bytes(static_cast<std::size_t>(input.tellg()));
+                input.seekg(0);
+                if (!bytes.empty()) input.read(reinterpret_cast<char*>(bytes.data()),
+                    static_cast<std::streamsize>(bytes.size()));
+                require(static_cast<bool>(input), "save fixture reads the entire slot");
+                return bytes;
+            }
+
+            explicit SavedFile(std::filesystem::path value)
+                : path(std::move(value)), original(read(path)) {}
+            ~SavedFile()
+            {
+                if (original)
+                {
+                    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+                    if (!original->empty()) output.write(reinterpret_cast<const char*>(original->data()),
+                        static_cast<std::streamsize>(original->size()));
+                }
+                else { std::error_code ignored; std::filesystem::remove(path, ignored); }
+            }
+        };
+        constexpr std::size_t firstSlot = 0, secondSlot = 1;
+        const SavedFile firstBlob(optionsui::gameBlobPath(firstSlot));
+        const SavedFile firstMetadata(optionsui::gameMetadataPath(firstSlot));
+        const SavedFile secondBlob(optionsui::gameBlobPath(secondSlot));
+        const SavedFile secondMetadata(optionsui::gameMetadataPath(secondSlot));
+        auto saved = rules::state();
+        saved.currentPlayer = 0;
+        saved.players[1].aiPlayerLevel = 2;
+        saved.numberOfPendingPhases = 1;
+        saved.phaseStack = {};
+        saved.phaseUndo = {};
+        saved.phaseStack[0].phase = rules::GamePhase::WaitMoveRoll;
+        require(ai::initializeMessageIngressProfiles(
+            std::filesystem::path(MONOPOLY_LEGACY_SOURCE_DIR) / "monopoly").has_value(),
+            "save scenario uses the real computer profile and parameter encoder");
+        loadHumanState(saved);
+        require(ui::localplayers::slotIsLocalHumanPlayer(0) &&
+            ui::localplayers::slotIsLocalAIPlayer(1), "save scenario has a human and a computer");
+
+        const auto click = [](const optionsui::Rect& rect)
+        {
+            require(userinterface::processUIMessage({uimsg::Type::MouseLeftDown,
+                (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2}),
+                "real UI routes the save/load dialog click");
+        };
+        const auto requestSave = [&](std::size_t slot, std::string_view description)
+        {
+            click(optionsui::fileButtonRect(optionsui::FileButton::Save));
+            require(userinterface::optionsSaveStateReadOnly().dialog == optionsui::FileDialogMode::Save,
+                "File/Save opens the real slot selection dialog");
+            click(optionsui::saveSlotRect(slot));
+            uimsg::Message text;
+            text.type = uimsg::Type::TextInput;
+            text.text = description;
+            require(userinterface::processUIMessage(text) &&
+                userinterface::processUIMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_RETURN}),
+                "typed description and Enter submit the selected save slot");
+        };
+        std::vector<actions::Message> delayedParameters;
+        std::vector<std::uint8_t> returnedBlob;
+        const auto drainWithDelayedAI = [&](bool delayParameters = true)
+        {
+            actions::Message message;
+            std::size_t count{};
+            while (messaging::receiveAction(message))
+            {
+                require(++count < 1000, "save queue drains while the AI reply is delayed");
+                if (message.action == actions::Type::AISaveParameters && delayParameters)
+                    delayedParameters.push_back(std::move(message));
+                else
+                {
+                    if (message.action == actions::Type::NotifyGameStateForSave)
+                        returnedBlob = message.binaryDataA;
+                    deliver(message);
+                }
+            }
+        };
+        displayState.city = 0;
+        displayState.system = 0;
+        displayState.current2DView = displayState.desired2DView;
+        require(userinterface::beginOptionsFromIBar(), "human opens the real Options/File screen");
+        const auto requestsBefore = observed[static_cast<std::size_t>(actions::Type::GetGameStateForSave)];
+        requestSave(firstSlot, "First pending save");
+        drainWithDelayedAI();
+        require(rules::phases::current(rules::state()).phase == rules::GamePhase::CollectAIParametersForSave &&
+            delayedParameters.size() == 1 && !delayedParameters.front().binaryDataA.empty(),
+            "RULE waits for the actual AI parameters at the delayed message boundary");
+        requestSave(secondSlot, "Second pending save");
+        drainWithDelayedAI();
+        require(messaging::sendAction(delayedParameters.front()), "the first actual AI reply resumes saving");
+        drainWithDelayedAI(false);
+        require(!returnedBlob.empty() && SavedFile::read(firstBlob.path) == returnedBlob,
+            "a repeated Save click must not discard or redirect the first completed RULE archive");
+        optionsui::SaveRuntimeState slots;
+        require(optionsui::refreshSaveSlots(slots, optionsui::FileDialogMode::Load).has_value() &&
+            slots.slots[firstSlot].metadata.description == u"First pending save" &&
+            SavedFile::read(secondBlob.path) == secondBlob.original &&
+            SavedFile::read(secondMetadata.path) == secondMetadata.original,
+            "the completed archive keeps the first description and leaves the other slot untouched");
+        require(observed[static_cast<std::size_t>(actions::Type::GetGameStateForSave)] == requestsBefore + 1 &&
+            !userinterface::optionsSaveStateReadOnly().pendingSaveSlot,
+            "the UI submits one save request and releases its pending state on completion");
+        rules::GameState decoded;
+        rules::archive::AIStateArray restoredAI;
+        require(rules::archive::decodeSave(returnedBlob, decoded, &restoredAI) &&
+            decoded.currentPlayer == 0 && decoded.phaseStack[0].phase == rules::GamePhase::WaitMoveRoll &&
+            !restoredAI[1].empty(), "the disk archive contains the playable phase and real computer parameters");
+
+        click(optionsui::fileButtonRect(optionsui::FileButton::Load));
+        click(optionsui::saveSlotRect(firstSlot));
+        require(userinterface::processUIMessage({uimsg::Type::KeyboardPressed, SDL_SCANCODE_RETURN}),
+            "the human reloads the persisted archive through the actual File dialog");
+        drain();
+        require(!userinterface::optionsStateReadOnly().active &&
+            rules::state().players[0].cash == decoded.players[0].cash &&
+            ui::localplayers::slotIsLocalAIPlayer(1), "loading restores the saved turn and computer ownership");
+        pressHumanMain(ibar::RuleMode::StartTurn, actions::Type::RollDice);
+        std::cout << "[PASS] repeated Save preserves the first archive, then File/Load resumes a playable human turn\n";
+    }
+
     void testHumanRejectedActions()
     {
         auto waiting = rules::state();
@@ -849,6 +987,7 @@ namespace
         testHumanCounterOffer(1, true);
         testHumanCounterOffer(1, false);
         testHumanRejectedActions();
+        testHumanPendingSave();
         rules::shutdown();
         ibar::shutdown();
         messaging::shutdown();
