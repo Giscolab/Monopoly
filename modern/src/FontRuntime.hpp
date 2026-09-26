@@ -64,6 +64,11 @@ namespace monopoly::fonts
         std::uint32_t height{};
     };
 
+    [[nodiscard]] std::expected<std::string, Error> transcodeUtf8(
+        std::u16string_view text);
+    [[nodiscard]] std::expected<std::string, Error> transcodeUtf8(
+        std::wstring_view text);
+
     class Runtime final
     {
     public:
