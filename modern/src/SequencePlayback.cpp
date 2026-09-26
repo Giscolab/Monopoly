@@ -408,6 +408,18 @@ namespace monopoly::engine
         return publishRuntimeViews();
     }
 
+    std::expected<void, std::string> SequencePlayback::stopAll()
+    {
+        const auto flushed = processUserCommands();
+        if (!flushed) return flushed;
+        runtime_.stopAll();
+        world_.clear();
+        world2D_.clear();
+        runtimePrograms_.clear();
+        retiredDeeds_.clear();
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::update(std::int32_t tick)
     {
         const auto updated = commands_.updateCycle(tick);

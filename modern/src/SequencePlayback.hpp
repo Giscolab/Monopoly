@@ -73,6 +73,7 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> setCameraNumber(
             std::uint8_t cameraNumber);
         [[nodiscard]] std::expected<void, std::string> processUserCommands();
+        [[nodiscard]] std::expected<void, std::string> stopAll();
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
         [[nodiscard]] std::expected<void, std::string> configureBoardTextures(
             data::BoardMeshKind mesh, data::TextureResolution resolution,

@@ -1102,6 +1102,7 @@ namespace monopoly::engine
             {
                 openingMovies.reset(*playback);
                 (void)sequenceVideoRuntime.reset(*playback);
+                (void)playback->stopAll();
             }
             openingVideoCleanupPending = false;
             resetPresentationOwners();
@@ -2439,6 +2440,7 @@ namespace monopoly::engine
         {
             openingMovies.reset(*playback);
             (void)sequenceVideoRuntime.reset(*playback);
+            (void)playback->stopAll();
         }
         openingVideoCleanupPending = false;
         rules::cards::setBankPayoutObserver(nullptr);
