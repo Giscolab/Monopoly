@@ -98,7 +98,14 @@ namespace monopoly::data
                 return std::unexpected(SequenceError{SequenceErrorCode::ChunkFailure,
                     part.error().offset, "cannot enter sequence attribute", part.error()});
             if (part->id >= 1 && part->id < 11)
-                break;
+            {
+                if (!result.firstChildAttributeIndex)
+                    result.firstChildAttributeIndex = result.values.size();
+                // Only siblings describe this sequence. Never read the child's
+                // fixed record or attributes into its parent's initial values.
+                (void)candidate.ascend();
+                continue;
+            }
             if (result.values.size() >= maximumAttributes)
                 return std::unexpected(SequenceError{SequenceErrorCode::AttributeLimitExceeded,
                     part->headerOffset, "sequence attribute count exceeds configured limit", {}});

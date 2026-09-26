@@ -201,10 +201,15 @@ namespace monopoly::data
     struct LegacySequenceAttributes
     {
         std::vector<LegacySequenceAttribute> values;
+        // First StartupSequence scan stops at the first direct child. The
+        // second scan still consumes all following direct attributes.
+        // nullopt means no child was encountered (also for value-only fixtures).
+        std::optional<std::size_t> firstChildAttributeIndex;
     };
 
-    // Reads only private attributes preceding the first child sequence. The
-    // supplied reader is not mutated. Unknown attributes remain explicit so
+    // Reads all direct private attributes, skipping each child sequence's
+    // contents while preserving the first-child dimensionality boundary.
+    // The supplied reader is not mutated. Unknown attributes remain explicit so
     // an execution layer cannot silently claim their effects are supported.
     [[nodiscard]] std::expected<LegacySequenceAttributes, SequenceError>
     readLegacySequenceAttributes(const LegacyChunkReader& reader,

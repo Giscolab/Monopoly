@@ -1,4 +1,5 @@
 #include "SequenceRuntime.hpp"
+#include "SequenceLifecycleMessage.hpp"
 #include "LegacyDataArchiveBuilder.hpp"
 
 #include <algorithm>
@@ -350,6 +351,93 @@ namespace
             "runtime continues after registry unmount because program owns CNK bytes");
     }
 
+    void testLifecycleNotificationsAndClock()
+    {
+        Fixture fixture;
+        const std::array items{ArchiveBuildItem{LegacyDataType::Chunky,
+            sequence(0, 8, 2, 0, true)}};
+        DataBankRegistry registry;
+        (void)archive(fixture.root / "lifecycle.dat", items, registry);
+        const auto executable = program(registry);
+        SequenceRuntime held;
+        const auto root = held.start(executable, 23, {}, std::nullopt, 7).value();
+        const auto created = lifecycleMessage(held.events().front(), 600);
+        expect(created && created->type == monopoly::uimsg::Type::SequenceStarted &&
+            created->numberA == packDataId(2, 0) && created->numberB == 23 &&
+            created->numberC == 7 && created->numberD == 1 && created->numberE == 600,
+            "Created message carries identity and root clock rather than local zero or frame count");
+        (void)held.update(600);
+        expect(held.update(611).has_value() &&
+            count(held.events(), SequenceEventKind::ReachedEnd) == 1,
+            "Hold publishes one end notification on first crossing");
+        for (const auto& event : held.events())
+        {
+            const auto message = lifecycleMessage(event, 611);
+            if (event.kind == SequenceEventKind::ReachedEnd)
+                expect(message && message->type == monopoly::uimsg::Type::SequenceReachedEnd &&
+                    message->numberD == 2 && message->numberE == 611 && event.clock == 8,
+                    "end notification uses irregular top-level tick independent of held local clock");
+            else
+                expect(!message, "Updated events are not published as UI lifecycle messages");
+        }
+        expect(held.update(866).has_value() && held.inspect(root)->clock == 8 &&
+            count(held.events(), SequenceEventKind::Updated) == 1 &&
+            count(held.events(), SequenceEventKind::ReachedEnd) == 0,
+            "Hold cadence255 update retains final pose without repeating end");
+        expect(held.forceRedrawMatching(packDataId(2, 0), 23) == 1 &&
+            held.update(866).has_value() &&
+            count(held.events(), SequenceEventKind::Updated) == 1 &&
+            count(held.events(), SequenceEventKind::ReachedEnd) == 0,
+            "forced same-tick redraw does not repeat held end");
+        expect(held.seek(root, 4).has_value() && held.update(866).has_value() &&
+            count(held.events(), SequenceEventKind::ReachedEnd) == 0,
+            "seeking before held end reevaluates without a premature end event");
+        expect(held.update(1121).has_value() &&
+            count(held.events(), SequenceEventKind::ReachedEnd) == 1,
+            "a new crossing after seek notifies again");
+        (void)held.stop(root);
+        const auto deleted = lifecycleMessage(held.events().back(), 1121);
+        expect(deleted && deleted->type == monopoly::uimsg::Type::SequenceDeleted &&
+            deleted->numberD == 1 && deleted->numberE == 1121,
+            "deletion in the same cycle uses the same root tick as reaching end");
+
+        SequenceRuntime looping;
+        ClockStartOptions options; options.endingAction = 3;
+        const auto loop = looping.start(executable, 24, options, std::nullopt, 8).value();
+        (void)looping.update(900);
+        for (const auto tick : {908, 924, 933})
+        {
+            expect(looping.update(tick).has_value() && looping.inspect(loop)->clock == 0 &&
+                count(looping.events(), SequenceEventKind::ReachedEnd) == 1,
+                "Loop still notifies at every end, including overshot cycles");
+            for (const auto& event : looping.events())
+                if (const auto message = lifecycleMessage(event, tick))
+                    expect(message->numberE == tick && message->numberD == 3,
+                        "loop messages follow irregular root ticks rather than publish count");
+        }
+        (void)looping.forceRedrawMatching(packDataId(2, 0), 24);
+        expect(looping.update(933).has_value() &&
+            count(looping.events(), SequenceEventKind::ReachedEnd) == 0,
+            "forced reevaluation at loop start does not invent another end");
+        SequenceRuntime immediate;
+        options.endingAction = 1;
+        options.initialClockOffset = 8;
+        (void)immediate.start(executable, 25, options, std::nullopt, 9).value();
+        const auto immediateCreated = lifecycleMessage(immediate.events().front(), 1400);
+        expect(immediate.update(1400).has_value() && immediate.liveNodeCount() == 0 &&
+            count(immediate.events(), SequenceEventKind::ReachedEnd) == 1 &&
+            count(immediate.events(), SequenceEventKind::Destroyed) == 1,
+            "Stop sequence can start, reach end and be deleted within one cycle");
+        for (const auto& event : immediate.events())
+            if (const auto message = lifecycleMessage(event, 1400))
+                expect(immediateCreated && message->numberE == immediateCreated->numberE &&
+                    message->numberE == 1400,
+                    "same-cycle start, end and delete share the exact top-level tick");
+        auto unlabeled = held.events().back();
+        unlabeled.label = 0;
+        expect(!lifecycleMessage(unlabeled, 1121), "unlabeled lifecycle events remain private");
+    }
+
     void testPauseAndSeek()
     {
         Fixture fixture;
@@ -484,7 +572,9 @@ namespace
         append(linearAttributes, meshChoice(1, 2, 0x3E800000U)); // 0.25
         DataBytes keys;
         append(keys, meshChoice(3, 4, 0xBF000000U)); // -0.5
+        append(keys, cameraFov(0x3F000000U)); // Other families do not select another effect.
         append(keys, meshChoice(9, 10, 0x3FC00000U)); // 1.5
+        append(keys, soundVolume(10));
         append(linearAttributes, tweeker(2, 8, keys));
         const std::array linearItems{ArchiveBuildItem{LegacyDataType::Chunky,
             mesh(target, true, 0, linearAttributes)}};
@@ -505,6 +595,25 @@ namespace
         expect(instances.size() == 1 &&
             instances.front().meshChoice == SequenceMeshChoice3D{3, 4, 0.5F},
             "current mesh-choice state reaches renderer-independent 3D mesh intent");
+
+        expect(linear.update(8).has_value() &&
+            linear.inspect(root)->meshChoice == SequenceMeshChoice3D{9, 10, 1.5F},
+            "exact final mesh-choice key replaces both pose indices and proportion");
+        const auto tween = linear.inspect(root)->children.front();
+        (void)linear.forceRedrawMatching(packDataId(2, 0), 17);
+        (void)linear.setEndingAction(tween, 2); // Force the held tweeker itself too.
+        expect(linear.update(8).has_value() &&
+            linear.meshInstances().front().meshChoice == SequenceMeshChoice3D{9, 10, 1.5F},
+            "held final key survives forced same-tick redraw into renderer intent");
+        expect(linear.seek(tween, 4).has_value() && linear.update(8).has_value() &&
+            linear.inspect(root)->meshChoice == SequenceMeshChoice3D{3, 4, 0.5F},
+            "seek back from final key restores initial indices during interpolation");
+        expect(linear.seek(tween, 8).has_value() && linear.update(8).has_value() &&
+            linear.inspect(root)->meshChoice == SequenceMeshChoice3D{9, 10, 1.5F},
+            "seek to exact final key reapplies all final mesh-choice fields");
+        expect(linear.setEndingAction(tween, 3).has_value() && linear.update(8).has_value() &&
+            linear.inspect(root)->meshChoice == SequenceMeshChoice3D{3, 4, -0.5F},
+            "looping from final key restores the complete initial mesh-choice key");
 
         DataBytes identityAttributes;
         append(identityAttributes, meshChoice(5, 6, 0x3F400000U)); // 0.75
@@ -531,6 +640,7 @@ namespace
         append(attributes, cameraFov(0x3F00'0000U)); // 0.5
         DataBytes keys;
         append(keys, cameraFov(0x3E80'0000U)); // 0.25
+        append(keys, soundVolume(10)); // Ignored even though parent is not audio.
         append(keys, cameraFov(0x3F80'0000U)); // 1.0
         append(attributes, tweeker(2, 8, keys));
         const std::array items{ArchiveBuildItem{LegacyDataType::Chunky,
@@ -924,6 +1034,69 @@ namespace
             "LoopToBeginning remains unfinished after crossing its end");
     }
 
+    void testTweekerSelectsOneEffect()
+    {
+        Fixture fixture;
+        DataBytes keys;
+        append(keys, dimensionality(0)); // Metadata does not choose an effect.
+        append(keys, soundVolume(10));
+        append(keys, soundPanning(95));
+        append(keys, soundPitch(11025));
+        append(keys, cameraFov(0x3F000000U));
+        append(keys, soundVolume(90));
+        append(keys, soundVolume(0)); // Only the first pair is used.
+        DataBytes attributes;
+        append(attributes, soundVolume(70));
+        append(attributes, soundPitch(22050));
+        append(attributes, soundPanning(-25));
+        append(attributes, tweeker(2, 8, keys));
+        const std::array items{
+            ArchiveBuildItem{LegacyDataType::Chunky, sound(packDataId(2, 1), true, 0, attributes)},
+            ArchiveBuildItem{LegacyDataType::Wave,
+                {std::byte{'R'}, std::byte{'I'}, std::byte{'F'}, std::byte{'F'}}}
+        };
+        DataBankRegistry registry;
+        (void)archive(fixture.root / "tweeker-one-effect.dat", items, registry);
+        SequenceRuntime runtime;
+        const auto root = runtime.start(program(registry), 7).value();
+        expect(runtime.update(0).has_value() && runtime.requestSoundClock(root, 4).has_value() &&
+            runtime.update(4).has_value(),
+            "mixed-family audio tweeker advances without activating unrelated camera effects");
+        auto view = runtime.inspect(root);
+        expect(view && view->volume == 50 && view->pitch == 22050 && view->panning == -25,
+            "volume is interpolated alone while pitch and pan retain the parent's values");
+        expect(runtime.requestSoundClock(root, 8).has_value() && runtime.update(8).has_value() && runtime.inspect(root) &&
+            runtime.inspect(root)->volume == 90,
+            "selected audio effect stops at its second key, ignoring a third occurrence");
+
+        for (const auto metadata : {std::uint8_t{136}, std::uint8_t{140}})
+        {
+            DataBytes noOpKeys;
+            if (metadata == 136) append(noOpKeys, boundingBox2D(0, 0, 10, 10));
+            else append(noOpKeys, chunk(140, DataBytes{std::byte{4}}));
+            append(noOpKeys, offset2D(100, 100));
+            append(noOpKeys, soundVolume(10));
+            append(noOpKeys, cameraFov(0x3F000000U));
+            DataBytes child;
+            append(child, offset2D(7, 9));
+            append(child, tweeker(2, 8, noOpKeys));
+            const std::array noOpItems{ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 20, 2, 0, true, child)}};
+            DataBankRegistry noOpRegistry;
+            (void)archive(fixture.root / ("tweeker-noop-" + std::to_string(metadata) + ".dat"),
+                noOpItems, noOpRegistry);
+            SequenceRuntime noOp;
+            const auto noOpRoot = noOp.start(program(noOpRegistry)).value();
+            expect(noOp.update(0).has_value() && noOp.update(4).has_value(),
+                "unsupported first private effect is a no-op rather than a fatal unrelated effect");
+            const auto unchanged = noOp.inspect(noOpRoot);
+            const auto* transform = unchanged ? std::get_if<Matrix2D>(&unchanged->worldTransform) : nullptr;
+            expect(unchanged && !unchanged->tweekerTransformApplied && transform &&
+                transform->values[6] == 7 && transform->values[7] == 9,
+                "bounds or label selected first cannot fall through to a later translation");
+        }
+    }
+
     void testSequenceVolumeContract()
     {
         Fixture fixture;
@@ -1287,6 +1460,7 @@ int main()
     {
         testRecursiveLifecycleAndOrder();
         testEndCrossingHoldAndLoop();
+        testLifecycleNotificationsAndClock();
         testPauseAndSeek();
         testBitmapLeafRuntimeIntent();
         testMeshLeafRuntimeIntent();
@@ -1298,6 +1472,7 @@ int main()
         testCommandsAndFailureLimits();
         testIsSequenceFinishedContract();
         testSequenceVolumeContract();
+        testTweekerSelectsOneEffect();
         testProgramCyclesDepthAndAttributes();
         testRawUapStartContract();
         testRawHmdStartContract();

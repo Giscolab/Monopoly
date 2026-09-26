@@ -20,6 +20,9 @@ namespace monopoly::data
     public:
         [[nodiscard]] std::expected<std::shared_ptr<const BitmapRuntimeAsset>, BitmapError>
             resolve(DataId id, LegacyDataType sourceType, SharedDataBytes bytes);
+        // Called after render publication retires the previous consumers.
+        // Keep active immutable assets; unused entries must not pin DAT leases.
+        [[nodiscard]] std::size_t releaseUnused() noexcept;
         void clear() noexcept { assets_.clear(); }
         [[nodiscard]] std::size_t size() const noexcept { return assets_.size(); }
     private:

@@ -232,7 +232,7 @@ namespace
         }
     }
 
-    void testComputerGame()
+    void testComputerGame(rules::PlayerNumber playerCount = 2)
     {
         observed.fill(0);
         acceptedActions.fill(0);
@@ -250,14 +250,16 @@ namespace
         rules::random::seed(12345);
         std::srand(54321);
         drain();
-        require(ui::localplayers::requestAddLocalPlayer(
-            userinterface::ruleStateReadOnly(), L"Computer One", 0, 0, 2, false), "first AI enters setup");
-        drain();
-        require(ui::localplayers::requestAddLocalPlayer(
-            userinterface::ruleStateReadOnly(), L"Computer Two", 1, 1, 2, false), "second AI enters setup");
-        drain();
-        require(rules::state().numberOfPlayers == 2 && ui::localplayers::count() == 2,
-            "real naming notifications assign both local slots");
+        constexpr std::array names{L"Computer One", L"Computer Two", L"Computer Three",
+            L"Computer Four", L"Computer Five", L"Computer Six"};
+        for (rules::PlayerNumber player = 0; player < playerCount; ++player)
+        {
+            require(ui::localplayers::requestAddLocalPlayer(userinterface::ruleStateReadOnly(),
+                names[player], player, player, 2, false), "computer enters through real player setup");
+            drain();
+        }
+        require(rules::state().numberOfPlayers == playerCount && ui::localplayers::count() == playerCount,
+            "real naming notifications assign every local slot");
         require(messaging::sendAction(actions::Type::StartGame, 0, rules::BankPlayer), "start is queued");
         // All-AI games pre-approve the configuration. Queue the user's settings
         // before StartGame's ensuing RestartPhase can auto-start the game.
@@ -268,6 +270,53 @@ namespace
         require(rules::configuration::acceptedConfigurationMessage(options, 0, false, accept),
             "real configuration encodes fast AI play");
         require(messaging::sendAction(accept), "configuration is queued");
+
+        if (playerCount == rules::MaxPlayers)
+        {
+            // Six-player games can legitimately run indefinitely when the
+            // deeds stay divided between opponents. Exercise every seat for
+            // two complete rounds without imposing an invented turn limit.
+            std::array<unsigned, rules::MaxPlayers> endedTurns{};
+            std::size_t idleTicks{};
+            while (std::any_of(endedTurns.begin(), endedTurns.end(),
+                [](unsigned turns) { return turns < 2; }) &&
+                delivered < 20'000 && idleTicks < 2'000)
+            {
+                actions::Message message;
+                if (messaging::receiveAction(message))
+                {
+                    if (message.action == actions::Type::EndTurn &&
+                        message.fromPlayer < playerCount)
+                        ++endedTurns[message.fromPlayer];
+                    deliver(message);
+                }
+                else
+                {
+                    ++idleTicks;
+                    presentationTick += 60;
+                    rules::serviceIdleTick();
+                    actions::Message tick;
+                    tick.action = actions::Type::Tick;
+                    tick.fromPlayer = rules::BankPlayer;
+                    tick.toPlayer = rules::AllPlayers;
+                    deliver(tick);
+                }
+            }
+            drain();
+            require(std::all_of(endedTurns.begin(), endedTurns.end(),
+                [](unsigned turns) { return turns >= 2; }) &&
+                observed[static_cast<std::size_t>(actions::Type::EndTurn)] ==
+                acceptedActions[static_cast<std::size_t>(actions::Type::EndTurn)],
+                "all six real computer players complete repeated accepted turns");
+            require(observed[static_cast<std::size_t>(actions::Type::BuyOrAuctionDecision)] != 0 &&
+                runtime::state().gameInProgress,
+                "full-table game continues through real property decisions");
+            std::cout << "[PASS] all six AI seats complete repeated turns through the real UI projection\n";
+            rules::shutdown();
+            ibar::shutdown();
+            messaging::shutdown();
+            return;
+        }
 
         // No scripted rolls, purchases, bids, trades or bankruptcy requests:
         // all decisions below come from the production AI and RULE messages.
@@ -296,7 +345,7 @@ namespace
         };
         playUntilGameOver(1);
         require(observed[static_cast<std::size_t>(actions::Type::NotifyGameOver)] != 0,
-            "two local AIs must reach game over through the real UI projection without stalling");
+            "local AIs must reach game over through the real UI projection without stalling");
         require(observed[static_cast<std::size_t>(actions::Type::RollDice)] >= 4,
             "computer game includes repeated turns");
         require(observed[static_cast<std::size_t>(actions::Type::BuyOrAuctionDecision)] != 0,
@@ -306,7 +355,10 @@ namespace
         require(rules::phases::current(rules::state()).phase == rules::GamePhase::GameFinished,
             "RULE reaches its finished phase");
         require(!runtime::state().gameInProgress, "UI consumes game over");
-        std::cout << "[PASS] complete AI game: " << delivered << " messages, "
+        require(observed[static_cast<std::size_t>(actions::Type::GoBankrupt)] >= playerCount - 1u,
+            "full game eliminates every player except the winner through actual bankruptcy actions");
+        std::cout << "[PASS] complete " << static_cast<unsigned>(playerCount) << "-player AI game: "
+            << delivered << " messages, "
             << observed[static_cast<std::size_t>(actions::Type::RollDice)] << " rolls, "
             << observed[static_cast<std::size_t>(actions::Type::BuyHouse)] << " house purchases\n";
 
@@ -362,6 +414,7 @@ namespace
         inputs.rulePlayer = player;
         inputs.gameInProgress = runtime::state().gameInProgress;
         inputs.rollDiceDesired = userinterface::dicePromptState().currentStartTurn;
+        inputs.raiseCashCanBankrupt = projection.raiseCashCanBankrupt;
         inputs.tradeEligible = ui::localplayers::tradeSourcePlayer(
             userinterface::ruleStateReadOnly(), player) < rules::MaxPlayers;
         const auto hit = ibar::ruleActionHitState(
@@ -600,6 +653,130 @@ namespace
             "Done closes the mortgage decision without changing the retained mortgage");
         std::cout << "[PASS] real human clicks/Space complete turns, dismiss cards and finish mortgage decisions\n";
         testHumanCounterOffer();
+        rules::shutdown();
+        ibar::shutdown();
+        messaging::shutdown();
+    }
+
+    void testHumanDebtChains()
+    {
+        observed.fill(0);
+        acceptedActions.fill(0);
+        delivered = 0;
+        initialStatePublished = false;
+        require(messaging::initialize(), "debt-chain FIFO initializes");
+        userinterface::resetRuleProjection();
+        ui::localplayers::reset();
+        ai::resetMessageIngress();
+        require(ibar::initialize() && rules::initialize(), "debt-chain IBar and RULE initialize");
+        drain();
+        constexpr std::array names{L"Debtor One", L"Debtor Two", L"Debtor Three", L"Debtor Four"};
+        for (rules::PlayerNumber player = 0; player < names.size(); ++player)
+        {
+            require(ui::localplayers::requestAddLocalPlayer(userinterface::ruleStateReadOnly(),
+                names[player], player, player, 0, false), "four humans register through real setup");
+            drain();
+        }
+        require(messaging::sendAction(actions::Type::StartGame, 0, rules::BankPlayer),
+            "debt-chain game starts through real setup");
+        for (rules::PlayerNumber player = 0; player < names.size(); ++player)
+        {
+            actions::Message accept;
+            require(rules::configuration::acceptedConfigurationMessage(
+                rules::state().options, player, false, accept) && messaging::sendAction(accept),
+                "all four humans accept their game options");
+        }
+        drain();
+        serviceHumanIdleTick();
+        const auto initial = rules::state();
+
+        const auto cardState = [&](bool chairman, std::array<std::int64_t, 4> cash)
+        {
+            auto saved = initial;
+            saved.currentPlayer = 0;
+            for (rules::PlayerNumber player = 0; player < cash.size(); ++player)
+            {
+                saved.players[player].cash = cash[player];
+                saved.players[player].currentSquare = 0;
+            }
+            saved.players[0].currentSquare = chairman ? 7 : 2;
+            saved.players[0].firstMoveMade = true;
+            for (auto& square : saved.squares)
+            {
+                square.owner = rules::BankPlayer;
+                square.houses = 0;
+                square.mortgaged = false;
+            }
+            saved.squares[39].owner = chairman ? 0 : 1;
+            saved.squares[39].mortgaged = true;
+            const auto deck = chairman ? rules::DeckType::Chance : rules::DeckType::Community;
+            const auto card = chairman ? rules::CardType::ChancePay50ToEachPlayer :
+                rules::CardType::CommunityGet50FromEachPlayer;
+            auto& pile = saved.cards[static_cast<std::size_t>(deck)].cardPile;
+            const auto found = std::find(pile.begin(), pile.end(), static_cast<std::uint8_t>(card));
+            require(found != pile.end(), "card fixture retains the original legal deck");
+            std::iter_swap(pile.begin(), found);
+            saved.numberOfPendingPhases = 2;
+            saved.phaseStack = {};
+            saved.phaseUndo = {};
+            saved.phaseStack[0].phase = rules::GamePhase::WaitUntilCardSeen;
+            saved.phaseStack[1].phase = rules::GamePhase::WaitEndTurn;
+            return saved;
+        };
+        const auto assertCash = [](std::array<std::int64_t, 4> expected)
+        {
+            for (rules::PlayerNumber player = 0; player < expected.size(); ++player)
+                require(rules::state().players[player].cash == expected[player] &&
+                    userinterface::ruleStateReadOnly().players[player].cash == expected[player],
+                    "successive card payments agree in authoritative and projected cash balances");
+        };
+
+        loadHumanState(cardState(false, {100, 0, 100, 100}));
+        pressHumanMain(ibar::RuleMode::ViewingCard, actions::Type::CardSeen);
+        require(userinterface::iBarRuleStateReadOnly().player == 1,
+            "birthday asks the next player for the first payment");
+        pressHumanMain(ibar::RuleMode::RaiseMoney, actions::Type::GoBankrupt);
+        require(userinterface::iBarRuleStateReadOnly().player == 0 &&
+            rules::state().squares[39].owner == 0 && rules::state().players[1].currentSquare == 41,
+            "first payer goes bankrupt to the card recipient before later payments");
+        pressHumanMain(ibar::RuleMode::FreeUnmortgage, actions::Type::FreeUnmortgageDone);
+        assertCash({180, 0, 50, 50});
+        require(rules::state().squares[39].mortgaged &&
+            rules::phases::current(rules::state()).phase == rules::GamePhase::WaitEndTurn,
+            "mortgage fee and remaining birthday payments finish before the turn resumes");
+
+        loadHumanState(cardState(true, {75, 100, 100, 100}));
+        pressHumanMain(ibar::RuleMode::ViewingCard, actions::Type::CardSeen);
+        assertCash({25, 150, 100, 100});
+        require(userinterface::iBarRuleStateReadOnly().player == 0,
+            "chairman pays the first creditor and must raise cash for the second");
+        pressHumanMain(ibar::RuleMode::RaiseMoney, actions::Type::GoBankrupt);
+        require(userinterface::iBarRuleStateReadOnly().player == 2 &&
+            rules::state().squares[39].owner == 2 && rules::state().players[0].currentSquare == 41,
+            "only the active chairman creditor receives the remaining estate");
+        pressHumanMain(ibar::RuleMode::FreeUnmortgage, actions::Type::FreeUnmortgageDone, true);
+        assertCash({0, 150, 105, 100});
+        pressHumanMain(ibar::RuleMode::DoneTurn, actions::Type::EndTurn);
+        require(rules::state().currentPlayer == 1,
+            "bankrupt chairman can close the turn and the next surviving human plays");
+
+        loadHumanState(cardState(false, {0, 0, 100, 100}));
+        pressHumanMain(ibar::RuleMode::ViewingCard, actions::Type::CardSeen);
+        pressHumanMain(ibar::RuleMode::RaiseMoney, actions::Type::GoBankrupt);
+        require(userinterface::iBarRuleStateReadOnly().player == 0 &&
+            userinterface::iBarRuleStateReadOnly().raiseCashNeeded == 20,
+            "birthday recipient must pay interest while the inherited deed is held in escrow");
+        pressHumanMain(ibar::RuleMode::RaiseMoney, actions::Type::GoBankrupt, true);
+        assertCash({0, 0, 100, 100});
+        require(rules::state().players[0].currentSquare == 41 &&
+            rules::state().players[1].currentSquare == 41 &&
+            rules::state().squares[39].owner == rules::BankPlayer &&
+            !rules::state().squares[39].mortgaged,
+            "cascade bankruptcy returns the escrow deed to the bank and cancels later collections");
+        pressHumanMain(ibar::RuleMode::DoneTurn, actions::Type::EndTurn);
+        require(rules::state().currentPlayer == 2,
+            "the next turn skips both bankrupt players after the inherited-fee cascade");
+        std::cout << "[PASS] human card debts, creditor order, mortgage escrow and cascading bankruptcy\n";
         rules::shutdown();
         ibar::shutdown();
         messaging::shutdown();
@@ -893,7 +1070,9 @@ int main()
         testJailRollPrompt(false);
         testJailRollPrompt(true);
         testHumanGameInput();
+        testHumanDebtChains();
         testComputerGame();
+        testComputerGame(rules::MaxPlayers);
         testNetworkGame();
     }
     catch (const std::exception& failure)

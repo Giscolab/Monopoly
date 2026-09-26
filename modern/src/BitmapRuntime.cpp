@@ -1,6 +1,12 @@
 #include "BitmapRuntime.hpp"
 namespace monopoly::data
 {
+    std::size_t BitmapRuntimeCache::releaseUnused() noexcept
+    {
+        return std::erase_if(assets_, [](const auto& entry)
+        { return entry.second.use_count() == 1; });
+    }
+
     std::expected<std::shared_ptr<const BitmapRuntimeAsset>, BitmapError>
     BitmapRuntimeCache::resolve(
         DataId id, LegacyDataType sourceType, SharedDataBytes bytes)

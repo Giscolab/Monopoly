@@ -208,6 +208,10 @@ namespace monopoly::language
             }
         }
 
+        // The retail bound counts UTF-16 units. Modern names may contain
+        // supplementary characters, so never publish half of their last pair.
+        if (!output.empty() && output.back() >= 0xD800 && output.back() <= 0xDBFF)
+            output.pop_back();
         return output;
     }
 }

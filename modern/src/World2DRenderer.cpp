@@ -1,6 +1,8 @@
 #include "World2DRenderer.hpp"
 #include "MeshGPUResources.hpp"
 #include "LogicalViewport.hpp"
+#include "World3DShaderUniforms.hpp"
+#include "SequenceTransforms.hpp"
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstring>
@@ -191,15 +193,21 @@ namespace monopoly::engine
         SDL_BindGPUGraphicsPipeline(pass,pipeline_);
         SDL_SetGPUViewport(pass,&viewport); SDL_SetGPUScissor(pass,&scissor);
         SDL_GPUBufferBinding binding{quad_,0}; SDL_BindGPUVertexBuffers(pass,0,&binding,1);
-        const std::array<float,8> white{1,1,1,1,1,1,1,1};
-        SDL_PushGPUFragmentUniformData(command,0,white.data(),sizeof(white));
+        World3DFragmentUniforms fragmentUniforms;
+        fragmentUniforms.materialDiffuse = {1, 1, 1, 1};
+        SDL_PushGPUFragmentUniformData(command, 0, &fragmentUniforms, sizeof(fragmentUniforms));
+        World3DVertexUniforms vertexUniforms;
+        vertexUniforms.world = sequence::identity3D().values;
+        vertexUniforms.materialDiffuse = {1, 1, 1, 1};
+        vertexUniforms.sceneAmbient = {1, 1, 1, 1};
+        // Remaining zero-initialized fields disable all 3D lights for 2D.
         for (const auto node:slot.order())
         {
             const auto& object=*slot.find(node);
             // Row-vector Matrix2D into the original 800x600 logical canvas.
             // DataBMP origin is (0,0); no dice-specific anchor is inserted.
-            const auto matrix=matrixFor(object);
-            SDL_PushGPUVertexUniformData(command,0,matrix.data(),sizeof(matrix));
+            vertexUniforms.worldViewProjection = matrixFor(object);
+            SDL_PushGPUVertexUniformData(command, 0, &vertexUniforms, sizeof(vertexUniforms));
             SDL_GPUTextureSamplerBinding sample{textures_.at(object.asset.get()).gpu,sampler_};
             SDL_BindGPUFragmentSamplers(pass,0,&sample,1);
             SDL_DrawGPUPrimitives(pass,6,1,0,0);

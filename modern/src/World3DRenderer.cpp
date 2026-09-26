@@ -1,6 +1,7 @@
 #include "World3DRenderer.hpp"
 
 #include "SequenceTransforms.hpp"
+#include "World3DShaderUniforms.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -14,27 +15,6 @@ namespace monopoly::engine
 {
     namespace
     {
-        struct alignas(16) VertexUniforms
-        {
-            std::array<float, 16> worldViewProjection{};
-            std::array<float, 16> world{};
-        };
-
-        struct alignas(16) FragmentUniforms
-        {
-            std::array<float, 4> materialDiffuse{};
-            std::array<float, 4> sceneAmbient{};
-            std::array<float, 4> boardReflectionColorEnabled{};
-            std::array<float, 4> boardReflectionDirection{};
-            std::array<float, 4> sunColorEnabled{};
-            std::array<float, 4> sunDirection{};
-            std::array<float, 4> spotlightColorEnabled{};
-            std::array<float, 4> spotlightPositionRange{};
-            std::array<float, 4> spotlightDirectionFalloff{};
-            std::array<float, 4> spotlightAttenuationTheta{};
-            std::array<float, 4> spotlightPhi{};
-        };
-
         [[nodiscard]] std::array<float, 4> vector4(
             const std::array<float, 3>& value, float w = 0.0F) noexcept
         {
@@ -384,31 +364,32 @@ namespace monopoly::engine
             const auto worldViewProjection = sequence::multiply(
                 worldView, projection.rasterProjection);
 
-            VertexUniforms vertexUniforms;
+            World3DVertexUniforms vertexUniforms;
             vertexUniforms.worldViewProjection = worldViewProjection.values;
             vertexUniforms.world = batch.worldTransform.values;
+            vertexUniforms.materialDiffuse = batch.material.diffuse;
 
-            FragmentUniforms fragmentUniforms;
+            World3DFragmentUniforms fragmentUniforms;
             fragmentUniforms.materialDiffuse = batch.material.diffuse;
-            fragmentUniforms.sceneAmbient = vector4(lighting_.ambient, 1.0F);
-            fragmentUniforms.boardReflectionColorEnabled = vector4(
+            vertexUniforms.sceneAmbient = vector4(lighting_.ambient, 1.0F);
+            vertexUniforms.boardReflectionColorEnabled = vector4(
                 lighting_.boardReflection.color,
                 lighting_.boardReflection.enabled ? 1.0F : 0.0F);
-            fragmentUniforms.boardReflectionDirection = vector4(
+            vertexUniforms.boardReflectionDirection = vector4(
                 lighting_.boardReflection.direction);
-            fragmentUniforms.sunColorEnabled = vector4(
+            vertexUniforms.sunColorEnabled = vector4(
                 lighting_.sun.color, lighting_.sun.enabled ? 1.0F : 0.0F);
-            fragmentUniforms.sunDirection = vector4(lighting_.sun.direction);
-            fragmentUniforms.spotlightColorEnabled = vector4(
+            vertexUniforms.sunDirection = vector4(lighting_.sun.direction);
+            vertexUniforms.spotlightColorEnabled = vector4(
                 lighting_.spotlight.color,
                 lighting_.spotlight.enabled ? 1.0F : 0.0F);
-            fragmentUniforms.spotlightPositionRange = vector4(
+            vertexUniforms.spotlightPositionRange = vector4(
                 lighting_.spotlight.position, lighting_.spotlight.range);
-            fragmentUniforms.spotlightDirectionFalloff = vector4(
+            vertexUniforms.spotlightDirectionFalloff = vector4(
                 lighting_.spotlight.direction, lighting_.spotlight.falloff);
-            fragmentUniforms.spotlightAttenuationTheta = vector4(
+            vertexUniforms.spotlightAttenuationTheta = vector4(
                 lighting_.spotlight.attenuation, lighting_.spotlight.theta);
-            fragmentUniforms.spotlightPhi =
+            vertexUniforms.spotlightPhi =
                 {lighting_.spotlight.phi, 0.0F, 0.0F, 0.0F};
 
             SDL_PushGPUVertexUniformData(commandBuffer, 0U,

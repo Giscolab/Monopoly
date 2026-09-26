@@ -262,15 +262,9 @@ namespace monopoly::sequence
             if (interpolationType > 2)
                 return std::unexpected(TweekerTransformError::InvalidInterpolation);
             if (interpolationType == 0) return std::nullopt;
-            const data::SequenceCameraFieldOfViewAttribute* first{};
-            const data::SequenceCameraFieldOfViewAttribute* second{};
-            for (const auto& attribute : attributes.values)
-                if (const auto* field =
-                    std::get_if<data::SequenceCameraFieldOfViewAttribute>(&attribute))
-                {
-                    if (!first) first = field;
-                    else { second = field; break; }
-                }
+            const auto keys = selectTweekerKeys(attributes);
+            const auto* first = std::get_if<data::SequenceCameraFieldOfViewAttribute>(keys.first);
+            const auto* second = std::get_if<data::SequenceCameraFieldOfViewAttribute>(keys.second);
             if (!first) return std::nullopt;
             if (!parentIsCamera)
                 return std::unexpected(TweekerTransformError::DimensionalityMismatch);
@@ -312,34 +306,13 @@ namespace monopoly::sequence
             // not touch sound/video properties.
             if (interpolationType == 0)
                 return result;
-            const data::SequenceSoundPitchAttribute* pitchA{};
-            const data::SequenceSoundPitchAttribute* pitchB{};
-            const data::SequenceSoundVolumeAttribute* volumeA{};
-            const data::SequenceSoundVolumeAttribute* volumeB{};
-            const data::SequenceSoundPanningAttribute* panA{};
-            const data::SequenceSoundPanningAttribute* panB{};
-
-            for (const auto& attribute : attributes.values)
-            {
-                if (const auto* value =
-                    std::get_if<data::SequenceSoundPitchAttribute>(&attribute))
-                {
-                    if (!pitchA) pitchA = value;
-                    else if (!pitchB) pitchB = value;
-                }
-                else if (const auto* value =
-                    std::get_if<data::SequenceSoundVolumeAttribute>(&attribute))
-                {
-                    if (!volumeA) volumeA = value;
-                    else if (!volumeB) volumeB = value;
-                }
-                else if (const auto* value =
-                    std::get_if<data::SequenceSoundPanningAttribute>(&attribute))
-                {
-                    if (!panA) panA = value;
-                    else if (!panB) panB = value;
-                }
-            }
+            const auto keys = selectTweekerKeys(attributes);
+            const auto* pitchA = std::get_if<data::SequenceSoundPitchAttribute>(keys.first);
+            const auto* pitchB = std::get_if<data::SequenceSoundPitchAttribute>(keys.second);
+            const auto* volumeA = std::get_if<data::SequenceSoundVolumeAttribute>(keys.first);
+            const auto* volumeB = std::get_if<data::SequenceSoundVolumeAttribute>(keys.second);
+            const auto* panA = std::get_if<data::SequenceSoundPanningAttribute>(keys.first);
+            const auto* panB = std::get_if<data::SequenceSoundPanningAttribute>(keys.second);
 
             if (!pitchA && !volumeA && !panA)
                 return result;
@@ -389,15 +362,9 @@ namespace monopoly::sequence
             std::int32_t endTime, std::uint8_t parentDimensionality) noexcept
         {
             if (interpolationType == 0) return std::nullopt;
-            const data::Sequence3DMeshChoiceAttribute* first{};
-            const data::Sequence3DMeshChoiceAttribute* second{};
-            for (const auto& attribute : attributes.values)
-                if (const auto* choice =
-                    std::get_if<data::Sequence3DMeshChoiceAttribute>(&attribute))
-                {
-                    if (!first) first = choice;
-                    else { second = choice; break; }
-                }
+            const auto keys = selectTweekerKeys(attributes);
+            const auto* first = std::get_if<data::Sequence3DMeshChoiceAttribute>(keys.first);
+            const auto* second = std::get_if<data::Sequence3DMeshChoiceAttribute>(keys.second);
             if (!first) return std::nullopt;
             if (parentDimensionality != 3)
                 return std::unexpected(TweekerTransformError::DimensionalityMismatch);
@@ -407,8 +374,14 @@ namespace monopoly::sequence
             {
                 const float proportion = static_cast<float>(clock) /
                     static_cast<float>(endTime);
-                result.meshProportion = first->meshProportion + proportion *
-                    (second->meshProportion - first->meshProportion);
+                // Retail applies the complete final key at p == 1. Between
+                // keys, only the proportion changes; pose indices stay at A.
+                if (proportion == 1.0F)
+                    result = {second->meshIndexA, second->meshIndexB,
+                        second->meshProportion};
+                else
+                    result.meshProportion = first->meshProportion + proportion *
+                        (second->meshProportion - first->meshProportion);
             }
             return result;
         }
@@ -1289,7 +1262,7 @@ namespace monopoly::sequence
             node.definition().dataId, node.definition().record.chunk.headerOffset, tick.error()));
         if (!tick->updated) return true; // gated parent gates descendants too
         emit(SequenceEventKind::Updated, node);
-        if (tick->hitEnd) emit(SequenceEventKind::ReachedEnd, node);
+        if (tick->notifyEnd) emit(SequenceEventKind::ReachedEnd, node);
         if (tick->stopped) return false; // children do not get a final tick
         const auto children = tick->restartChildren ? rebuildChildren(node) : birthChildren(node, tick->previousClock);
         if (!children) return std::unexpected(children.error());

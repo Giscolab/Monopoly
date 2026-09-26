@@ -140,6 +140,54 @@ namespace
             "StartCXYSR transform reaches the active 2D render intent");
     }
 
+    void testBitmapRetirementDuringPlayback()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto face = data::packDataId(data::LegacyGroupId::Main, 0x0096);
+        const auto faceBitmap = data::packDataId(data::LegacyGroupId::Main, 0x00A0);
+        const auto raw = data::packDataId(data::LegacyGroupId::Main, 0x00A2);
+        expect(playback.startXY(face, 256, 0, 0).has_value() &&
+            playback.startXY(raw, 12, 0, 0).has_value() && playback.update(0).has_value(),
+            "two independent bitmap resources publish through normal playback");
+        std::weak_ptr<const data::BitmapRuntimeAsset> retired;
+        std::weak_ptr<const data::DataBytes> retiredSource;
+        std::shared_ptr<const data::BitmapRuntimeAsset> consumer;
+        sequence::SequenceNodeId survivor{};
+        for (const auto& item : playback.runtime().bitmapInstances())
+        {
+            const auto* object = playback.world2D().find(item.node);
+            if (!object) continue;
+            if (item.contentsDataId == faceBitmap)
+            {
+                retired = object->asset;
+                retiredSource = object->asset->source;
+            }
+            else if (item.contentsDataId == raw)
+            {
+                consumer = object->asset;
+                survivor = item.node;
+            }
+        }
+        expect(!retired.expired() && !retiredSource.expired() && consumer,
+            "published frames own decoded bitmap assets and DAT source leases");
+        expect(playback.stop(face, 256).has_value() && playback.update(4).has_value(),
+            "one bitmap sequence retires while the other remains in the game");
+        const auto* active = playback.world2D().find(survivor);
+        expect(retired.expired() && retiredSource.expired() && active && active->asset == consumer,
+            "normal frame publication releases stopped bitmap pixels and source while preserving active identity");
+        expect(playback.update(8).has_value() && playback.world2D().find(survivor) && consumer &&
+            consumer->image.width == 3 && consumer->image.height == 2,
+            "continued playback retains the surviving decoded image");
+        std::weak_ptr<const data::BitmapRuntimeAsset> stopped = consumer;
+        expect(playback.stopAll().has_value() && playback.world2D().size() == 0 && consumer &&
+            consumer->image.width == 3 && !consumer->image.pixels.empty(),
+            "stopAll clears playback ownership without invalidating an external frame consumer");
+        consumer.reset();
+        expect(stopped.expired(), "stopAll leaves no cache pin after the final external consumer releases");
+    }
+
     void testFixedAndBobbingDice2D()
     {
         using namespace monopoly;
@@ -187,7 +235,7 @@ int main()
 {
     std::cout << "Monopoly SequencePlayback 2D tests\n"
               << "==================================\n";
-    try { testRawWavePlayback(); testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testFixedAndBobbingDice2D(); }
+    try { testRawWavePlayback(); testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testBitmapRetirementDuringPlayback(); testFixedAndBobbingDice2D(); }
     catch (const std::exception& e)
     {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << '\n';

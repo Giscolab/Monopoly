@@ -73,6 +73,52 @@ int main()
     check(uapAsset && (*uapAsset)->sourceType == data::LegacyDataType::Uap &&
             (*uapAsset)->image.width == 3 && (*uapAsset)->image.height == 2,
         "bitmap runtime cache decodes and identifies immutable DataUAP assets");
+    {
+        data::BitmapRuntimeCache lifetimeCache;
+        std::shared_ptr<const data::BitmapRuntimeAsset> consumer;
+        std::weak_ptr<const data::BitmapRuntimeAsset> retiredAsset;
+        std::weak_ptr<const data::DataBytes> retiredSource;
+        {
+            auto payload = std::make_shared<const data::DataBytes>(
+                SyntheticSequenceResources::bitmap24());
+            retiredSource = payload;
+            auto decoded = lifetimeCache.resolve(9, data::LegacyDataType::Bitmap, payload);
+            check(decoded.has_value(), "lifetime fixture decodes a bitmap");
+            if (decoded) consumer = *decoded;
+            retiredAsset = consumer;
+        }
+        check(lifetimeCache.releaseUnused() == 0 && consumer &&
+            consumer->image.pixels == expected && !retiredSource.expired(),
+            "cache collection preserves active pixels and their immutable source lease");
+        consumer.reset();
+        check(lifetimeCache.releaseUnused() == 1 && lifetimeCache.size() == 0 &&
+            retiredAsset.expired() && retiredSource.expired(),
+            "last consumer release makes decoded pixels and source eligible for collection");
+        check(lifetimeCache.releaseUnused() == 0, "empty bitmap collection is idempotent");
+
+        std::shared_ptr<const data::BitmapRuntimeAsset> oldSnapshot, newSnapshot;
+        std::weak_ptr<const data::DataBytes> oldSource, newSource;
+        {
+            auto oldBytes = std::make_shared<const data::DataBytes>(
+                SyntheticSequenceResources::bitmap24());
+            auto changedBytes = *oldBytes;
+            changedBytes[54] = std::byte{123};
+            auto newBytes = std::make_shared<const data::DataBytes>(std::move(changedBytes));
+            oldSource = oldBytes;
+            newSource = newBytes;
+            oldSnapshot = lifetimeCache.resolve(9, data::LegacyDataType::Bitmap, oldBytes).value();
+            newSnapshot = lifetimeCache.resolve(9, data::LegacyDataType::Bitmap, newBytes).value();
+        }
+        check(lifetimeCache.releaseUnused() == 0 && oldSnapshot != newSnapshot &&
+            oldSnapshot->image.pixels == expected && newSnapshot->image.pixels != expected,
+            "same-ID replacement preserves distinct active snapshot pixels during collection");
+        oldSnapshot.reset();
+        check(oldSource.expired() && !newSource.expired() && lifetimeCache.size() == 1,
+            "retired snapshot releases independently of the current same-ID cache entry");
+        newSnapshot.reset();
+        check(lifetimeCache.releaseUnused() == 1 && newSource.expired(),
+            "replacement snapshot is collected after its own final consumer ends");
+    }
     engine::SequenceWorld2DSlot slot;
     sequence::SequenceBitmapRenderItem item{1,7,257,0,sequence::translate2D(-11,0),
         {data::LegacyDataType::Bitmap,2,2,0,0,24},source};

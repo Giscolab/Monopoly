@@ -82,13 +82,33 @@ namespace
 
     void testWideConversion()
     {
-        const auto text = language::wideToUtf16(L"Monopoly U0001F3B2");
-        require(text && *text == u"Monopoly U0001F3B2",
+        const auto text = language::wideToUtf16(L"Monopoly \U0001F3B2");
+        require(text && *text == u"Monopoly \U0001F3B2",
             "wide player names convert to portable UTF-16 including supplementary characters");
 
         const std::wstring invalid{static_cast<wchar_t>(0xD800)};
         require(!language::wideToUtf16(invalid),
             "invalid wide Unicode is rejected rather than copied into LANG text");
+    }
+
+    void testSupplementaryCharacterAtLimit()
+    {
+        language::LegacyFormatArguments args{};
+        auto custom = resolvers();
+        args.stringA = u"A\U0001F3B2B";
+        const auto shortenedArgument = language::formatLegacyMessage(u"^A tail", args, custom, 2);
+        const auto shortenedLiteral = language::formatLegacyMessage(u"A\U0001F3B2B", args, custom, 2);
+        require(shortenedArgument && *shortenedArgument == u"A" &&
+            shortenedLiteral && *shortenedLiteral == u"A",
+            "UTF-16 limit truncates before a surrogate pair in both literal and substituted text");
+        const auto wholePair = language::formatLegacyMessage(u"^A", args, custom, 3);
+        require(wholePair && *wholePair == u"A\U0001F3B2",
+            "a supplementary character that fits exactly is retained");
+        custom.playerName = [](rules::PlayerNumber) -> std::expected<std::u16string, std::string>
+        { return u"\U0001F3B2"; };
+        const auto shortenedName = language::formatLegacyMessage(u"^P", args, custom, 1);
+        require(shortenedName && shortenedName->empty(),
+            "player-name substitution cannot leave a dangling UTF-16 surrogate");
     }
 }
 
@@ -99,6 +119,7 @@ int main()
         testControlExpansion();
         testLegacyQuirksAndBounds();
         testWideConversion();
+        testSupplementaryCharacterAtLimit();
         std::cout << "[PASS] legacy message formatting and Unicode conversion\n";
         return 0;
     }

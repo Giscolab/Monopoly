@@ -361,6 +361,103 @@ namespace
                 "real SDL_GPU directional light illuminates a matching world normal");
         }
 
+        // All three vertices have the same depth, so the barycentric color
+        // below is independent of perspective correction. Sun light sees
+        // normals +Z,+Z,+X as red intensities 1,1,0. Near the barycenter,
+        // Gouraud gives ~170; normalizing an interpolated normal gives ~228.
+        auto gouraudSlot = slot;
+        sequence::SequenceMeshRenderItem gouraudItem;
+        gouraudItem.node = 1;
+        gouraudItem.contentsDataId = data::packDataId(8, 55);
+        gouraudItem.priority = 7;
+        gouraudItem.worldTransform = sequence::identity3D();
+        auto gouraudAsset = std::make_shared<data::MeshRuntimeAsset>(
+            *makeAsset(gouraudItem.contentsDataId));
+        auto gouraudRender = std::make_shared<data::MeshRenderData>(
+            *gouraudAsset->renderData);
+        gouraudRender->vertices = {
+            {{{-8.0F, -8.0F, 10.0F}}, {{0, 0, 1}}, {{0, 0}}},
+            {{{ 8.0F, -8.0F, 10.0F}}, {{0, 0, 1}}, {{0, 0}}},
+            {{{ 0.0F,  8.0F, 10.0F}}, {{1, 0, 0}}, {{0, 0}}}};
+        gouraudRender->bounds = {{-8.0F, -8.0F, 10.0F}, {8.0F, 8.0F, 10.0F}};
+        gouraudAsset->renderData = std::move(gouraudRender);
+        gouraudItem.asset = std::move(gouraudAsset);
+        expect(gouraudSlot.sync({gouraudItem}).has_value(),
+            "renderer receives a constant-depth triangle with distinct vertex normals");
+        SDL_GPUCommandBuffer* gouraudCommand = SDL_AcquireGPUCommandBuffer(device);
+        expect(gouraudCommand && clearTarget(gouraudCommand, target),
+            "Gouraud regression starts from a black target");
+        if (gouraudCommand)
+        {
+            const auto gouraudStats = renderer->render(
+                gouraudCommand, target, 64U, 64U, viewport, gouraudSlot);
+            pixels.fill(0);
+            const bool gouraudRead = gouraudStats &&
+                downloadTarget(device, gouraudCommand, target, pixels);
+            if (!gouraudStats) (void)SDL_CancelGPUCommandBuffer(gouraudCommand);
+            // Projected base Y=57.6, apex Y=6.4. Pixel center Y=40.5
+            // has apex weight 17.1/51.2, leaving 0.666 of full red.
+            constexpr std::size_t barycenter = (40U * 64U + 32U) * 4U;
+            const auto red = pixels[barycenter];
+            std::cout << "[GPU] Gouraud barycenter red=" << static_cast<unsigned>(red) << '\n';
+            expect(gouraudRead && red >= 167U && red <= 173U &&
+                pixels[barycenter + 1U] == 0U && pixels[barycenter + 2U] == 0U &&
+                pixels[barycenter + 3U] == 255U,
+                "Gouraud interpolates vertex colors (~170), not normalized pixel normals (~228)");
+        }
+
+        // Fixed-function lighting clamps the material-modulated color at
+        // vertices, not after interpolation. Two white directionals give
+        // intensities 2,0,0 to +Z,+X,+X; their clamped white average is 1/3.
+        engine::World3DLighting overlappingLighting{};
+        overlappingLighting.ambient = {0.0F, 0.0F, 0.0F};
+        overlappingLighting.sun = {{1.0F, 1.0F, 1.0F}, {0.0F, 0.0F, -1.0F}, true};
+        overlappingLighting.boardReflection = overlappingLighting.sun;
+        renderer->setLighting(overlappingLighting);
+        const auto drawSaturatedTriangle = [&](float materialRed, bool white)
+        {
+            auto saturatedSlot = slot;
+            auto item = gouraudItem;
+            item.contentsDataId = data::packDataId(8, white ? 56 : 57);
+            auto asset = std::make_shared<data::MeshRuntimeAsset>(*gouraudItem.asset);
+            asset->dataId = item.contentsDataId;
+            auto render = std::make_shared<data::MeshRenderData>(*asset->renderData);
+            render->vertices[1].normal = {1, 0, 0};
+            render->batches.front().material.diffuse =
+                {materialRed, white ? 1.0F : 0.0F, white ? 1.0F : 0.0F, 1.0F};
+            asset->renderData = std::move(render);
+            item.asset = std::move(asset);
+            expect(saturatedSlot.sync({item}).has_value(),
+                "saturation fixture publishes +Z,+X,+X with the selected diffuse material");
+            auto* command = SDL_AcquireGPUCommandBuffer(device);
+            expect(command && clearTarget(command, target),
+                "vertex saturation regression starts from black");
+            if (!command) return;
+            const auto drawn = renderer->render(command, target, 64U, 64U, viewport, saturatedSlot);
+            pixels.fill(0);
+            const bool read = drawn && downloadTarget(device, command, target, pixels);
+            if (!drawn) (void)SDL_CancelGPUCommandBuffer(command);
+            // Average symmetric pixel centers X=31.5,32.5 near centroid X=32
+            // to remove their opposite horizontal barycentric offsets.
+            constexpr std::size_t left = (40U * 64U + 31U) * 4U;
+            constexpr std::size_t right = (40U * 64U + 32U) * 4U;
+            const float red = (pixels[left] + pixels[right]) * 0.5F;
+            std::cout << "[GPU] vertex clamp material=" << materialRed << " red=" << red << '\n';
+            const bool alpha = pixels[left + 3U] == 255U && pixels[right + 3U] == 255U;
+            if (white)
+                expect(read && red >= 83.0F && red <= 87.0F && alpha &&
+                    pixels[left] == pixels[left + 1U] && pixels[left] == pixels[left + 2U] &&
+                    pixels[right] == pixels[right + 1U] && pixels[right] == pixels[right + 2U],
+                    "overlapping lights clamp white per vertex (~85), not after interpolation (~170)");
+            else
+                expect(read && red >= 41.0F && red <= 44.0F && alpha &&
+                    pixels[left + 1U] == 0U && pixels[left + 2U] == 0U &&
+                    pixels[right + 1U] == 0U && pixels[right + 2U] == 0U,
+                    "material 0.25 applies before vertex clamp (~42.5), not afterward (~21.25)");
+        };
+        drawSaturatedTriangle(1.0F, true);
+        drawSaturatedTriangle(0.25F, false);
+
         engine::World3DLighting spotlightLighting{};
         spotlightLighting.ambient = {0.0F, 0.0F, 0.0F};
         spotlightLighting.spotlight.enabled = true;

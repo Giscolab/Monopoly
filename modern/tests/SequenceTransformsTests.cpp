@@ -75,14 +75,14 @@ namespace
             std::byte{0x22}, std::byte{0x56}})); // 22050 Hz.
         append(contents, chunk(142, DataBytes{std::byte{70}}));
         append(contents, chunk(143, DataBytes{std::byte{231}})); // -25.
-        append(contents, sequence()); // attribute scan must stop here
+        append(contents, sequence()); // only dimensionality inference stops here
         LegacyChunkReader reader(std::make_shared<const DataBytes>(sequence(contents)));
         auto record = readLegacySequenceRecord(reader);
         auto attributes = record ? readLegacySequenceAttributes(reader) :
             std::expected<LegacySequenceAttributes, SequenceError>(
                 std::unexpected(record.error()));
-        expect(attributes && attributes->values.size() == 5,
-            "attribute parser stops before the first child sequence");
+        expect(attributes && attributes->values.size() == 5 && attributes->firstChildAttributeIndex == 5,
+            "attribute parser records the first-child dimensionality boundary");
         const auto* dim = attributes ? std::get_if<SequenceDimensionalityAttribute>(
             &attributes->values[0]) : nullptr;
         const auto* decoded = attributes ?
@@ -119,6 +119,105 @@ namespace
         const auto limited = readLegacySequenceAttributes(bounded, 1);
         expect(!limited && limited.error().code == SequenceErrorCode::AttributeLimitExceeded,
             "attribute decoding has an explicit anti-amplification limit");
+    }
+
+    void testBoundsInferenceAndChildBoundary()
+    {
+        DataBytes box2D;
+        for (const auto value : {1U, 2U, 30U, 40U}) word(box2D, value);
+        DataBytes sphere; real(sphere, 12.5F);
+        DataBytes choice(4, std::byte{}); real(choice, 0.5F);
+        const std::array hints{
+            chunk(136, box2D), chunk(137, DataBytes(96, std::byte{})),
+            chunk(138, sphere), chunk(139, choice)};
+        for (std::size_t index = 0; index < hints.size(); ++index)
+        {
+            LegacyChunkReader reader(std::make_shared<const DataBytes>(sequence(hints[index])));
+            const auto record = readLegacySequenceRecord(reader);
+            const auto attributes = readLegacySequenceAttributes(reader);
+            expect(record && attributes, "bounding and mesh-choice hint bytes decode");
+            if (!record || !attributes) continue;
+            const auto initial = initialSequenceTransform(*record, *attributes, 0);
+            const auto expectedDimension = index == 0 ? 2 : 3;
+            const auto* two = std::get_if<Matrix2D>(&initial.local);
+            const auto* three = std::get_if<Matrix3D>(&initial.local);
+            expect(initial.dimensionality == expectedDimension && !initial.explicitlyPositioned &&
+                (index == 0 ? two && two->values == identity2D().values :
+                    three && three->values == identity3D().values),
+                "bounds and mesh choice infer dimension without acting as positioning matrices");
+        }
+
+        // The first sphere settles dimensionality. A later explicit 2D marker
+        // cannot override it, but a compatible position after a child is used.
+        DataBytes contents = hints[2];
+        append(contents, sequence(offset3D(777, 0, 0)));
+        append(contents, chunk(129, DataBytes{std::byte{2}}));
+        append(contents, offset3D(9, 8, 7));
+        LegacyChunkReader reader(std::make_shared<const DataBytes>(sequence(contents)));
+        const auto record = readLegacySequenceRecord(reader);
+        const auto attributes = readLegacySequenceAttributes(reader);
+        expect(record && attributes && attributes->firstChildAttributeIndex == 1 && attributes->values.size() == 3,
+            "sphere hint and late positioning survive decoding without adopting child attributes");
+        if (record && attributes)
+        {
+            const auto initial = initialSequenceTransform(*record, *attributes, 2);
+            const auto* matrix = std::get_if<Matrix3D>(&initial.local);
+            expect(initial.dimensionality == 3 && initial.explicitlyPositioned && matrix &&
+                near(matrix->values[12], 9) && near(matrix->values[13], 8) && near(matrix->values[14], 7),
+                "sphere hint wins over later dimensionality while positioning scans past the child");
+        }
+
+        DataBytes childFirst = sequence(offset3D(777, 0, 0));
+        append(childFirst, hints[2]);
+        append(childFirst, chunk(129, DataBytes{std::byte{3}}));
+        append(childFirst, offset3D(100, 200, 300));
+        DataBytes offset2D; word(offset2D, 4); word(offset2D, 7);
+        append(childFirst, chunk(130, offset2D));
+        LegacyChunkReader inherited(std::make_shared<const DataBytes>(sequence(childFirst)));
+        const auto inheritedRecord = readLegacySequenceRecord(inherited);
+        const auto inheritedAttributes = readLegacySequenceAttributes(inherited);
+        expect(inheritedRecord && inheritedAttributes && inheritedAttributes->firstChildAttributeIndex == 0,
+            "child-first sequence retains an empty dimensionality prefix");
+        if (inheritedRecord && inheritedAttributes)
+        {
+            const auto initial = initialSequenceTransform(*inheritedRecord, *inheritedAttributes, 2);
+            const auto* matrix = std::get_if<Matrix2D>(&initial.local);
+            expect(initial.dimensionality == 2 && initial.explicitlyPositioned && matrix &&
+                near(matrix->values[6], 4) && near(matrix->values[7], 7),
+                "late sphere and explicit 3D cannot override inherited 2D but late 2D position applies");
+            const auto zero = initialSequenceTransform(*inheritedRecord, *inheritedAttributes, 0);
+            expect(zero.dimensionality == 0 && !zero.explicitlyPositioned &&
+                std::holds_alternative<std::monostate>(zero.local),
+                "attributes after the first child cannot invent dimensions for a zero-dimensional parent");
+        }
+    }
+
+    void testBoundsAreNotTransformKeys()
+    {
+        LegacySequenceAttributes keys;
+        keys.values.push_back(Sequence2DBoundingBoxAttribute{{}, 1, 2, 3, 4});
+        keys.values.push_back(Sequence3DBoundingBoxAttribute{});
+        keys.values.push_back(Sequence3DBoundingSphereAttribute{{}, 42.0F});
+        keys.values.push_back(Sequence3DMeshChoiceAttribute{{}, 0, 1, 0.5F});
+        const auto boundsOnly = evaluateTweekerTransform(keys, 2, 5, 10, 3);
+        expect(boundsOnly && !boundsOnly->changed,
+            "bounding boxes, sphere and mesh choice never become transformation tweeker keys");
+        keys.values.push_back(Sequence3DOffsetAttribute{{}, 7, 8, 9});
+        const auto selectedBounds = evaluateTweekerTransform(keys, 2, 5, 10, 3);
+        expect(selectedBounds && !selectedBounds->changed,
+            "first private bounds attribute prevents falling through to a later transform type");
+        keys.values.clear();
+        keys.values.push_back(SequenceDimensionalityAttribute{{}, 3});
+        keys.values.push_back(SequenceFileNameAttribute{{}, 1, "unused.wav"});
+        keys.values.push_back(Sequence3DOffsetAttribute{{}, 7, 8, 9});
+        keys.values.push_back(SequenceSoundVolumeAttribute{{}, 20});
+        keys.values.push_back(Sequence3DOffsetAttribute{{}, 17, 18, 19});
+        keys.values.push_back(Sequence3DOffsetAttribute{{}, 100, 100, 100});
+        const auto interpolated = evaluateTweekerTransform(keys, 2, 5, 10, 3);
+        const auto* matrix = interpolated ? std::get_if<Matrix3D>(&interpolated->transform) : nullptr;
+        expect(interpolated && interpolated->changed && matrix && near(matrix->values[12], 12) &&
+            near(matrix->values[13], 13) && near(matrix->values[14], 14),
+            "first transform type uses its first two keys across unrelated attributes only");
     }
 
     void testMatrixConventionsAndFirstTransform()
@@ -170,6 +269,7 @@ namespace
     void testTweekerModesAndErrors()
     {
         LegacySequenceAttributes keys;
+        keys.values.clear();
         keys.values.push_back(Sequence3DOffsetAttribute{{}, 7, 8, 9});
         keys.values.push_back(Sequence3DOffsetAttribute{{}, 17, 18, 19});
 
@@ -195,7 +295,7 @@ namespace
             "tweeker key dimensionality must match its parent");
     }
 
-    void testRecursiveRuntimeWorldTransform()
+    void testRecursiveRuntimeWorldTransform(bool latePosition)
     {
         const auto unique = std::to_string(
             std::chrono::steady_clock::now().time_since_epoch().count());
@@ -203,8 +303,13 @@ namespace
         DataBytes childContents;
         append(childContents, offset3D(5, 0, 0));
         DataBytes rootContents;
-        append(rootContents, offset3D(10, 0, 0));
+        if (latePosition)
+            append(rootContents, chunk(129, DataBytes{std::byte{3}}));
+        else
+            append(rootContents, offset3D(10, 0, 0));
         append(rootContents, sequence(childContents));
+        if (latePosition)
+            append(rootContents, offset3D(10, 0, 0));
         const std::array items{ArchiveBuildItem{LegacyDataType::Chunky, sequence(rootContents)}};
         expect(writeLegacyDataArchive(path, items).has_value(), "synthetic transformed DAT is written");
         DataBankRegistry registry;
@@ -221,7 +326,8 @@ namespace
         const auto* childWorld = childView ? std::get_if<Matrix3D>(&childView->worldTransform) : nullptr;
         expect(rootView && rootView->dimensionality == 3 && childWorld &&
             !rootView->tweekerTransformApplied && near(childWorld->values[12], 15),
-            "recursive runtime composes child local transform with parent world");
+            latePosition ? "runtime child inherits parent positioning decoded after the child record" :
+                "recursive runtime composes child local transform with parent world");
         registry.clear();
         expect(runtime.update(1).has_value() && childView,
             "decoded transforms remain owned after the registry snapshot is replaced");
@@ -287,9 +393,12 @@ namespace
 int main()
 {
     testImmutableAttributeDecode();
+    testBoundsInferenceAndChildBoundary();
+    testBoundsAreNotTransformKeys();
     testMatrixConventionsAndFirstTransform();
     testTweekerModesAndErrors();
-    testRecursiveRuntimeWorldTransform();
+    testRecursiveRuntimeWorldTransform(false);
+    testRecursiveRuntimeWorldTransform(true);
     testTweekerOrderingAndInterpolation();
     std::cout << (failures ? "Sequence transform tests FAILED\n" :
         "Sequence transform tests passed\n");

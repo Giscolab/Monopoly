@@ -8,6 +8,11 @@
 
 namespace monopoly::ibar
 {
+    std::optional<std::uint8_t> BackdropPlayback::takeCardReadRequest() noexcept
+    {
+        return std::exchange(pendingCardRead_, std::nullopt);
+    }
+
     std::expected<data::DataId, std::string> desiredBackdrop(
         const rules::GameState& state,
         bool visible,
@@ -386,11 +391,17 @@ namespace monopoly::ibar
 
         const auto desiredCard = inputs.ruleMode == RuleMode::ViewingCard
             ? inputs.desiredCardIndex : std::optional<std::uint8_t>{};
+        const auto previousCardState = card_.visualState();
         const auto card = card_.sync(
             desiredCard, visible, inputs.desired2DView,
             inputs.desiredBoardCamera, playback);
         if (!card)
             return card;
+        // UDIBar reads lastCardIn when the face appears, after the incoming
+        // animation, including its accelerated path while the IBar is hidden.
+        if (previousCardState != CardVisualState::FaceIn &&
+            card_.visualState() == CardVisualState::FaceIn)
+            pendingCardRead_ = card_.lastCard();
 
         const auto propertyTitles = propertyTitles_.sync(
             inputs.propertyTitles, playback);

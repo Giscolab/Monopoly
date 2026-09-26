@@ -401,19 +401,28 @@ namespace
                 backdrop.cardVisualState() == ibar::CardVisualState::DeckOut &&
                 data::dataTag(backdrop.currentCardSequence()) == 0x0035,
             "aggregate ViewingCard starts Chance deck-out using Engine camera index 38");
+        require(!backdrop.takeCardReadRequest(),
+            "card voice waits while the card leaves its deck");
 
         require(playback.update(10).has_value() &&
                 backdrop.sync(state, true, 0, playback, inputs) && playback.update(11) &&
                 backdrop.cardVisualState() == ibar::CardVisualState::CardIn,
             "aggregate card advances deck-out to CardIn");
+        require(!backdrop.takeCardReadRequest(),
+            "card voice waits while the card flies in");
         require(playback.update(20).has_value() &&
                 backdrop.sync(state, true, 0, playback, inputs) && playback.update(21) &&
                 backdrop.cardVisualState() == ibar::CardVisualState::FaceIn,
             "aggregate card advances CardIn to face animation");
+        require(backdrop.takeCardReadRequest() == std::optional<std::uint8_t>{std::uint8_t{0}} &&
+                !backdrop.takeCardReadRequest(),
+            "face entry requests the correct card voice exactly once");
         require(playback.update(30).has_value() &&
                 backdrop.sync(state, true, 0, playback, inputs) && playback.update(31) &&
                 backdrop.cardVisualState() == ibar::CardVisualState::Idle,
             "aggregate card reaches legacy Idle state");
+        require(!backdrop.takeCardReadRequest(),
+            "idle does not repeat the card voice");
 
         inputs.desiredCardIndex.reset();
         require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(32) &&
@@ -425,6 +434,49 @@ namespace
                 backdrop.cardVisualState() == ibar::CardVisualState::Off,
             "aggregate outgoing card returns to Off on the next legacy state-4 cycle");
 
+        runtime::reset();
+    }
+
+    void testCardVoiceHiddenAndMissingResource()
+    {
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        ibar::BackdropPlayback backdrop;
+        rules::GameState state{};
+        state.numberOfPlayers = 1;
+        runtime::reset();
+        ibar::ActionButtonInputs inputs{};
+        inputs.trackRules = false;
+        inputs.ruleMode = ibar::RuleMode::ViewingCard;
+        inputs.rulePlayer = 0;
+        inputs.desiredCardIndex = static_cast<std::uint8_t>(31);
+        inputs.desired2DView = display::Screen2D::Main;
+        require(backdrop.sync(state, true, 0, playback, inputs) && playback.update(0),
+            "Community voice fixture begins real deck animation");
+        require(!backdrop.takeCardReadRequest(), "Community deck departure remains silent");
+
+        // While the incoming buttons are still running, hiding the IBar
+        // accelerates the card directly to its face. Remove the desired card
+        // as a modal state change would: the outgoing card is still remembered.
+        inputs.desiredCardIndex.reset();
+        inputs.ruleMode = ibar::RuleMode::Nothing;
+        engine::SequencePlayback unavailable(nullptr);
+        const auto failed = backdrop.sync(state, false, 0, unavailable, inputs);
+        require(!failed && backdrop.cardVisualState() == ibar::CardVisualState::DeckOut &&
+                !backdrop.takeCardReadRequest(),
+            "unavailable face CNK cannot emit a card voice or commit FaceIn");
+        require(backdrop.sync(state, false, 0, playback, inputs) &&
+                backdrop.cardVisualState() == ibar::CardVisualState::FaceIn && playback.update(1),
+            "hidden IBar retries the failed face transition using the remembered card");
+        require(backdrop.takeCardReadRequest() == std::optional<std::uint8_t>{std::uint8_t{31}} &&
+                !backdrop.takeCardReadRequest(),
+            "hidden face transition reads remembered Community card once despite cleared desired card");
+        require(backdrop.sync(state, false, 0, playback, inputs) &&
+                !backdrop.takeCardReadRequest(),
+            "hidden escalation to idle does not repeat the voice");
+
+        backdrop.reset();
+        require(!backdrop.takeCardReadRequest(), "backdrop reset clears pending card speech");
         runtime::reset();
     }
 
@@ -1039,6 +1091,7 @@ int main()
         testBuyAuctionPopupIntegration();
         testPropertyHoverIntegration();
         testCardPlaybackIntegration();
+        testCardVoiceHiddenAndMissingResource();
         testGlobalButtonPredicates();
         testRollDicePromptInputs();
         testRuleActionHitState();

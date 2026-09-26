@@ -355,6 +355,90 @@ namespace
             "three-byte camera FOV payload is rejected before reading its float");
     }
 
+    void testAttributesAcrossChildren()
+    {
+        const auto append = [](DataBytes& target, const DataBytes& bytes)
+        { target.insert(target.end(), bytes.begin(), bytes.end()); };
+        const auto grouping = [&](const DataBytes& contents)
+        {
+            auto payload = CommonHeader;
+            append(payload, contents);
+            return chunk(1, payload);
+        };
+        DataBytes contents;
+        append(contents, chunk(140, DataBytes{std::byte{5}}));
+        // Invalid private data inside the child belongs to its own decoder.
+        append(contents, grouping(chunk(129, DataBytes{std::byte{1}})));
+        append(contents, chunk(142, DataBytes{std::byte{70}}));
+        append(contents, grouping({}));
+        append(contents, chunk(20, DataBytes{
+            std::byte{'a'}, std::byte{'.'}, std::byte{'w'}, std::byte{'a'}, std::byte{'v'}, std::byte{0}}));
+        append(contents, chunk(129, DataBytes{std::byte{2}}));
+        append(contents, chunk(200, {}));
+        auto owner = std::make_shared<const DataBytes>(grouping(contents));
+        std::weak_ptr<const DataBytes> retained = owner;
+        LegacyChunkReader reader(owner);
+        owner.reset();
+        const auto record = readLegacySequenceRecord(reader);
+        expect(record.has_value(), "interleaved attribute fixture has a valid parent record");
+        const auto offset = reader.currentOffset();
+        const auto level = reader.level();
+        const auto attributes = readLegacySequenceAttributes(reader, 5);
+        expect(attributes && attributes->values.size() == 5 && attributes->firstChildAttributeIndex == 1,
+            "all direct attributes are decoded while retaining the first-child inference boundary");
+        if (attributes && attributes->values.size() == 5)
+        {
+            const auto* label = std::get_if<SequenceLabelAttribute>(&attributes->values[0]);
+            const auto* volume = std::get_if<SequenceSoundVolumeAttribute>(&attributes->values[1]);
+            const auto* file = std::get_if<SequenceFileNameAttribute>(&attributes->values[2]);
+            const auto* dimension = std::get_if<SequenceDimensionalityAttribute>(&attributes->values[3]);
+            const auto* unknown = std::get_if<SequenceUnsupportedAttribute>(&attributes->values[4]);
+            expect(label && label->labelNumber == 5 && volume && volume->volume == 70 &&
+                file && file->fileName == "a.wav" && dimension && dimension->value == 2 &&
+                unknown && unknown->chunk.id == 200,
+                "late volume, filename, dimensionality and unknown attributes preserve sibling order");
+        }
+        expect(reader.currentOffset() == offset && reader.level() == level && !retained.expired(),
+            "complete attribute scan preserves caller cursor, nesting and shared payload ownership");
+        const auto limited = readLegacySequenceAttributes(reader, 4);
+        expect(!limited && limited.error().code == SequenceErrorCode::AttributeLimitExceeded &&
+            reader.currentOffset() == offset && reader.level() == level,
+            "attribute budget includes siblings after children and fails without moving the caller");
+
+        DataBytes children;
+        append(children, grouping({}));
+        append(children, grouping({}));
+        LegacyChunkReader childOnly(std::make_shared<const DataBytes>(grouping(children)));
+        (void)readLegacySequenceRecord(childOnly);
+        const auto zeroBudget = readLegacySequenceAttributes(childOnly, 0);
+        expect(zeroBudget && zeroBudget->values.empty() && zeroBudget->firstChildAttributeIndex == 0,
+            "children are skipped without consuming the private-attribute budget");
+        LegacyChunkReader empty(std::make_shared<const DataBytes>(grouping({})));
+        (void)readLegacySequenceRecord(empty);
+        const auto noChildren = readLegacySequenceAttributes(empty, 0);
+        expect(noChildren && noChildren->values.empty() && !noChildren->firstChildAttributeIndex,
+            "empty attribute lists preserve absence of a child boundary");
+
+        DataBytes truncated = children;
+        append(truncated, chunk(133, DataBytes(11, std::byte{})));
+        LegacyChunkReader shortAttribute(std::make_shared<const DataBytes>(grouping(truncated)));
+        (void)readLegacySequenceRecord(shortAttribute);
+        const auto beforeError = shortAttribute.currentOffset();
+        const auto invalid = readLegacySequenceAttributes(shortAttribute);
+        expect(!invalid && invalid.error().code == SequenceErrorCode::AttributeTruncated &&
+            shortAttribute.currentOffset() == beforeError && shortAttribute.level() == 1,
+            "truncated transform following children is rejected transactionally");
+
+        auto overrun = children;
+        appendU32(overrun, (142U << 24U) | 20U); // Claims bytes outside the parent.
+        LegacyChunkReader malformed(std::make_shared<const DataBytes>(grouping(overrun)));
+        (void)readLegacySequenceRecord(malformed);
+        const auto badChunk = readLegacySequenceAttributes(malformed);
+        expect(!badChunk && badChunk.error().code == SequenceErrorCode::ChunkFailure &&
+            badChunk.error().chunkError && badChunk.error().chunkError->code == ChunkErrorCode::ChunkPastParent,
+            "physical bounds remain enforced for attributes after children");
+    }
+
     void testDataIdResolution()
     {
         auto header = *decodeLegacySequenceHeader(CommonHeader);
@@ -377,6 +461,7 @@ int main()
     testTraversalOwnershipAndErrors();
     testMeshChoiceAttribute();
     testCameraFieldOfViewAttribute();
+    testAttributesAcrossChildren();
     testDataIdResolution();
     return failures == 0 ? 0 : 1;
 }

@@ -28,6 +28,18 @@ namespace monopoly::sequence
         SequenceTransform transform;
     };
 
+    struct TweekerKeys
+    {
+        const data::LegacySequenceAttribute* first{};
+        const data::LegacySequenceAttribute* second{};
+    };
+
+    // L_Seqncr.cpp:4755: the first private attribute (130..144) chooses
+    // one effect for the entire tweeker. Only a second key of that same
+    // type participates; dimensionality and filenames do not choose a type.
+    [[nodiscard]] TweekerKeys selectTweekerKeys(
+        const data::LegacySequenceAttributes& attributes) noexcept;
+
     [[nodiscard]] Matrix2D identity2D() noexcept;
     [[nodiscard]] Matrix3D identity3D() noexcept;
     [[nodiscard]] Matrix2D multiply(const Matrix2D& left, const Matrix2D& right) noexcept;
@@ -48,8 +60,10 @@ namespace monopoly::sequence
     [[nodiscard]] Matrix3D moveRySTxzTransform(
         float yaw, float scale, float x, float z) noexcept;
 
-    // StartupSequence dimensionality scan followed by the first applicable
-    // positioning subchunk. Unknown/unimplemented attributes are rejected by
+    // StartupSequence dimensionality scan stops at the first child, while
+    // positioning uses the first applicable direct subchunk on either side
+    // of that boundary. Bounds/mesh choice hint dimensions, never matrices.
+    // Unknown/unimplemented attributes are rejected by
     // SequenceProgram before this runtime conversion is called.
     [[nodiscard]] InitialSequenceTransform initialSequenceTransform(
         const data::LegacySequenceRecord& record,

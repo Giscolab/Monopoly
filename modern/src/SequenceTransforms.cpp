@@ -1,5 +1,6 @@
 #include "SequenceTransforms.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <type_traits>
 
@@ -73,6 +74,18 @@ namespace monopoly::sequence
             return std::holds_alternative<data::Sequence3DOffsetAttribute>(attribute) ||
                 std::holds_alternative<data::Sequence3DMatrixAttribute>(attribute) ||
                 std::holds_alternative<data::Sequence3DOriginScaleRotateOffsetAttribute>(attribute);
+        }
+        bool hints2D(const data::LegacySequenceAttribute& attribute) noexcept
+        {
+            return is2D(attribute) ||
+                std::holds_alternative<data::Sequence2DBoundingBoxAttribute>(attribute);
+        }
+        bool hints3D(const data::LegacySequenceAttribute& attribute) noexcept
+        {
+            return is3D(attribute) ||
+                std::holds_alternative<data::Sequence3DBoundingBoxAttribute>(attribute) ||
+                std::holds_alternative<data::Sequence3DBoundingSphereAttribute>(attribute) ||
+                std::holds_alternative<data::Sequence3DMeshChoiceAttribute>(attribute);
         }
         float interpolate(float proportion, float first, float second) noexcept
         { return (1.0F - proportion) * first + proportion * second; }
@@ -154,13 +167,16 @@ namespace monopoly::sequence
         else
         {
             dimensionality = parentDimensionality;
-            for (const auto& attribute : attributes.values)
+            const auto prefixSize = std::min(attributes.values.size(),
+                attributes.firstChildAttributeIndex.value_or(attributes.values.size()));
+            for (std::size_t index = 0; index < prefixSize; ++index)
             {
+                const auto& attribute = attributes.values[index];
                 if (const auto* explicitValue =
                     std::get_if<data::SequenceDimensionalityAttribute>(&attribute))
                 { dimensionality = explicitValue->value; break; }
-                if (is2D(attribute)) { dimensionality = 2; break; }
-                if (is3D(attribute)) { dimensionality = 3; break; }
+                if (hints2D(attribute)) { dimensionality = 2; break; }
+                if (hints3D(attribute)) { dimensionality = 3; break; }
             }
         }
 
@@ -212,6 +228,26 @@ namespace monopoly::sequence
         return std::monostate{};
     }
 
+    TweekerKeys selectTweekerKeys(
+        const data::LegacySequenceAttributes& attributes) noexcept
+    {
+        TweekerKeys keys;
+        for (const auto& attribute : attributes.values)
+        {
+            if (std::holds_alternative<data::SequenceDimensionalityAttribute>(attribute) ||
+                std::holds_alternative<data::SequenceFileNameAttribute>(attribute) ||
+                std::holds_alternative<data::SequenceUnsupportedAttribute>(attribute))
+                continue;
+            if (!keys.first) keys.first = &attribute;
+            else if (attribute.index() == keys.first->index())
+            {
+                keys.second = &attribute;
+                break;
+            }
+        }
+        return keys;
+    }
+
     std::expected<EvaluatedTweekerTransform, TweekerTransformError>
     evaluateTweekerTransform(const data::LegacySequenceAttributes& attributes,
         std::uint8_t interpolationType, std::int32_t clock,
@@ -225,15 +261,9 @@ namespace monopoly::sequence
                 parentDimensionality == 3 ? SequenceTransform(identity3D()) :
                 SequenceTransform(std::monostate{})};
 
-        const data::LegacySequenceAttribute* first{};
-        const data::LegacySequenceAttribute* second{};
-        for (const auto& attribute : attributes.values)
-        {
-            if (!is2D(attribute) && !is3D(attribute)) continue;
-            if (!first) first = &attribute;
-            else if (attribute.index() == first->index()) { second = &attribute; break; }
-        }
-        if (!first) return EvaluatedTweekerTransform{};
+        const auto [first, second] = selectTweekerKeys(attributes);
+        if (!first || (!is2D(*first) && !is3D(*first)))
+            return EvaluatedTweekerTransform{};
         if ((is2D(*first) && parentDimensionality != 2) ||
             (is3D(*first) && parentDimensionality != 3))
             return std::unexpected(TweekerTransformError::DimensionalityMismatch);

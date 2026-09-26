@@ -118,6 +118,7 @@ namespace monopoly::ibar
             propertyTitles_.reset();
             propertyHover_.reset();
             card_.reset();
+            pendingCardRead_.reset();
             jailCards_.reset();
             buyAuctionPopup_.reset();
             scoreStrip_.reset();
@@ -145,6 +146,9 @@ namespace monopoly::ibar
         {
             return propertyHover_.currentDeed();
         }
+
+        // Emitted only after the remembered card successfully enters FaceIn.
+        [[nodiscard]] std::optional<std::uint8_t> takeCardReadRequest() noexcept;
 
         [[nodiscard]] CardVisualState cardVisualState() const noexcept
         {
@@ -221,6 +225,7 @@ namespace monopoly::ibar
     private:
         data::DataId currentBackdrop_{data::EmptyDataId};
         std::optional<std::uint8_t> consumedPressedButton_;
+        std::optional<std::uint8_t> pendingCardRead_;
         CameraButtonPlayback auctionButton_{AuctionButtonIndex};
         CameraButtonPlayback buyButton_{BuyButtonIndex};
         CameraButtonPlayback cameraButton_;

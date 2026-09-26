@@ -502,6 +502,9 @@ namespace monopoly::engine
             (void)runtimeBitmaps_.remove(id);
             return true;
         });
+        // The new frame owns every visible decoded bitmap. Retire cache-only
+        // assets now so their DAT payloads become eligible for the raw LRU.
+        (void)bitmaps_.releaseUnused();
         return {};
     }
 
@@ -545,6 +548,7 @@ namespace monopoly::engine
         runtime_.stopAll();
         world_.clear();
         world2D_.clear();
+        bitmaps_.clear();
         runtimePrograms_.clear();
         retiredDeeds_.clear();
         return {};
