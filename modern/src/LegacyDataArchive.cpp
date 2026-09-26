@@ -662,6 +662,43 @@ namespace monopoly::data
     }
 
 
+    std::expected<LegacyDataType, DataError>
+    LegacyDataArchive::initialDataType(DataTag tag) const
+    {
+        const auto item = metadata(tag);
+        if (!item) return std::unexpected(item.error());
+        return item->type;
+    }
+
+
+    std::expected<std::uint32_t, DataError>
+    LegacyDataArchive::initialSize(DataTag tag) const
+    {
+        const auto item = metadata(tag);
+        if (!item) return std::unexpected(item.error());
+        return item->uncompressedSize;
+    }
+
+
+    std::expected<std::uint32_t, DataError>
+    LegacyDataArchive::loadedRawSize(DataTag tag)
+    {
+        const auto bytes = load(tag);
+        if (!bytes) return std::unexpected(bytes.error());
+
+        if ((*bytes)->size() > std::numeric_limits<std::uint32_t>::max())
+        {
+            return std::unexpected(makeError(
+                DataErrorCode::DecompressedSizeMismatch,
+                path_,
+                "loaded DAT item size exceeds the legacy 32-bit range",
+                tag));
+        }
+
+        return static_cast<std::uint32_t>((*bytes)->size());
+    }
+
+
     std::expected<SharedDataBytes, DataError>
     LegacyDataArchive::load(DataTag tag)
     {
@@ -1075,6 +1112,48 @@ namespace monopoly::data
         }
 
         return (*mounted)->metadata(dataTag(id));
+    }
+
+
+    std::expected<LegacyDataType, DataError>
+    DataBankRegistry::initialDataType(DataId id) const
+    {
+        if (isEmptyDataId(id))
+            return LegacyDataType::Unknown;
+
+        auto mounted = archive(dataGroup(id));
+        if (!mounted)
+            return std::unexpected(mounted.error());
+
+        return (*mounted)->initialDataType(dataTag(id));
+    }
+
+
+    std::expected<std::uint32_t, DataError>
+    DataBankRegistry::initialSize(DataId id) const
+    {
+        if (isEmptyDataId(id))
+            return std::uint32_t{0};
+
+        auto mounted = archive(dataGroup(id));
+        if (!mounted)
+            return std::unexpected(mounted.error());
+
+        return (*mounted)->initialSize(dataTag(id));
+    }
+
+
+    std::expected<std::uint32_t, DataError>
+    DataBankRegistry::loadedRawSize(DataId id) const
+    {
+        if (isEmptyDataId(id))
+            return std::uint32_t{0};
+
+        auto mounted = archive(dataGroup(id));
+        if (!mounted)
+            return std::unexpected(mounted.error());
+
+        return (*mounted)->loadedRawSize(dataTag(id));
     }
 
 
