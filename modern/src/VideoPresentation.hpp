@@ -47,6 +47,7 @@ namespace monopoly::video
         frameAt(std::uint64_t elapsedMicroseconds);
         [[nodiscard]] std::expected<void, std::string> seek(
             std::uint64_t timestampMicroseconds, std::uint64_t sequenceMicroseconds);
+        [[nodiscard]] std::expected<void, std::string> setGain(float gain);
         [[nodiscard]] bool videoDrained() const;
         void stop() noexcept;
     private:
