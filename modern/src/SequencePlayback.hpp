@@ -66,6 +66,8 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> transitionRySTxzDropStayAtEnd(
             std::optional<data::DataId> previousId, data::DataId id,
             std::uint16_t priority, float yaw, float scale, float x, float z);
+        [[nodiscard]] std::expected<void, std::string> setViewport3D(
+            World3DRect viewport);
         [[nodiscard]] std::expected<void, std::string> setCamera3D(
             const World3DCamera& camera);
         [[nodiscard]] std::expected<void, std::string> setCameraNumber(

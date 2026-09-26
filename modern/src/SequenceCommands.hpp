@@ -15,7 +15,7 @@
 
 namespace monopoly::sequence
 {
-    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, SetVolume, ForceRedraw, SetCamera };
+    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, SetVolume, ForceRedraw, SetViewport, SetCamera };
     enum class CommandQueueError { QueueFull, InvalidProgram, InvalidEndingAction, InvalidRenderSlot, NestingOverflow };
 
     struct StartSequenceCommand
@@ -60,6 +60,16 @@ namespace monopoly::sequence
         bool wholeTree{};
     };
     inline constexpr std::uint8_t MonopolyRenderSlotCount = 5;
+    struct SequenceViewportRect
+    {
+        std::int32_t left{}, top{}, right{}, bottom{};
+        auto operator<=>(const SequenceViewportRect&) const = default;
+    };
+    struct SetViewportCommand
+    {
+        std::uint8_t renderSlot{};
+        SequenceViewportRect viewport;
+    };
     struct SetCameraCommand
     {
         std::uint8_t renderSlot{};
@@ -75,7 +85,7 @@ namespace monopoly::sequence
     using SequenceCommand = std::variant<StartSequenceCommand,
         StopSequenceCommand, MoveSequenceCommand,
         SetSequenceEndingActionCommand, SetSequenceVolumeCommand,
-        ForceRedrawSequenceCommand, SetCameraCommand>;
+        ForceRedrawSequenceCommand, SetViewportCommand, SetCameraCommand>;
 
     [[nodiscard]] MoveSequenceCommand makeMoveTheWorks(data::DataId dataId,
         std::uint16_t priority, SequenceTransform transform,
@@ -119,8 +129,12 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             ForceRedrawSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
+            SetViewportCommand command);
+        [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             SetCameraCommand command);
 
+        [[nodiscard]] const SetViewportCommand* viewportState(
+            std::uint8_t renderSlot) const noexcept;
         [[nodiscard]] const SetCameraCommand* cameraState(
             std::uint8_t renderSlot) const noexcept;
         [[nodiscard]] std::expected<int, CommandQueueError> collect();
@@ -149,6 +163,7 @@ namespace monopoly::sequence
         std::vector<SequenceCommandOutcome> outcomes_;
         std::vector<SequenceEvent> cycleEvents_;
         std::optional<RuntimeError> cycleError_;
+        std::array<std::optional<SetViewportCommand>, MonopolyRenderSlotCount> viewportStates_{};
         std::array<std::optional<SetCameraCommand>, MonopolyRenderSlotCount> cameraStates_{};
         int nestingLevel_{};
         std::int32_t parentClock_{};

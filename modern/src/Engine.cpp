@@ -2353,6 +2353,22 @@ namespace monopoly::engine
                 return SDL_SetError("Mouse cursor synchronization failed: %s",
                     SDL_GetError());
 
+            const auto desiredWorldViewport =
+                display::worldViewport(displayState.viewportInUse);
+            const auto desiredViewportState = sequence::SequenceViewportRect{
+                desiredWorldViewport.left, desiredWorldViewport.top,
+                desiredWorldViewport.right, desiredWorldViewport.bottom};
+            const auto* queuedViewport = session->commands().viewportState(
+                static_cast<std::uint8_t>(RenderSlot::World3D));
+            if (!queuedViewport || queuedViewport->viewport != desiredViewportState)
+            {
+                const auto viewportQueued =
+                    session->setViewport3D(desiredWorldViewport);
+                if (!viewportQueued)
+                    return SDL_SetError("World3D viewport command: %s",
+                        viewportQueued.error().c_str());
+            }
+
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             publishSequenceLifecycleEvents(*session);
@@ -2365,7 +2381,11 @@ namespace monopoly::engine
                     disableAudioPlayback("Sequence audio playback disabled", audioSync.error());
                 }
             }
-            const auto viewport = display::worldViewport(displayState.viewportInUse);
+            World3DRect viewport = desiredWorldViewport;
+            if (const auto* command = session->commands().viewportState(
+                    static_cast<std::uint8_t>(RenderSlot::World3D)))
+                viewport = {command->viewport.left, command->viewport.top,
+                    command->viewport.right, command->viewport.bottom};
             if (viewport.empty()) session->world().clearView();
             else
             {

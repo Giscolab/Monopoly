@@ -77,6 +77,14 @@ namespace monopoly::sequence
     }
 
     std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        SetViewportCommand command)
+    {
+        if (command.renderSlot >= MonopolyRenderSlotCount)
+            return std::unexpected(CommandQueueError::InvalidRenderSlot);
+        return enqueueValidated(command);
+    }
+
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
         SetCameraCommand command)
     {
         // Monopoly's C_ArtLib.h sets CE_ARTLIB_RendMaxRenderSlots to five.
@@ -85,6 +93,14 @@ namespace monopoly::sequence
         if (command.renderSlot >= MonopolyRenderSlotCount)
             return std::unexpected(CommandQueueError::InvalidRenderSlot);
         return enqueueValidated(command);
+    }
+
+    const SetViewportCommand* SequenceCommandQueue::viewportState(
+        std::uint8_t renderSlot) const noexcept
+    {
+        if (renderSlot >= viewportStates_.size() || !viewportStates_[renderSlot])
+            return nullptr;
+        return &*viewportStates_[renderSlot];
     }
 
     const SetCameraCommand* SequenceCommandQueue::cameraState(
@@ -186,6 +202,12 @@ namespace monopoly::sequence
                     outcomes_.push_back(SequenceCommandOutcome{
                         SequenceCommandKind::ForceRedraw, {}, count, {}});
                 }
+                else if constexpr (std::is_same_v<Command, SetViewportCommand>)
+                {
+                    viewportStates_[value.renderSlot] = value;
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::SetViewport, {}, 1U, {}});
+                }
                 else
                 {
                     cameraStates_[value.renderSlot] = value;
@@ -195,6 +217,7 @@ namespace monopoly::sequence
             }, std::move(command));
 
             if (!outcomes_.empty() &&
+                outcomes_.back().kind != SequenceCommandKind::SetViewport &&
                 outcomes_.back().kind != SequenceCommandKind::SetCamera &&
                 !outcomes_.back().error)
             {

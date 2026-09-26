@@ -307,6 +307,18 @@ namespace monopoly::engine
             2);
     }
 
+    std::expected<void, std::string> SequencePlayback::setViewport3D(
+        World3DRect viewport)
+    {
+        const auto queued = commands_.enqueue(sequence::SetViewportCommand{
+            static_cast<std::uint8_t>(RenderSlot::World3D),
+            {viewport.left, viewport.top, viewport.right, viewport.bottom}});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue rejected World3D viewport");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::setCamera3D(
         const World3DCamera& camera)
     {
