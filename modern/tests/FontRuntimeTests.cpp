@@ -140,6 +140,11 @@ namespace
             "empty text has no fabricated glyph surface");
 
         const std::string utf8Accent = "\xC3\xA9";
+        const auto encoded16 = fonts::transcodeUtf8(std::u16string_view(u"é"));
+        const auto encodedWide = fonts::transcodeUtf8(std::wstring_view(L"é"));
+        require(encoded16 && encodedWide &&
+            *encoded16 == utf8Accent && *encodedWide == utf8Accent,
+            "shared Unicode transcoder produces the same UTF-8 from UTF-16 and wchar text");
         const auto utf8Metrics = take(font.measure(utf8Accent), "measure UTF-8 accent");
         const auto utf16Metrics = take(font.measure(std::u16string_view(u"é")),
             "measure UTF-16 accent");
@@ -155,8 +160,10 @@ namespace
 
         const std::u16string invalidHigh{static_cast<char16_t>(0xD800)};
         const std::u16string invalidLow{static_cast<char16_t>(0xDC00)};
-        require(!font.measure(invalidHigh) && !font.render(invalidLow, 0),
-            "malformed UTF-16 is rejected instead of leaking invalid UTF-8 into SDL_ttf");
+        const std::wstring invalidWide{static_cast<wchar_t>(0xD800)};
+        require(!font.measure(invalidHigh) && !font.render(invalidLow, 0) &&
+            !fonts::transcodeUtf8(invalidWide),
+            "malformed Unicode is rejected instead of leaking invalid UTF-8 into SDL_ttf");
 
         require(image.width > 2 && image.height > 1, "clip fixture has a nontrivial extent");
         const fonts::ClipRect clip{1, 0, image.width - 2, image.height - 1};
