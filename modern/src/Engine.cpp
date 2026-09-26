@@ -1494,15 +1494,21 @@ namespace monopoly::engine
             const audio::PlaybackKey key{audio::PlaybackDomain::Sequence, instance.node};
             const bool known = std::find(activeSequenceSounds.begin(),
                 activeSequenceSounds.end(), instance.node) != activeSequenceSounds.end();
+            const float gain =
+                static_cast<float>(instance.volume) / 100.0F;
             if (!known)
             {
-                const auto started = output->play(key, instance.contentsDataId,
-                    1.0F, instance.endingAction == 3);
+                const auto started = output->play(
+                    key, instance.contentsDataId,
+                    gain, instance.endingAction == 3);
                 if (!started)
                     return std::unexpected(started.error());
             }
             else
+            {
+                output->setGain(key, gain);
                 output->setLooping(key, instance.endingAction == 3);
+            }
             next.push_back(instance.node);
         }
 
