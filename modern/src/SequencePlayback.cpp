@@ -407,6 +407,27 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<int, std::string> SequencePlayback::collectCommands()
+    {
+        const auto result = commands_.collect();
+        if (!result)
+            return std::unexpected("sequence command collection nesting overflow");
+        return *result;
+    }
+
+    std::expected<int, std::string> SequencePlayback::executeCommands()
+    {
+        const auto result = commands_.execute();
+        if (!result)
+            return std::unexpected("sequence command execution nesting overflow");
+        if (const auto& cycleError = commands_.lastCycleError())
+            return std::unexpected(cycleError->detail);
+        for (const auto& outcome : commands_.outcomes())
+            if (outcome.error)
+                return std::unexpected(outcome.error->detail);
+        return *result;
+    }
+
     std::expected<void, std::string> SequencePlayback::processUserCommands()
     {
         const auto updated = commands_.processUserCommands();

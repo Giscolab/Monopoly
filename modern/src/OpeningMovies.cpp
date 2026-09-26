@@ -135,22 +135,46 @@ namespace monopoly::openingmovies
             decoderFailed(runtimeId.error(), playback);
             return;
         }
-        auto program = playback.loadProgram(*runtimeId);
-        if (!program)
+        const auto collecting = playback.collectCommands();
+        if (!collecting)
         {
             (void)playback.freeRuntimeSequence(*runtimeId);
-            decoderFailed(program.error(), playback);
+            decoderFailed(collecting.error(), playback);
             return;
         }
-        auto node = playback.runtime().start(*program, MoviePriority);
-        if (!node)
+
+        const auto started = playback.start(*runtimeId, MoviePriority);
+        const auto ending = started
+            ? playback.setEndingAction(*runtimeId, MoviePriority, 1)
+            : std::expected<void, std::string>{
+                std::unexpected(started.error())};
+        const auto executed = ending
+            ? playback.executeCommands()
+            : std::expected<int, std::string>{
+                std::unexpected(ending.error())};
+
+        if (!executed)
+        {
+            while (playback.commands().nestingLevel() > 0)
+                (void)playback.executeCommands();
+            (void)playback.freeRuntimeSequence(*runtimeId);
+            decoderFailed(executed.error(), playback);
+            return;
+        }
+
+        const auto nodes = playback.runtime().matching(
+            *runtimeId, MoviePriority, false);
+        if (nodes.empty())
         {
             (void)playback.freeRuntimeSequence(*runtimeId);
-            decoderFailed(node.error().detail, playback);
+            decoderFailed(
+                "opening movie start command produced no runtime node",
+                playback);
             return;
         }
+
         movieDataId_ = *runtimeId;
-        movie_ = *node;
+        movie_ = nodes.front();
         movieFile_ = std::move(*file);
         ++nextMovie_;
     }

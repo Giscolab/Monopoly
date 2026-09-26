@@ -74,6 +74,8 @@ namespace monopoly::engine
             const World3DCamera& camera);
         [[nodiscard]] std::expected<void, std::string> setCameraNumber(
             std::uint8_t cameraNumber);
+        [[nodiscard]] std::expected<int, std::string> collectCommands();
+        [[nodiscard]] std::expected<int, std::string> executeCommands();
         [[nodiscard]] std::expected<void, std::string> processUserCommands();
         [[nodiscard]] std::expected<void, std::string> stopAll();
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
