@@ -1,4 +1,5 @@
 #include "SequenceRuntime.hpp"
+#include "AudioRuntime.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -773,6 +774,57 @@ namespace monopoly::sequence
             return std::unexpected(error(RuntimeErrorCode::IdentifierExhausted, id, offset, "node identifiers exhausted"));
         if (parent) options.parentClockAtBirth = parent->clock.clock();
         else options.parentClockAtBirth.reset();
+
+        if (std::holds_alternative<data::SequenceSoundData>(
+                def.record.data) &&
+            !options.endTimeOverride)
+        {
+            if (const auto resources = program->resources())
+            {
+                data::SharedDataBytes waveBytes;
+                if (def.contentsDataId)
+                {
+                    auto loaded =
+                        resources->banks().load(*def.contentsDataId);
+                    if (!loaded)
+                        return std::unexpected(caused(
+                            RuntimeErrorCode::DataFailure,
+                            *def.contentsDataId,
+                            offset,
+                            loaded.error()));
+                    waveBytes = *loaded;
+                }
+                else
+                {
+                    const auto fileName =
+                        externalFileName(def.attributes);
+                    if (!fileName.empty())
+                    {
+                        auto loaded = preloadExternalFile(
+                            *resources, fileName, id, offset);
+                        if (!loaded)
+                            return std::unexpected(loaded.error());
+                        waveBytes = *loaded;
+                    }
+                }
+
+                if (waveBytes && !waveBytes->empty())
+                {
+                    const std::span<const std::uint8_t> riff(
+                        reinterpret_cast<const std::uint8_t*>(
+                            waveBytes->data()),
+                        waveBytes->size());
+                    const auto duration =
+                        audio::legacyWaveDurationTicks(riff);
+                    if (duration != 0 &&
+                        duration <= static_cast<std::uint32_t>(
+                            std::numeric_limits<std::int32_t>::max()))
+                        options.endTimeOverride =
+                            static_cast<std::int32_t>(duration);
+                }
+            }
+        }
+
         auto clock = SequenceClock::start(def.record, options);
         if (!clock) return std::unexpected(caused(RuntimeErrorCode::ClockFailure, id, offset, clock.error()));
         const auto initial = initialSequenceTransform(def.record, def.attributes,

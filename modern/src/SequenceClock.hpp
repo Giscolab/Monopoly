@@ -30,6 +30,7 @@ namespace monopoly::sequence
         std::uint8_t endingAction{};
         std::optional<bool> dropFrames;
         std::int32_t initialClockOffset{};
+        std::optional<std::int32_t> endTimeOverride;
         // Omit for a top-level sequence; supply the parent's current clock
         // for a newly born child. This is not its last-update timestamp.
         std::optional<std::int32_t> parentClockAtBirth;

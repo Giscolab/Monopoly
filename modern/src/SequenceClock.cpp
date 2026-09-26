@@ -54,8 +54,12 @@ namespace monopoly::sequence
         // no supported runtime contract here, especially modulo for loops.
         if (record.header.endTime < 0)
             return std::unexpected(ClockError::NegativeEndTime);
-        result.endTime_ = record.header.endTime == 0 ?
-            InfiniteEndTime : record.header.endTime;
+        const auto authoredEndTime = record.header.endTime == 0
+            ? InfiniteEndTime
+            : record.header.endTime;
+        if (options.endTimeOverride && *options.endTimeOverride <= 0)
+            return std::unexpected(ClockError::NegativeEndTime);
+        result.endTime_ = options.endTimeOverride.value_or(authoredEndTime);
         result.dropFrames_ = options.dropFrames.value_or(record.header.dropFrames);
         std::int64_t initial = options.initialClockOffset;
         if (result.dropFrames_ && options.parentClockAtBirth)
