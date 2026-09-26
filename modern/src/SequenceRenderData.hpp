@@ -28,6 +28,7 @@ namespace monopoly::sequence
         Matrix3D worldTransform{};
         std::shared_ptr<const data::MeshRuntimeAsset> asset;
         SequenceMeshChoice3D meshChoice{};
+        std::optional<SequenceBounds3D> bounds;
         std::shared_ptr<const data::MeshRenderData> renderData;
     };
 

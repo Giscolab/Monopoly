@@ -49,6 +49,40 @@ namespace monopoly::sequence
             return result;
         }
 
+        std::optional<SequenceBounds3D> initialBounds3D(
+            const data::LegacySequenceAttributes& attributes,
+            std::uint8_t dimensionality) noexcept
+        {
+            if (dimensionality != 3) return std::nullopt;
+            std::optional<SequenceBounds3D> result;
+            for (const auto& attribute : attributes.values)
+            {
+                if (const auto* box =
+                    std::get_if<data::Sequence3DBoundingBoxAttribute>(&attribute))
+                {
+                    SequenceBounds3D bounds{box->points.front(), box->points.front()};
+                    for (const auto& point : box->points)
+                        for (std::size_t axis = 0; axis < 3; ++axis)
+                        {
+                            bounds.minimum[axis] =
+                                std::min(bounds.minimum[axis], point[axis]);
+                            bounds.maximum[axis] =
+                                std::max(bounds.maximum[axis], point[axis]);
+                        }
+                    result = bounds;
+                }
+                else if (const auto* sphere =
+                    std::get_if<data::Sequence3DBoundingSphereAttribute>(&attribute))
+                {
+                    const float radius = std::abs(sphere->radius);
+                    result = SequenceBounds3D{
+                        {-radius, -radius, -radius},
+                        {radius, radius, radius}};
+                }
+            }
+            return result;
+        }
+
         struct SequenceAudioState
         {
             std::uint16_t pitch{};
@@ -1206,7 +1240,8 @@ namespace monopoly::sequence
                 {
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
-                        std::get<Matrix3D>(node->worldTransform), node->meshChoice});
+                        std::get<Matrix3D>(node->worldTransform), node->meshChoice,
+                        initialBounds3D(definition.attributes, node->dimensionality)});
                 }
                 self(self, node->children);
             }

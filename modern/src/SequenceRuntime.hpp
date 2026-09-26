@@ -191,6 +191,13 @@ namespace monopoly::sequence
         std::uint8_t volume{100};
         std::int8_t panning{};
     };
+    struct SequenceBounds3D
+    {
+        std::array<float, 3> minimum{};
+        std::array<float, 3> maximum{};
+        auto operator<=>(const SequenceBounds3D&) const = default;
+    };
+
     struct SequenceMeshInstanceView
     {
         SequenceNodeId node{};
@@ -199,6 +206,7 @@ namespace monopoly::sequence
         std::int32_t clock{};
         Matrix3D worldTransform{};
         SequenceMeshChoice3D meshChoice{};
+        std::optional<SequenceBounds3D> bounds;
     };
     struct RuntimeLimits
     {

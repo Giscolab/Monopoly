@@ -35,7 +35,8 @@ namespace monopoly::sequence
             }
             result.push_back({instance.node, instance.contentsDataId,
                 instance.priority, instance.clock, instance.worldTransform,
-                std::move(*asset), instance.meshChoice, std::move(renderData)});
+                std::move(*asset), instance.meshChoice, instance.bounds,
+                std::move(renderData)});
         }
         return result;
     }

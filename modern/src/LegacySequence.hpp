@@ -146,6 +146,16 @@ namespace monopoly::data
         ChunkInfo chunk;
         std::int32_t left{}, top{}, right{}, bottom{};
     };
+    struct Sequence3DBoundingBoxAttribute
+    {
+        ChunkInfo chunk;
+        std::array<std::array<float, 3>, 8> points{};
+    };
+    struct Sequence3DBoundingSphereAttribute
+    {
+        ChunkInfo chunk;
+        float radius{};
+    };
     struct Sequence3DMeshChoiceAttribute
     { ChunkInfo chunk; std::int16_t meshIndexA{}, meshIndexB{}; float meshProportion{}; };
     struct SequenceLabelAttribute
@@ -174,6 +184,8 @@ namespace monopoly::data
         Sequence3DMatrixAttribute,
         Sequence3DOriginScaleRotateOffsetAttribute,
         Sequence2DBoundingBoxAttribute,
+        Sequence3DBoundingBoxAttribute,
+        Sequence3DBoundingSphereAttribute,
         Sequence3DMeshChoiceAttribute,
         SequenceLabelAttribute,
         SequenceSoundPitchAttribute,

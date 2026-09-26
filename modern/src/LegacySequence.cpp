@@ -145,6 +145,8 @@ namespace monopoly::data
             case 134: required = 64; break;
             case 135: required = 48; break;
             case 136: required = 16; break;
+            case 137: required = 96; break;
+            case 138: required = 4; break;
             case 139: required = 8; break;
             case 140: required = 1; break;
             case 141: required = 2; break;
@@ -222,6 +224,20 @@ namespace monopoly::data
                     static_cast<std::int32_t>(readU32(*bytes, 4)),
                     static_cast<std::int32_t>(readU32(*bytes, 8)),
                     static_cast<std::int32_t>(readU32(*bytes, 12))});
+                break;
+            case 137:
+            {
+                Sequence3DBoundingBoxAttribute value{*part, {}};
+                for (std::size_t point = 0; point < value.points.size(); ++point)
+                    for (std::size_t axis = 0; axis < value.points[point].size(); ++axis)
+                        value.points[point][axis] =
+                            readF32(*bytes, (point * 3U + axis) * 4U);
+                result.values.push_back(value);
+                break;
+            }
+            case 138:
+                result.values.push_back(Sequence3DBoundingSphereAttribute{
+                    *part, readF32(*bytes, 0)});
                 break;
             case 139:
                 result.values.push_back(Sequence3DMeshChoiceAttribute{*part,

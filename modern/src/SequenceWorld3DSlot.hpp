@@ -31,6 +31,7 @@ namespace monopoly::engine
         std::int32_t clock{};
         sequence::Matrix3D worldTransform{};
         std::shared_ptr<const data::MeshRuntimeAsset> asset;
+        std::optional<sequence::SequenceBounds3D> sequenceBounds;
         std::optional<World3DRect> screenBounds;
         std::shared_ptr<const data::MeshRenderData> renderData;
     };
