@@ -562,13 +562,13 @@ namespace monopoly::sequence
             if (!record) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, record.error()));
             if (record->chunk.id != 1 && record->chunk.id != 2 &&
-                record->chunk.id != 3 && record->chunk.id != 5 &&
-                record->chunk.id != 6 && record->chunk.id != 7 &&
-                record->chunk.id != 8 && record->chunk.id != 9 &&
-                record->chunk.id != 10)
+                record->chunk.id != 3 && record->chunk.id != 4 &&
+                record->chunk.id != 5 && record->chunk.id != 6 &&
+                record->chunk.id != 7 && record->chunk.id != 8 &&
+                record->chunk.id != 9 && record->chunk.id != 10)
                 return std::unexpected(error(RuntimeErrorCode::UnsupportedType,
                     currentId, currentOffset,
-                    "runtime currently executes grouping, indirect, 2D bitmap, sound, video intent, camera, preloader, 3D mesh and tweeker records only"));
+                    "runtime currently executes grouping, indirect, 2D bitmap, 3D model, sound, video intent, camera, preloader, 3D mesh and tweeker records only"));
             auto attributes = data::readLegacySequenceAttributes(*reader);
             if (!attributes) return std::unexpected(caused(RuntimeErrorCode::DecodeFailure,
                 currentId, currentOffset, attributes.error()));
@@ -592,6 +592,9 @@ namespace monopoly::sequence
             if (const auto* bitmap = std::get_if<data::SequenceBitmapData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     bitmap->bitmapDataId, currentId);
+            else if (const auto* model = std::get_if<data::SequenceModelData>(&record->data))
+                contentsDataId = data::resolveSequenceDataId(record->header,
+                    model->modelDataId, currentId);
             else if (const auto* sound = std::get_if<data::SequenceSoundData>(&record->data))
                 contentsDataId = data::resolveSequenceDataId(record->header,
                     sound->soundDataId, currentId);
@@ -1473,14 +1476,37 @@ namespace monopoly::sequence
             for (const auto& node : nodes)
             {
                 const auto& definition = node->definition();
-                if (definition.record.chunk.id == 9 && definition.contentsDataId &&
+                if ((definition.record.chunk.id == 4 ||
+                     definition.record.chunk.id == 9) &&
+                    definition.contentsDataId &&
                     node->dimensionality == 3 &&
                     std::holds_alternative<Matrix3D>(node->worldTransform))
                 {
+                    std::optional<data::DataId> textureMapDataId;
+                    std::optional<data::DataId> jointPositionsDataId;
+                    if (const auto* model =
+                        std::get_if<data::SequenceModelData>(
+                            &definition.record.data))
+                    {
+                        if (model->textureMapDataId != data::EmptyDataId)
+                            textureMapDataId = data::resolveSequenceDataId(
+                                definition.record.header,
+                                model->textureMapDataId,
+                                definition.dataId);
+                        if (model->jointPositionsDataId != data::EmptyDataId)
+                            jointPositionsDataId = data::resolveSequenceDataId(
+                                definition.record.header,
+                                model->jointPositionsDataId,
+                                definition.dataId);
+                    }
+
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
-                        std::get<Matrix3D>(node->worldTransform), node->meshChoice,
-                        initialBounds3D(definition.attributes, node->dimensionality)});
+                        std::get<Matrix3D>(node->worldTransform),
+                        node->meshChoice,
+                        initialBounds3D(
+                            definition.attributes, node->dimensionality),
+                        textureMapDataId, jointPositionsDataId});
                 }
                 self(self, node->children);
             }

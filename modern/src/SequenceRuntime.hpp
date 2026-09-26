@@ -53,7 +53,7 @@ namespace monopoly::sequence
     // exponentially; cycles are rejected by (DATA ID, chunk offset). Every
     // CNK lease needed by the supported tree is acquired before publication.
     // Currently executable: grouping/indirect, 2D bitmap, sound, video,
-    // preloader, 3D mesh, 3D camera and transform/FOV/audio tweekers.
+    // preloader, legacy 3D model/mesh, 3D camera and transform/FOV/audio tweekers.
     // Attributes are immutable input.
     // Other decoded kinds and attributes fail explicitly; no fake renderer.
     class SequenceProgram final
@@ -218,6 +218,8 @@ namespace monopoly::sequence
         Matrix3D worldTransform{};
         SequenceMeshChoice3D meshChoice{};
         std::optional<SequenceBounds3D> bounds;
+        std::optional<data::DataId> textureMapDataId;
+        std::optional<data::DataId> jointPositionsDataId;
     };
     struct RuntimeLimits
     {
