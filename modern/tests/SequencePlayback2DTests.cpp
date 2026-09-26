@@ -188,6 +188,48 @@ namespace
         expect(stopped.expired(), "stopAll leaves no cache pin after the final external consumer releases");
     }
 
+    void testMeshRetirementDuringPlayback()
+    {
+        using namespace monopoly;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto model = data::packDataId(data::LegacyGroupId::Main, 0);
+        const auto meshId = data::packDataId(data::LegacyGroupId::ThreeD, 0);
+        const auto bitmap = data::packDataId(data::LegacyGroupId::Main, 0x00A2);
+        expect(playback.start(model, 400).has_value() && playback.startXY(bitmap, 12, 0, 0).has_value() &&
+            playback.update(0).has_value(), "mesh and bitmap publish together through normal playback");
+        std::weak_ptr<const data::MeshRuntimeAsset> retired;
+        std::weak_ptr<const data::LegacyMeshData> retiredMesh;
+        std::weak_ptr<const data::DataBytes> retiredSource;
+        for (const auto& item : playback.runtime().meshInstances())
+            if (const auto* object = playback.world().find(item.node))
+            {
+                retired = object->asset;
+                retiredMesh = object->asset->mesh->source();
+            }
+        {
+            const auto lease = playback.resources()->banks().load(meshId);
+            if (lease) retiredSource = *lease;
+        }
+        expect(!retired.expired() && !retiredMesh.expired() && !retiredSource.expired(),
+            "active 3D slot owns decoded mesh and immutable DAT lease");
+        expect(playback.stop(model, 400).has_value() && playback.update(4).has_value() &&
+            playback.world().size() == 0 && playback.world2D().size() == 1 &&
+            retired.expired() && retiredMesh.expired() && retiredSource.expired(),
+            "stopped 3D mesh releases decoded data and DAT lease while another sequence continues");
+        expect(playback.start(model, 400).has_value() && playback.update(8).has_value(),
+            "evicted mesh restarts from its retained resource snapshot");
+        std::shared_ptr<const data::MeshRuntimeAsset> consumer;
+        for (const auto& item : playback.runtime().meshInstances())
+            if (const auto* object = playback.world().find(item.node)) consumer = object->asset;
+        retired = consumer;
+        expect(playback.stopAll().has_value() && playback.world().size() == 0 && consumer &&
+            consumer->renderData->indices.size() == 3 && !consumer->mesh->source()->bytes().empty(),
+            "stopAll clears mesh cache ownership while an external frame remains valid");
+        consumer.reset();
+        expect(retired.expired(), "stopAll leaves no decoded mesh pin after external consumer retirement");
+    }
+
     void testFixedAndBobbingDice2D()
     {
         using namespace monopoly;
@@ -235,7 +277,7 @@ int main()
 {
     std::cout << "Monopoly SequencePlayback 2D tests\n"
               << "==================================\n";
-    try { testRawWavePlayback(); testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testBitmapRetirementDuringPlayback(); testFixedAndBobbingDice2D(); }
+    try { testRawWavePlayback(); testRawUapStartAndOrigin(); testDuplicateStartXYPositions(); testStartXYSR(); testBitmapRetirementDuringPlayback(); testMeshRetirementDuringPlayback(); testFixedAndBobbingDice2D(); }
     catch (const std::exception& e)
     {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << '\n';

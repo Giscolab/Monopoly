@@ -182,6 +182,11 @@ namespace monopoly::data
         [[nodiscard]] std::expected<void, MeshRuntimeError> replaceTextureImages(
             DataId id, std::span<const std::shared_ptr<const HmdTextureImage>> images);
         [[nodiscard]] std::size_t size() const noexcept;
+        // Release only cache-owned decoded meshes and their DAT leases.
+        [[nodiscard]] std::size_t releaseUnused() noexcept;
+        // Both eviction operations retain configured texture substitutions;
+        // resolve reapplies them when a mesh is rebuilt. An empty replacement
+        // explicitly restores the embedded textures for the selected DataId.
         void clear() noexcept;
         [[nodiscard]] std::shared_ptr<const ResourceSnapshot> resources() const noexcept;
     private:
@@ -189,5 +194,7 @@ namespace monopoly::data
         MeshTextureResolver textureResolver_;
         MeshRuntimeLimits limits_;
         std::unordered_map<DataId, std::shared_ptr<const MeshRuntimeAsset>> assets_;
+        std::unordered_map<DataId,
+            std::vector<std::shared_ptr<const HmdTextureImage>>> textureOverrides_;
     };
 }

@@ -25,6 +25,7 @@
 #include "RuleBuildings.hpp"
 #include "RuntimeState.hpp"
 #include "SequencePlayback.hpp"
+#include "World3DGPUScene.hpp"
 #include "SequenceLifecycleMessage.hpp"
 #include "SequenceVideoRuntime.hpp"
 #include "OpeningMovies.hpp"
@@ -1071,6 +1072,9 @@ namespace monopoly::engine
             resetPresentationOwners();
             sequenceVideoRuntime.reset();
             playback.reset();
+            // The renderer survives the menu transition; the old scene does not.
+            if (worldRenderer)
+                if (auto* cache = worldRenderer->meshCache()) cache->clear();
             if (audioRuntime) audioRuntime->stopAll();
             monopolySoundRuntime.reset(audioRuntime.get());
             stopVoiceChat();
@@ -2360,6 +2364,10 @@ namespace monopoly::engine
 
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
+            // Hidden 3D views skip rendering but must still retire stopped meshes.
+            if (worldRenderer)
+                if (auto* cache = worldRenderer->meshCache())
+                    pruneWorld3DGPUScene(session->world(), *cache);
             publishSequenceLifecycleEvents(*session, static_cast<std::int32_t>(tick));
 
             {

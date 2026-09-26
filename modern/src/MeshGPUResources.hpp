@@ -123,6 +123,9 @@ namespace monopoly::engine
             std::uint64_t key) const noexcept;
         [[nodiscard]] std::size_t dynamicSize() const noexcept;
         void pruneDynamicVertices(std::span<const std::uint64_t> activeKeys) noexcept;
+        // Keep every live scene asset, including offscreen/shared instances.
+        // SDL defers GPU destruction until submitted commands no longer use it.
+        void prune(std::span<const data::DataId> activeIds) noexcept;
         void erase(data::DataId id) noexcept;
         void clear() noexcept;
         [[nodiscard]] SDL_GPUDevice* device() const noexcept { return device_; }

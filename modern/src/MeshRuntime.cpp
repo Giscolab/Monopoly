@@ -532,6 +532,12 @@ namespace monopoly::data
         auto immutableSource = std::make_shared<const LegacyMeshData>(std::move(*source));
         auto built = MeshXRuntime::build(immutableSource, textureResolver_, limits_);
         if (!built) return std::unexpected(built.error());
+        if (const auto configured = textureOverrides_.find(id); configured != textureOverrides_.end())
+        {
+            auto substituted = built->withTextureImages(configured->second);
+            if (!substituted) return std::unexpected(substituted.error());
+            built = std::move(substituted);
+        }
         auto mesh = std::make_shared<const MeshXRuntime>(std::move(*built));
         auto renderData = std::make_shared<const MeshRenderData>(makeMeshRenderData(*mesh));
         auto asset = std::make_shared<const MeshRuntimeAsset>(
@@ -563,11 +569,21 @@ namespace monopoly::data
         auto renderData = std::make_shared<const MeshRenderData>(makeMeshRenderData(*mesh));
         auto asset = std::make_shared<const MeshRuntimeAsset>(
             MeshRuntimeAsset{id, std::move(mesh), std::move(renderData)});
+        // Publish only after the complete replacement has passed validation.
+        // Image configuration owns no HMD source lease and survives eviction.
+        std::vector<std::shared_ptr<const HmdTextureImage>> configured(images.begin(), images.end());
+        if (configured.empty()) textureOverrides_.erase(id);
+        else textureOverrides_.insert_or_assign(id, std::move(configured));
         assets_.insert_or_assign(id, std::move(asset));
         return {};
     }
 
     std::size_t MeshRuntimeCache::size() const noexcept { return assets_.size(); }
+    std::size_t MeshRuntimeCache::releaseUnused() noexcept
+    {
+        return std::erase_if(assets_, [](const auto& entry)
+        { return entry.second.use_count() == 1; });
+    }
     void MeshRuntimeCache::clear() noexcept { assets_.clear(); }
     std::shared_ptr<const ResourceSnapshot> MeshRuntimeCache::resources() const noexcept
     { return resources_; }

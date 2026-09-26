@@ -6,6 +6,20 @@
 
 namespace monopoly::engine
 {
+    void pruneWorld3DGPUScene(const SequenceWorld3DSlot& slot, MeshGPUCache& cache)
+    {
+        std::vector<data::DataId> activeMeshes;
+        const auto activeNodes = slot.order();
+        // Visibility only controls drawing, not the lifetime of a live mesh.
+        for (const auto node : activeNodes)
+            if (const auto* object = slot.find(node); object && object->asset)
+                activeMeshes.push_back(object->asset->dataId);
+        // Per-node animation buffers can outlive their node even when another
+        // live instance still owns the same static DataId. Retire both layers.
+        cache.pruneDynamicVertices(activeNodes);
+        cache.prune(activeMeshes);
+    }
+
     std::expected<std::vector<World3DGPUIndexedBatch>, MeshGPUError>
     buildWorld3DGPUScene(const SequenceWorld3DSlot& slot, MeshGPUCache& cache)
     {
@@ -70,6 +84,7 @@ namespace monopoly::engine
             }
         }
         cache.pruneDynamicVertices(activeDynamicVertices);
+        pruneWorld3DGPUScene(slot, cache);
         return result;
     }
 }

@@ -1,4 +1,5 @@
 #include "World3DGPUScene.hpp"
+#include "SyntheticSequenceResources.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -94,6 +95,116 @@ namespace
             "failed GPU scene build mutates neither cache nor CPU slot ownership");
     }
 
+    void testSceneOwnershipPruning(SDL_GPUDevice* device)
+    {
+        engine::SequenceWorld3DSlot slot;
+        auto camera = engine::World3DCamera{};
+        camera.location = {0, 0, 0};
+        camera.fieldOfView = 1.5707963267948966F;
+        camera.nearPlane = 1;
+        camera.farPlane = 100;
+        expect(slot.configureView({0, 0, 800, 450}, camera).has_value(),
+            "pruning fixture configures a visible scene");
+        engine::MeshGPUCache cache(device);
+        const auto firstId = data::packDataId(8, 51);
+        const auto secondId = data::packDataId(8, 52);
+        auto first = makeItem(101, firstId, 0.0F, true);
+        auto second = makeItem(202, secondId);
+        auto shared = first;
+        shared.node = 303;
+        const std::weak_ptr<const data::MeshRuntimeAsset> firstSource = first.asset;
+        const std::weak_ptr<const data::HmdTextureImage> firstImage =
+            first.asset->renderData->batches.front().texture->sourceImage;
+        auto pose = std::make_shared<data::MeshRenderData>(*shared.asset->renderData);
+        pose->vertices.front().position[0] = -0.5F;
+        shared.renderData = std::move(pose);
+        expect(slot.sync({first, second, shared}).has_value(),
+            "two mesh assets include a second animated instance of the first");
+        {
+            const auto scene = engine::buildWorld3DGPUScene(slot, cache);
+            expect(scene && scene->size() == 3 && cache.size() == 2 && cache.dynamicSize() == 1,
+                "shared instances reuse one static upload while keeping per-node animated vertices");
+        }
+        const auto* firstGPU = cache.find(firstId);
+        const auto* secondGPU = cache.find(secondId);
+        expect(firstGPU && secondGPU, "both live assets have uploaded resources");
+        if (!firstGPU || !secondGPU) return;
+        const auto keptBuffer = secondGPU->vertexBuffer;
+        const auto sharedBuffer = firstGPU->vertexBuffer;
+
+        const std::weak_ptr<const data::MeshRenderData> animatedSource = shared.renderData;
+        slot.clearView();
+        expect(slot.sync({first, second}).has_value(),
+            "animated node 303 stops while base node 101 still owns the same mesh in a hidden view");
+        shared.renderData.reset();
+        expect(!animatedSource.expired() && cache.dynamicSize() == 1,
+            "the animation buffer still owns its evaluated CPU vertices before pruning");
+        engine::pruneWorld3DGPUScene(slot, cache);
+        const auto* sharedStatic = cache.find(firstId);
+        expect(!slot.view() && cache.dynamicSize() == 0 && animatedSource.expired() &&
+            sharedStatic && sharedStatic->vertexBuffer == sharedBuffer && cache.size() == 2,
+            "without an intervening render, pruning removes stopped node animation while retaining shared static mesh");
+        expect(slot.configureView({0, 0, 800, 450}, camera).has_value(),
+            "remaining lifetime checks restore the existing 3D camera");
+
+        first.asset.reset();
+        shared.worldTransform.values[12] = 1000.0F;
+        expect(slot.sync({second, shared}).has_value(),
+            "first visible instance stops while its shared instance moves offscreen");
+        {
+            const auto scene = engine::buildWorld3DGPUScene(slot, cache);
+            const auto* retained = cache.find(firstId);
+            expect(scene && scene->size() == 1 && cache.size() == 2 && retained &&
+                retained->vertexBuffer == sharedBuffer && !firstSource.expired(),
+                "live offscreen instance retains its static mesh and texture upload");
+        }
+        slot.clearView();
+        engine::pruneWorld3DGPUScene(slot, cache);
+        expect(!slot.view() && cache.size() == 2 && !firstSource.expired(),
+            "hiding the 3D view preserves all active static assets, including offscreen instances");
+        expect(slot.sync({second}).has_value(), "last instance stops while the 3D view is hidden");
+        shared.asset.reset();
+        shared.renderData.reset();
+        {
+            engine::pruneWorld3DGPUScene(slot, cache);
+            const auto* retained = cache.find(secondId);
+            expect(cache.size() == 1 && !cache.find(firstId) && retained &&
+                retained->vertexBuffer == keptBuffer && cache.dynamicSize() == 0,
+                "without rendering, last-instance removal releases only its resources and preserves the other upload");
+        }
+        expect(firstSource.expired() && firstImage.expired(),
+            "pruned GPU ownership no longer pins the stopped CPU asset or embedded texture pixels");
+        const std::weak_ptr<const data::MeshRuntimeAsset> secondSource = second.asset;
+        second.asset.reset();
+        expect(slot.sync({}).has_value(), "all sequence meshes stop");
+        const auto empty = engine::buildWorld3DGPUScene(slot, cache);
+        expect(empty && empty->empty() && cache.size() == 0 && cache.dynamicSize() == 0 &&
+            secondSource.expired(), "an empty scene releases the last static GPU and CPU references");
+    }
+
+    void testCPUSweepAfterGPUPruning(SDL_GPUDevice* device)
+    {
+        SyntheticSequenceResources fixture;
+        data::MeshRuntimeCache cpu(fixture.service.snapshot());
+        engine::MeshGPUCache gpu(device);
+        std::weak_ptr<const data::MeshRuntimeAsset> source;
+        {
+            const auto asset = cpu.resolve(data::packDataId(data::LegacyGroupId::ThreeD, 0));
+            expect(asset.has_value(), "real CPU cache decodes the synthetic HMD for GPU lifetime proof");
+            if (!asset) return;
+            source = *asset;
+            expect(gpu.resolve(*asset).has_value(), "GPU upload retains the decoded HMD asset");
+        }
+        expect(cpu.releaseUnused() == 0 && cpu.size() == 1 && !source.expired(),
+            "CPU sweep preserves an asset still owned by a GPU upload");
+        engine::SequenceWorld3DSlot empty;
+        const auto scene = engine::buildWorld3DGPUScene(empty, gpu);
+        expect(scene && scene->empty() && gpu.size() == 0 && !source.expired(),
+            "empty scene releases GPU ownership while CPU cache still owns the decoded asset");
+        expect(cpu.releaseUnused() == 1 && cpu.size() == 0 && source.expired(),
+            "CPU sweep after GPU pruning finally releases the decoded HMD asset");
+    }
+
     void testRealGPUSceneWhenAvailable()
     {
         if (!SDL_Init(SDL_INIT_VIDEO))
@@ -174,6 +285,8 @@ namespace
                 "returning to base pose prunes dynamic vertices and restores cached static vertex buffer");
             cache.clear();
         }
+        testSceneOwnershipPruning(device);
+        testCPUSweepAfterGPUPruning(device);
         SDL_DestroyGPUDevice(device);
         SDL_Quit();
     }

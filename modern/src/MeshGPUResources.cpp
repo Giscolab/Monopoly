@@ -600,6 +600,23 @@ namespace monopoly::engine
         }
     }
 
+    void MeshGPUCache::prune(std::span<const data::DataId> activeIds) noexcept
+    {
+        for (auto iterator = resources_.begin(); iterator != resources_.end();)
+        {
+            if (std::find(activeIds.begin(), activeIds.end(), iterator->first) != activeIds.end())
+            {
+                ++iterator;
+                continue;
+            }
+            eraseDynamicForDataId(iterator->first);
+            // ReleaseGPUBuffer/Texture defer physical destruction until safe;
+            // dropping the CPU source reference needs no GPU idle wait.
+            release(iterator->second);
+            iterator = resources_.erase(iterator);
+        }
+    }
+
     const MeshGPUResource* MeshGPUCache::find(data::DataId id) const noexcept
     {
         const auto found = resources_.find(id);

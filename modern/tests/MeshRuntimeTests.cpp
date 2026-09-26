@@ -492,6 +492,71 @@ namespace
             near((*restored)->renderData->vertices[1].uv[0], 0.75F),
             "restoration rebuilds embedded pixels and their original UV coverage");
     }
+    void testCacheRetirementAndTextureConfiguration()
+    {
+        ResourceFixture fixture;
+        expect(writeResources(fixture.root, texturedTriangleWithEmbeddedImage()),
+            "mesh retirement fixture contains an embedded texture");
+        ResourceRuntime runtime;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        if (!paths || !runtime.initialize(*paths))
+        {
+            expect(false, "mesh retirement resources initialize");
+            return;
+        }
+        const auto snapshot = runtime.snapshot();
+        MeshRuntimeCache cache(snapshot);
+        const auto id = packDataId(LegacyGroupId::ThreeD, 0);
+        auto original = cache.resolve(id).value();
+        auto pixels = std::make_shared<HmdTextureImage>(
+            *original->mesh->groups()[0].texture->sourceImage);
+        pixels->rgba.assign(pixels->rgba.size(), 117);
+        const std::array<std::shared_ptr<const HmdTextureImage>, 1> replacement{pixels};
+        expect(cache.replaceTextureImages(id, replacement).has_value(),
+            "mesh texture configuration publishes before eviction");
+        auto consumer = cache.resolve(id).value();
+        std::weak_ptr<const MeshRuntimeAsset> retired = consumer;
+        std::weak_ptr<const LegacyMeshData> retiredMesh = consumer->mesh->source();
+        std::weak_ptr<const DataBytes> retiredSource;
+        {
+            const auto lease = snapshot->banks().load(id);
+            if (lease) retiredSource = *lease;
+        }
+        expect(cache.releaseUnused() == 0 && !retiredSource.expired() &&
+            consumer->renderData->batches[0].texture->sourceImage == pixels &&
+            original->renderData->batches[0].texture->sourceImage != pixels,
+            "active current and historical mesh consumers retain independent immutable textures");
+        original.reset();
+        consumer.reset();
+        expect(cache.releaseUnused() == 1 && cache.size() == 0 &&
+            retired.expired() && retiredMesh.expired() && retiredSource.expired(),
+            "unused decoded mesh and DAT lease retire while texture configuration survives");
+        expect(cache.releaseUnused() == 0, "empty mesh cache collection is idempotent");
+
+        auto invalid = std::make_shared<HmdTextureImage>(*pixels);
+        invalid->rgba.pop_back();
+        const std::array<std::shared_ptr<const HmdTextureImage>, 1> malformed{invalid};
+        expect(!cache.replaceTextureImages(id, malformed) && cache.size() == 0,
+            "invalid replacement after eviction publishes neither mesh nor new configuration");
+        auto rebuilt = cache.resolve(id).value();
+        expect(rebuilt->mesh->groups()[0].texture->sourceImage == pixels &&
+            rebuilt->renderData->batches[0].texture->sourceImage == pixels,
+            "rebuild reapplies the last valid texture substitution after eviction and failed replacement");
+        cache.clear();
+        auto afterClear = cache.resolve(id).value();
+        expect(afterClear != rebuilt && afterClear->renderData->batches[0].texture->sourceImage == pixels &&
+            rebuilt->renderData->batches[0].texture->sourceImage == pixels,
+            "clear purges decoded assets but retains configuration and external immutable consumers");
+        expect(cache.replaceTextureImages(id, {}).has_value(),
+            "empty replacement explicitly removes persistent texture configuration");
+        cache.clear();
+        auto stock = cache.resolve(id).value();
+        expect(stock->renderData->batches[0].texture->sourceImage->rgba != pixels->rgba &&
+            stock->mesh->groups()[0].texture->width == 4 &&
+            afterClear->renderData->batches[0].texture->sourceImage == pixels,
+            "stock texture restoration survives clear and does not alter retained substituted consumers");
+    }
+
     void testTextureResolutionAndHistoricalDrop()
     {
         auto source = parse(texturedTriangle());
@@ -535,6 +600,7 @@ int main()
     testTextureResolutionAndHistoricalDrop();
     testTextureSubstitutionPreservesGeometry();
     testTextureCacheRefreshAndRollback();
+    testCacheRetirementAndTextureConfiguration();
     std::cout << (failures ? "MESHX runtime tests FAILED\n" :
         "MESHX runtime tests passed\n");
     return failures ? 1 : 0;

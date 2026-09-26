@@ -28,6 +28,10 @@ namespace monopoly::engine
         std::optional<data::MeshTextureRegion> texture;
     };
 
+    // Retire stopped mesh assets even when the interface has no 3D view.
+    // Active instances remain owners regardless of their current visibility.
+    void pruneWorld3DGPUScene(const SequenceWorld3DSlot& slot, MeshGPUCache& cache);
+
     // Final portable scene-data boundary before the SDL_GPU graphics pipeline.
     // It preserves sequencer traversal and per-mesh batch order. Embedded HMD
     // texture pixels are already uploaded by MeshGPUCache at this boundary.
