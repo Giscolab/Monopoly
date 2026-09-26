@@ -64,6 +64,30 @@ namespace
         return chunk(3, payload);
     }
 
+    DataBytes sound(DataId target, bool absolute, std::int32_t start = 0)
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint32_t>(start) & 0x00FF'FFFFU);
+        word(payload, 4U << 24U);
+        word(payload, 2U | (absolute ? 16U : 0U)); // Hold + absolute IDs flag.
+        word(payload, target);
+        return chunk(5, payload);
+    }
+
+    DataBytes video(std::int32_t start = 0)
+    {
+        DataBytes payload;
+        word(payload, static_cast<std::uint32_t>(start) & 0x00FF'FFFFU);
+        word(payload, 4U << 24U);
+        word(payload, 2U); // Hold.
+        const std::array<std::byte, 10> fields{
+            std::byte{1}, std::byte{0}, std::byte{255},
+            std::byte{1}, std::byte{1}, std::byte{0}, std::byte{0},
+            std::byte{0}, std::byte{0}, std::byte{0}};
+        payload.insert(payload.end(), fields.begin(), fields.end());
+        return chunk(6, payload);
+    }
+
     DataBytes mesh(DataId target, bool absolute, std::int32_t start = 0,
         const DataBytes& attributes = {})
     {
@@ -820,6 +844,66 @@ namespace
             "parsed but unexecuted attributes are refused instead of silently ignored");
     }
 
+    void testSequenceVolumeContract()
+    {
+        Fixture fixture;
+        const auto waveId = packDataId(2, 1);
+        const std::array soundItems{
+            ArchiveBuildItem{LegacyDataType::Chunky, sound(waveId, true)},
+            ArchiveBuildItem{LegacyDataType::Wave,
+                {std::byte{'R'}, std::byte{'I'}, std::byte{'F'}, std::byte{'F'}}}
+        };
+        DataBankRegistry soundRegistry;
+        (void)archive(fixture.root / "volume-sound.dat", soundItems, soundRegistry);
+        SequenceRuntime soundRuntime;
+        const auto soundRoot = soundRuntime.start(program(soundRegistry), 44).value();
+        auto soundIntent = soundRuntime.soundInstances();
+        expect(soundIntent.size() == 1 && soundIntent.front().volume == 100 &&
+            soundRuntime.inspect(soundRoot)->volume == 100,
+            "sequence sound volume defaults to retail maximum 100");
+        expect(soundRuntime.setVolume(soundRoot, 25).has_value() &&
+            soundRuntime.soundInstances().front().volume == 25,
+            "direct sequence volume updates active sound intent");
+        expect(soundRuntime.setVolume(soundRoot, 255).has_value() &&
+            soundRuntime.soundInstances().front().volume == 100,
+            "sequence sound volume clamps values above 100 like LE_SOUND_SetVolumeBufSnd");
+        expect(soundRuntime.setVolumeMatching(packDataId(2, 0), 44, 70) == 1 &&
+            soundRuntime.soundInstances().front().volume == 70,
+            "LE_SEQNCR_SetVolume targeting updates matching sound by DataID and priority");
+
+        const std::array videoItems{
+            ArchiveBuildItem{LegacyDataType::Chunky, video()}
+        };
+        DataBankRegistry videoRegistry;
+        (void)archive(fixture.root / "volume-video.dat", videoItems, videoRegistry, 3);
+        const auto videoProgram = SequenceProgram::load(
+            videoRegistry, packDataId(3, 0)).value();
+        SequenceRuntime videoRuntime;
+        const auto videoRoot = videoRuntime.start(videoProgram, 9).value();
+        expect(videoRuntime.inspect(videoRoot)->volume == 100,
+            "sequence video volume also defaults to 100");
+        expect(videoRuntime.setVolumeMatching(packDataId(3, 0), 9, 35) == 1 &&
+            videoRuntime.inspect(videoRoot)->volume == 35,
+            "LE_SEQNCR_SetVolume targets video sequences as in ArtLib");
+        const auto videoIntent = videoRuntime.videoInstances();
+        expect(videoIntent.size() == 1 && videoIntent.front().volume == 35,
+            "video presentation intent carries the live sequence volume");
+
+        const std::array groupItems{
+            ArchiveBuildItem{LegacyDataType::Chunky,
+                sequence(0, 20, 2, 0, true)}
+        };
+        DataBankRegistry groupRegistry;
+        (void)archive(fixture.root / "volume-group.dat", groupItems, groupRegistry, 4);
+        SequenceRuntime groupRuntime;
+        const auto groupProgram = SequenceProgram::load(
+            groupRegistry, packDataId(4, 0)).value();
+        const auto groupRoot = groupRuntime.start(groupProgram, 5).value();
+        expect(groupRuntime.setVolumeMatching(packDataId(4, 0), 5, 10) == 1 &&
+            groupRuntime.inspect(groupRoot)->volume == 100,
+            "SetVolume finds non-audio matches but does not mutate their audio state");
+    }
+
     void testRawUapStartContract()
     {
         Fixture fixture;
@@ -973,6 +1057,7 @@ int main()
         testGetChildMeshWorldMatrixContract();
         testForceRedrawRuntimeContract();
         testCommandsAndFailureLimits();
+        testSequenceVolumeContract();
         testProgramCyclesDepthAndAttributes();
         testRawUapStartContract();
         testRawHmdStartContract();
