@@ -1103,4 +1103,20 @@ namespace monopoly::data
 
         return packDataId(dataGroup(indexTableId), *tag);
     }
+
+    std::expected<DataId, DataError> lookupIndexedDataIdLegacy(
+        const DataBankRegistry& registry,
+        DataId indexTableId,
+        std::uint32_t indexValue)
+    {
+        const auto result = lookupIndexedDataId(
+            registry, indexTableId, indexValue);
+        if (result) return *result;
+
+        if (result.error().code == DataErrorCode::TypeMismatch ||
+            result.error().code == DataErrorCode::IndexedItemNotFound)
+            return EmptyDataId;
+
+        return std::unexpected(result.error());
+    }
 }
