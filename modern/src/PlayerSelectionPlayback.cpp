@@ -261,9 +261,11 @@ namespace monopoly::playerselection
                 auto draw=[&](data::LegacyBitmapRGBA8& image,const std::string& value,int x,int y,bool center,std::uint32_t color=0xFFFFFFU)->std::expected<void,std::string>
                 {
                     if(value.empty()) return {};
-                    auto rendered=font->render(value,color); if(!rendered) return std::unexpected(rendered.error().detail);
-                    if(center){x-=static_cast<int>(rendered->width)/2;y-=static_cast<int>(rendered->height)/2;}
-                    return data::blitStraightRGBA8(image,*rendered,x,y,data::BitmapBlitMode::SourceOver);
+                    auto metrics=font->measure(value); if(!metrics) return std::unexpected(metrics.error().detail);
+                    if(center){x-=metrics->width/2;y-=metrics->height/2;}
+                    auto rendered=font->blitText(image,value,x,y,color);
+                    if(!rendered) return std::unexpected(rendered.error().detail);
+                    return {};
                 };
                 auto blank=[](int w,int h){data::LegacyBitmapRGBA8 image{static_cast<std::uint32_t>(w),static_cast<std::uint32_t>(h),{}};image.pixels.assign(static_cast<std::size_t>(w)*h*4,0);return image;};
                 auto surface=[&](int key,data::LegacyBitmapRGBA8 image,int x,int y,int priority)->std::expected<void,std::string>
