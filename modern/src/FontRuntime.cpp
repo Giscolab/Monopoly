@@ -128,6 +128,61 @@ namespace monopoly::fonts
         }
     }
 
+    std::expected<std::string, Error> transcodeUtf8(std::u16string_view text)
+    {
+        return utf16ToUtf8(text, {});
+    }
+
+    std::expected<std::string, Error> transcodeUtf8(std::wstring_view text)
+    {
+        if constexpr (sizeof(wchar_t) == 2)
+        {
+            std::u16string utf16;
+            utf16.reserve(text.size());
+            for (const auto value : text)
+                utf16.push_back(static_cast<char16_t>(value));
+            return transcodeUtf8(utf16);
+        }
+        else
+        {
+            std::string result;
+            result.reserve(text.size() * 4U);
+            const auto append = [&](std::uint32_t codePoint)
+            {
+                if (codePoint <= 0x7FU)
+                    result.push_back(static_cast<char>(codePoint));
+                else if (codePoint <= 0x7FFU)
+                {
+                    result.push_back(static_cast<char>(0xC0U | (codePoint >> 6U)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+                else if (codePoint <= 0xFFFFU)
+                {
+                    result.push_back(static_cast<char>(0xE0U | (codePoint >> 12U)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+                else
+                {
+                    result.push_back(static_cast<char>(0xF0U | (codePoint >> 18U)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 12U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+                }
+            };
+            for (const auto value : text)
+            {
+                const auto codePoint = static_cast<std::uint32_t>(value);
+                if (codePoint > 0x10FFFFU ||
+                    (codePoint >= 0xD800U && codePoint <= 0xDFFFU))
+                    return std::unexpected(makeError(ErrorCode::InvalidTextEncoding, {},
+                        "invalid wide-character Unicode code point"));
+                append(codePoint);
+            }
+            return result;
+        }
+    }
+
     Runtime::Runtime()
     {
         ttfInitialized_ = TTF_Init();
