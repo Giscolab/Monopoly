@@ -22,4 +22,6 @@ Les options `--voice-host` et `--voice-connect` conservent leur mode de spectate
 - Déconnexion d’un client : ses joueurs deviennent des IA locales selon le comportement d’origine. Perte de l’hôte : fin du réseau, arrêt des anciennes présentations et retour à une partie locale ; aucune migration d’hôte.
 - Chargement d’une sauvegarde : joueurs réattribués à l’hôte, comme dans la source.
 
-Ce lot est relu statiquement seulement : aucun build ni test n’a été lancé à la demande de l’utilisateur. Le parcours entre processus/machines et la qualification des ressources restent ouverts dans [PORTING_STATUS.md](PORTING_STATUS.md).
+Validation locale Windows/MSVC Debug du code `cf1ba45` : application compilée et 140/140 suites CTest passées. `GameSessionIntegrationTests` utilise deux connexions TCP réelles dans un même processus et le moteur RULE de l’hôte : admission, synchronisation, ordre aléatoire conservant le propriétaire de chaque joueur, notifications privées, rejet des commandes d’une autre connexion, achat d’une propriété et reprise du joueur déconnecté par une IA. Les entrées des clients sont pilotées par le test ; leur interface graphique n’est pas exercée.
+
+Le parcours entre processus puis entre machines, la voix physique et la qualification des ressources restent ouverts dans [PORTING_STATUS.md](PORTING_STATUS.md).

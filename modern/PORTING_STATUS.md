@@ -10,7 +10,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 
 - Initialisation, boucle de jeu, timers, slots, règles, IA, messages locaux, archives et restauration de partie.
 - Surfaces UI : enchères, plateau, pièces, sélection locale, Trade/Future/Immunity, IBar et Banque maisons/hôtels, chat avec texte et défilement, statistiques et deed floater, options Load/Save, Credits et QuickHelp.
-- **GIS-8** : capture SDL3, PCM 11025 Hz/8-bit/mono, GSM 6.10 WAV49, DAT1/DATN, playback et transport TCP de voix. Les sessions de jeu C01 ont désormais leur admission, ownership, routage et retour local ; voir [sessions TCP](NETWORK_GAME.md). Sa validation sur le HEAD courant reste à confirmer.
+- **GIS-8** : capture SDL3, PCM 11025 Hz/8-bit/mono, GSM 6.10 WAV49, DAT1/DATN, playback et transport TCP de voix. Les sessions de jeu C01 ont leur admission, ownership, routage et retour local ; le scénario intégré TCP est validé localement au code `cf1ba45`, voir [sessions TCP](NETWORK_GAME.md). La qualification entre machines et du matériel reste ouverte.
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
 - Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
 
@@ -44,7 +44,7 @@ MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint
 
 | ID | Code présent | Validation attendue |
 |---|---|---|
-| C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Qualification Q02 encore ouverte ; résultat de validation du HEAD courant à confirmer. Voir [usage](NETWORK_GAME.md). |
+| C01 | Code des sessions de jeu TCP raccordé : menu/CLI, admission, ownership, actions, notifications privées, déconnexion et retour local. | Scénario intégré sur deux connexions TCP, dans un même processus, validé au code `cf1ba45`. Qualification Q02 encore ouverte. Voir [usage et portée](NETWORK_GAME.md). |
 | C02 | FullHelp portable raccordé : conversion HLP → HTML asynchrone puis ouverture navigateur. | Exporteur externe `winhlp` requis ; conversion réelle, sujets/images et plateformes à qualifier. Voir [aide complète](FULL_HELP.md). |
 | C03 | Génération des 28 rectos/28 versos Europe et catalogue runtime raccordés aux enchères, IBar, Trade et Stats ; variantes de langue, plateau, devise et règle maisons/hôtel. | Qualification visuelle avec les modèles DAT retail en Q03 ; génération et remplacement du catalogue couverts par tests ciblés, résultat consigné ci-dessous. |
 
@@ -72,15 +72,17 @@ Sessions réseau C01, aide C02, attente des actions IA avant trade (A02), taille
 
 Les onze branches `assistant/*` sont intégrées (dix têtes distinctes). Elles ajoutent la durée WAV, le backend de surfaces GRAFIX partagé, le blending des ombres et des contrats de tests. Leurs conclusions utiles sont reprises dans la matrice ; les anciennes réserves déjà résolues ne sont pas réintroduites. La génération des actes Europe C03 est implémentée dans le lot suivant, avec le survol Trade et le remplacement transactionnel des 56 surfaces.
 
-**Compilations et tests autorisés via GitHub Actions.** Les premiers commits de ce lot avaient été publiés sans validation, avec `[skip ci]`. Cette restriction est levée. La référence ci-dessous précède ces modifications ; elle ne les qualifie pas. Pour chaque résultat CI, vérifier le SHA testé : un succès sur un commit antérieur ne qualifie pas les changements suivants.
+**Compilations et tests autorisés via GitHub Actions.** Les premiers commits de ce lot avaient été publiés sans validation, avec `[skip ci]`. Cette restriction est levée ; la référence locale ci-dessous comprend désormais leurs modifications. Pour chaque résultat CI, vérifier le SHA testé : un succès sur un commit antérieur ne qualifie pas les changements suivants.
+
+Les commits `ee9621d`, `57321a8` et `cf1ba45` corrigent ensuite les parcours de tours humains et IA, l’annulation des phases, les séquences sonores, les contre-offres, la sortie du plateau depuis la prison, les commandes SDL, les noms Unicode et la conservation des propriétaires réseau lors du choix de l’ordre. Le démarrage expose aussi les ressources manquantes et accepte un répertoire explicite. Les tests intégrés passent par RULE, FIFO, projection UI et commandes IBar ; deux parties IA successives atteignent leur fin. Les présentations graphiques de ces scénarios sont simulées : cette preuve ne remplace pas une partie avec les ressources retail.
 
 ## Validation de référence
 
-Validation de référence : **132/132 suites CTest passées** — code `d77be96`, Windows/MSVC Debug, 26 septembre 2026.
+Validation de référence : **140/140 suites CTest passées** — code `cf1ba45`, Windows/MSVC Debug, 27 septembre 2026.
 
-Application compilée ; test OptionsVisualPlayback ciblé puis CTest global réussi en 37,78 s. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend le décodage portable QuickHelp ; elle ne remplace pas Q01–Q05.
+Application compilée ; CTest global réussi en 8,49 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios de parties humaines/IA, la régression TCP et les nouveaux tests de saisie et de gains audio ; elle ne remplace pas Q01–Q05.
 
-Les journaux locaux se trouvent sous `modern/build/options-help-*-20260926.log`. Les exécutions CI et leurs logs restent la preuve de validation distante ; la référence ci-dessus n’est pas une affirmation sur le dernier run GitHub.
+Les journaux locaux de cette référence sont `modern/build/tcp-name-sound-final-build.log` et `modern/build/tcp-name-sound-final-tests.log`. Les exécutions CI et leurs logs restent la preuve de validation distante ; la référence ci-dessus n’est pas une affirmation sur le dernier run GitHub.
 
 ## Suivi automatique et maintenance
 
