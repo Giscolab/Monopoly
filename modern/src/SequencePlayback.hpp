@@ -51,6 +51,10 @@ namespace monopoly::engine
             data::DataId id, std::uint16_t priority, std::uint8_t action);
         [[nodiscard]] std::expected<void, std::string> setVolume(
             data::DataId id, std::uint16_t priority, std::uint8_t volume);
+        [[nodiscard]] std::expected<void, std::string> setPitch(
+            data::DataId id, std::uint16_t priority, std::uint16_t pitch);
+        [[nodiscard]] std::expected<void, std::string> setPanning(
+            data::DataId id, std::uint16_t priority, std::int8_t panning);
         [[nodiscard]] std::expected<void, std::string> forceRedraw(
             data::DataId id, std::uint16_t priority);
         [[nodiscard]] std::expected<void, std::string> startMoved(

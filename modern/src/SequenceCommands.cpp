@@ -71,6 +71,18 @@ namespace monopoly::sequence
     }
 
     std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        SetSequencePitchCommand command)
+    {
+        return enqueueValidated(command);
+    }
+
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
+        SetSequencePanningCommand command)
+    {
+        return enqueueValidated(command);
+    }
+
+    std::expected<void, CommandQueueError> SequenceCommandQueue::enqueue(
         ForceRedrawSequenceCommand command)
     {
         return enqueueValidated(command);
@@ -194,6 +206,20 @@ namespace monopoly::sequence
                         value.dataId, value.priority, value.volume, value.wholeTree);
                     outcomes_.push_back(SequenceCommandOutcome{
                         SequenceCommandKind::SetVolume, {}, count, {}});
+                }
+                else if constexpr (std::is_same_v<Command, SetSequencePitchCommand>)
+                {
+                    const auto count = runtime_.setPitchMatching(
+                        value.dataId, value.priority, value.pitch, value.wholeTree);
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::SetPitch, {}, count, {}});
+                }
+                else if constexpr (std::is_same_v<Command, SetSequencePanningCommand>)
+                {
+                    const auto count = runtime_.setPanningMatching(
+                        value.dataId, value.priority, value.panning, value.wholeTree);
+                    outcomes_.push_back(SequenceCommandOutcome{
+                        SequenceCommandKind::SetPanning, {}, count, {}});
                 }
                 else if constexpr (std::is_same_v<Command, ForceRedrawSequenceCommand>)
                 {

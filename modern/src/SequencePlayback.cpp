@@ -287,6 +287,30 @@ namespace monopoly::engine
     }
 
 
+    std::expected<void, std::string> SequencePlayback::setPitch(
+        data::DataId id, std::uint16_t priority, std::uint16_t pitch)
+    {
+        const auto queued = commands_.enqueue(
+            sequence::SetSequencePitchCommand{
+                id, priority, pitch, false});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue rejected pitch change");
+        return {};
+    }
+
+    std::expected<void, std::string> SequencePlayback::setPanning(
+        data::DataId id, std::uint16_t priority, std::int8_t panning)
+    {
+        const auto queued = commands_.enqueue(
+            sequence::SetSequencePanningCommand{
+                id, priority, panning, false});
+        if (!queued)
+            return std::unexpected(
+                "sequence command queue rejected panning change");
+        return {};
+    }
+
     std::expected<void, std::string> SequencePlayback::forceRedraw(
         data::DataId id, std::uint16_t priority)
     {

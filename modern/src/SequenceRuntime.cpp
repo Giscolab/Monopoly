@@ -1071,6 +1071,40 @@ namespace monopoly::sequence
             node->volume = std::min<std::uint8_t>(volume, 100U);
         return {};
     }
+
+    std::expected<void, RuntimeError> SequenceRuntime::setPitch(
+        SequenceNodeId id, std::uint16_t pitch)
+    {
+        events_.clear();
+        auto* node = find(id);
+        if (!node)
+            return std::unexpected(error(
+                RuntimeErrorCode::InvalidHandle, 0, 0,
+                "node no longer exists"));
+        const auto& data = node->definition().record.data;
+        if (std::holds_alternative<data::SequenceSoundData>(data) ||
+            std::holds_alternative<data::SequenceVideoData>(data))
+            node->pitch = pitch;
+        return {};
+    }
+
+    std::expected<void, RuntimeError> SequenceRuntime::setPanning(
+        SequenceNodeId id, std::int8_t panning)
+    {
+        events_.clear();
+        auto* node = find(id);
+        if (!node)
+            return std::unexpected(error(
+                RuntimeErrorCode::InvalidHandle, 0, 0,
+                "node no longer exists"));
+        const auto& data = node->definition().record.data;
+        if (std::holds_alternative<data::SequenceSoundData>(data) ||
+            std::holds_alternative<data::SequenceVideoData>(data))
+            node->panning = static_cast<std::int8_t>(
+                std::clamp<int>(panning, -100, 100));
+        return {};
+    }
+
     std::expected<void, RuntimeError>
     SequenceRuntime::setScrollingWorldVisibility(
         SequenceNodeId id, bool onScreen)
@@ -1352,6 +1386,44 @@ namespace monopoly::sequence
             if (std::holds_alternative<data::SequenceSoundData>(payload) ||
                 std::holds_alternative<data::SequenceVideoData>(payload))
                 node->volume = clamped;
+        }
+        return matches.size();
+    }
+
+    std::size_t SequenceRuntime::setPitchMatching(
+        data::DataId id, std::uint16_t priority,
+        std::uint16_t pitch, bool wholeTree)
+    {
+        events_.clear();
+        const auto matches = matching(id, priority, wholeTree);
+        for (const auto match : matches)
+        {
+            auto* node = find(match);
+            if (!node) continue;
+            const auto& payload = node->definition().record.data;
+            if (std::holds_alternative<data::SequenceSoundData>(payload) ||
+                std::holds_alternative<data::SequenceVideoData>(payload))
+                node->pitch = pitch;
+        }
+        return matches.size();
+    }
+
+    std::size_t SequenceRuntime::setPanningMatching(
+        data::DataId id, std::uint16_t priority,
+        std::int8_t panning, bool wholeTree)
+    {
+        events_.clear();
+        const auto matches = matching(id, priority, wholeTree);
+        const auto clamped = static_cast<std::int8_t>(
+            std::clamp<int>(panning, -100, 100));
+        for (const auto match : matches)
+        {
+            auto* node = find(match);
+            if (!node) continue;
+            const auto& payload = node->definition().record.data;
+            if (std::holds_alternative<data::SequenceSoundData>(payload) ||
+                std::holds_alternative<data::SequenceVideoData>(payload))
+                node->panning = clamped;
         }
         return matches.size();
     }

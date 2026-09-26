@@ -15,7 +15,7 @@
 
 namespace monopoly::sequence
 {
-    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, SetVolume, ForceRedraw, SetViewport, SetCamera };
+    enum class SequenceCommandKind { Start, Stop, Move, SetEndingAction, SetVolume, SetPitch, SetPanning, ForceRedraw, SetViewport, SetCamera };
     enum class CommandQueueError { QueueFull, InvalidProgram, InvalidEndingAction, InvalidRenderSlot, NestingOverflow };
 
     struct StartSequenceCommand
@@ -44,6 +44,20 @@ namespace monopoly::sequence
         data::DataId dataId{};
         std::uint16_t priority{};
         std::uint8_t volume{100};
+        bool wholeTree{};
+    };
+    struct SetSequencePitchCommand
+    {
+        data::DataId dataId{};
+        std::uint16_t priority{};
+        std::uint16_t pitch{};
+        bool wholeTree{};
+    };
+    struct SetSequencePanningCommand
+    {
+        data::DataId dataId{};
+        std::uint16_t priority{};
+        std::int8_t panning{};
         bool wholeTree{};
     };
     struct MoveSequenceCommand
@@ -85,6 +99,7 @@ namespace monopoly::sequence
     using SequenceCommand = std::variant<StartSequenceCommand,
         StopSequenceCommand, MoveSequenceCommand,
         SetSequenceEndingActionCommand, SetSequenceVolumeCommand,
+        SetSequencePitchCommand, SetSequencePanningCommand,
         ForceRedrawSequenceCommand, SetViewportCommand, SetCameraCommand>;
 
     [[nodiscard]] MoveSequenceCommand makeMoveTheWorks(data::DataId dataId,
@@ -126,6 +141,10 @@ namespace monopoly::sequence
             SetSequenceEndingActionCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             SetSequenceVolumeCommand command);
+        [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
+            SetSequencePitchCommand command);
+        [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
+            SetSequencePanningCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(
             ForceRedrawSequenceCommand command);
         [[nodiscard]] std::expected<void, CommandQueueError> enqueue(

@@ -256,6 +256,10 @@ namespace monopoly::sequence
         [[nodiscard]] std::expected<void, RuntimeError> setEndingAction(SequenceNodeId node, std::uint8_t action);
         [[nodiscard]] std::expected<void, RuntimeError> setVolume(
             SequenceNodeId node, std::uint8_t volume);
+        [[nodiscard]] std::expected<void, RuntimeError> setPitch(
+            SequenceNodeId node, std::uint16_t pitch);
+        [[nodiscard]] std::expected<void, RuntimeError> setPanning(
+            SequenceNodeId node, std::int8_t panning);
         [[nodiscard]] std::expected<void, RuntimeError>
             setScrollingWorldVisibility(SequenceNodeId node, bool onScreen);
 
@@ -270,6 +274,12 @@ namespace monopoly::sequence
             bool wholeTree = false);
         [[nodiscard]] std::size_t setVolumeMatching(
             data::DataId id, std::uint16_t priority, std::uint8_t volume,
+            bool wholeTree = false);
+        [[nodiscard]] std::size_t setPitchMatching(
+            data::DataId id, std::uint16_t priority, std::uint16_t pitch,
+            bool wholeTree = false);
+        [[nodiscard]] std::size_t setPanningMatching(
+            data::DataId id, std::uint16_t priority, std::int8_t panning,
             bool wholeTree = false);
         [[nodiscard]] std::size_t moveMatching(data::DataId id,
             std::uint16_t priority, const SequenceTransform& transform,
