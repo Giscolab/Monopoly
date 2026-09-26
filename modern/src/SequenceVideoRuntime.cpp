@@ -350,7 +350,11 @@ namespace monopoly::video
             for (auto node = playback.runtime().inspect(intent.node); node;
                 node = node->parent ? playback.runtime().inspect(node->parent) : std::nullopt)
                 paused = paused || node->paused;
-            const auto clock = entry.presentation->pump(*sequenceTime, paused || entry.runtime.status().ended);
+            const auto gain = entry.presentation->setGain(
+                static_cast<float>(intent.volume) / 100.0F);
+            if (!gain) return std::unexpected(gain.error());
+            const auto clock = entry.presentation->pump(
+                *sequenceTime, paused || entry.runtime.status().ended);
             if (!clock) return std::unexpected(clock.error());
             const auto desired = entry.runtime.frameAtElapsed(std::min(clock->elapsedMicroseconds,
                 entry.clipDurationMicroseconds > 0 ? entry.clipDurationMicroseconds - 1 : 0));
