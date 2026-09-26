@@ -118,6 +118,16 @@ namespace monopoly::sequence
         return translate2D(x, y);
     }
 
+    Matrix2D moveXYSRTransform(
+        std::int32_t x, std::int32_t y,
+        float scale, float rotate) noexcept
+    {
+        auto result = rotate2D(rotate);
+        result = multiply(result, scale2D(scale, scale));
+        result = multiply(result, translate2D(x, y));
+        return result;
+    }
+
     Matrix3D moveRySTxzTransform(float yaw, float scale,
         float x, float z) noexcept
     {
