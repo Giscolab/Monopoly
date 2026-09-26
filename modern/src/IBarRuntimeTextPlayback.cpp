@@ -15,35 +15,6 @@ namespace monopoly::ibar
         constexpr std::array<int, 4> Y{506, 525, 530, 508};
         constexpr std::array<data::DataTag, 3> BaseTags{0x01BE, 0x01BD, 0x01B9};
 
-        std::string utf8(std::wstring_view value)
-        {
-            std::string result;
-            for (std::size_t i = 0; i < value.size(); ++i)
-            {
-                auto cp = static_cast<std::uint32_t>(value[i]);
-                if constexpr (sizeof(wchar_t) == 2)
-                {
-                    if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < value.size())
-                    {
-                        const auto low = static_cast<std::uint32_t>(value[i + 1]);
-                        if (low >= 0xDC00 && low <= 0xDFFF)
-                        { cp = 0x10000 + ((cp - 0xD800) << 10) + low - 0xDC00; ++i; }
-                    }
-                }
-                if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) cp = 0xFFFD;
-                if (cp < 0x80) result += static_cast<char>(cp);
-                else
-                {
-                    const int continuations = cp < 0x800 ? 1 : cp < 0x10000 ? 2 : 3;
-                    result += static_cast<char>((continuations == 1 ? 0xC0 : continuations == 2 ? 0xE0 : 0xF0) |
-                        (cp >> (6 * continuations)));
-                    for (int n = continuations - 1; n >= 0; --n)
-                        result += static_cast<char>(0x80 | ((cp >> (6 * n)) & 0x3F));
-                }
-            }
-            return result;
-        }
-
         class FontGuard
         {
         public:
@@ -119,7 +90,13 @@ namespace monopoly::ibar
             for (std::size_t i = 0; i < 2; ++i)
                 if (text[i].size() < 3) text[i].insert(0, 3 - text[i].size(), ' ');
         }
-        if (desired[2]) text[2] = utf8(game.players[game.currentPlayer].name);
+        if (desired[2])
+        {
+            const auto encodedName = fonts::transcodeUtf8(
+                std::wstring_view(game.players[game.currentPlayer].name));
+            if (!encodedName) return std::unexpected(encodedName.error().detail);
+            text[2] = *encodedName;
+        }
         text[3] = nextMessage;
 
         for (std::size_t i = 0; i < desired.size(); ++i)
@@ -154,13 +131,12 @@ namespace monopoly::ibar
             }
             const auto measured = font->measure(text[i]);
             if (!measured) return std::unexpected(measured.error().detail);
-            const auto rendered = font->render(text[i], i < 2 ? 0x00FFFFFF : i == 2 ? 0 : nextColor);
-            if (!rendered) return std::unexpected(rendered.error().detail);
             const auto x = i < 2 ? (static_cast<int>(image.width) - measured->width) / 2 :
                 i == 2 ? std::max(0, (140 - measured->width) / 2) : 120 - measured->width;
-            const auto blitted = data::blitStraightRGBA8(image, *rendered, x, i < 2 ? 4 : 0,
-                data::BitmapBlitMode::SourceOver);
-            if (!blitted) return std::unexpected(blitted.error());
+            const auto blitted = font->blitText(
+                image, text[i], x, i < 2 ? 4 : 0,
+                i < 2 ? 0x00FFFFFF : i == 2 ? 0 : nextColor);
+            if (!blitted) return std::unexpected(blitted.error().detail);
             images[i] = std::move(image);
         }
 
