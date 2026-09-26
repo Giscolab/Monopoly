@@ -239,6 +239,105 @@ namespace monopoly::sequence
             return result;
         }
 
+        struct TweekerAudioUpdate
+        {
+            std::optional<std::uint16_t> pitch;
+            std::optional<std::uint8_t> volume;
+            std::optional<std::int8_t> panning;
+
+            [[nodiscard]] bool empty() const noexcept
+            { return !pitch && !volume && !panning; }
+        };
+
+        int interpolateInteger(float proportion, int first, int second) noexcept
+        {
+            return static_cast<int>(
+                (1.0F - proportion) * static_cast<float>(first) +
+                proportion * static_cast<float>(second));
+        }
+
+        std::expected<TweekerAudioUpdate, TweekerTransformError>
+        evaluateTweekerAudio(
+            const data::LegacySequenceAttributes& attributes,
+            std::uint8_t interpolationType, std::int32_t clock,
+            std::int32_t endTime, bool parentIsAudio) noexcept
+        {
+            TweekerAudioUpdate result;
+            // ArtLib identity tweekers only clear transform tweeks; they do
+            // not touch sound/video properties.
+            if (interpolationType == 0)
+                return result;
+            const data::SequenceSoundPitchAttribute* pitchA{};
+            const data::SequenceSoundPitchAttribute* pitchB{};
+            const data::SequenceSoundVolumeAttribute* volumeA{};
+            const data::SequenceSoundVolumeAttribute* volumeB{};
+            const data::SequenceSoundPanningAttribute* panA{};
+            const data::SequenceSoundPanningAttribute* panB{};
+
+            for (const auto& attribute : attributes.values)
+            {
+                if (const auto* value =
+                    std::get_if<data::SequenceSoundPitchAttribute>(&attribute))
+                {
+                    if (!pitchA) pitchA = value;
+                    else if (!pitchB) pitchB = value;
+                }
+                else if (const auto* value =
+                    std::get_if<data::SequenceSoundVolumeAttribute>(&attribute))
+                {
+                    if (!volumeA) volumeA = value;
+                    else if (!volumeB) volumeB = value;
+                }
+                else if (const auto* value =
+                    std::get_if<data::SequenceSoundPanningAttribute>(&attribute))
+                {
+                    if (!panA) panA = value;
+                    else if (!panB) panB = value;
+                }
+            }
+
+            if (!pitchA && !volumeA && !panA)
+                return result;
+            if (!parentIsAudio)
+                return std::unexpected(
+                    TweekerTransformError::DimensionalityMismatch);
+
+            const bool linear = interpolationType == 2 &&
+                endTime < 1'234'567'890;
+            const float proportion = linear
+                ? static_cast<float>(clock) / static_cast<float>(endTime)
+                : 0.0F;
+
+            if (pitchA)
+            {
+                const int value = linear && pitchB
+                    ? interpolateInteger(
+                        proportion, pitchA->pitch, pitchB->pitch)
+                    : pitchA->pitch;
+                result.pitch = static_cast<std::uint16_t>(
+                    std::clamp(value, 0, 65'535));
+            }
+            if (volumeA)
+            {
+                const int value = linear && volumeB
+                    ? interpolateInteger(
+                        proportion, volumeA->volume, volumeB->volume)
+                    : volumeA->volume;
+                result.volume = static_cast<std::uint8_t>(
+                    std::clamp(value, 0, 100));
+            }
+            if (panA)
+            {
+                const int value = linear && panB
+                    ? interpolateInteger(
+                        proportion, panA->panning, panB->panning)
+                    : panA->panning;
+                result.panning = static_cast<std::int8_t>(
+                    std::clamp(value, -100, 100));
+            }
+            return result;
+        }
+
         std::expected<std::optional<SequenceMeshChoice3D>, TweekerTransformError>
         evaluateTweekerMeshChoice(const data::LegacySequenceAttributes& attributes,
             std::uint8_t interpolationType, std::int32_t clock,
@@ -970,6 +1069,22 @@ namespace monopoly::sequence
                 node.definition().dataId, node.definition().record.chunk.headerOffset,
                 "camera field-of-view tweeker must target a camera sequence"));
         if (*cameraFov) node.parent->cameraFieldOfView = **cameraFov;
+
+        const auto& parentData = node.parent->definition().record.data;
+        const bool parentIsAudio =
+            std::holds_alternative<data::SequenceSoundData>(parentData) ||
+            std::holds_alternative<data::SequenceVideoData>(parentData);
+        const auto audio = evaluateTweekerAudio(
+            node.definition().attributes, tweeker.interpolationType,
+            node.clock.clock(), node.clock.endTime(), parentIsAudio);
+        if (!audio)
+            return std::unexpected(error(RuntimeErrorCode::TweekerFailure,
+                node.definition().dataId,
+                node.definition().record.chunk.headerOffset,
+                "sound tweeker must target a sound or video sequence"));
+        if (audio->pitch) node.parent->pitch = *audio->pitch;
+        if (audio->volume) node.parent->volume = *audio->volume;
+        if (audio->panning) node.parent->panning = *audio->panning;
         return {};
     }
     std::expected<void, RuntimeError> SequenceRuntime::update(std::int32_t parentClock)
