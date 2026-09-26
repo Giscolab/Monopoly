@@ -60,13 +60,10 @@ namespace monopoly::tradeui
                 {
                     const auto metrics = font.measure(line);
                     if (!metrics) return std::unexpected(metrics.error().detail);
-                    const auto rendered = font.render(line, PanelTextColour);
-                    if (!rendered) return std::unexpected(rendered.error().detail);
                     const int x = (static_cast<int>(PanelWidth) - metrics->width) / 2;
-                    const auto blitted = data::blitStraightRGBA8(
-                        image, *rendered, x, y,
-                        data::BitmapBlitMode::SourceOver);
-                    if (!blitted) return std::unexpected(blitted.error());
+                    const auto blitted = font.blitText(
+                        image, line, x, y, PanelTextColour);
+                    if (!blitted) return std::unexpected(blitted.error().detail);
                 }
                 y += height;
             }
