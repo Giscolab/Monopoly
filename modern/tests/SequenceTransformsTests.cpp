@@ -129,6 +129,16 @@ namespace
         expect(first.dimensionality == 2 && near(firstMatrix[6], 4) && near(firstMatrix[7], 7),
             "only the first applicable transform subchunk positions a sequence");
 
+        constexpr float halfPi = 1.57079632679489661923F;
+        const auto xysr = moveXYSRTransform(10, 20, 2.0F, halfPi);
+        expect(near(xysr.values[0], 0.0F) &&
+            near(xysr.values[1], 2.0F) &&
+            near(xysr.values[3], -2.0F) &&
+            near(xysr.values[4], 0.0F) &&
+            near(xysr.values[6], 10.0F) &&
+            near(xysr.values[7], 20.0F),
+            "StartCXYSR applies rotate, uniform scale, then translation in row-vector order");
+
         const auto world = composeSequenceWorld(first.local, 2,
             SequenceTransform(translate2D(10, 20)), 2);
         const auto& worldMatrix = std::get<Matrix2D>(world).values;
