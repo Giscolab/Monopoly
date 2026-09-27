@@ -1600,9 +1600,11 @@ namespace monopoly::sequence
             node->localTransform, node->tweekerTransformApplied,
             node->tweekerTransform, node->worldTransform, {}};
         view.meshChoice = node->meshChoice;
-        view.pitch = node->pitch;
-        view.volume = node->volume;
-        view.panning = node->panning;
+        // Publish the same live controls as the audio/video consumers. Keep
+        // authored aux.audio values separate for subsequent tweeker updates.
+        view.pitch = node->commandedPitch.value_or(node->pitch);
+        view.volume = node->commandedVolume.value_or(node->volume);
+        view.panning = node->commandedPanning.value_or(node->panning);
         for (const auto& child : node->children) view.children.push_back(child->id);
         return view;
     }
