@@ -331,6 +331,32 @@ if(MSVC)
     )
 endif()
 
+# Offline resource assembly. No SDL window, no changes under Source/ and no
+# automatic installation of incomplete archives into the runtime data root.
+add_executable(MonopolyArchiveTool
+    src/ArchiveAssemblyTool.cpp
+    src/ArchiveAssembly.cpp
+    src/ArchiveAssembly.hpp
+    src/ArchiveEnglishText.cpp
+)
+target_link_libraries(MonopolyArchiveTool PRIVATE MonopolyDataCore)
+target_compile_definitions(MonopolyArchiveTool PRIVATE
+    MONOPOLY_PROTECTED_SOURCE_ROOT="${MONOPOLY_LEGACY_SOURCE_ROOT}"
+)
+if(MSVC)
+    target_compile_options(MonopolyArchiveTool PRIVATE /W4 /permissive- /utf-8)
+endif()
+if(MONOPOLY_LEGACY_MANIFESTS_AVAILABLE)
+    add_custom_target(MonopolyAssembleArchives
+        COMMAND $<TARGET_FILE:MonopolyArchiveTool>
+            --source "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly"
+            --output "$<TARGET_FILE_DIR:MonopolyArchiveTool>/resource-assembly"
+        DEPENDS MonopolyArchiveTool
+        COMMENT "Assembling supplied payloads; incomplete banks stay quarantined"
+        VERBATIM
+    )
+endif()
+
 if(BUILD_TESTING)
 
     add_executable(

@@ -72,3 +72,12 @@ empreinte SHA-256. `assets/resource-status.txt` donne les compteurs et la liste
 des huit banques requises encore absentes. La presence d'une banque n'est pas
 une validation de son contenu ni de la jouabilite. La copie des images et la
 compilation ne reconstituent pas les sequences CNK, TAB, HMD ou les sons absents.
+
+
+## Assemblage des archives
+
+Le programme `MonopolyArchiveTool` et la cible CMake `MonopolyAssembleArchives`
+assemblent les payloads fournis et les textes anglais compatibles. Voir
+[ARCHIVE_ASSEMBLY.md](ARCHIVE_ASSEMBLY.md) pour les commandes, les correspondances
+explicites et les rapports. Les sorties partielles restent isolees du repertoire
+de lancement : la copie des BMP seule ne reconstitue pas tous les DAT.
