@@ -9,6 +9,8 @@
 /Source/monopoly/DirectX.ini.bak
 /Source/monopoly/Monopoly.exe
 /Source/monopoly/Monopoly_compat.exe
+/runtime-data/
+/monopoly-1999-english-us-cd/
 
 # ============================================================
 # Modern CMake / MSVC local build trees
