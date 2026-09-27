@@ -108,6 +108,20 @@ namespace monopoly::sequence
         float meshProportion{};
         auto operator<=>(const SequenceMeshChoice3D&) const = default;
     };
+    struct SequenceSpatial2DView
+    {
+        Matrix2D worldTransform{};
+        data::Sequence2DBoundingBoxAttribute bounds{};
+        std::uint64_t movementRevision{};
+    };
+    struct SequenceCamera2DView
+    {
+        SequenceNodeId node{};
+        Matrix2D worldTransform{};
+        data::Sequence2DBoundingBoxAttribute bounds{};
+        // Only a Camera chunk replaces the slot's previous scale.
+        std::optional<float> scale;
+    };
     struct SequenceCamera3DView
     {
         SequenceNodeId node{};
@@ -178,6 +192,7 @@ namespace monopoly::sequence
         std::string fileName;
         bool paused{};
         std::uint64_t seekGeneration{};
+        std::optional<SequenceSpatial2DView> spatial2D;
     };
     struct SequenceVideoInstanceView
     {
@@ -318,6 +333,10 @@ namespace monopoly::sequence
         // Active 3D camera sequences with raw ArtLib FOV semantics. Projection
         // interpretation remains the renderer's responsibility.
         [[nodiscard]] std::vector<SequenceCamera3DView> cameraInstances() const;
+        // Any current label owner in 2D can drive the render-slot camera.
+        // Bitmap bounds are replaced by resolved image metadata at publication.
+        [[nodiscard]] std::optional<SequenceCamera2DView> camera2DForLabel(
+            std::uint8_t label) const;
         // Mirrors LE_SEQNCR_LabelArray for camera records: the most recently
         // started owner wins; deleting it clears the label without restoring
         // an older overlapping owner.

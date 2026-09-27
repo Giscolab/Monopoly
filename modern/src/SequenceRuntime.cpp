@@ -759,6 +759,8 @@ namespace monopoly::sequence
         // RuntimeTweekerInfo::currentProportion belongs to this instance.
         // Seek and forced reevaluation do not reset an already applied key.
         std::optional<float> tweekerProportion;
+        bool positionRecalc{true};
+        std::uint64_t movementRevision{};
         const SequenceDescription& definition() const
         { return program->descriptions()[description]; }
     };
@@ -1032,6 +1034,7 @@ namespace monopoly::sequence
         // MarkAsNeedingPositionRecalc marks this sequence and its ancestors;
         // descendants are then reevaluated by the recursive update. Preserve
         // that observable effect even when a descendant cadence would gate it.
+        node.positionRecalc = true;
         forceAncestors(node);
         forceDescendants(node);
     }
@@ -1290,9 +1293,15 @@ namespace monopoly::sequence
             node.dimensionality,
             node.parent ? node.parent->worldTransform : SequenceTransform(std::monostate{}),
             node.parent ? node.parent->dimensionality : 0);
+        if (node.positionRecalc) ++node.movementRevision;
         for (auto iterator = node.children.begin(); iterator != node.children.end();)
         {
             if ((*iterator)->definition().record.chunk.id == 10) { ++iterator; continue; }
+            if (node.positionRecalc)
+            {
+                (*iterator)->positionRecalc = true;
+                (*iterator)->reevaluate = true;
+            }
             const auto alive = updateNode(**iterator, node.clock.clock());
             if (!alive) return std::unexpected(alive.error());
             if (!*alive) { destroy(*iterator); iterator = node.children.erase(iterator); }
@@ -1302,6 +1311,7 @@ namespace monopoly::sequence
                 ++iterator;
             }
         }
+        node.positionRecalc = false;
         node.reevaluate = false;
         return true;
     }
@@ -1344,6 +1354,7 @@ namespace monopoly::sequence
         {
             node.parent->tweekerTransformApplied = !evaluated->identity;
             node.parent->tweekerTransform = evaluated->transform;
+            node.parent->positionRecalc = true;
         }
         if (*meshChoice)
             node.parent->meshChoice = **meshChoice;
@@ -1370,7 +1381,13 @@ namespace monopoly::sequence
                 node.definition().record.chunk.headerOffset,
                 "sound tweeker must target a sound or video sequence"));
         if (audio->pitch) node.parent->pitch = *audio->pitch;
-        if (audio->volume) node.parent->volume = *audio->volume;
+        if (audio->volume)
+        {
+            node.parent->volume = *audio->volume;
+            if (node.parent->dimensionality == 2 &&
+                std::holds_alternative<data::SequenceSoundData>(parentData))
+                node.parent->positionRecalc = true;
+        }
         if (audio->panning) node.parent->panning = *audio->panning;
         if (proportion) node.tweekerProportion = proportion;
         return {};
@@ -1638,7 +1655,13 @@ namespace monopoly::sequence
                         node->panning,
                         centerX,
                         externalFileName(definition.attributes),
-                        node->clock.paused(), node->seekGeneration});
+                        node->clock.paused(), node->seekGeneration, {}});
+                    if (centerX)
+                        result.back().spatial2D = SequenceSpatial2DView{
+                            std::get<Matrix2D>(node->worldTransform),
+                            boundingBox2D(definition.attributes).value_or(
+                                data::Sequence2DBoundingBoxAttribute{}),
+                            node->movementRevision};
                 }
                 self(self, node->children);
             }
@@ -1774,6 +1797,24 @@ namespace monopoly::sequence
         };
         visit(visit, roots_);
         return result;
+    }
+
+    std::optional<SequenceCamera2DView> SequenceRuntime::camera2DForLabel(
+        std::uint8_t label) const
+    {
+        if (label == 0) return std::nullopt;
+        const auto* node = labelOwners_[label] ? find(labelOwners_[label]) : nullptr;
+        if (!node || node->dimensionality != 2 ||
+            !std::holds_alternative<Matrix2D>(node->worldTransform))
+            return std::nullopt;
+        const bool camera = node->definition().record.chunk.id == 7;
+        auto bounds = boundingBox2D(node->definition().attributes);
+        if (!bounds && camera)
+            bounds = data::Sequence2DBoundingBoxAttribute{{}, -5, -5, 5, 5};
+        return SequenceCamera2DView{node->id,
+            std::get<Matrix2D>(node->worldTransform),
+            bounds.value_or(data::Sequence2DBoundingBoxAttribute{}),
+            camera ? std::optional<float>{node->cameraFieldOfView} : std::nullopt};
     }
 
     std::optional<SequenceCamera3DView> SequenceRuntime::cameraForLabel(

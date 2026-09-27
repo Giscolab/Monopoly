@@ -1472,10 +1472,11 @@ namespace monopoly::engine
             std::uint8_t effectiveVolume = instance.volume;
             std::int32_t pan = instance.dimensionality == 0 ?
                 static_cast<std::int32_t>(instance.panning) : 0;
-            if (instance.dimensionality == 2 && instance.screenCenterX2D)
+            if (const auto center = session.soundScreenCenterX2D(instance.node);
+                instance.dimensionality == 2 && center)
             {
                 const auto spatial = audio::legacy2DSoundMix(
-                    instance.volume, *instance.screenCenterX2D);
+                    instance.volume, *center);
                 effectiveVolume = spatial.volume;
                 pan = spatial.panning;
             }

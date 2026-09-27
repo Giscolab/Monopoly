@@ -152,8 +152,9 @@ namespace monopoly::engine
         if (!command || !target || !width || !height ||
             width>std::numeric_limits<int>::max() || height>std::numeric_limits<int>::max())
             return std::unexpected("invalid 2D command, target or dimensions");
-        const auto matrixFor = [](const SequenceWorld2DObject& object) {
-            const auto& m=object.worldTransform.values;
+        const auto matrixFor = [&slot](const SequenceWorld2DObject& object) {
+            const auto projected = sequence::multiply(object.worldTransform, slot.worldToScreen());
+            const auto& m=projected.values;
             const auto w=static_cast<float>(object.asset->image.width);
             const auto h=static_cast<float>(object.asset->image.height);
             return std::array<float,16>{

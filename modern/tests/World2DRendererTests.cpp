@@ -52,6 +52,74 @@ namespace
     }
     std::array<std::uint8_t,4> pixel(const std::vector<std::uint8_t>& p,unsigned x,unsigned y,unsigned width=800)
     { const auto i=(y*width+x)*4;return {p.at(i),p.at(i+1),p.at(i+2),p.at(i+3)}; }
+
+    void testLabeledCamera(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
+    {
+        SyntheticSequenceResources resources;
+        resources.service.shutdown();
+        // Valid CNKs exercise Main's label 1 through the real DAT/program path.
+        // A non-camera group uses its transformed bounding-box center; a type 7
+        // camera additionally supplies the scale through its FOV attribute.
+        const auto group = SyntheticSequenceResources::words({
+            0x01000024, 0, 0x04000000, 2, 0x88000014, 0, 0, 20, 20});
+        auto camera = SyntheticSequenceResources::words({
+            0x07000035, 0, 0x04000000, 2, 0x3F800000, 0x459C4000});
+        camera.push_back(std::byte{1});
+        const auto cameraAttributes = SyntheticSequenceResources::words({
+            0x88000014, 0xFFFFFFF6, 0xFFFFFFF6, 10, 10, 0x90000008, 0x40000000});
+        camera.insert(camera.end(), cameraAttributes.begin(), cameraAttributes.end());
+        const auto leaf = SyntheticSequenceResources::words({0x03000014, 0, 0x04000000, 2, 0});
+        const std::array items{
+            data::ArchiveBuildItem{data::LegacyDataType::Bitmap, SyntheticSequenceResources::bitmap24()},
+            data::ArchiveBuildItem{data::LegacyDataType::Chunky, group},
+            data::ArchiveBuildItem{data::LegacyDataType::Chunky, camera},
+            data::ArchiveBuildItem{data::LegacyDataType::Chunky, leaf}};
+        require(data::writeLegacyDataArchive(resources.directory / "Dat_Mon/dat_main.dat", items).has_value(),
+            "camera fixture writes bitmap, generic group and camera CNKs");
+        const auto paths = data::ResourcePaths::create(std::array{resources.directory});
+        require(paths && resources.service.initialize(*paths), "camera fixture reloads its real DAT bank");
+        engine::SequencePlayback playback(resources.service.snapshot());
+        const auto bitmapId = data::packDataId(data::LegacyGroupId::Main, 3);
+        const auto groupId = data::packDataId(data::LegacyGroupId::Main, 1);
+        const auto cameraId = data::packDataId(data::LegacyGroupId::Main, 2);
+        const std::array<std::uint8_t,4> blue{0,0,255,255}, white{255,255,255,255},
+            red{255,0,0,255}, green{0,255,0,255}, black{0,0,0,255};
+        require(playback.startXY(bitmapId, 5, 100, 100) && playback.update(0),
+            "camera fixture starts the bitmap in world coordinates");
+        const auto initial = capture(device, renderer, playback.world2D());
+        require(pixel(initial,100,100)==blue, "default 2D camera preserves the original logical canvas");
+        require(playback.startXY(groupId, 10, 410, 290, false, 1) && playback.update(1),
+            "a generic 2D group takes camera label one");
+        auto pixels = capture(device, renderer, playback.world2D());
+        require(pixel(pixels,80,100)==blue && pixel(pixels,100,100)==black,
+            "label-one bbox center (420,300) moves actual GPU pixels from x100 to x80");
+
+        require(playback.stop(bitmapId, 5) && playback.startXY(bitmapId, 5, 410, 310) &&
+            playback.startXY(cameraId, 20, 400, 300) && playback.update(2),
+            "real 2D camera replaces the generic label and supplies a twofold zoom");
+        pixels = capture(device, renderer, playback.world2D());
+        require(pixel(pixels,420,320)==blue && pixel(pixels,421,321)==blue &&
+            pixel(pixels,422,320)==white && pixel(pixels,420,322)==red && pixel(pixels,422,322)==green,
+            "camera FOV zooms each bitmap texel around the viewport center");
+
+        require(playback.startXY(groupId, 11, 430, 290, false, 1) && playback.update(3),
+            "a second generic object replaces the camera label without supplying scale");
+        pixels = capture(device, renderer, playback.world2D());
+        require(pixel(pixels,340,320)==blue && pixel(pixels,342,322)==green && pixel(pixels,420,320)==black,
+            "generic label replacement keeps the previous twofold camera scale");
+        require(playback.stop(groupId, 11) && playback.update(4), "the newest label owner stops");
+        pixels = capture(device, renderer, playback.world2D());
+        require(pixel(pixels,340,320)==blue && pixel(pixels,420,320)==black,
+            "removing the owner retains the camera instead of reviving an older same-label sequence");
+
+        require(playback.stop(cameraId, 20) &&
+            playback.startXYSR(cameraId, 20, 400, 300, 1.0F, 1.5707963267948966F) && playback.update(5),
+            "a quarter-turned camera reclaims the label through its CNK");
+        pixels = capture(device, renderer, playback.world2D());
+        require(pixel(pixels,420,279)==blue && pixel(pixels,420,277)==white &&
+            pixel(pixels,422,279)==red && pixel(pixels,422,277)==green,
+            "inverse camera rotation and zoom preserve the four source colors on the GPU");
+    }
 }
 int main()
 {
@@ -102,6 +170,7 @@ int main()
             playback.stop(yellow,258) && playback.update(4),"all synthetic dice stop");
         auto empty=capture(device,*renderer,playback.world2D());
         require(renderer->textureCount()==0 && pixel(empty,365,300)==black,"shutdown prunes GPU texture cache and old pixels");
+        testLabeledCamera(device, *renderer);
         renderer.reset();
         SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
     }

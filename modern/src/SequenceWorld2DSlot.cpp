@@ -2,9 +2,78 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <limits>
 
 namespace monopoly::engine
 {
+    std::array<std::int32_t, 2> SequenceWorld2DSlot::transformPoint(
+        const sequence::Matrix2D& matrix, std::int32_t x, std::int32_t y) noexcept
+    {
+        const auto& m = matrix.values;
+        const float px = static_cast<float>(x), py = static_cast<float>(y);
+        const float w = m[2] * px + m[5] * py + m[8];
+        if (w == 0.0F) return {};
+        const auto rounded = [](float value) {
+            if (!std::isfinite(value)) return std::int32_t{};
+            return static_cast<std::int32_t>(std::clamp(
+                std::nearbyint(static_cast<double>(value)),
+                static_cast<double>(std::numeric_limits<std::int32_t>::min()),
+                static_cast<double>(std::numeric_limits<std::int32_t>::max())));
+        };
+        return {rounded((m[0] * px + m[3] * py + m[6]) / w),
+            rounded((m[1] * px + m[4] * py + m[7]) / w)};
+    }
+
+    std::array<std::int32_t, 2> SequenceWorld2DSlot::boundsCenter(
+        const sequence::Matrix2D& matrix,
+        const data::Sequence2DBoundingBoxAttribute& bounds) noexcept
+    {
+        const std::array corners{
+            transformPoint(matrix, bounds.left, bounds.top),
+            transformPoint(matrix, bounds.right, bounds.top),
+            transformPoint(matrix, bounds.left, bounds.bottom),
+            transformPoint(matrix, bounds.right, bounds.bottom)};
+        std::array<std::int64_t, 2> sum{};
+        for (const auto& point : corners)
+            for (std::size_t axis = 0; axis < 2; ++axis) sum[axis] += point[axis];
+        return {static_cast<std::int32_t>(sum[0] / 4),
+            static_cast<std::int32_t>(sum[1] / 4)};
+    }
+
+    void SequenceWorld2DSlot::updateCamera(
+        const std::optional<sequence::SequenceCamera2DView>& camera) noexcept
+    {
+        if (!camera) return;
+        if (!std::ranges::all_of(camera->worldTransform.values,
+                [](float value) { return std::isfinite(value); }) ||
+            (camera->scale && !std::isfinite(*camera->scale))) return;
+        cameraCenter_ = boundsCenter(camera->worldTransform, camera->bounds);
+        const auto origin = transformPoint(camera->worldTransform, 0, 0);
+        const auto xAxis = transformPoint(camera->worldTransform, 1'000'000, 0);
+        const auto dx = static_cast<double>(xAxis[0]) - origin[0];
+        const auto dy = static_cast<double>(xAxis[1]) - origin[1];
+        cameraRotation_ = dx != 0.0 || dy != 0.0
+            ? static_cast<float>(-std::atan2(dy, dx)) : 0.0F;
+        if (camera->scale) cameraScale_ = *camera->scale;
+        // L_Rend2D:393: translate origin, scale, rotate, translate viewport.
+        auto originShift = sequence::identity2D();
+        originShift.values[6] = -static_cast<float>(cameraCenter_[0]);
+        originShift.values[7] = -static_cast<float>(cameraCenter_[1]);
+        worldToScreen_ = sequence::multiply(originShift,
+            sequence::moveXYSRTransform(400, 300, cameraScale_, cameraRotation_));
+        // The slot uses identity for the inverse of a singular camera matrix.
+        screenToWorld_ = sequence::identity2D();
+        if (cameraScale_ != 0.0F)
+        {
+            const auto inverse = sequence::multiply(sequence::translate2D(-400, -300),
+                sequence::moveXYSRTransform(cameraCenter_[0], cameraCenter_[1],
+                    1.0F / cameraScale_, -cameraRotation_));
+            if (std::ranges::all_of(inverse.values,
+                    [](float value) { return std::isfinite(value); }))
+                screenToWorld_ = inverse;
+        }
+    }
+
     std::expected<SequenceWorld2DSyncStats, std::string> SequenceWorld2DSlot::sync(
         const std::vector<sequence::SequenceBitmapRenderItem>& items,
         data::BitmapRuntimeCache& cache)

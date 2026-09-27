@@ -1,6 +1,7 @@
 #include "Application.hpp"
 #include "AIMessageIngress.hpp"
 #include "Engine.hpp"
+#include "SequencePlayback.hpp"
 #include "Game.hpp"
 #include "LogicalViewport.hpp"
 #include "Messaging.hpp"
@@ -99,8 +100,15 @@ namespace
             return;
         }
 
-        monopoly::mouse::updatePosition(
-            static_cast<int>(point->x), static_cast<int>(point->y), true);
+        std::array<std::int32_t, 2> worldPoint{
+            static_cast<std::int32_t>(point->x), static_cast<std::int32_t>(point->y)};
+        const auto* session = monopoly::engine::sequencePlayback();
+        if (session)
+            worldPoint = monopoly::engine::SequenceWorld2DSlot::transformPoint(
+                const_cast<monopoly::engine::SequencePlayback*>(session)->world2D().screenToWorld(),
+                worldPoint[0], worldPoint[1]);
+        const auto previousPosition = monopoly::mouse::stateReadOnly();
+        monopoly::mouse::updatePosition(worldPoint[0], worldPoint[1], true);
 
         int width = 0;
         int height = 0;
@@ -117,13 +125,20 @@ namespace
                     std::lround(static_cast<double>(deltaY) / transform.scale));
             }
         }
+        if (session)
+        {
+            // L_Mouse computes deltas after inverse projection, including a
+            // camera change since the previous mouse event.
+            logicalDeltaX = static_cast<std::int64_t>(worldPoint[0]) - previousPosition.x;
+            logicalDeltaY = static_cast<std::int64_t>(worldPoint[1]) - previousPosition.y;
+        }
         const auto modifier = (SDL_GetModState() & SDL_KMOD_CTRL) != 0
             ? monopoly::uimsg::MouseModifierControl : 0;
         (void)monopoly::uimsg::send(
             {
                 type,
-                static_cast<std::int64_t>(point->x),
-                static_cast<std::int64_t>(point->y),
+                worldPoint[0],
+                worldPoint[1],
                 logicalDeltaX,
                 logicalDeltaY,
                 modifier

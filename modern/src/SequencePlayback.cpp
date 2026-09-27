@@ -18,15 +18,16 @@ namespace monopoly::engine
         }
 
         bool scrollingWorld2DVisible(
-            const sequence::SequenceScrollingWorldView& view) noexcept
+            const sequence::SequenceScrollingWorldView& view,
+            const sequence::Matrix2D& worldToScreen) noexcept
         {
             if (!view.bounds2D ||
                 !std::holds_alternative<sequence::Matrix2D>(view.worldTransform))
                 return true;
 
             const auto& box = *view.bounds2D;
-            const auto& matrix =
-                std::get<sequence::Matrix2D>(view.worldTransform);
+            const auto matrix = sequence::multiply(
+                std::get<sequence::Matrix2D>(view.worldTransform), worldToScreen);
             const std::array points{
                 transform2DPoint(matrix,
                     static_cast<float>(box.left),
@@ -56,6 +57,14 @@ namespace monopoly::engine
                 left < 800.0F && top < 600.0F;
         }
     }
+    std::optional<std::int32_t> SequencePlayback::soundScreenCenterX2D(
+        sequence::SequenceNodeId node) const noexcept
+    {
+        const auto found = spatialSounds2D_.find(node);
+        return found == spatialSounds2D_.end() ? std::nullopt :
+            std::optional<std::int32_t>{found->second.screenCenterX};
+    }
+
     void SequencePlayback::setEuropeanDeeds(const std::array<data::DataId, 56>& ids)
     {
         for (const auto id : europeanDeeds_)
@@ -455,6 +464,39 @@ namespace monopoly::engine
             return std::unexpected(bitmapItems.error().detail);
         }
 
+        // SequenceMoved precedes UpdateInvalidAreas in ArtLib. Sound movement
+        // uses the previous camera; changing only the camera does not repan it.
+        const auto sounds = runtime_.soundInstances();
+        for (const auto& sound : sounds)
+        {
+            if (!sound.spatial2D) continue;
+            const auto& spatial = *sound.spatial2D;
+            const auto previous = spatialSounds2D_.find(sound.node);
+            if (previous != spatialSounds2D_.end() &&
+                previous->second.movementRevision == spatial.movementRevision) continue;
+            const auto matrix = sequence::multiply(spatial.worldTransform, world2D_.worldToScreen());
+            spatialSounds2D_[sound.node] = {spatial.movementRevision,
+                SequenceWorld2DSlot::boundsCenter(matrix, spatial.bounds)[0]};
+        }
+        std::erase_if(spatialSounds2D_, [&](const auto& entry) {
+            return std::ranges::none_of(sounds, [&](const auto& sound) {
+                return sound.node == entry.first && sound.spatial2D.has_value();
+            });
+        });
+
+        auto camera = runtime_.camera2DForLabel(world2D_.cameraLabel());
+        if (camera)
+            for (const auto& bitmap : *bitmapItems)
+                if (bitmap.node == camera->node)
+                {
+                    const auto& metadata = bitmap.metadata;
+                    camera->bounds = {{}, metadata.originX, metadata.originY,
+                        metadata.originX + static_cast<std::int32_t>(metadata.width),
+                        metadata.originY + static_cast<std::int32_t>(metadata.height)};
+                    break;
+                }
+        world2D_.updateCamera(camera);
+
         const auto bitmapPublished = world2D_.sync(*bitmapItems, bitmaps_);
         if (!bitmapPublished)
         {
@@ -475,7 +517,7 @@ namespace monopoly::engine
         {
             bool visible = true;
             if (scrolling.dimensionality == 2)
-                visible = scrollingWorld2DVisible(scrolling);
+                visible = scrollingWorld2DVisible(scrolling, world2D_.worldToScreen());
             else if (scrolling.dimensionality == 3 &&
                      scrolling.bounds3D &&
                      std::holds_alternative<sequence::Matrix3D>(
@@ -547,6 +589,7 @@ namespace monopoly::engine
         const auto flushed = processUserCommands();
         if (!flushed) return flushed;
         runtime_.stopAll();
+        spatialSounds2D_.clear();
         world_.clear();
         world2D_.clear();
         bitmaps_.clear();

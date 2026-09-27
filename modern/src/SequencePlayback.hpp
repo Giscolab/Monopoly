@@ -95,6 +95,8 @@ namespace monopoly::engine
         sequence::SequenceRuntime& runtime() noexcept { return runtime_; }
         SequenceWorld3DSlot& world() noexcept { return world_; }
         SequenceWorld2DSlot& world2D() noexcept { return world2D_; }
+        [[nodiscard]] std::optional<std::int32_t> soundScreenCenterX2D(
+            sequence::SequenceNodeId node) const noexcept;
         data::RuntimeBitmapStore& runtimeBitmaps() noexcept { return runtimeBitmaps_; }
         const data::RuntimeBitmapStore& runtimeBitmaps() const noexcept { return runtimeBitmaps_; }
         std::shared_ptr<const data::ResourceSnapshot> resources() const noexcept
@@ -126,5 +128,11 @@ namespace monopoly::engine
         SequenceWorld3DSlot world_;
         data::BitmapRuntimeCache bitmaps_;
         SequenceWorld2DSlot world2D_;
+        struct SpatialSound2D
+        {
+            std::uint64_t movementRevision{};
+            std::int32_t screenCenterX{};
+        };
+        std::map<sequence::SequenceNodeId, SpatialSound2D> spatialSounds2D_;
     };
 }

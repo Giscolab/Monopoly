@@ -27,13 +27,31 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<SequenceWorld2DSyncStats, std::string> sync(
             const std::vector<sequence::SequenceBitmapRenderItem>& items,
             data::BitmapRuntimeCache& cache);
+        // Removing sequence objects does not uninstall the legacy render slot:
+        // its last camera remains until another label owner supplies a view.
         void clear() noexcept { objects_.clear(); order_.clear(); }
+        void updateCamera(const std::optional<sequence::SequenceCamera2DView>& camera) noexcept;
+        [[nodiscard]] const sequence::Matrix2D& worldToScreen() const noexcept
+        { return worldToScreen_; }
+        [[nodiscard]] const sequence::Matrix2D& screenToWorld() const noexcept
+        { return screenToWorld_; }
+        [[nodiscard]] static constexpr std::uint8_t cameraLabel() noexcept { return 1; }
+        [[nodiscard]] static std::array<std::int32_t, 2> transformPoint(
+            const sequence::Matrix2D& matrix, std::int32_t x, std::int32_t y) noexcept;
+        [[nodiscard]] static std::array<std::int32_t, 2> boundsCenter(
+            const sequence::Matrix2D& matrix,
+            const data::Sequence2DBoundingBoxAttribute& bounds) noexcept;
         [[nodiscard]] std::size_t size() const noexcept { return objects_.size(); }
         [[nodiscard]] const SequenceWorld2DObject* find(sequence::SequenceNodeId id) const noexcept
         { const auto it = objects_.find(id); return it == objects_.end() ? nullptr : &it->second; }
         [[nodiscard]] const std::vector<sequence::SequenceNodeId>& order() const noexcept
         { return order_; }
     private:
+        std::array<std::int32_t, 2> cameraCenter_{400, 300};
+        float cameraRotation_{};
+        float cameraScale_{1.0F};
+        sequence::Matrix2D worldToScreen_{sequence::identity2D()};
+        sequence::Matrix2D screenToWorld_{sequence::identity2D()};
         std::map<sequence::SequenceNodeId, SequenceWorld2DObject> objects_;
         std::vector<sequence::SequenceNodeId> order_;
     };
