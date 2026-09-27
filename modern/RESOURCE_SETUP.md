@@ -38,3 +38,37 @@ Les fichiers attendus sous `Dat_Mon` sont `dat_main.dat`, `dat_pat.dat`,
 `dat_lk01.dat`. Les en-têtes `.h`, les manifestes et les archives de code source
 ne remplacent pas ces données. Les autres éditions/langues prises en charge par
 les lecteurs ne sont pas sélectionnées automatiquement par ce démarrage.
+
+
+## Copie automatique des ressources fournies
+
+La cible `MonopolyRuntimeResources`, requise par `MonopolyModern`, copie les
+ressources disponibles dans `Source/monopoly` vers le dossier de l'executable
+(`build/Debug` ou `build/Release`). Elle s'execute aussi sans changement C++ :
+une image ajoutee ou une copie supprimee sera prise en compte au prochain build.
+`Source/` reste en lecture seule. Aucune sauvegarde de partie ni configuration
+historique de machine n'est copiee.
+
+Les images conservent leurs chemins, notamment `Boards/`, `Cities/`, `Currency/`
+et `Languages/`, utilises directement par `TextureCatalog`. Les deux fonds ont
+aussi leur copie sous `assets/legacy/`. Les douze profils IA sont copies sous
+`assets/ai/`, avec les noms attendus par leur chargeur. Les fichiers QuickHelp,
+HLP, la licence et les descriptions des textures conservent leurs chemins.
+
+Les en-tetes de manifestes ainsi que `English.A` et `English.atr` sont conserves
+sous `assets/reconstruction/` : ce sont des entrees pour la reconstruction, pas
+des archives DAT pretes a jouer. Une banque `Dat_Mon/*.dat` deja fournie est
+copiee telle quelle ; une banque differente deja presente n'est jamais ecrasee.
+Le script ne fabrique aucune archive vide pour masquer une ressource absente.
+
+Pour ne preparer que les fichiers, sans compiler le C++ ni lancer de tests :
+
+```powershell
+cmake --build modern/build --config Debug --target MonopolyRuntimeResources
+```
+
+`assets/resource-copies.tsv` consigne chaque origine, destination, taille et
+empreinte SHA-256. `assets/resource-status.txt` donne les compteurs et la liste
+des huit banques requises encore absentes. La presence d'une banque n'est pas
+une validation de son contenu ni de la jouabilite. La copie des images et la
+compilation ne reconstituent pas les sequences CNK, TAB, HMD ou les sons absents.

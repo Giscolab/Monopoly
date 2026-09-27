@@ -2004,41 +2004,18 @@ target_sources(
     src/LegacyAssets.cpp
 )
 
-if(MONOPOLY_LEGACY_BACKGROUNDS_AVAILABLE)
-    add_custom_command(
-        TARGET MonopolyModern
-        POST_BUILD
-
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy"
-
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/BackGround.bmp"
-            "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy/BackGround.bmp"
-
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/BackGroundEuro.bmp"
-            "$<TARGET_FILE_DIR:MonopolyModern>/assets/legacy/BackGroundEuro.bmp"
-    )
-endif()
-
-if(MONOPOLY_LEGACY_AI_PROFILES_AVAILABLE)
-    add_custom_command(
-        TARGET MonopolyModern
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:MonopolyModern>/assets/ai"
-    )
-    foreach(LEGACY_AI_PROFILE IN LISTS MONOPOLY_LEGACY_AI_PROFILE_FILES)
-        add_custom_command(
-            TARGET MonopolyModern
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${MONOPOLY_LEGACY_SOURCE_ROOT}/monopoly/${LEGACY_AI_PROFILE}"
-                "$<TARGET_FILE_DIR:MonopolyModern>/assets/ai/${LEGACY_AI_PROFILE}"
-        )
-    endforeach()
-endif()
+# Refresh resources even when only an image changed or a staged file was lost.
+# Source/ is read-only; all outputs live beside this configuration's executable.
+add_custom_target(MonopolyRuntimeResources
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLEGACY_ROOT=${MONOPOLY_LEGACY_SOURCE_ROOT}"
+        "-DRUNTIME_DIR=$<TARGET_FILE_DIR:MonopolyModern>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/StageRuntimeResources.cmake"
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/StageRuntimeResources.cmake"
+    COMMENT "Copying supplied Monopoly resources beside the executable"
+    VERBATIM
+)
+add_dependencies(MonopolyModern MonopolyRuntimeResources)
 
 target_sources(
     MonopolyModern
