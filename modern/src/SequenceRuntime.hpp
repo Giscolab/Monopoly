@@ -193,6 +193,10 @@ namespace monopoly::sequence
         bool paused{};
         std::uint64_t seekGeneration{};
         std::optional<SequenceSpatial2DView> spatial2D;
+        // Direct buffer commands bypass positional attenuation/panning until
+        // the next SequenceMoved. Already included in volume/panning above.
+        std::optional<std::uint8_t> volumeOverride;
+        std::optional<std::int8_t> panningOverride;
     };
     struct SequenceVideoInstanceView
     {
@@ -337,9 +341,9 @@ namespace monopoly::sequence
         // Bitmap bounds are replaced by resolved image metadata at publication.
         [[nodiscard]] std::optional<SequenceCamera2DView> camera2DForLabel(
             std::uint8_t label) const;
-        // Mirrors LE_SEQNCR_LabelArray for camera records: the most recently
-        // started owner wins; deleting it clears the label without restoring
-        // an older overlapping owner.
+        // Any current 3D label owner supplies the pose; non-camera nodes use
+        // the retail half-FOV and clip defaults. The newest owner wins, and
+        // removing it does not restore an older overlapping owner.
         [[nodiscard]] std::optional<SequenceCamera3DView> cameraForLabel(
             std::uint8_t label) const;
         [[nodiscard]] std::vector<SequenceNodeId> roots() const;
@@ -366,6 +370,7 @@ namespace monopoly::sequence
         void forceDescendants(Node& node);
         void clearRedrawFlags();
         void move(Node& node, const SequenceTransform& transform);
+        void updatePosition(Node& node);
         [[nodiscard]] std::expected<void, RuntimeError> birthChildren(Node& node,
             std::optional<std::int32_t> previous);
         [[nodiscard]] std::expected<void, RuntimeError> rebuildChildren(Node& node);

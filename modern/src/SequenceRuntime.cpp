@@ -751,6 +751,11 @@ namespace monopoly::sequence
         std::uint16_t pitch{};
         std::uint8_t volume{100};
         std::int8_t panning{};
+        // User audio commands change the playback buffer, not aux.audio.
+        // Tweekers and positional mixing can subsequently replace that output.
+        std::optional<std::uint16_t> commandedPitch;
+        std::optional<std::uint8_t> commandedVolume;
+        std::optional<std::int8_t> commandedPanning;
         data::SharedDataBytes preloadedData;
         std::uint64_t seekGeneration{};
         bool soundFailed{};
@@ -1121,7 +1126,7 @@ namespace monopoly::sequence
         const auto& data = node->definition().record.data;
         if (std::holds_alternative<data::SequenceSoundData>(data) ||
             std::holds_alternative<data::SequenceVideoData>(data))
-            node->volume = std::min<std::uint8_t>(volume, 100U);
+            node->commandedVolume = std::min<std::uint8_t>(volume, 100U);
         return {};
     }
 
@@ -1137,7 +1142,7 @@ namespace monopoly::sequence
         const auto& data = node->definition().record.data;
         if (std::holds_alternative<data::SequenceSoundData>(data) ||
             std::holds_alternative<data::SequenceVideoData>(data))
-            node->pitch = pitch;
+            node->commandedPitch = pitch;
         return {};
     }
 
@@ -1153,7 +1158,7 @@ namespace monopoly::sequence
         const auto& data = node->definition().record.data;
         if (std::holds_alternative<data::SequenceSoundData>(data) ||
             std::holds_alternative<data::SequenceVideoData>(data))
-            node->panning = static_cast<std::int8_t>(
+            node->commandedPanning = static_cast<std::int8_t>(
                 std::clamp<int>(panning, -100, 100));
         return {};
     }
@@ -1238,6 +1243,30 @@ namespace monopoly::sequence
         if (!*alive) erase(*node);
         return {};
     }
+    void SequenceRuntime::updatePosition(Node& node)
+    {
+        const auto effectiveLocal = applyTweekerBeforeLocal(node.tweekerTransform,
+            node.tweekerTransformApplied, node.localTransform, node.dimensionality);
+        node.worldTransform = composeSequenceWorld(effectiveLocal,
+            node.dimensionality,
+            node.parent ? node.parent->worldTransform : SequenceTransform(std::monostate{}),
+            node.parent ? node.parent->dimensionality : 0);
+        if (node.positionRecalc)
+        {
+            ++node.movementRevision;
+            node.needsRedraw = true;
+            if (node.dimensionality == 2 &&
+                std::holds_alternative<data::SequenceSoundData>(node.definition().record.data))
+            {
+                // L_Rend2D::SequenceMoved writes both buffer controls from
+                // aux.audio.volume and the current screen position. A prior
+                // SetVolume/SetPan override lasts only until this movement.
+                node.commandedVolume.reset();
+                node.commandedPanning.reset();
+            }
+        }
+    }
+
     std::expected<bool, RuntimeError> SequenceRuntime::updateNode(Node& node, std::int32_t parentClock)
     {
         if (node.soundFailed)
@@ -1259,6 +1288,13 @@ namespace monopoly::sequence
             }
             node.clock.hibernateScrollingWorld(parentClock);
             node.needsRedraw = false;
+            // Hibernation freezes animation, not placement. Retail still
+            // executes its positional update for an off-screen world. Without
+            // this, moving it (or its parent) back on-screen leaves visibility
+            // permanently evaluating the previous off-screen world matrix.
+            if (node.positionRecalc)
+                updatePosition(node);
+            node.positionRecalc = false;
             node.reevaluate = false;
             return true;
         }
@@ -1287,13 +1323,7 @@ namespace monopoly::sequence
             if (!*alive) { destroy(*iterator); iterator = node.children.erase(iterator); }
             else ++iterator;
         }
-        const auto effectiveLocal = applyTweekerBeforeLocal(node.tweekerTransform,
-            node.tweekerTransformApplied, node.localTransform, node.dimensionality);
-        node.worldTransform = composeSequenceWorld(effectiveLocal,
-            node.dimensionality,
-            node.parent ? node.parent->worldTransform : SequenceTransform(std::monostate{}),
-            node.parent ? node.parent->dimensionality : 0);
-        if (node.positionRecalc) ++node.movementRevision;
+        updatePosition(node);
         for (auto iterator = node.children.begin(); iterator != node.children.end();)
         {
             if ((*iterator)->definition().record.chunk.id == 10) { ++iterator; continue; }
@@ -1357,7 +1387,12 @@ namespace monopoly::sequence
             node.parent->positionRecalc = true;
         }
         if (*meshChoice)
+        {
             node.parent->meshChoice = **meshChoice;
+            // Retail mesh interpolation is applied by SequenceMoved and
+            // propagates positional reevaluation to descendants as well.
+            node.parent->positionRecalc = true;
+        }
         const auto cameraFov = evaluateTweekerCameraFieldOfView(
             node.definition().attributes, tweeker.interpolationType,
             node.clock.clock(), node.clock.endTime(),
@@ -1380,15 +1415,29 @@ namespace monopoly::sequence
                 node.definition().dataId,
                 node.definition().record.chunk.headerOffset,
                 "sound tweeker must target a sound or video sequence"));
-        if (audio->pitch) node.parent->pitch = *audio->pitch;
+        if (audio->pitch)
+        {
+            node.parent->pitch = *audio->pitch;
+            node.parent->commandedPitch.reset();
+        }
+        const bool directAudio = node.parent->dimensionality == 0 ||
+            std::holds_alternative<data::SequenceVideoData>(parentData);
         if (audio->volume)
         {
             node.parent->volume = *audio->volume;
-            if (node.parent->dimensionality == 2 &&
-                std::holds_alternative<data::SequenceSoundData>(parentData))
+            if (directAudio)
+                node.parent->commandedVolume.reset();
+            else
                 node.parent->positionRecalc = true;
         }
-        if (audio->panning) node.parent->panning = *audio->panning;
+        if (audio->panning)
+        {
+            node.parent->panning = *audio->panning;
+            // A positional sound's pan tweeker changes aux.audio only; it
+            // does not touch the buffer or replace a manual pan command.
+            if (directAudio)
+                node.parent->commandedPanning.reset();
+        }
         if (proportion) node.tweekerProportion = proportion;
         return {};
     }
@@ -1471,7 +1520,7 @@ namespace monopoly::sequence
             const auto& payload = node->definition().record.data;
             if (std::holds_alternative<data::SequenceSoundData>(payload) ||
                 std::holds_alternative<data::SequenceVideoData>(payload))
-                node->volume = clamped;
+                node->commandedVolume = clamped;
         }
         return matches.size();
     }
@@ -1489,7 +1538,7 @@ namespace monopoly::sequence
             const auto& payload = node->definition().record.data;
             if (std::holds_alternative<data::SequenceSoundData>(payload) ||
                 std::holds_alternative<data::SequenceVideoData>(payload))
-                node->pitch = pitch;
+                node->commandedPitch = pitch;
         }
         return matches.size();
     }
@@ -1509,7 +1558,7 @@ namespace monopoly::sequence
             const auto& payload = node->definition().record.data;
             if (std::holds_alternative<data::SequenceSoundData>(payload) ||
                 std::holds_alternative<data::SequenceVideoData>(payload))
-                node->panning = clamped;
+                node->commandedPanning = clamped;
         }
         return matches.size();
     }
@@ -1650,12 +1699,13 @@ namespace monopoly::sequence
                         node->clock.clock(),
                         node->clock.endingAction(),
                         node->dimensionality,
-                        node->pitch,
-                        node->volume,
-                        node->panning,
+                        node->commandedPitch.value_or(node->pitch),
+                        node->commandedVolume.value_or(node->volume),
+                        node->commandedPanning.value_or(node->panning),
                         centerX,
                         externalFileName(definition.attributes),
-                        node->clock.paused(), node->seekGeneration, {}});
+                        node->clock.paused(), node->seekGeneration, {},
+                        node->commandedVolume, node->commandedPanning});
                     if (centerX)
                         result.back().spatial2D = SequenceSpatial2DView{
                             std::get<Matrix2D>(node->worldTransform),
@@ -1691,8 +1741,10 @@ namespace monopoly::sequence
                         boundingBox2D(definition.attributes),
                         std::get<Matrix2D>(node->worldTransform),
                         node->clock.endingAction(), definition.binkDoubleSize,
-                        node->clock.elapsedParentClock(), node->pitch,
-                        node->volume, node->panning});
+                        node->clock.elapsedParentClock(),
+                        node->commandedPitch.value_or(node->pitch),
+                        node->commandedVolume.value_or(node->volume),
+                        node->commandedPanning.value_or(node->panning)});
                 }
                 self(self, node->children);
             }
@@ -1823,16 +1875,20 @@ namespace monopoly::sequence
         if (label == 0) return std::nullopt;
         const auto owner = labelOwners_[label];
         const auto* node = owner != 0 ? find(owner) : nullptr;
-        if (!node || node->definition().record.chunk.id != 7 ||
-            node->dimensionality != 3 ||
+        if (!node || node->dimensionality != 3 ||
             !std::holds_alternative<Matrix3D>(node->worldTransform))
             return std::nullopt;
-        const auto& camera = std::get<data::SequenceCameraData>(
-            node->definition().record.data);
+
+        // The L_Rend3D camera update accepts any labeled 3D sequence for the
+        // pose. Only camera chunks supply the half-FOV and clipping planes;
+        // groups and meshes use the retail defaults instead.
+        const auto* camera = std::get_if<data::SequenceCameraData>(
+            &node->definition().record.data);
         return SequenceCamera3DView{node->id, node->labelNumber, node->priority,
             node->clock.clock(), std::get<Matrix3D>(node->worldTransform),
-            node->cameraFieldOfView, camera.nearClipPlaneDistance,
-            camera.farClipPlaneDistance};
+            camera ? node->cameraFieldOfView : 0.7853981633974F,
+            camera ? camera->nearClipPlaneDistance : 1.0F,
+            camera ? camera->farClipPlaneDistance : 5000.0F};
     }
 
     std::vector<SequenceNodeId> SequenceRuntime::roots() const

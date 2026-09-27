@@ -1480,6 +1480,10 @@ namespace monopoly::engine
                 effectiveVolume = spatial.volume;
                 pan = spatial.panning;
             }
+            // SEQCMD_SetVolume/SetPan write the sound buffer directly, even
+            // for 2D sounds. Only a later positional update replaces them.
+            if (instance.volumeOverride) effectiveVolume = *instance.volumeOverride;
+            if (instance.panningOverride) pan = *instance.panningOverride;
             const float gain =
                 static_cast<float>(effectiveVolume) / 100.0F;
             if (!known)
