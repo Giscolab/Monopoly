@@ -37,7 +37,7 @@ namespace monopoly::sequence
                     result.push_back({instance.node, instance.contentsDataId,
                         instance.priority, instance.clock, instance.worldTransform,
                         {data::LegacyDataType::Native, image.width, image.height, 0, 0, 32},
-                        {}, std::move(runtimeAsset)});
+                        {}, std::move(runtimeAsset), instance.bounds});
                     continue;
                 }
             }
@@ -83,14 +83,14 @@ namespace monopoly::sequence
                         instance.node, instance.contentsDataId, bitmap.error().detail));
                 renderMetadata.width = bitmap->width;
                 renderMetadata.height = bitmap->height;
-                renderMetadata.originX = bitmap->originX;
-                renderMetadata.originY = bitmap->originY;
+                renderMetadata.originX = instance.zeroBitmapOffset ? 0 : bitmap->originX;
+                renderMetadata.originY = instance.zeroBitmapOffset ? 0 : bitmap->originY;
                 renderMetadata.bitsPerPixel = 8;
             }
 
             result.push_back({instance.node, instance.contentsDataId,
                 instance.priority, instance.clock, instance.worldTransform,
-                renderMetadata, *bytes});
+                renderMetadata, *bytes, {}, instance.bounds});
         }
         return result;
     }

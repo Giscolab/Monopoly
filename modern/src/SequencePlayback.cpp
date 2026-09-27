@@ -490,9 +490,10 @@ namespace monopoly::engine
                 if (bitmap.node == camera->node)
                 {
                     const auto& metadata = bitmap.metadata;
-                    camera->bounds = {{}, metadata.originX, metadata.originY,
+                    camera->bounds = bitmap.bounds.value_or(data::Sequence2DBoundingBoxAttribute{
+                        {}, metadata.originX, metadata.originY,
                         metadata.originX + static_cast<std::int32_t>(metadata.width),
-                        metadata.originY + static_cast<std::int32_t>(metadata.height)};
+                        metadata.originY + static_cast<std::int32_t>(metadata.height)});
                     break;
                 }
         world2D_.updateCamera(camera);

@@ -421,6 +421,7 @@ namespace monopoly::sequence
             }, children.error()));
         program->descriptions_.push_back({id, std::move(record),
             std::move(*children), {}, id, {}});
+        program->descriptions_.back().zeroBitmapOffset = true;
         return std::shared_ptr<const SequenceProgram>(std::move(program));
     }
 
@@ -1678,7 +1679,8 @@ namespace monopoly::sequence
                     std::holds_alternative<Matrix2D>(node->worldTransform))
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
-                        std::get<Matrix2D>(node->worldTransform)});
+                        std::get<Matrix2D>(node->worldTransform),
+                        boundingBox2D(definition.attributes), definition.zeroBitmapOffset});
                 self(self, node->children);
             }
         };

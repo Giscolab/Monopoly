@@ -47,6 +47,8 @@ namespace monopoly::sequence
         std::vector<std::size_t> childDescriptions;
         // Runtime-only TakeOverAndPlayBinkVideo option; never decoded from DAT.
         bool binkDoubleSize{};
+        // LE_SEQNCR_Start clears the internal TAB offset only for raw bitmaps.
+        bool zeroBitmapOffset{};
     };
 
     // Immutable, bounded description DAG. Shared sublists are not expanded
@@ -176,6 +178,8 @@ namespace monopoly::sequence
         std::uint16_t priority{};
         std::int32_t clock{};
         Matrix2D worldTransform{};
+        std::optional<data::Sequence2DBoundingBoxAttribute> bounds;
+        bool zeroBitmapOffset{};
     };
     struct SequenceSoundInstanceView
     {

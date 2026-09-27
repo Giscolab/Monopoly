@@ -99,13 +99,41 @@ namespace monopoly::engine
                 if (!decoded) return std::unexpected(decoded.error().detail);
                 asset = *decoded;
             }
+            // L_Seqncr.cpp:4318-4427 keeps an explicit CNK bounding rectangle;
+            // otherwise it uses the bitmap's origin and dimensions. L_Rend2D
+            // transforms those four corners, not an image anchored at (0,0).
+            // Apply this mapping before the sequence and camera transformations.
+            if (!asset->image.width || !asset->image.height)
+                return std::unexpected("zero-sized 2D bitmap asset");
+            auto rasterToSequence = sequence::identity2D();
+            if (item.bounds)
+            {
+                const auto& box = *item.bounds;
+                const auto width = static_cast<std::int64_t>(box.right) - box.left;
+                const auto height = static_cast<std::int64_t>(box.bottom) - box.top;
+                rasterToSequence.values[0] = static_cast<float>(width) /
+                    static_cast<float>(asset->image.width);
+                rasterToSequence.values[4] = static_cast<float>(height) /
+                    static_cast<float>(asset->image.height);
+                rasterToSequence.values[6] = static_cast<float>(box.left);
+                rasterToSequence.values[7] = static_cast<float>(box.top);
+            }
+            else
+            {
+                rasterToSequence.values[6] = static_cast<float>(item.metadata.originX);
+                rasterToSequence.values[7] = static_cast<float>(item.metadata.originY);
+            }
+            const auto positioned = sequence::multiply(rasterToSequence, item.worldTransform);
+            if (!std::ranges::all_of(positioned.values,
+                    [](float value) { return std::isfinite(value); }))
+                return std::unexpected("non-finite 2D bitmap placement");
             const auto* old = find(item.node);
             if (!old) ++stats.started;
             else if (old->asset != asset || old->priority != item.priority ||
-                old->worldTransform.values != item.worldTransform.values) ++stats.moved;
+                old->worldTransform.values != positioned.values) ++stats.moved;
             else ++stats.unchanged;
             next.emplace(item.node, SequenceWorld2DObject{item.node, item.contentsDataId,
-                item.priority, item.clock, item.worldTransform, asset});
+                item.priority, item.clock, positioned, asset});
             order.push_back(item.node);
         }
         for (const auto& [id, object] : objects_)
