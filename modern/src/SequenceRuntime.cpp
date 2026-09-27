@@ -22,7 +22,13 @@ namespace monopoly::sequence
         RuntimeError caused(RuntimeErrorCode code, data::DataId id,
             std::size_t offset, E cause)
         {
-            auto result = error(code, id, offset, "sequence dependency failed");
+            auto detail = "sequence dependency failed (DataID " +
+                std::to_string(id) + ", offset " + std::to_string(offset) + ")";
+            if constexpr (requires { cause.detail; })
+                detail += ": " + cause.detail;
+            else if constexpr (requires { static_cast<int>(cause); })
+                detail += ": error " + std::to_string(static_cast<int>(cause));
+            auto result = error(code, id, offset, std::move(detail));
             result.cause = std::move(cause);
             return result;
         }
@@ -395,10 +401,11 @@ namespace monopoly::sequence
             limits.maximumDescriptions == 0)
             return std::unexpected(error(RuntimeErrorCode::InvalidLimits, id, 0,
                 "description depth must be 1..128 and node budget nonzero"));
-        if (sourceType != data::LegacyDataType::Uap &&
+        if (sourceType != data::LegacyDataType::Bitmap &&
+            sourceType != data::LegacyDataType::Uap &&
             sourceType != data::LegacyDataType::Native)
             return std::unexpected(error(RuntimeErrorCode::UnsupportedType, id, 0,
-                "raw bitmap sequence supports only DataUAP and DataNative"));
+                "raw bitmap sequence supports only DataBMP, DataUAP and DataNative"));
 
         auto program = std::shared_ptr<SequenceProgram>(new SequenceProgram);
         data::LegacySequenceHeader header{};
@@ -468,13 +475,16 @@ namespace monopoly::sequence
         if (!metadata)
             return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 id, offset, metadata.error()));
-        if (metadata->type == data::LegacyDataType::Uap)
+        if (metadata->type == data::LegacyDataType::Bitmap ||
+            metadata->type == data::LegacyDataType::Uap)
         {
-            // L_Seqncr.cpp:3648-3658. Raw DataUAP starts as an infinite
-            // 2D bitmap sequence at the ArtLib basic 60 Hz cadence.
+            // Retail DATA converts BMP to a native bitmap before StartUpSequence.
+            // Modern DATA keeps the disk type until the renderer decodes pixels.
+            // Both disk bitmap types therefore need the synthetic 2D sequence,
+            // not the CNK reader.
             if (offset != 0)
                 return std::unexpected(error(RuntimeErrorCode::DecodeFailure,
-                    id, offset, "raw UAP sequence must start at offset zero"));
+                    id, offset, "raw bitmap sequence must start at offset zero"));
             return rawBitmap(id, metadata->type, limits);
         }
 
