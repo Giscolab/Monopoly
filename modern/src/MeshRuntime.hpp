@@ -22,6 +22,8 @@ namespace monopoly::data
         MissingSource,
         MissingResources,
         SourceLoadFailed,
+        ModernAssetInvalid,
+        ModernAssetUnsupported,
         TriangleDecodeFailed,
         TextureDecodeFailed,
         MimeDecodeFailed,
