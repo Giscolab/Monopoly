@@ -214,7 +214,82 @@ namespace monopoly::data
         auto catalog = std::shared_ptr<LanguageCatalog>(
             new LanguageCatalog());
         catalog->language_ = language;
-        catalog->archive_ = std::move(textArchive);
+        catalog->legacyArchive_ = std::move(textArchive);
+        catalog->maximumMessageId_ =
+            parsedIndex->entries().back().indexValue;
+        catalog->index_ = std::move(*parsedIndex);
+        return catalog;
+    }
+
+
+    std::expected<std::shared_ptr<LanguageCatalog>, DataError>
+    LanguageCatalog::open(
+        LanguageId language,
+        std::shared_ptr<const DataSource> source)
+    {
+        if (findLanguageBankTriplet(language) == nullptr)
+        {
+            return std::unexpected(textError(
+                DataErrorCode::InvalidLanguage,
+                "language ID must be in the source-defined range 1..10"));
+        }
+
+        if (!source)
+        {
+            return std::unexpected(textError(
+                DataErrorCode::ResourceNotFound,
+                "language DATA source is absent"));
+        }
+
+        const auto languageId = [](DataTag tag)
+        {
+            return packDataId(LegacyGroupId::LanguageText, tag);
+        };
+
+        auto indexMetadata = source->metadata(languageId(0));
+        if (!indexMetadata)
+            return std::unexpected(indexMetadata.error());
+
+        if (indexMetadata->type != LegacyDataType::IndexTable)
+        {
+            return std::unexpected(textError(
+                DataErrorCode::TypeMismatch,
+                "language item tag 0 must be an index table",
+                DataTag{0}));
+        }
+
+        auto indexBytes = source->load(languageId(0));
+        if (!indexBytes)
+            return std::unexpected(indexBytes.error());
+
+        auto parsedIndex = DataIndexTable::parse(**indexBytes);
+        if (!parsedIndex)
+            return std::unexpected(parsedIndex.error());
+
+        for (const auto& entry : parsedIndex->entries())
+        {
+            auto target = source->metadata(languageId(entry.dataTag));
+            if (!target)
+            {
+                auto error = target.error();
+                error.detail =
+                    "language index references a tag outside the DATA source";
+                return std::unexpected(std::move(error));
+            }
+
+            if (target->type != LegacyDataType::String)
+            {
+                return std::unexpected(textError(
+                    DataErrorCode::TypeMismatch,
+                    "language index target must be a DataString item",
+                    entry.dataTag));
+            }
+        }
+
+        auto catalog = std::shared_ptr<LanguageCatalog>(
+            new LanguageCatalog());
+        catalog->language_ = language;
+        catalog->source_ = std::move(source);
         catalog->maximumMessageId_ =
             parsedIndex->entries().back().indexValue;
         catalog->index_ = std::move(*parsedIndex);
@@ -252,7 +327,11 @@ namespace monopoly::data
             return std::optional<SharedLanguageText>{};
         }
 
-        auto bytes = archive_->load(*tag);
+        std::expected<SharedDataBytes, DataError> bytes =
+            source_
+                ? source_->load(packDataId(
+                    LegacyGroupId::LanguageText, *tag))
+                : legacyArchive_->load(*tag);
 
         if (!bytes)
         {
@@ -264,7 +343,8 @@ namespace monopoly::data
         if (!decoded)
         {
             auto error = decoded.error();
-            error.path = archive_->path();
+            if (legacyArchive_)
+                error.path = legacyArchive_->path();
             error.tag = *tag;
             return std::unexpected(std::move(error));
         }
@@ -432,6 +512,76 @@ namespace monopoly::data
         {
             auto error = catalog.error();
             error.path = (*text)->path();
+            return std::unexpected(std::move(error));
+        }
+
+        auto staged = std::make_shared<LanguageSnapshot>(LanguageSnapshot
+        {
+            language,
+            *text,
+            *media,
+            *dialog,
+            *catalog
+        });
+
+        std::scoped_lock lock(mutex_);
+        active_ = std::move(staged);
+        return {};
+    }
+
+
+    std::expected<void, DataError> LanguageService::select(
+        const DataBankRegistry& registry,
+        std::shared_ptr<const DataSource> source,
+        LanguageId language)
+    {
+        const auto* definitions = findLanguageBankTriplet(language);
+        if (definitions == nullptr)
+        {
+            return std::unexpected(textError(
+                DataErrorCode::InvalidLanguage,
+                "language ID must be in the source-defined range 1..10"));
+        }
+
+        if (!source)
+        {
+            return std::unexpected(textError(
+                DataErrorCode::ResourceNotFound,
+                "language DATA source is absent"));
+        }
+
+        auto text = registry.archive(
+            legacyGroupValue(definitions->text.group));
+        if (!text)
+            return std::unexpected(text.error());
+
+        auto media = registry.archive(
+            legacyGroupValue(definitions->graphics.group));
+        if (!media)
+            return std::unexpected(media.error());
+
+        auto dialog = registry.archive(
+            legacyGroupValue(definitions->dialog.group));
+        if (!dialog)
+            return std::unexpected(dialog.error());
+
+        if (!(*text)->isOpen() ||
+            !(*media)->isOpen() ||
+            !(*dialog)->isOpen())
+        {
+            return std::unexpected(textError(
+                DataErrorCode::ArchiveClosed,
+                "language archive compatibility owners are closed"));
+        }
+
+        auto catalog = LanguageCatalog::open(
+            language,
+            std::move(source));
+        if (!catalog)
+        {
+            auto error = catalog.error();
+            if (error.path.empty())
+                error.path = (*text)->path();
             return std::unexpected(std::move(error));
         }
 

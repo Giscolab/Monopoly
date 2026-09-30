@@ -32,6 +32,15 @@ namespace monopoly::data
             LanguageId language,
             std::shared_ptr<LegacyDataArchive> textArchive);
 
+        // Format-agnostic catalog path. The source must expose DAT_LANG
+        // logical IDs (group 9); it may be a layered modern/legacy provider.
+        [[nodiscard]] static std::expected<
+            std::shared_ptr<LanguageCatalog>,
+            DataError>
+        open(
+            LanguageId language,
+            std::shared_ptr<const DataSource> source);
+
         [[nodiscard]] LanguageId language() const noexcept;
         [[nodiscard]] std::uint32_t maximumMessageId() const noexcept;
 
@@ -58,7 +67,10 @@ namespace monopoly::data
         LanguageCatalog() = default;
 
         LanguageId language_{ LanguageId::EnglishUs };
-        std::shared_ptr<LegacyDataArchive> archive_;
+        // Legacy owner is retained for the compatibility open() path and for
+        // preserving DAT path diagnostics. Generic catalogs own source_ only.
+        std::shared_ptr<LegacyDataArchive> legacyArchive_;
+        std::shared_ptr<const DataSource> source_;
         DataIndexTable index_;
         std::uint32_t maximumMessageId_{};
         mutable std::mutex mutex_;
@@ -92,6 +104,13 @@ namespace monopoly::data
         // ce snapshot est consomme; ResourceRuntime publie cet ensemble.
         [[nodiscard]] std::expected<void, DataError> select(
             const DataBankRegistry& registry,
+            LanguageId language);
+
+        // Uses legacy archives for compatibility/lifecycle fields, but reads
+        // the text catalog through the supplied logical DATA source.
+        [[nodiscard]] std::expected<void, DataError> select(
+            const DataBankRegistry& registry,
+            std::shared_ptr<const DataSource> source,
             LanguageId language);
 
         [[nodiscard]] std::shared_ptr<const LanguageSnapshot>
