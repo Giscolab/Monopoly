@@ -12,7 +12,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 - Surfaces UI : enchères, plateau, pièces, sélection locale, Trade/Future/Immunity, IBar et Banque maisons/hôtels, chat avec texte et défilement, statistiques et deed floater, options Load/Save, Credits et QuickHelp.
 - **GIS-8** : capture SDL3, PCM 11025 Hz/8-bit/mono, GSM 6.10 WAV49, DAT1/DATN, playback et transport TCP de voix. Les sessions de jeu C01 ont leur admission, ownership, routage et retour local ; le scénario intégré TCP est validé localement au code `cf1ba45`, voir [sessions TCP](NETWORK_GAME.md). La qualification entre machines et du matériel reste ouverte.
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
-- Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
+- Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les consommateurs DATA passent désormais par une interface logique `DataSource` : les DAT sont le backend de repli, avec surcharges par `DataId` et manifestes de payloads hors archive. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
@@ -34,7 +34,7 @@ Ces points remplacent les anciennes mentions vagues « partiel » ou « futur »
 | A02 | IA / trade | Décisions, évaluations et transitions des échanges. `Trade_SendItems` est déjà raccordé. |
 | A03 | UI / audio / Penny | Notifications, animations, transitions et surfaces résiduelles effectivement consommées ; ne pas rouvrir les propriétaires de texte déjà portés. |
 | A04 | LANG / FONTS / GRAFIX | 96 DPI d’origine raccordés ; formatage, UTF-16, métriques et clipping encore à comparer. |
-| A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Le LRU des blocs DAT et la libération des bitmaps/meshes CPU et GPU sont raccordés ; les scènes actives et substitutions de textures restent possédées. Comparaison des autres contrats à poursuivre. |
+| A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Le LRU des blocs DAT et la libération des bitmaps/meshes CPU et GPU sont raccordés ; les consommateurs runtime ne dépendent plus directement du registre DAT et peuvent recevoir des payloads logiques hors archive avec fallback retail. Les scènes actives et substitutions de textures restent possédées. Le décodage des formats modernes natifs et le retrait complet des banques retail restent à poursuivre. |
 | A06 | Séquenceur | Préchargement, attributs après enfants, sélection et persistance des tweekers, événements de fin et callback souris consommé sont raccordés. Labels et autres usages C++ ou DAT restent à comparer. Model est le type 4, Preloader le type 8 ; le renderer source actif n’accepte pas Model. L’absence d’appel C++ seule n’exclut pas un usage par données. |
 | A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. |
 
@@ -80,9 +80,13 @@ Les commits `a697c17`, `cc251ce` et `0646b5e` corrigent le rendu Gouraud et ses 
 
 Le commit `7aab3c0` rétablit la décision IBar après les échanges pendant le tour d’un joueur autre que le premier : les scénarios acceptés et refusés terminent réellement le tour par clic. Le rendu élimine les faces arrière, y compris pour les ombres. Un contrôle de l’API `IDirect3DDevice3` en 32 bits confirme le réglage initial `D3DCULL_CCW` des périphériques HAL et RGB ; les tests GPU vérifient les deux orientations sans modifier les indices HMD de production.
 
+Les commits `10ca017`, `2b46b1d`, `18bbf2a` et `c1c5cdc` ouvrent ensuite la migration des ressources : interface `DataSource` indépendante du conteneur, fallback DAT par `LayeredDataSource`, catalogue LANG routé par la même source logique, puis chargement optionnel de payloads hors archive via `--data-overrides`. Les DAT restent le fallback requis tant que les formats natifs modernes ne couvrent pas tous les contrats.
+
 ## Validation de référence
 
 Validation de référence : **140/140 suites CTest passées** — code `7aab3c0`, Windows/MSVC Debug, 27 septembre 2026.
+
+Les commits DATA `10ca017..c1c5cdc` ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Aucune nouvelle campagne CTest n’a été lancée pour ce lot ; la référence 140/140 reste donc `7aab3c0`.
 
 Application compilée ; CTest global réussi en 8,25 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios humains/IA et TCP, les refus d’actions, les cartes et faillites, les régressions de séquences et de caches, ainsi que les lectures de pixels GPU ; elle ne remplace pas Q01–Q05.
 
