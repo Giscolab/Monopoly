@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -12,6 +13,7 @@ namespace monopoly::startup
     struct ResourceArguments
     {
         std::optional<std::string> dataRoot;
+        std::optional<std::string> dataOverrides;
         bool checkOnly{};
         std::vector<std::string_view> remaining;
     };
@@ -23,6 +25,12 @@ namespace monopoly::startup
     // Uses SDL's process-local environment; never writes into the installation.
     [[nodiscard]] std::expected<void, std::string>
         selectResourceRoot(std::string_view utf8Root);
+
+    // Optional manifest of loose logical DATA payloads layered above DAT.
+    [[nodiscard]] std::expected<void, std::string>
+        selectDataOverrideManifest(std::string_view utf8Path);
+    [[nodiscard]] std::optional<std::filesystem::path>
+        dataOverrideManifest();
 
     enum class ResourceSetupResult { Ready, Cancelled, Failed };
 

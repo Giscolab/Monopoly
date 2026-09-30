@@ -229,6 +229,7 @@ add_library(
     src/DataBanks.cpp
     src/LegacyDataArchive.cpp
     src/LayeredDataSource.cpp
+    src/LooseDataOverrides.cpp
     src/LegacyDataArchiveBuilder.cpp
     src/LegacyWave.cpp
     src/LegacyChunk.cpp

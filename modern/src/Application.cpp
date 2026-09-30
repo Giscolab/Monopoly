@@ -174,6 +174,7 @@ namespace monopoly
             const auto usage = []
             {
                 std::cerr << "Usage: MonopolyModern [--data-root <absolute folder>] "
+                    "[--data-overrides <absolute manifest.tsv>] "
                     "[--check-resources] [--voice-host IPv4:port | "
                     "--voice-connect IPv4:port | --network-host IPv4:port | "
                     "--network-connect IPv4:port]\n"
@@ -214,6 +215,17 @@ namespace monopoly
             if (!selected)
             {
                 std::cerr << "Invalid --data-root: " << selected.error() << '\n';
+                return 1;
+            }
+        }
+        if (resourceOptions->dataOverrides)
+        {
+            const auto selected = startup::selectDataOverrideManifest(
+                *resourceOptions->dataOverrides);
+            if (!selected)
+            {
+                std::cerr << "Invalid --data-overrides: "
+                    << selected.error() << '\n';
                 return 1;
             }
         }

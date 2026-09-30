@@ -1,5 +1,6 @@
 #include "StartupResources.hpp"
 
+#include "LooseDataOverrides.hpp"
 #include "ResourceRuntime.hpp"
 #include "UDUtils.hpp"
 
@@ -14,6 +15,8 @@ namespace monopoly::startup
 {
     namespace
     {
+        std::optional<std::filesystem::path> selectedDataOverrides;
+
         struct FolderResult
         {
             std::atomic<bool> finished{};
@@ -68,6 +71,15 @@ namespace monopoly::startup
                         "--data-root requires one absolute installation folder");
                 result.dataRoot = arguments[++index];
             }
+            else if (argument == "--data-overrides")
+            {
+                if (result.dataOverrides || index + 1 == arguments.size() ||
+                    arguments[index + 1].empty() ||
+                    arguments[index + 1].starts_with("--"))
+                    return std::unexpected(
+                        "--data-overrides requires one absolute manifest path");
+                result.dataOverrides = arguments[++index];
+            }
             else if (argument == "--check-resources")
             {
                 if (result.checkOnly)
@@ -93,6 +105,32 @@ namespace monopoly::startup
         return {};
     }
 
+
+    std::expected<void, std::string> selectDataOverrideManifest(
+        std::string_view utf8Path)
+    {
+        const std::filesystem::path path{
+            std::u8string(utf8Path.begin(), utf8Path.end())};
+        if (!path.is_absolute())
+            return std::unexpected(
+                "--data-overrides requires an absolute manifest path");
+
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(path, error))
+            return std::unexpected(
+                "data override manifest does not exist or is not a file");
+
+        selectedDataOverrides = path.lexically_normal();
+        return {};
+    }
+
+
+    std::optional<std::filesystem::path> dataOverrideManifest()
+    {
+        return selectedDataOverrides;
+    }
+
+
     ResourceSetupResult prepareResources(bool interactive)
     {
         for (;;)
@@ -111,6 +149,23 @@ namespace monopoly::startup
                 {
                     std::cout << "All eight required banks and the language catalog "
                         "can be opened. Gameplay assets remain to be exercised.\n";
+                    if (selectedDataOverrides)
+                    {
+                        const auto overrides =
+                            data::loadLooseDataOverrides(*selectedDataOverrides);
+                        if (!overrides)
+                        {
+                            const auto& error = overrides.error();
+                            const auto path = error.path.u8string();
+                            std::cerr << "DATA override manifest failed ["
+                                << data::dataErrorCodeName(error.code) << "] "
+                                << std::string(path.begin(), path.end())
+                                << ": " << error.detail << '\n';
+                            return ResourceSetupResult::Failed;
+                        }
+                        std::cout << "Loose DATA overrides: "
+                            << overrides->size() << " logical items.\n";
+                    }
                     return ResourceSetupResult::Ready;
                 }
                 for (const auto& issue : issues)

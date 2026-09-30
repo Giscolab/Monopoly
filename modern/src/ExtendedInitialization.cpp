@@ -1,10 +1,12 @@
 #include "ExtendedInitialization.hpp"
 
 #include "Display.hpp"
+#include "LooseDataOverrides.hpp"
 #include "PlayerSelection.hpp"
 #include "Messaging.hpp"
 #include "RulesEngine.hpp"
 #include "RuntimeState.hpp"
+#include "StartupResources.hpp"
 #include "Timers.hpp"
 #include "TimeStep.hpp"
 #include "UserInterface.hpp"
@@ -43,13 +45,35 @@ namespace monopoly::startup
         const data::ResourcePaths& paths, data::ResourceContext context)
     {
         // Userifce.cpp : DATA core puis LANG, obligatoirement avant MESS.
-        // Le port signale aussi les erreurs core auparavant ignorees.
-        auto initialized = resourceRuntime.initialize(paths, context);
+        // Modern loose payloads are layered before LANG validation so the
+        // catalog and every runtime consumer observe the same logical source.
+        std::vector<data::DataSourceOverride> overrides;
+        if (const auto manifest = dataOverrideManifest())
+        {
+            auto loaded = data::loadLooseDataOverrides(*manifest);
+            if (!loaded)
+            {
+                const auto& error = loaded.error();
+                const auto utf8Path = error.path.u8string();
+                std::cerr << "DATA override loading failed ["
+                    << data::dataErrorCodeName(error.code) << "] "
+                    << std::string(utf8Path.begin(), utf8Path.end())
+                    << ": " << error.detail << '\n';
+                return false;
+            }
+            overrides = std::move(*loaded);
+        }
+
+        auto initialized = resourceRuntime.initialize(
+            paths,
+            context,
+            {},
+            std::span<const data::DataSourceOverride>{overrides});
         if (!initialized)
         {
             const auto& error = initialized.error();
             const auto utf8Path = error.path.u8string();
-            std::cerr << "Legacy resources initialization failed ["
+            std::cerr << "Resources initialization failed ["
                 << data::dataErrorCodeName(error.code) << "] "
                 << std::string(utf8Path.begin(), utf8Path.end())
                 << ": " << error.detail << '\n';
