@@ -982,15 +982,20 @@ namespace monopoly::engine
         {
             return [](
                 data::DataId id,
-                std::optional<data::DataId> rootSequenceDataId)
+                std::optional<data::DataId> rootSequenceDataId,
+                std::uint16_t priority)
                 -> std::expected<
                     std::optional<std::shared_ptr<const data::MeshRenderData>>,
                     data::MeshRuntimeError>
             {
                 const auto* definition =
                     data::modernTokenForLegacyMesh(id);
+                const bool idlePriority =
+                    priority >= pieces::TokenPriority &&
+                    priority < pieces::TokenPriority + rules::MaxPlayers;
                 if (!definition ||
                     !definition->staticIdleReplacement ||
+                    !idlePriority ||
                     !rootSequenceDataId ||
                     *rootSequenceDataId !=
                         data::idleSequenceDataId(definition->token))
@@ -1086,7 +1091,8 @@ namespace monopoly::engine
                         (void)modernResolver(
                             probe,
                             data::idleSequenceDataId(
-                                definition.token));
+                                definition.token),
+                            pieces::TokenPriority);
                 }
 
                 playback = std::make_unique<SequencePlayback>(

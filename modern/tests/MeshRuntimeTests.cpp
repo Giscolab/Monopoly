@@ -319,6 +319,101 @@ namespace
             "external asset handles survive cache eviction through immutable HMD ownership");
     }
 
+    void testContextSensitiveModernCache()
+    {
+        ResourceFixture fixture;
+        expect(writeResources(fixture.root, flatTriangle()),
+            "modern routing fixture contains a valid retail HMD fallback");
+        ResourceRuntime runtime;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        if (!paths || !runtime.initialize(*paths))
+        {
+            expect(false, "modern routing resources initialize");
+            return;
+        }
+        const auto built = MeshXRuntime::build(parse(flatTriangle()));
+        if (!built)
+        {
+            expect(false, "modern routing render data initializes");
+            return;
+        }
+        const auto modern = std::make_shared<const MeshRenderData>(
+            makeMeshRenderData(*built));
+        const auto id = packDataId(LegacyGroupId::ThreeD, 0);
+        const auto idleRoot = packDataId(LegacyGroupId::ThreeD, 1);
+        const auto wrongRoot = packDataId(LegacyGroupId::ThreeD, 2);
+        struct Context
+        {
+            std::optional<DataId> root;
+            std::uint16_t priority;
+            bool modern;
+            std::string_view description;
+        };
+        const std::array contexts{
+            Context{idleRoot, 224, true, "lower idle priority boundary selects modern"},
+            Context{idleRoot, 229, true, "last player idle priority selects modern"},
+            Context{idleRoot, 223, false, "priority below idle range selects retail"},
+            Context{idleRoot, 230, false, "exclusive upper idle boundary selects retail"},
+            Context{idleRoot, 258, false, "IBar priority selects retail for the same idle root"},
+            Context{wrongRoot, 224, false, "different sequence root selects retail"},
+            Context{std::nullopt, 224, false, "absent sequence root selects retail"},
+            Context{std::nullopt, 0, false, "default resolution context selects retail"}
+        };
+        // This injected policy tests the public cache seam and cache ordering;
+        // the private Engine resolver's eligibility policy is not exercised here.
+        for (const bool modernFirst : {false, true})
+        {
+            std::size_t calls{};
+            std::optional<DataId> receivedRoot;
+            std::uint16_t receivedPriority{};
+            MeshRuntimeCache cache(runtime.snapshot(), {}, {},
+                [&](DataId requested, std::optional<DataId> root,
+                    std::uint16_t priority)
+                    -> std::expected<std::optional<std::shared_ptr<const MeshRenderData>>,
+                        MeshRuntimeError>
+                {
+                    ++calls;
+                    receivedRoot = root;
+                    receivedPriority = priority;
+                    if (requested == id && root == idleRoot &&
+                        priority >= 224 && priority < 230)
+                        return std::optional{modern};
+                    return std::optional<std::shared_ptr<const MeshRenderData>>{};
+                });
+            const auto first = modernFirst ? cache.resolve(id, idleRoot, 224) : cache.resolve(id);
+            expect(first && (*first)->origin == (modernFirst ?
+                MeshAssetOrigin::ModernGltf : MeshAssetOrigin::LegacyHmd),
+                modernFirst ? "modern-first cache primes modern asset" :
+                    "retail-first cache primes retail asset");
+            std::shared_ptr<const MeshRuntimeAsset> modernAsset;
+            std::shared_ptr<const MeshRuntimeAsset> retailAsset;
+            for (unsigned repeat = 0; repeat < 2; ++repeat)
+            {
+                for (const auto& context : contexts)
+                {
+                    const auto before = calls;
+                    const auto resolved = cache.resolve(id, context.root, context.priority);
+                    expect(calls == before + 1 && receivedRoot == context.root &&
+                        receivedPriority == context.priority,
+                        "every resolution forwards context before consulting cached assets");
+                    expect(resolved && (*resolved)->origin == (context.modern ?
+                        MeshAssetOrigin::ModernGltf : MeshAssetOrigin::LegacyHmd),
+                        context.description);
+                    if (!resolved) continue;
+                    auto& previous = context.modern ? modernAsset : retailAsset;
+                    expect(!previous || previous == *resolved,
+                        "each origin reuses its own immutable asset across context changes");
+                    previous = *resolved;
+                    expect(context.modern ? (!(*resolved)->mesh && (*resolved)->renderData == modern) :
+                        ((*resolved)->mesh && (*resolved)->renderData != modern),
+                        "modern render data and retail mesh ownership remain separate");
+                }
+            }
+            expect(cache.size() == 2 && modernAsset != retailAsset,
+                "one DATA id retains separate modern and retail assets in either resolution order");
+        }
+    }
+
     void testEmbeddedTextureResolution()
     {
         auto source = parse(texturedTriangleWithEmbeddedImage());
@@ -596,6 +691,7 @@ int main()
     testUntexturedMeshAndRenderData();
     testMimePoseEvaluation();
     testResourceScopedCache();
+    testContextSensitiveModernCache();
     testEmbeddedTextureResolution();
     testTextureResolutionAndHistoricalDrop();
     testTextureSubstitutionPreservesGeometry();

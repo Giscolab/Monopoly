@@ -195,7 +195,8 @@ namespace monopoly::data
         std::expected<std::optional<std::shared_ptr<const MeshRenderData>>,
             MeshRuntimeError>(
                 DataId,
-                std::optional<DataId> rootSequenceDataId)>;
+                std::optional<DataId> rootSequenceDataId,
+                std::uint16_t priority)>;
 
     // Cache scoped to one immutable ResourceSnapshot. A published replacement
     // therefore cannot silently change the bytes behind an existing asset.
@@ -208,7 +209,8 @@ namespace monopoly::data
         [[nodiscard]] std::expected<std::shared_ptr<const MeshRuntimeAsset>, MeshRuntimeError>
         resolve(
             DataId id,
-            std::optional<DataId> rootSequenceDataId = std::nullopt);
+            std::optional<DataId> rootSequenceDataId = std::nullopt,
+            std::uint16_t priority = 0);
         // Prepare a complete replacement before publishing it; only this DataId
         // changes. Empty images restore the original embedded texture payloads.
         [[nodiscard]] std::expected<void, MeshRuntimeError> replaceTextureImages(

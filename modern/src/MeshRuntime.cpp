@@ -520,7 +520,8 @@ namespace monopoly::data
     std::expected<std::shared_ptr<const MeshRuntimeAsset>, MeshRuntimeError>
     MeshRuntimeCache::resolve(
         DataId id,
-        std::optional<DataId> rootSequenceDataId)
+        std::optional<DataId> rootSequenceDataId,
+        std::uint16_t priority)
     {
         if (!resources_)
             return std::unexpected(runtimeError(MeshRuntimeErrorCode::MissingResources,
@@ -532,7 +533,7 @@ namespace monopoly::data
         if (modernMeshResolver_)
         {
             const auto modern =
-                modernMeshResolver_(id, rootSequenceDataId);
+                modernMeshResolver_(id, rootSequenceDataId, priority);
             if (modern && *modern)
             {
                 if (const auto found = modernAssets_.find(id);

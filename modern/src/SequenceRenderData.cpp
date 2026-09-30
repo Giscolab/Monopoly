@@ -13,7 +13,8 @@ namespace monopoly::sequence
         {
             auto asset = meshes.resolve(
                 instance.contentsDataId,
-                instance.rootSequenceDataId);
+                instance.rootSequenceDataId,
+                instance.priority);
             if (!asset)
             {
                 return std::unexpected(SequenceRenderDataError{
