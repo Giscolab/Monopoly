@@ -593,6 +593,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/AudioRuntime.cpp
+    src/AudioWaveDecoder.cpp
     src/DebugDialogs.cpp
     src/Gsm610Codec.cpp
     src/VoiceChatAudioRuntime.cpp

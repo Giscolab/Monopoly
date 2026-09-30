@@ -293,6 +293,12 @@ namespace monopoly
             return 1;
         }
 
+        // Audio is initialized before opening movies. A missing device is not
+        // fatal to gameplay; AudioRuntime can retry later if the device changes.
+        if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
+            std::cerr << "SDL audio unavailable at startup: "
+                << SDL_GetError() << '\n';
+
         const auto setup = startup::prepareResources(true);
         if (setup != startup::ResourceSetupResult::Ready)
         {

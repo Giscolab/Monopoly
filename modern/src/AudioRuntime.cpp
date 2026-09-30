@@ -1,5 +1,6 @@
 #include "AudioRuntime.hpp"
 
+#include "AudioWaveDecoder.hpp"
 #include "LegacyDataArchive.hpp"
 
 #include <SDL3/SDL.h>
@@ -184,21 +185,12 @@ namespace monopoly::audio
             return std::unexpected("legacy Wave item is empty");
         if ((*loaded)->size() > static_cast<std::size_t>(INT_MAX))
             return std::unexpected("legacy Wave item exceeds SDL stream limits");
-        SDL_IOStream* io = SDL_IOFromConstMem(
-            (*loaded)->data(), (*loaded)->size());
-        if (io == nullptr)
-            return std::unexpected(
-                std::string("SDL_IOFromConstMem: ") + SDL_GetError());
+        auto decoded = decodeWave(**loaded);
+        if (!decoded)
+            return std::unexpected(decoded.error());
 
-        SDL_AudioSpec spec{};
-        Uint8* decoded{};
-        Uint32 decodedLength{};
-        if (!SDL_LoadWAV_IO(io, true, &spec, &decoded, &decodedLength))
-            return std::unexpected(
-                std::string("SDL_LoadWAV_IO: ") + SDL_GetError());
-
-        std::vector<Uint8> pcm(decoded, decoded + decodedLength);
-        SDL_free(decoded);
+        const SDL_AudioSpec spec = decoded->spec;
+        std::vector<Uint8> pcm = std::move(decoded->pcm);
         if (pcm.empty())
             return std::unexpected("decoded legacy Wave contains no PCM data");
         if (pcm.size() > static_cast<std::size_t>(INT_MAX))
