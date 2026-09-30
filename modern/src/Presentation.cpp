@@ -1,6 +1,7 @@
 #include "Presentation.hpp"
 
 #include <charconv>
+#include <cstdio>
 #include <optional>
 #include <utility>
 
@@ -203,6 +204,38 @@ namespace monopoly::presentation
     }
 
 
+    std::expected<void, std::string>
+    toggleBorderlessFullscreen(
+        SDL_Window* window,
+        const Options& options)
+    {
+        if (!window)
+            return std::unexpected("presentation window is null");
+
+        const bool fullscreen =
+            (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+        if (fullscreen)
+        {
+            if (!SDL_SetWindowFullscreen(window, false))
+                return std::unexpected(SDL_GetError());
+            if (!SDL_SetWindowFullscreenMode(window, nullptr))
+                return std::unexpected(SDL_GetError());
+            if (!SDL_SetWindowSize(window, options.width, options.height))
+                return std::unexpected(SDL_GetError());
+            (void)SDL_SetWindowPosition(
+                window,
+                SDL_WINDOWPOS_CENTERED,
+                SDL_WINDOWPOS_CENTERED);
+            return {};
+        }
+
+        if (!SDL_SetWindowFullscreenMode(window, nullptr) ||
+            !SDL_SetWindowFullscreen(window, true))
+            return std::unexpected(SDL_GetError());
+        return {};
+    }
+
+
     SDL_GPUPresentMode toSDLPresentMode(PresentMode mode) noexcept
     {
         switch (mode)
@@ -273,5 +306,54 @@ namespace monopoly::presentation
                 SDL_GetError());
 
         return selected;
+    }
+
+
+    FrameTelemetry::FrameTelemetry(SDL_Window* window) noexcept
+        : window_(window),
+          sampleStartNanoseconds_(SDL_GetTicksNS())
+    {
+    }
+
+
+    void FrameTelemetry::framePresented() noexcept
+    {
+        ++sampleFrames_;
+        const Uint64 now = SDL_GetTicksNS();
+        const Uint64 elapsed = now - sampleStartNanoseconds_;
+        if (elapsed < 1'000'000'000ULL)
+            return;
+
+        lastFramesPerSecond_ =
+            static_cast<double>(sampleFrames_) *
+            1'000'000'000.0 /
+            static_cast<double>(elapsed);
+
+        if (window_)
+        {
+            int width{};
+            int height{};
+            if (SDL_GetWindowSizeInPixels(window_, &width, &height))
+            {
+                char title[128]{};
+                std::snprintf(
+                    title,
+                    sizeof(title),
+                    "Monopoly Modern - %dx%d - %.1f FPS",
+                    width,
+                    height,
+                    lastFramesPerSecond_);
+                (void)SDL_SetWindowTitle(window_, title);
+            }
+        }
+
+        sampleFrames_ = 0;
+        sampleStartNanoseconds_ = now;
+    }
+
+
+    double FrameTelemetry::lastFramesPerSecond() const noexcept
+    {
+        return lastFramesPerSecond_;
     }
 }

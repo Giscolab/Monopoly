@@ -343,6 +343,8 @@ namespace monopoly
             return 1;
         }
 
+        presentation::FrameTelemetry frameTelemetry(window);
+
         if (!initializeAIProfiles())
         {
             engine::shutdown();
@@ -484,25 +486,39 @@ namespace monopoly
                     }
                     else if (event.type == SDL_EVENT_KEY_DOWN)
                     {
-                        uimsg::send(
-                            {
-                                uimsg::Type::KeyboardPressed,
-                                static_cast<std::int64_t>(
-                                    event.key.scancode
-                                )
-                            }
-                        );
+                        if (event.key.scancode == SDL_SCANCODE_F11 &&
+                            !event.key.repeat)
+                        {
+                            const auto toggled =
+                                presentation::toggleBorderlessFullscreen(
+                                    window, *presentationOptions);
+                            if (!toggled)
+                                std::cerr << "Fullscreen toggle failed: "
+                                    << toggled.error() << '\n';
+                        }
+                        else
+                        {
+                            uimsg::send(
+                                {
+                                    uimsg::Type::KeyboardPressed,
+                                    static_cast<std::int64_t>(
+                                        event.key.scancode
+                                    )
+                                }
+                            );
+                        }
                     }
                     else if (event.type == SDL_EVENT_KEY_UP)
                     {
-                        uimsg::send(
-                            {
-                                uimsg::Type::KeyboardReleased,
-                                static_cast<std::int64_t>(
-                                    event.key.scancode
-                                )
-                            }
-                        );
+                        if (event.key.scancode != SDL_SCANCODE_F11)
+                            uimsg::send(
+                                {
+                                    uimsg::Type::KeyboardReleased,
+                                    static_cast<std::int64_t>(
+                                        event.key.scancode
+                                    )
+                                }
+                            );
                     }
                     else if (event.type == SDL_EVENT_TEXT_INPUT)
                     {
@@ -537,6 +553,10 @@ namespace monopoly
 
                             finished = true;
                             result = 1;
+                        }
+                        else
+                        {
+                            frameTelemetry.framePresented();
                         }
                     }
                     else

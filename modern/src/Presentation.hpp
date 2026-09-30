@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <expected>
 #include <span>
 #include <string>
@@ -46,6 +47,13 @@ namespace monopoly::presentation
     [[nodiscard]] std::expected<void, std::string>
     configureWindow(SDL_Window* window, const Options& options);
 
+    // F11 convenience path: desktop-resolution borderless fullscreen <-> the
+    // configured development window size. It does not alter gameplay state.
+    [[nodiscard]] std::expected<void, std::string>
+    toggleBorderlessFullscreen(
+        SDL_Window* window,
+        const Options& options);
+
     [[nodiscard]] SDL_GPUPresentMode toSDLPresentMode(
         PresentMode mode) noexcept;
 
@@ -62,4 +70,21 @@ namespace monopoly::presentation
         SDL_GPUDevice* device,
         SDL_Window* window,
         PresentMode requested);
+
+    // Lightweight runtime evidence for the modernization target. The title is
+    // refreshed roughly once per second with physical swapchain-scale pixels
+    // and measured submitted frames per second.
+    class FrameTelemetry final
+    {
+    public:
+        explicit FrameTelemetry(SDL_Window* window) noexcept;
+        void framePresented() noexcept;
+        [[nodiscard]] double lastFramesPerSecond() const noexcept;
+
+    private:
+        SDL_Window* window_{};
+        Uint64 sampleStartNanoseconds_{};
+        std::uint32_t sampleFrames_{};
+        double lastFramesPerSecond_{};
+    };
 }
