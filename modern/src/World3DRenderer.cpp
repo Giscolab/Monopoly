@@ -157,6 +157,8 @@ namespace monopoly::engine
         shaderDirectory_ = std::move(other.shaderDirectory_);
         colorFormat_ = std::exchange(other.colorFormat_, SDL_GPU_TEXTUREFORMAT_INVALID);
         meshCache_ = std::move(other.meshCache_);
+        studioEnvironment_ = std::move(other.studioEnvironment_);
+        studioEnvironmentEnabled_ = std::exchange(other.studioEnvironmentEnabled_, false);
         textureSampler_ = std::exchange(other.textureSampler_, nullptr);
         linearSampler_ = std::exchange(other.linearSampler_, nullptr);
         bilinearFiltering_ = std::exchange(other.bilinearFiltering_, false);
@@ -196,6 +198,8 @@ namespace monopoly::engine
         releaseDepthTarget();
         if (meshCache_) meshCache_->clear();
         meshCache_.reset();
+        studioEnvironment_.reset();
+        studioEnvironmentEnabled_ = false;
         releaseSamplingResources();
         pipeline_.reset();
         modernPipeline_.reset();
@@ -235,7 +239,8 @@ namespace monopoly::engine
     std::expected<World3DRenderer, World3DRendererError> World3DRenderer::load(
         SDL_GPUDevice* device,
         const std::filesystem::path& shaderDirectory,
-        SDL_GPUTextureFormat colorFormat)
+        SDL_GPUTextureFormat colorFormat,
+        const std::filesystem::path& studioEnvironmentPath)
     {
         if (!device)
             return std::unexpected(World3DRendererError{
@@ -250,6 +255,29 @@ namespace monopoly::engine
 
         auto whiteTexture = createWhiteTexture(device);
         if (!whiteTexture) return std::unexpected(whiteTexture.error());
+
+        auto environment = StudioEnvironmentGPU::blackFallback(device);
+        if (!environment)
+        {
+            SDL_ReleaseGPUTexture(device, *whiteTexture);
+            return std::unexpected(World3DRendererError{
+                World3DRendererErrorCode::FallbackTextureCreationFailed,
+                environment.error().detail, {}, {}});
+        }
+        bool environmentEnabled = false;
+        if (!studioEnvironmentPath.empty())
+        {
+            auto data = readStudioEnvironment(studioEnvironmentPath);
+            auto uploaded = data ? StudioEnvironmentGPU::upload(device, *data) :
+                std::expected<StudioEnvironmentGPU, StudioEnvironmentError>{std::unexpected(data.error())};
+            if (uploaded)
+            {
+                environment = std::move(uploaded);
+                environmentEnabled = true;
+            }
+            else SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                "Optional studio environment disabled: %s", uploaded.error().detail.c_str());
+        }
 
         SDL_GPUSamplerCreateInfo samplerInfo{};
         // Source/PC3D/pc3d.cpp: retail filters are POINT/POINT/NONE.
@@ -283,13 +311,15 @@ namespace monopoly::engine
         }
         World3DRenderer result;
         result.device_ = device;
+        result.whiteTexture_ = *whiteTexture;
+        result.textureSampler_ = sampler;
+        result.linearSampler_ = linearSampler;
+        result.studioEnvironment_ = std::move(*environment);
+        result.studioEnvironmentEnabled_ = environmentEnabled;
         result.pipeline_ = std::move(*pipeline);
         result.shaderDirectory_ = shaderDirectory;
         result.colorFormat_ = colorFormat;
         result.meshCache_ = std::make_unique<MeshGPUCache>(device);
-        result.whiteTexture_ = *whiteTexture;
-        result.textureSampler_ = sampler;
-        result.linearSampler_ = linearSampler;
         return result;
     }
 
@@ -442,6 +472,7 @@ namespace monopoly::engine
                     batch.material.emissive, batch.material.emissiveStrength);
                 modernFragment.cameraPosition = vector4(projection.camera.location, 1.0F);
                 modernFragment.sceneAmbient = vertexUniforms.sceneAmbient;
+                modernFragment.sceneAmbient[3] = studioEnvironmentEnabled_ ? 1.0F : 0.0F;
                 modernFragment.boardReflectionColorEnabled = vertexUniforms.boardReflectionColorEnabled;
                 modernFragment.boardReflectionDirection = vertexUniforms.boardReflectionDirection;
                 modernFragment.sunColorEnabled = vertexUniforms.sunColorEnabled;
@@ -485,9 +516,14 @@ namespace monopoly::engine
                 bilinearFiltering_ ? linearSampler_ : textureSampler_};
             if (modern)
             {
-                auto maps = batch.modernTextures;
-                for (auto& binding : maps)
+                std::array<SDL_GPUTextureSamplerBinding, 6> maps{};
+                std::copy(batch.modernTextures.begin(), batch.modernTextures.end(), maps.begin());
+                for (std::size_t map = 0; map < 5U; ++map)
+                {
+                    auto& binding = maps[map];
                     if (!binding.texture) binding = {whiteTexture_, linearSampler_};
+                }
+                maps[5] = {studioEnvironment_.texture(), studioEnvironment_.sampler()};
                 SDL_BindGPUFragmentSamplers(pass, 0U, maps.data(),
                     static_cast<Uint32>(maps.size()));
             }

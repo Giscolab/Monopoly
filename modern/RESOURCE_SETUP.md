@@ -144,12 +144,22 @@ cmake --build modern/build --config Debug --target MonopolyExportModernTokenVari
 cmake --build modern/build --config Debug --target MonopolyExportModernSceneAssets
 cmake --build modern/build --config Debug --target MonopolyExportAlignedBoardAssets
 cmake --build modern/build --config Debug --target MonopolyExportModernEnvironment
+cmake --build modern/build --config Debug --target MonopolyGenerateStudioEnvironment
 ```
 
 Le plateau runtime est `board/paris_board_runtime.glb`, distinct du plateau
 diagnostique non aligné. Son export utilise les 40 cellules décodées du retail.
 Maison, fontaine, gare et colonne Morris sont des fichiers séparés ; l'adaptateur
 de décor ne crée pas de dépendance DATA retail fictive.
+
+La cible studio requiert Python et génère, sans Blender, le fichier HDR
+`lighting/studio_environment.mstudio` : cube RGBA16F 64x64 et mipmaps GGX,
+262 160 octets. Le staging copie cet éclairage optionnel avec les assets
+existants. Un fichier absent ou invalide désactive sa contribution et conserve
+le rendu précédent. Deux générations fraîches donnent le même SHA-256. Les
+23 frames CNK demandées passent avec IBL/PBR actifs ; l'application reste vivante
+plus de 25 secondes avec neuf chargements de pions. Ces captures et ce démarrage
+borné ne qualifient pas une partie interactive.
 
 La cible des variantes produit les états complets bateau/chien/cheval après
 leurs contrats de déformation de production et la reconstruction des pions

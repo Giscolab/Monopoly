@@ -79,7 +79,7 @@ namespace monopoly::engine
             info.format = choice.format;
             info.stage = stage;
             info.num_uniform_buffers = 1;
-            info.num_samplers = stage == SDL_GPU_SHADERSTAGE_FRAGMENT ? (modernPBR ? 5U : 1U) : 0U;
+            info.num_samplers = stage == SDL_GPU_SHADERSTAGE_FRAGMENT ? (modernPBR ? 6U : 1U) : 0U;
 
             SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
             if (!shader)

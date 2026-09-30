@@ -77,8 +77,16 @@ Le pipeline HMD conserve ses shaders Gouraud et ses ombres. Les meshes GLB
 utilisent un chemin PBR distinct : facteurs métal/rugosité, cinq cartes,
 samplers/mipmaps, normales tangentes, émission et alpha OPAQUE/MASK. Les
 54 contrôles CPU GLB et 86 contrôles GPU ciblés passent ; BLEND et les scènes
-glTF animées conservent un refus explicite. Le décor Paris n'implémente pas
-d'éclairage IBL.
+glTF animées conservent un refus explicite. Un cube studio HDR optionnel ajoute
+des réflexions spéculaires préfiltrées GGX avec approximation DFG analytique.
+Les 30 nouveaux contrôles CPU/GPU passent et le haut-de-forme de production a
+été capturé en 1920x1080 avec des réflexions blanches, bleues et dorées examinées.
+Le diffus reste une approximation ambiante, sans irradiance dédiée ni LUT BRDF.
+Environnement absent/invalide, sa contribution est désactivée et les pixels
+précédents sont conservés. Les 23 captures CNK demandées passent avec IBL/PBR
+actifs et la galerie des 11 pions a été examinée. Un smoke test de l'application
+dépasse 25 secondes avec neuf chargements de pions, sans qualification de partie
+interactive ou d'animation continue ; voir le [contrat Blender](BLENDER_INTEGRATION_SPEC.md).
 
 Les options suivantes demandent les adaptateurs de scène ; elles restent
 dépendantes des ressources et du contexte de jeu :

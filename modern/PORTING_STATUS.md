@@ -112,6 +112,18 @@ indices et transformations. Les PNG/JPEG embarqués et cinq cartes PBR sont
 raccordés, avec rôles sRGB/linéaires, samplers, mipmaps, normales tangentes et
 alpha OPAQUE/MASK. Les **54 contrôles CPU GLB et 86 contrôles GPU** passent.
 BLEND, scènes glTF animées et accesseurs sparse restent explicitement refusés.
+Un environnement studio HDR optionnel ajoute des réflexions spéculaires IBL :
+cube RGBA16F 64x64, mipmaps GGX déterministes et approximation DFG analytique.
+Les 30 nouveaux contrôles CPU/GPU passent, ainsi que les 86 contrôles de rendu
+existants ; environnement absent/invalide, le cube noir désactivé conserve les
+pixels précédents. Le haut-de-forme de production (CNK `0x80236`, tick 0,
+priorité racine 224) a été capturé en 1920x1080 avec PBR et environnement actifs,
+et ses réflexions ont été examinées. Les 23 captures CNK demandées passent avec
+IBL/PBR actifs ; la galerie des 11 pions a été examinée. Un démarrage de
+l'application reste vivant plus de 25 secondes avec neuf chargements de pions,
+puis son processus dédié est arrêté. Ce smoke test et ces captures ne qualifient
+ni partie interactive ni animation continue. Le diffus conserve
+l'approximation ambiante, sans cube d'irradiance ni LUT BRDF.
 Les caches distinguent les propriétaires immuables modernes/retail partageant
 un DATA id. Le tree Git de `Source/` conserve le baseline verrouillé.
 DXIL est exécuté sous Windows ; SPIR-V/MSL sont compilés et réfléchis, sans

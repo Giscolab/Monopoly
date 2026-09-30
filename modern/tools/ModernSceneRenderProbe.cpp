@@ -442,8 +442,11 @@ int main(int argc, char** argv)
         gpu.transfer = SDL_CreateGPUTransferBuffer(gpu.device, &transfer);
         require(gpu.transfer != nullptr, "Readback transfer");
         // Renderer is declared after GPUResources so its resources release first.
-        auto renderer = engine::World3DRenderer::load(gpu.device, shaders, texture.format);
+        auto renderer = engine::World3DRenderer::load(gpu.device, shaders, texture.format,
+            assetRoot / "lighting/studio_environment.mstudio");
         if (!renderer) throw std::runtime_error("Renderer shaders: " + renderer.error().detail);
+        std::cout << "studio_environment_enabled\t"
+            << renderer->studioEnvironmentEnabled() << '\n';
         renderer->setBilinearFiltering(true);
         engine::World3DLighting lighting;
         lighting.ambient = {.53F, .53F, .53F};

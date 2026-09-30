@@ -222,10 +222,17 @@ see [shader tooling](tools/SHADER_TOOLCHAIN.md). Generated ModernPBR assets are
 staged by normal builds. `MonopolyCompileShaders` regenerates both shader
 families into the build directory without changing checked-in binaries.
 
-Animated GLB playback and image-based environment lighting remain unsupported.
-The ambient factor approximation is not IBL. Optional scene decorations are
-geometry, not an environment-lighting implementation. Procedural Blender graphs
-still need compatible conversion or baking.
+Optional studio image-based specular lighting uses a bounded `MSTUDIO` file:
+a linear HDR 64x64 RGBA16F cube with deterministic GGX-prefiltered mip levels.
+`MonopolyGenerateStudioEnvironment` generates analytic softboxes under
+`build/modern-assets/lighting/studio_environment.mstudio` (262,160 bytes).
+The modern shader binds five material 2D maps plus this cube and retains its
+256-byte uniform ABI. Missing or invalid optional lighting binds a black cube
+and disables the environment contribution, preserving previous pixels.
+Specular lighting uses an analytic DFG approximation; diffuse lighting remains
+the ambient approximation. A diffuse irradiance cube and BRDF LUT are not
+implemented. Optional scene decorations remain geometry. Animated GLB playback
+is unsupported; procedural Blender graphs still need conversion or baking.
 
 ## Material contract
 
@@ -368,6 +375,20 @@ Blender scene or the retail token animation mechanism.
   response, emissive/sRGB, culling, two-sided normals and mixed legacy/PBR draws.
   DXIL executed on this Windows machine; MSL and SPIR-V were compiled and
   reflected, not runtime-qualified on other platforms.
+- Studio environment validation adds 30 CPU/GPU assertions; the existing 86
+  renderer checks also pass, including disabled-environment pixel preservation.
+  The production top-hat CNK `0x80236`, tick zero, root priority 224 was rendered
+  at 1920x1080 with environment enabled and PBR loaded. The inspected capture
+  `build/hat-ibl-gpu-20261001.png` shows broad white, blue and gold reflections.
+  All 23 requested production-CNK frames (11 token idles and 12 state frames)
+  also pass with environment enabled and PBR loaded; see
+  `build/token-ibl-qualification/qualification.json`. The inspected
+  `eleven_tokens_ibl.png` gallery shows all 11 tokens. A fresh generator repeat
+  matches SHA-256 `cdd97760353a46538136cb6ea40d045bf1ba58921152e1b57814987c9b4e5726`.
+  The application remained alive for more than 25 seconds with nine token loads
+  before its owned process was stopped; logs are
+  `build/ibl-app-smoke-20261001.out.log` and `.err.log`. Requested frame captures
+  and this bounded startup do not qualify interactive gameplay or live animation.
 - `MonopolyTokenAnimationTimeline` and `tools/token_animation_inventory.py`
   inventoried all 1,089 token CNKs against local runtime-data over 600 parent
   ticks. Generated metadata stays in build/token_animation_inventory.json.

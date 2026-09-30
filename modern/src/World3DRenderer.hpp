@@ -2,6 +2,7 @@
 
 #include "World3DGPUScene.hpp"
 #include "World3DPipeline.hpp"
+#include "StudioEnvironmentGPU.hpp"
 
 #include <SDL3/SDL_gpu.h>
 
@@ -89,7 +90,8 @@ namespace monopoly::engine
             World3DRendererError> load(
                 SDL_GPUDevice* device,
                 const std::filesystem::path& shaderDirectory,
-                SDL_GPUTextureFormat colorFormat);
+                SDL_GPUTextureFormat colorFormat,
+                const std::filesystem::path& studioEnvironmentPath = {});
 
         [[nodiscard]] std::expected<World3DRenderStats,
             World3DRendererError> render(
@@ -113,6 +115,8 @@ namespace monopoly::engine
         { return pipeline_; }
         [[nodiscard]] const World3DPipeline* modernPipeline() const noexcept
         { return modernPipeline_ ? &*modernPipeline_ : nullptr; }
+        [[nodiscard]] bool studioEnvironmentEnabled() const noexcept
+        { return studioEnvironmentEnabled_; }
 
     private:
         [[nodiscard]] bool ensureDepthTarget(
@@ -127,6 +131,8 @@ namespace monopoly::engine
         std::filesystem::path shaderDirectory_;
         SDL_GPUTextureFormat colorFormat_{SDL_GPU_TEXTUREFORMAT_INVALID};
         std::unique_ptr<MeshGPUCache> meshCache_;
+        StudioEnvironmentGPU studioEnvironment_;
+        bool studioEnvironmentEnabled_{};
         SDL_GPUSampler* textureSampler_{};
         SDL_GPUSampler* linearSampler_{};
         bool bilinearFiltering_{};

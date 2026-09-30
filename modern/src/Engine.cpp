@@ -2691,7 +2691,9 @@ namespace monopoly::engine
                 {
                     const auto shaderPath = std::filesystem::path(SDL_GetBasePath()) / "shaders";
                     auto loaded = World3DRenderer::load(gpuDevice, shaderPath,
-                        SDL_GetGPUSwapchainTextureFormat(gpuDevice, gameWindow));
+                        SDL_GetGPUSwapchainTextureFormat(gpuDevice, gameWindow),
+                        std::filesystem::path(SDL_GetBasePath()) /
+                            "assets/modern/lighting/studio_environment.mstudio");
                     if (!loaded) return SDL_SetError("World3D pipeline: %s", loaded.error().detail.c_str());
                     worldRenderer = std::move(*loaded);
                 }

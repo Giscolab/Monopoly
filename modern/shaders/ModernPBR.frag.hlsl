@@ -57,6 +57,14 @@ Texture2D occlusionMap : register(t4, space2);
 [[vk::combinedImageSampler]]
 #endif
 SamplerState occlusionSampler : register(s4, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+TextureCube specularEnvironment : register(t5, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState specularEnvironmentSampler : register(s5, space2);
 
 struct PixelInput
 {
@@ -168,6 +176,16 @@ float3 mappedNormal(PixelInput input, float3 n)
     sampled.xy *= mapParameters.y;
     return safeNormalize(tangent * sampled.x + bitangent * sampled.y + n * sampled.z);
 }
+float3 environmentBRDF(float3 f0, float roughness, float noV)
+{
+    // Karis, "Physically Based Shading on Mobile" (Epic Games, 2014).
+    // Analytic split-sum environment BRDF fit; no DFG lookup texture.
+    const float4 r = saturate(roughness) * float4(-1.0f, -0.0275f, -0.572f, 0.022f)
+        + float4(1.0f, 0.0425f, 1.04f, -0.04f);
+    const float a004 = min(r.x * r.x, exp2(-9.28f * noV)) * r.x + r.y;
+    const float2 ab = float2(-1.04f, 1.04f) * a004 + r.zw;
+    return max(f0 * ab.x + ab.y, 0.0f);
+}
 float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
 {
     float4 sampledBaseColor = baseColor;
@@ -187,8 +205,24 @@ float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
     const float3 v = safeNormalize(cameraPosition.xyz - input.worldPosition);
     const float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
     const float3 fresnel = fresnelSchlick(saturate(dot(n, v)), f0);
-    // Ambient approximation; no environment map is available.
-    float3 color = sceneAmbient.rgb * ((1.0f - fresnel) * (1.0f - metallic) * albedo + f0);
+    float3 color;
+    if (sceneAmbient.w > 0.5f)
+    {
+        // Mips contain GGX-prefiltered linear HDR radiance at perceptual
+        // roughness mip/(levelCount-1). The current diffuse approximation stays.
+        uint width, height, levelCount;
+        specularEnvironment.GetDimensions(0, width, height, levelCount);
+        const float lod = saturate(roughness) * float(max(levelCount, 1u) - 1u);
+        const float3 radiance = specularEnvironment.SampleLevel(specularEnvironmentSampler,
+            reflect(-v, n), lod).rgb;
+        const float3 specular = radiance * environmentBRDF(f0, roughness, saturate(dot(n, v)));
+        color = sceneAmbient.rgb * ((1.0f - fresnel) * (1.0f - metallic) * albedo + specular);
+    }
+    else
+    {
+        // Preserve the pre-environment factor-ambient expression exactly.
+        color = sceneAmbient.rgb * ((1.0f - fresnel) * (1.0f - metallic) * albedo + f0);
+    }
     if (mapParameters.x > 0.5f)
     {
         const float occlusion = occlusionMap.Sample(occlusionSampler, input.uv).r;

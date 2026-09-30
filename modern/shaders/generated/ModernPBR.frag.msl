@@ -36,341 +36,353 @@ struct main0_in
     float4 in_var_TEXCOORD3 [[user(locn3)]];
 };
 
-fragment main0_out main0(main0_in in [[stage_in]], constant type_MaterialUniforms& MaterialUniforms [[buffer(0)]], texture2d<float> baseColorMap [[texture(0)]], texture2d<float> metallicRoughnessMap [[texture(1)]], texture2d<float> normalMap [[texture(2)]], texture2d<float> emissiveMap [[texture(3)]], texture2d<float> occlusionMap [[texture(4)]], sampler baseColorMapSmplr [[sampler(0)]], sampler metallicRoughnessMapSmplr [[sampler(1)]], sampler normalMapSmplr [[sampler(2)]], sampler emissiveMapSmplr [[sampler(3)]], sampler occlusionMapSmplr [[sampler(4)]], bool gl_FrontFacing [[front_facing]])
+fragment main0_out main0(main0_in in [[stage_in]], constant type_MaterialUniforms& MaterialUniforms [[buffer(0)]], texture2d<float> baseColorMap [[texture(0)]], texture2d<float> metallicRoughnessMap [[texture(1)]], texture2d<float> normalMap [[texture(2)]], texture2d<float> emissiveMap [[texture(3)]], texture2d<float> occlusionMap [[texture(4)]], texturecube<float> specularEnvironment [[texture(5)]], sampler baseColorMapSmplr [[sampler(0)]], sampler metallicRoughnessMapSmplr [[sampler(1)]], sampler normalMapSmplr [[sampler(2)]], sampler emissiveMapSmplr [[sampler(3)]], sampler occlusionMapSmplr [[sampler(4)]], sampler specularEnvironmentSmplr [[sampler(5)]], bool gl_FrontFacing [[front_facing]])
 {
     main0_out out = {};
-    float4 _93;
+    float4 _109;
     if (MaterialUniforms.mapFlags.x > 0.5)
     {
-        _93 = MaterialUniforms.baseColor * baseColorMap.sample(baseColorMapSmplr, in.in_var_TEXCOORD2);
+        _109 = MaterialUniforms.baseColor * baseColorMap.sample(baseColorMapSmplr, in.in_var_TEXCOORD2);
     }
     else
     {
-        _93 = MaterialUniforms.baseColor;
+        _109 = MaterialUniforms.baseColor;
     }
-    bool _103;
+    bool _119;
     if (MaterialUniforms.metallicRoughness.w > 0.5)
     {
-        _103 = _93.w < MaterialUniforms.mapParameters.w;
+        _119 = _109.w < MaterialUniforms.mapParameters.w;
     }
     else
     {
-        _103 = false;
+        _119 = false;
     }
-    if (_103)
+    if (_119)
     {
         discard_fragment();
     }
-    float _122;
-    float _123;
+    float _138;
+    float _139;
     if (MaterialUniforms.mapFlags.y > 0.5)
     {
-        float4 _117 = metallicRoughnessMap.sample(metallicRoughnessMapSmplr, in.in_var_TEXCOORD2);
-        _122 = MaterialUniforms.metallicRoughness.y * _117.y;
-        _123 = MaterialUniforms.metallicRoughness.x * _117.z;
+        float4 _133 = metallicRoughnessMap.sample(metallicRoughnessMapSmplr, in.in_var_TEXCOORD2);
+        _138 = MaterialUniforms.metallicRoughness.y * _133.y;
+        _139 = MaterialUniforms.metallicRoughness.x * _133.z;
     }
     else
     {
-        _122 = MaterialUniforms.metallicRoughness.y;
-        _123 = MaterialUniforms.metallicRoughness.x;
+        _138 = MaterialUniforms.metallicRoughness.y;
+        _139 = MaterialUniforms.metallicRoughness.x;
     }
-    float _124 = fast::clamp(_123, 0.0, 1.0);
-    float3 _128 = in.in_var_TEXCOORD1 * rsqrt(precise::max(dot(in.in_var_TEXCOORD1, in.in_var_TEXCOORD1), 9.9999999392252902907785028219223e-09));
-    float3 _220;
+    float _140 = fast::clamp(_139, 0.0, 1.0);
+    float3 _144 = in.in_var_TEXCOORD1 * rsqrt(precise::max(dot(in.in_var_TEXCOORD1, in.in_var_TEXCOORD1), 9.9999999392252902907785028219223e-09));
+    float3 _236;
     do
     {
-        float3 _131 = dfdx(in.in_var_TEXCOORD0);
-        float3 _132 = dfdy(in.in_var_TEXCOORD0);
-        float2 _133 = dfdx(in.in_var_TEXCOORD2);
-        float2 _134 = dfdy(in.in_var_TEXCOORD2);
+        float3 _147 = dfdx(in.in_var_TEXCOORD0);
+        float3 _148 = dfdy(in.in_var_TEXCOORD0);
+        float2 _149 = dfdx(in.in_var_TEXCOORD2);
+        float2 _150 = dfdy(in.in_var_TEXCOORD2);
         if (MaterialUniforms.mapFlags.z <= 0.5)
         {
-            _220 = _128;
+            _236 = _144;
             break;
         }
-        float3 _143 = in.in_var_TEXCOORD3.xyz - (_128 * dot(_128, in.in_var_TEXCOORD3.xyz));
-        bool _152;
+        float3 _159 = in.in_var_TEXCOORD3.xyz - (_144 * dot(_144, in.in_var_TEXCOORD3.xyz));
+        bool _168;
         if (abs(in.in_var_TEXCOORD3.w) > 0.5)
         {
-            _152 = dot(_143, _143) > 9.9999999392252902907785028219223e-09;
+            _168 = dot(_159, _159) > 9.9999999392252902907785028219223e-09;
         }
         else
         {
-            _152 = false;
+            _168 = false;
         }
-        float3 _197;
-        float3 _198;
-        if (_152)
+        float3 _213;
+        float3 _214;
+        if (_168)
         {
-            float3 _159 = _143 * rsqrt(precise::max(dot(_143, _143), 9.9999999392252902907785028219223e-09));
-            _197 = cross(_128, _159) * in.in_var_TEXCOORD3.w;
-            _198 = _159;
+            float3 _175 = _159 * rsqrt(precise::max(dot(_159, _159), 9.9999999392252902907785028219223e-09));
+            _213 = cross(_144, _175) * in.in_var_TEXCOORD3.w;
+            _214 = _175;
         }
         else
         {
-            float _162 = _133.x;
-            float _163 = _134.y;
-            float _165 = _133.y;
-            float _166 = _134.x;
-            float _168 = (_162 * _163) - (_165 * _166);
-            if (abs(_168) < 9.9999999392252902907785028219223e-09)
+            float _178 = _149.x;
+            float _179 = _150.y;
+            float _181 = _149.y;
+            float _182 = _150.x;
+            float _184 = (_178 * _179) - (_181 * _182);
+            if (abs(_184) < 9.9999999392252902907785028219223e-09)
             {
-                _220 = _128;
+                _236 = _144;
                 break;
             }
-            float3 _176 = float3(_168);
-            float3 _177 = ((_131 * _163) - (_132 * _165)) / _176;
-            float3 _184 = _177 - (_128 * dot(_128, _177));
-            float _185 = dot(_184, _184);
-            if (_185 < 9.9999999392252902907785028219223e-09)
+            float3 _192 = float3(_184);
+            float3 _193 = ((_147 * _179) - (_148 * _181)) / _192;
+            float3 _200 = _193 - (_144 * dot(_144, _193));
+            float _201 = dot(_200, _200);
+            if (_201 < 9.9999999392252902907785028219223e-09)
             {
-                _220 = _128;
+                _236 = _144;
                 break;
             }
-            float3 _191 = _184 * rsqrt(precise::max(_185, 9.9999999392252902907785028219223e-09));
-            float3 _192 = cross(_128, _191);
-            _197 = _192 * ((dot(_192, ((_132 * _162) - (_131 * _166)) / _176) < 0.0) ? (-1.0) : 1.0);
-            _198 = _191;
+            float3 _207 = _200 * rsqrt(precise::max(_201, 9.9999999392252902907785028219223e-09));
+            float3 _208 = cross(_144, _207);
+            _213 = _208 * ((dot(_208, ((_148 * _178) - (_147 * _182)) / _192) < 0.0) ? (-1.0) : 1.0);
+            _214 = _207;
         }
-        float3 _203 = (normalMap.sample(normalMapSmplr, in.in_var_TEXCOORD2).xyz * 2.0) - float3(1.0);
-        float2 _207 = _203.xy * MaterialUniforms.mapParameters.y;
-        float3 _215 = ((_198 * _207.x) + (_197 * _207.y)) + (_128 * _203.z);
-        _220 = _215 * rsqrt(precise::max(dot(_215, _215), 9.9999999392252902907785028219223e-09));
+        float3 _219 = (normalMap.sample(normalMapSmplr, in.in_var_TEXCOORD2).xyz * 2.0) - float3(1.0);
+        float2 _223 = _219.xy * MaterialUniforms.mapParameters.y;
+        float3 _231 = ((_214 * _223.x) + (_213 * _223.y)) + (_144 * _219.z);
+        _236 = _231 * rsqrt(precise::max(dot(_231, _231), 9.9999999392252902907785028219223e-09));
         break;
     } while(false);
-    float3 _222 = _220 * (gl_FrontFacing ? 1.0 : (-1.0));
-    float3 _226 = MaterialUniforms.cameraPosition.xyz - in.in_var_TEXCOORD0;
-    float3 _230 = _226 * rsqrt(precise::max(dot(_226, _226), 9.9999999392252902907785028219223e-09));
-    float3 _232 = mix(float3(0.039999999105930328369140625), _93.xyz, float3(_124));
-    float _234 = fast::clamp(dot(_222, _230), 0.0, 1.0);
-    float3 _235 = float3(1.0) - _232;
-    float _245 = 1.0 - _124;
-    float3 _249 = MaterialUniforms.sceneAmbient.xyz * ((((float3(1.0) - (_232 + (_235 * powr(1.0 - fast::clamp(_234, 0.0, 1.0), 5.0)))) * _245) * _93.xyz) + _232);
-    float3 _263;
+    float3 _238 = _236 * (gl_FrontFacing ? 1.0 : (-1.0));
+    float3 _242 = MaterialUniforms.cameraPosition.xyz - in.in_var_TEXCOORD0;
+    float3 _246 = _242 * rsqrt(precise::max(dot(_242, _242), 9.9999999392252902907785028219223e-09));
+    float3 _248 = mix(float3(0.039999999105930328369140625), _109.xyz, float3(_140));
+    float _250 = fast::clamp(dot(_238, _246), 0.0, 1.0);
+    float3 _251 = float3(1.0) - _248;
+    float3 _256 = _248 + (_251 * powr(1.0 - fast::clamp(_250, 0.0, 1.0), 5.0));
+    float3 _314;
+    if (MaterialUniforms.sceneAmbient.w > 0.5)
+    {
+        float _266 = fast::clamp(_138, 0.0, 1.0);
+        float4 _277 = (float4(-1.0, -0.0274999998509883880615234375, -0.572000026702880859375, 0.02199999988079071044921875) * _266) + float4(1.0, 0.0425000004470348358154296875, 1.03999996185302734375, -0.039999999105930328369140625);
+        float _278 = _277.x;
+        float2 _288 = (float2(-1.03999996185302734375, 1.03999996185302734375) * ((precise::min(_278 * _278, exp2((-9.27999973297119140625) * _250)) * _278) + _277.y)) + _277.zw;
+        _314 = MaterialUniforms.sceneAmbient.xyz * ((((float3(1.0) - _256) * (1.0 - _140)) * _109.xyz) + (specularEnvironment.sample(specularEnvironmentSmplr, reflect(-_246, _238), level(_266 * float(max(uint(specularEnvironment.get_num_mip_levels()), 1u) - 1u))).xyz * precise::max((_248 * _288.x) + float3(_288.y), float3(0.0))));
+    }
+    else
+    {
+        _314 = MaterialUniforms.sceneAmbient.xyz * ((((float3(1.0) - _256) * (1.0 - _140)) * _109.xyz) + _248);
+    }
+    float3 _328;
     if (MaterialUniforms.mapParameters.x > 0.5)
     {
-        _263 = _249 * mix(1.0, occlusionMap.sample(occlusionMapSmplr, in.in_var_TEXCOORD2).x, fast::clamp(MaterialUniforms.mapParameters.z, 0.0, 1.0));
+        _328 = _314 * mix(1.0, occlusionMap.sample(occlusionMapSmplr, in.in_var_TEXCOORD2).x, fast::clamp(MaterialUniforms.mapParameters.z, 0.0, 1.0));
     }
     else
     {
-        _263 = _249;
+        _328 = _314;
     }
-    float3 _338;
+    float3 _404;
     if (MaterialUniforms.boardReflectionColorEnabled.w > 0.5)
     {
-        float3 _274 = -MaterialUniforms.boardReflectionDirection.xyz;
-        float3 _278 = _274 * rsqrt(precise::max(dot(_274, _274), 9.9999999392252902907785028219223e-09));
-        float3 _337;
+        float3 _339 = -MaterialUniforms.boardReflectionDirection.xyz;
+        float3 _343 = _339 * rsqrt(precise::max(dot(_339, _339), 9.9999999392252902907785028219223e-09));
+        float3 _403;
         do
         {
-            float _283 = fast::clamp(dot(_222, _278), 0.0, 1.0);
-            bool _288;
-            if ((isunordered(_283, 0.0) || _283 > 0.0))
+            float _348 = fast::clamp(dot(_238, _343), 0.0, 1.0);
+            bool _353;
+            if ((isunordered(_348, 0.0) || _348 > 0.0))
             {
-                _288 = _234 <= 0.0;
+                _353 = _250 <= 0.0;
             }
             else
             {
-                _288 = true;
+                _353 = true;
             }
-            if (_288)
+            if (_353)
             {
-                _337 = float3(0.0);
+                _403 = float3(0.0);
                 break;
             }
-            float3 _291 = _230 + _278;
-            float3 _295 = _291 * rsqrt(precise::max(dot(_291, _291), 9.9999999392252902907785028219223e-09));
-            float _297 = fast::clamp(dot(_222, _295), 0.0, 1.0);
-            float _298 = fast::clamp(_122, 0.04500000178813934326171875, 1.0);
-            float _299 = _298 * _298;
-            float _300 = _299 * _299;
-            float _301 = _297 * _297;
-            float _304 = (1.0 - _301) + (_300 * _301);
-            float3 _313 = _232 + (_235 * powr(1.0 - fast::clamp(dot(_230, _295), 0.0, 1.0), 5.0));
-            float _319 = 1.0 - _300;
-            _337 = ((((((float3(1.0) - _313) * _245) * _93.xyz) * float3(0.3183098733425140380859375)) + (_313 * ((_300 / ((3.1415927410125732421875 * _304) * _304)) * (0.5 / precise::max((_283 * sqrt(((_234 * _234) * _319) + _300)) + (_234 * sqrt(((_283 * _283) * _319) + _300)), 9.9999999747524270787835121154785e-07))))) * MaterialUniforms.boardReflectionColorEnabled.xyz) * _283;
+            float3 _356 = _246 + _343;
+            float3 _360 = _356 * rsqrt(precise::max(dot(_356, _356), 9.9999999392252902907785028219223e-09));
+            float _362 = fast::clamp(dot(_238, _360), 0.0, 1.0);
+            float _363 = fast::clamp(_138, 0.04500000178813934326171875, 1.0);
+            float _364 = _363 * _363;
+            float _365 = _364 * _364;
+            float _366 = _362 * _362;
+            float _369 = (1.0 - _366) + (_365 * _366);
+            float3 _378 = _248 + (_251 * powr(1.0 - fast::clamp(dot(_246, _360), 0.0, 1.0), 5.0));
+            float _385 = 1.0 - _365;
+            _403 = ((((((float3(1.0) - _378) * (1.0 - _140)) * _109.xyz) * float3(0.3183098733425140380859375)) + (_378 * ((_365 / ((3.1415927410125732421875 * _369) * _369)) * (0.5 / precise::max((_348 * sqrt(((_250 * _250) * _385) + _365)) + (_250 * sqrt(((_348 * _348) * _385) + _365)), 9.9999999747524270787835121154785e-07))))) * MaterialUniforms.boardReflectionColorEnabled.xyz) * _348;
             break;
         } while(false);
-        _338 = _337;
+        _404 = _403;
     }
     else
     {
-        _338 = float3(0.0);
+        _404 = float3(0.0);
     }
-    float3 _414;
+    float3 _481;
     if (MaterialUniforms.sunColorEnabled.w > 0.5)
     {
-        float3 _350 = -MaterialUniforms.sunDirection.xyz;
-        float3 _354 = _350 * rsqrt(precise::max(dot(_350, _350), 9.9999999392252902907785028219223e-09));
-        float3 _413;
+        float3 _416 = -MaterialUniforms.sunDirection.xyz;
+        float3 _420 = _416 * rsqrt(precise::max(dot(_416, _416), 9.9999999392252902907785028219223e-09));
+        float3 _480;
         do
         {
-            float _359 = fast::clamp(dot(_222, _354), 0.0, 1.0);
-            bool _364;
-            if ((isunordered(_359, 0.0) || _359 > 0.0))
+            float _425 = fast::clamp(dot(_238, _420), 0.0, 1.0);
+            bool _430;
+            if ((isunordered(_425, 0.0) || _425 > 0.0))
             {
-                _364 = _234 <= 0.0;
+                _430 = _250 <= 0.0;
             }
             else
             {
-                _364 = true;
+                _430 = true;
             }
-            if (_364)
+            if (_430)
             {
-                _413 = float3(0.0);
+                _480 = float3(0.0);
                 break;
             }
-            float3 _367 = _230 + _354;
-            float3 _371 = _367 * rsqrt(precise::max(dot(_367, _367), 9.9999999392252902907785028219223e-09));
-            float _373 = fast::clamp(dot(_222, _371), 0.0, 1.0);
-            float _374 = fast::clamp(_122, 0.04500000178813934326171875, 1.0);
-            float _375 = _374 * _374;
-            float _376 = _375 * _375;
-            float _377 = _373 * _373;
-            float _380 = (1.0 - _377) + (_376 * _377);
-            float3 _389 = _232 + (_235 * powr(1.0 - fast::clamp(dot(_230, _371), 0.0, 1.0), 5.0));
-            float _395 = 1.0 - _376;
-            _413 = ((((((float3(1.0) - _389) * _245) * _93.xyz) * float3(0.3183098733425140380859375)) + (_389 * ((_376 / ((3.1415927410125732421875 * _380) * _380)) * (0.5 / precise::max((_359 * sqrt(((_234 * _234) * _395) + _376)) + (_234 * sqrt(((_359 * _359) * _395) + _376)), 9.9999999747524270787835121154785e-07))))) * MaterialUniforms.sunColorEnabled.xyz) * _359;
+            float3 _433 = _246 + _420;
+            float3 _437 = _433 * rsqrt(precise::max(dot(_433, _433), 9.9999999392252902907785028219223e-09));
+            float _439 = fast::clamp(dot(_238, _437), 0.0, 1.0);
+            float _440 = fast::clamp(_138, 0.04500000178813934326171875, 1.0);
+            float _441 = _440 * _440;
+            float _442 = _441 * _441;
+            float _443 = _439 * _439;
+            float _446 = (1.0 - _443) + (_442 * _443);
+            float3 _455 = _248 + (_251 * powr(1.0 - fast::clamp(dot(_246, _437), 0.0, 1.0), 5.0));
+            float _462 = 1.0 - _442;
+            _480 = ((((((float3(1.0) - _455) * (1.0 - _140)) * _109.xyz) * float3(0.3183098733425140380859375)) + (_455 * ((_442 / ((3.1415927410125732421875 * _446) * _446)) * (0.5 / precise::max((_425 * sqrt(((_250 * _250) * _462) + _442)) + (_250 * sqrt(((_425 * _425) * _462) + _442)), 9.9999999747524270787835121154785e-07))))) * MaterialUniforms.sunColorEnabled.xyz) * _425;
             break;
         } while(false);
-        _414 = _413;
+        _481 = _480;
     }
     else
     {
-        _414 = float3(0.0);
+        _481 = float3(0.0);
     }
-    float3 _550;
+    float3 _618;
     do
     {
         if (MaterialUniforms.spotlightColorEnabled.w <= 0.5)
         {
-            _550 = float3(0.0);
+            _618 = float3(0.0);
             break;
         }
-        float3 _426 = MaterialUniforms.spotlightPositionRange.xyz - in.in_var_TEXCOORD0;
-        float _427 = length(_426);
-        bool _434;
-        if ((isunordered(_427, 9.9999999747524270787835121154785e-07) || _427 > 9.9999999747524270787835121154785e-07))
+        float3 _493 = MaterialUniforms.spotlightPositionRange.xyz - in.in_var_TEXCOORD0;
+        float _494 = length(_493);
+        bool _501;
+        if ((isunordered(_494, 9.9999999747524270787835121154785e-07) || _494 > 9.9999999747524270787835121154785e-07))
         {
-            _434 = _427 > MaterialUniforms.spotlightPositionRange.w;
+            _501 = _494 > MaterialUniforms.spotlightPositionRange.w;
         }
         else
         {
-            _434 = true;
+            _501 = true;
         }
-        if (_434)
+        if (_501)
         {
-            _550 = float3(0.0);
+            _618 = float3(0.0);
             break;
         }
-        float3 _438 = _426 / float3(_427);
-        float _447 = dot(MaterialUniforms.spotlightDirectionFalloff.xyz * rsqrt(precise::max(dot(MaterialUniforms.spotlightDirectionFalloff.xyz, MaterialUniforms.spotlightDirectionFalloff.xyz), 9.9999999392252902907785028219223e-09)), -_438);
-        float _451 = cos(MaterialUniforms.spotlightAttenuationTheta.w * 0.5);
-        float _455 = cos(MaterialUniforms.spotlightPhi.x * 0.5);
-        bool _462;
-        if (_447 < _451)
+        float3 _505 = _493 / float3(_494);
+        float _514 = dot(MaterialUniforms.spotlightDirectionFalloff.xyz * rsqrt(precise::max(dot(MaterialUniforms.spotlightDirectionFalloff.xyz, MaterialUniforms.spotlightDirectionFalloff.xyz), 9.9999999392252902907785028219223e-09)), -_505);
+        float _518 = cos(MaterialUniforms.spotlightAttenuationTheta.w * 0.5);
+        float _522 = cos(MaterialUniforms.spotlightPhi.x * 0.5);
+        bool _529;
+        if (_514 < _518)
         {
-            _462 = _447 > _455;
+            _529 = _514 > _522;
         }
         else
         {
-            _462 = false;
+            _529 = false;
         }
-        float _474;
-        if (_462)
+        float _541;
+        if (_529)
         {
-            _474 = powr(fast::clamp((_447 - _455) / precise::max(_451 - _455, 9.9999999747524270787835121154785e-07), 0.0, 1.0), precise::max(MaterialUniforms.spotlightDirectionFalloff.w, 0.0));
+            _541 = powr(fast::clamp((_514 - _522) / precise::max(_518 - _522, 9.9999999747524270787835121154785e-07), 0.0, 1.0), precise::max(MaterialUniforms.spotlightDirectionFalloff.w, 0.0));
         }
         else
         {
-            _474 = float(_447 >= _451);
+            _541 = float(_514 >= _518);
         }
-        float3 _549;
+        float3 _617;
         do
         {
-            float _495 = fast::clamp(dot(_222, _438), 0.0, 1.0);
-            bool _500;
-            if ((isunordered(_495, 0.0) || _495 > 0.0))
+            float _562 = fast::clamp(dot(_238, _505), 0.0, 1.0);
+            bool _567;
+            if ((isunordered(_562, 0.0) || _562 > 0.0))
             {
-                _500 = _234 <= 0.0;
+                _567 = _250 <= 0.0;
             }
             else
             {
-                _500 = true;
+                _567 = true;
             }
-            if (_500)
+            if (_567)
             {
-                _549 = float3(0.0);
+                _617 = float3(0.0);
                 break;
             }
-            float3 _503 = _230 + _438;
-            float3 _507 = _503 * rsqrt(precise::max(dot(_503, _503), 9.9999999392252902907785028219223e-09));
-            float _509 = fast::clamp(dot(_222, _507), 0.0, 1.0);
-            float _510 = fast::clamp(_122, 0.04500000178813934326171875, 1.0);
-            float _511 = _510 * _510;
-            float _512 = _511 * _511;
-            float _513 = _509 * _509;
-            float _516 = (1.0 - _513) + (_512 * _513);
-            float3 _525 = _232 + (_235 * powr(1.0 - fast::clamp(dot(_230, _507), 0.0, 1.0), 5.0));
-            float _531 = 1.0 - _512;
-            _549 = ((((((float3(1.0) - _525) * _245) * _93.xyz) * float3(0.3183098733425140380859375)) + (_525 * ((_512 / ((3.1415927410125732421875 * _516) * _516)) * (0.5 / precise::max((_495 * sqrt(((_234 * _234) * _531) + _512)) + (_234 * sqrt(((_495 * _495) * _531) + _512)), 9.9999999747524270787835121154785e-07))))) * ((MaterialUniforms.spotlightColorEnabled.xyz * _474) / float3(precise::max((MaterialUniforms.spotlightAttenuationTheta.x + (MaterialUniforms.spotlightAttenuationTheta.y * _427)) + ((MaterialUniforms.spotlightAttenuationTheta.z * _427) * _427), 9.9999999747524270787835121154785e-07)))) * _495;
+            float3 _570 = _246 + _505;
+            float3 _574 = _570 * rsqrt(precise::max(dot(_570, _570), 9.9999999392252902907785028219223e-09));
+            float _576 = fast::clamp(dot(_238, _574), 0.0, 1.0);
+            float _577 = fast::clamp(_138, 0.04500000178813934326171875, 1.0);
+            float _578 = _577 * _577;
+            float _579 = _578 * _578;
+            float _580 = _576 * _576;
+            float _583 = (1.0 - _580) + (_579 * _580);
+            float3 _592 = _248 + (_251 * powr(1.0 - fast::clamp(dot(_246, _574), 0.0, 1.0), 5.0));
+            float _599 = 1.0 - _579;
+            _617 = ((((((float3(1.0) - _592) * (1.0 - _140)) * _109.xyz) * float3(0.3183098733425140380859375)) + (_592 * ((_579 / ((3.1415927410125732421875 * _583) * _583)) * (0.5 / precise::max((_562 * sqrt(((_250 * _250) * _599) + _579)) + (_250 * sqrt(((_562 * _562) * _599) + _579)), 9.9999999747524270787835121154785e-07))))) * ((MaterialUniforms.spotlightColorEnabled.xyz * _541) / float3(precise::max((MaterialUniforms.spotlightAttenuationTheta.x + (MaterialUniforms.spotlightAttenuationTheta.y * _494)) + ((MaterialUniforms.spotlightAttenuationTheta.z * _494) * _494), 9.9999999747524270787835121154785e-07)))) * _562;
             break;
         } while(false);
-        _550 = _549;
+        _618 = _617;
         break;
     } while(false);
-    float3 _558 = MaterialUniforms.emissiveStrength.xyz * precise::max(MaterialUniforms.emissiveStrength.w, 0.0);
-    float3 _568;
+    float3 _626 = MaterialUniforms.emissiveStrength.xyz * precise::max(MaterialUniforms.emissiveStrength.w, 0.0);
+    float3 _636;
     if (MaterialUniforms.mapFlags.w > 0.5)
     {
-        _568 = _558 * emissiveMap.sample(emissiveMapSmplr, in.in_var_TEXCOORD2).xyz;
+        _636 = _626 * emissiveMap.sample(emissiveMapSmplr, in.in_var_TEXCOORD2).xyz;
     }
     else
     {
-        _568 = _558;
+        _636 = _626;
     }
-    float3 _569 = (((_263 + _338) + _414) + _550) + _568;
-    float3 _608;
+    float3 _637 = (((_328 + _404) + _481) + _618) + _636;
+    float3 _676;
     if (MaterialUniforms.metallicRoughness.z > 0.5)
     {
-        _608 = _569;
+        _676 = _637;
     }
     else
     {
-        float3 _576 = fast::clamp(_569, float3(0.0), float3(1.0));
-        float _577 = _576.x;
-        float _586;
-        if (_577 <= 0.003130800090730190277099609375)
+        float3 _644 = fast::clamp(_637, float3(0.0), float3(1.0));
+        float _645 = _644.x;
+        float _654;
+        if (_645 <= 0.003130800090730190277099609375)
         {
-            _586 = _577 * 12.9200000762939453125;
+            _654 = _645 * 12.9200000762939453125;
         }
         else
         {
-            _586 = (1.05499994754791259765625 * powr(_577, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+            _654 = (1.05499994754791259765625 * powr(_645, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
         }
-        float _587 = _576.y;
-        float _596;
-        if (_587 <= 0.003130800090730190277099609375)
+        float _655 = _644.y;
+        float _664;
+        if (_655 <= 0.003130800090730190277099609375)
         {
-            _596 = _587 * 12.9200000762939453125;
+            _664 = _655 * 12.9200000762939453125;
         }
         else
         {
-            _596 = (1.05499994754791259765625 * powr(_587, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+            _664 = (1.05499994754791259765625 * powr(_655, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
         }
-        float _597 = _576.z;
-        float _606;
-        if (_597 <= 0.003130800090730190277099609375)
+        float _665 = _644.z;
+        float _674;
+        if (_665 <= 0.003130800090730190277099609375)
         {
-            _606 = _597 * 12.9200000762939453125;
+            _674 = _665 * 12.9200000762939453125;
         }
         else
         {
-            _606 = (1.05499994754791259765625 * powr(_597, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+            _674 = (1.05499994754791259765625 * powr(_665, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
         }
-        _608 = float3(_586, _596, _606);
+        _676 = float3(_654, _664, _674);
     }
-    out.out_var_SV_Target0 = float4(_608, 1.0);
+    out.out_var_SV_Target0 = float4(_676, 1.0);
     return out;
 }
 

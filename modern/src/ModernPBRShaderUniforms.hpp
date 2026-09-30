@@ -18,6 +18,7 @@ namespace monopoly::engine
         std::array<float, 4> metallicRoughness{};
         std::array<float, 4> emissiveStrength{};
         std::array<float, 4> cameraPosition{};
+        // rgb: ambient/environment intensity; w: specular cubemap enabled (0/1).
         std::array<float, 4> sceneAmbient{};
         std::array<float, 4> boardReflectionColorEnabled{};
         std::array<float, 4> boardReflectionDirection{};

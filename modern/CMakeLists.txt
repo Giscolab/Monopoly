@@ -347,6 +347,7 @@ add_library(
     src/World3DShaderAssets.cpp
     src/World3DPipeline.cpp
     src/World3DRenderer.cpp
+    src/StudioEnvironmentGPU.cpp
     src/BoardLightingController.cpp
     src/World2DRenderer.cpp
     src/LogicalViewport.cpp
@@ -453,6 +454,11 @@ if(BUILD_TESTING)
     add_executable(MonopolySequencePlaybackGPUTests tests/SequencePlaybackGPUTests.cpp)
     target_link_libraries(MonopolySequencePlaybackGPUTests PRIVATE MonopolyGPU3DCore)
     add_test(NAME Monopoly.SequencePlaybackGPU COMMAND MonopolySequencePlaybackGPUTests)
+    add_executable(MonopolyStudioEnvironmentTests tests/StudioEnvironmentTests.cpp)
+    target_link_libraries(MonopolyStudioEnvironmentTests PRIVATE MonopolyGPU3DCore)
+    target_compile_definitions(MonopolyStudioEnvironmentTests PRIVATE
+        MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
+    add_test(NAME Monopoly.StudioEnvironment COMMAND MonopolyStudioEnvironmentTests)
     add_executable(MonopolyModernEnvironmentTests tests/ModernEnvironmentTests.cpp)
     target_link_libraries(MonopolyModernEnvironmentTests PRIVATE MonopolyDataCore)
     add_test(NAME Monopoly.ModernEnvironment COMMAND MonopolyModernEnvironmentTests)
@@ -701,6 +707,15 @@ add_dependencies(MonopolyModern MonopolyRuntimeShaders)
 # the retail HMD fallback untouched.
 set(MONOPOLY_GENERATED_MODERN_ASSET_ROOT
     "${CMAKE_CURRENT_BINARY_DIR}/modern-assets")
+if(Python3_Interpreter_FOUND)
+    add_custom_target(MonopolyGenerateStudioEnvironment
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_studio_environment.py"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/lighting/studio_environment.mstudio"
+        COMMENT "Generating deterministic linear HDR studio reflections and GGX mip levels"
+        VERBATIM
+    )
+endif()
 add_custom_target(MonopolyRuntimeModernAssets
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens"
