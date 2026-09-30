@@ -30,17 +30,28 @@ namespace monopoly::data
             const fastgltf::Primitive& primitive)
         {
             MeshMaterial result;
+            result.model = MeshMaterialModel::MetallicRoughness;
             if (!primitive.materialIndex ||
                 *primitive.materialIndex >= asset.materials.size())
                 return result;
 
-            const auto& factor =
-                asset.materials[*primitive.materialIndex]
-                    .pbrData.baseColorFactor;
+            const auto& material =
+                asset.materials[*primitive.materialIndex];
+            const auto& factor = material.pbrData.baseColorFactor;
 
             for (std::size_t index = 0; index < 4; ++index)
                 result.diffuse[index] =
                     static_cast<float>(factor[index]);
+            result.metallic = static_cast<float>(
+                material.pbrData.metallicFactor);
+            result.roughness = static_cast<float>(
+                material.pbrData.roughnessFactor);
+            for (std::size_t index = 0; index < 3; ++index)
+                result.emissive[index] =
+                    static_cast<float>(material.emissiveFactor[index]);
+            result.emissiveStrength =
+                static_cast<float>(material.emissiveStrength);
+            result.doubleSided = material.doubleSided;
 
             const auto channel = [](float value)
             {

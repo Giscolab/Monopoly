@@ -22,6 +22,7 @@ namespace monopoly::data
         MeshMaterial materialFrom(std::uint32_t raw)
         {
             MeshMaterial result;
+            result.model = MeshMaterialModel::LegacyDiffuse;
             result.rawDiffuse = raw;
             result.diffuse = {
                 static_cast<float>(raw & 0xFFU) / 255.0F,

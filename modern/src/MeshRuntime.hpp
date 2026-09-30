@@ -87,10 +87,22 @@ namespace monopoly::data
         std::array<float, 2> uv{-1.0F, -1.0F};
     };
 
+    enum class MeshMaterialModel : std::uint8_t
+    {
+        LegacyDiffuse,
+        MetallicRoughness
+    };
+
     struct MeshMaterial
     {
+        MeshMaterialModel model{MeshMaterialModel::LegacyDiffuse};
         std::uint32_t rawDiffuse{};
         std::array<float, 4> diffuse{1.0F, 1.0F, 1.0F, 1.0F};
+        float metallic{};
+        float roughness{1.0F};
+        std::array<float, 3> emissive{};
+        float emissiveStrength{1.0F};
+        bool doubleSided{};
     };
 
     struct MeshGroupRuntime

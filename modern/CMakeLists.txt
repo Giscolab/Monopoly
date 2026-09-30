@@ -606,6 +606,50 @@ add_custom_target(MonopolyRuntimeShaders
 )
 add_dependencies(MonopolyModern MonopolyRuntimeShaders)
 
+# Generated Blender assets are optional. Normal builds stage whatever has
+# already been exported under build/modern-assets; an empty directory leaves
+# the retail HMD fallback untouched.
+set(MONOPOLY_GENERATED_MODERN_ASSET_ROOT
+    "${CMAKE_CURRENT_BINARY_DIR}/modern-assets")
+add_custom_target(MonopolyRuntimeModernAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf
+        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/tokens"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/tokens"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens"
+        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/tokens"
+    COMMENT "Staging optional modern GLB assets beside MonopolyModern"
+    VERBATIM
+)
+add_dependencies(MonopolyModern MonopolyRuntimeModernAssets)
+
+set(MONOPOLY_BLENDER_AUTHORING_FILE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pack monopoly blender/Monopoly_Paris_procedural_RECUPERE.blend")
+set(MONOPOLY_BLENDER_EXPORT_SCRIPT
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_monopoly_assets.py")
+find_program(MONOPOLY_BLENDER_EXECUTABLE
+    NAMES blender blender.exe
+    HINTS
+        "C:/Program Files/Blender Foundation/Blender 5.2"
+        "C:/Program Files/Blender Foundation/Blender 5.2 LTS"
+)
+if(MONOPOLY_BLENDER_EXECUTABLE
+    AND EXISTS "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+    AND EXISTS "${MONOPOLY_BLENDER_EXPORT_SCRIPT}")
+    add_custom_target(MonopolyExportModernAssets
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
+            -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            --
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+        COMMENT "Exporting modern Monopoly GLB assets from Blender"
+        VERBATIM
+    )
+endif()
+
 # TARGET_RUNTIME_DLLS is empty on non-DLL platforms and with static SDL.
 # Do not invoke copy_if_different with only a destination in those builds.
 if(WIN32 AND SDL_SHARED)

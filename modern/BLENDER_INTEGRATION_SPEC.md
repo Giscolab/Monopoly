@@ -174,11 +174,34 @@ falls back to HMD when an asset is absent or rejected.
 
 A real runtime startup with the six generated GLBs beside the Debug executable
 successfully decoded all six existing modern token assets: race car, dog,
-top hat, boot, ship and thimble. This proves asset discovery and GLB decoding;
-visual scale/orientation/placement still require in-game qualification.
+top hat, boot, ship and thimble.
 
-Textures, PBR maps and morph targets intentionally remain unsupported in this
-first bridge so they cannot be rendered incorrectly by the legacy Gouraud path.
+The six existing assets now have explicit authoring calibration. Height is
+matched against one representative retail HMD per token; Blender's longitudinal
+X axis is rotated -90 degrees around Y to match the retail Z direction, each GLB
+is grounded to Y=0, and local X/Z offsets reproduce the retail HMD pivot. The
+calibration probe shows essentially identical local centers and identical
+heights for the six replacements without non-uniformly deforming their meshes.
+
+The CMake targets are:
+
+```text
+MonopolyExportModernAssets   # headless Blender -> build/modern-assets/tokens
+MonopolyRuntimeModernAssets  # stage generated GLBs beside MonopolyModern.exe
+```
+
+A normal MonopolyModern build stages already-generated modern assets but does
+not require Blender. Missing GLBs therefore remain a normal HMD fallback case.
+
+The CPU material contract now preserves glTF metallic/roughness, emissive,
+emissive strength and double-sided state in addition to baseColorFactor.
+The currently generated shader binaries still implement the legacy Gouraud
+path, so those PBR values are deliberately not faked in that shader. PBR shader
+generation is the next renderer step. On the current workstation no `dxc`,
+`spirv-cross`, `glslangValidator` or `shadercross` command is installed.
+
+Texture-backed PBR maps and morph targets remain intentionally unsupported in
+the first GLB bridge until their dedicated GPU/animation paths are connected.
 
 ## Material contract
 
