@@ -115,9 +115,9 @@ namespace monopoly::ibar
                 const auto resources = playback.resources();
                 if (!resources) return std::unexpected("IBar runtime text requires resources");
                 const auto id = data::packDataId(data::LegacyGroupId::Main, BaseTags[i]);
-                const auto metadata = resources->banks().metadata(id);
+                const auto metadata = resources->data().metadata(id);
                 if (!metadata) return std::unexpected(metadata.error().detail);
-                const auto bytes = resources->banks().load(id);
+                const auto bytes = resources->data().load(id);
                 if (!bytes) return std::unexpected(bytes.error().detail);
                 const auto base = bases_.resolve(id, metadata->type, *bytes);
                 if (!base) return std::unexpected(base.error().detail);

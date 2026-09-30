@@ -18,7 +18,7 @@ namespace monopoly::sequence
     class SequenceChildSchedule final
     {
     public:
-        // Reads a whole owning CNK sibling list. Use the registry adapter
+        // Reads a whole owning CNK sibling list. Use the DATA source adapter
         // below for direct or indirect children of a particular parent.
         [[nodiscard]] static std::expected<SequenceChildSchedule, ChildScheduleError>
         read(data::SharedDataBytes bytes, data::DataId containingDataId,
@@ -43,7 +43,7 @@ namespace monopoly::sequence
 
     private:
         friend std::expected<SequenceChildSchedule, ChildScheduleError>
-        openSequenceChildSchedule(const data::DataBankRegistry&,
+        openSequenceChildSchedule(const data::DataSource&,
             data::DataId, std::size_t, std::size_t);
         [[nodiscard]] static std::expected<SequenceChildSchedule, ChildScheduleError>
         readChildren(data::LegacyChunkReader reader, data::DataId containingDataId,
@@ -67,7 +67,7 @@ namespace monopoly::sequence
     // Same-item indirect targets retain the source's parent-boundary failure.
     // Only one level is loaded: cross-item cycles are NOT expanded recursively.
     [[nodiscard]] std::expected<SequenceChildSchedule, ChildScheduleError>
-    openSequenceChildSchedule(const data::DataBankRegistry& registry,
+    openSequenceChildSchedule(const data::DataSource& source,
         data::DataId parentDataId, std::size_t parentOffset,
         std::size_t maximumRecords = 65'536);
 }

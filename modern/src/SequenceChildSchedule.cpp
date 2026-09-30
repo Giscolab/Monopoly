@@ -100,10 +100,10 @@ namespace monopoly::sequence
     }
 
     std::expected<SequenceChildSchedule, ChildScheduleError>
-    openSequenceChildSchedule(const data::DataBankRegistry& registry,
+    openSequenceChildSchedule(const data::DataSource& source,
         data::DataId parentDataId, std::size_t parentOffset, std::size_t maximumRecords)
     {
-        auto reader = data::openLegacyChunkReader(registry, parentDataId);
+        auto reader = data::openLegacyChunkReader(source, parentDataId);
         if (!reader) return std::unexpected(ChildScheduleError{ reader.error() });
         const auto seek = reader->seek(parentOffset);
         if (!seek) return std::unexpected(ChildScheduleError{ seek.error() });
@@ -127,7 +127,7 @@ namespace monopoly::sequence
                     data::ChunkErrorCode::PositionOutOfRange, 0,
                     "same-item indirect child list starts outside its parent chunk" } });
             }
-            auto external = data::openLegacyChunkReader(registry, id);
+            auto external = data::openLegacyChunkReader(source, id);
             if (!external) return std::unexpected(ChildScheduleError{ external.error() });
             return SequenceChildSchedule::readChildren(std::move(*external), id, maximumRecords);
         }

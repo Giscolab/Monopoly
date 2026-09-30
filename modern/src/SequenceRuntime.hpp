@@ -62,7 +62,7 @@ namespace monopoly::sequence
     {
     public:
         [[nodiscard]] static std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
-        load(const data::DataBankRegistry& registry, data::DataId id,
+        load(const data::DataSource& source, data::DataId id,
             std::size_t offset = 0, DescriptionLimits limits = {});
         // Runtime loading also applies Monopoly's default PrepareSequenceData:
         // raw assets, or the direct bitmap/sound children of a grouping. As in

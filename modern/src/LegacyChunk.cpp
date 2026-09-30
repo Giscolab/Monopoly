@@ -266,10 +266,10 @@ namespace monopoly::data
 
 
     std::expected<LegacyChunkReader, DataError> openLegacyChunkReader(
-        const DataBankRegistry& registry,
+        const DataSource& source,
         DataId id)
     {
-        auto metadata = registry.metadata(id);
+        auto metadata = source.metadata(id);
 
         if (!metadata)
         {
@@ -287,7 +287,7 @@ namespace monopoly::data
             });
         }
 
-        auto bytes = registry.load(id);
+        auto bytes = source.load(id);
 
         if (!bytes)
         {

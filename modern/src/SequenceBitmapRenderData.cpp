@@ -42,7 +42,7 @@ namespace monopoly::sequence
                 }
             }
 
-            const auto metadata = resources->banks().metadata(instance.contentsDataId);
+            const auto metadata = resources->data().metadata(instance.contentsDataId);
             if (!metadata)
                 return std::unexpected(error(
                     SequenceBitmapRenderDataErrorCode::MetadataFailed,
@@ -54,7 +54,7 @@ namespace monopoly::sequence
                     instance.node, instance.contentsDataId,
                     "2D sequence content is neither LE_DATA_DataBMP nor LE_DATA_DataUAP"));
 
-            const auto bytes = resources->banks().load(instance.contentsDataId);
+            const auto bytes = resources->data().load(instance.contentsDataId);
             if (!bytes)
                 return std::unexpected(error(
                     SequenceBitmapRenderDataErrorCode::LoadFailed,

@@ -521,7 +521,7 @@ namespace monopoly::data
         if (const auto found = assets_.find(id); found != assets_.end())
             return found->second;
 
-        auto source = openLegacyMeshData(resources_->banks(), id);
+        auto source = openLegacyMeshData(resources_->data(), id);
         if (!source)
         {
             auto failure = runtimeError(MeshRuntimeErrorCode::SourceLoadFailed,
@@ -552,7 +552,7 @@ namespace monopoly::data
         if (!resources_)
             return std::unexpected(runtimeError(MeshRuntimeErrorCode::MissingResources,
                 "texture substitution requires an immutable resource snapshot"));
-        auto source = openLegacyMeshData(resources_->banks(), id);
+        auto source = openLegacyMeshData(resources_->data(), id);
         if (!source)
         {
             auto failure = runtimeError(MeshRuntimeErrorCode::SourceLoadFailed,

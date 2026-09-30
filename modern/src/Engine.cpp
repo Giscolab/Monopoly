@@ -926,9 +926,9 @@ namespace monopoly::engine
             const deeds::TemplateResolver resolve = [&](data::DataId id)
                 -> std::expected<std::shared_ptr<const data::BitmapRuntimeAsset>, std::string>
             {
-                const auto metadata = resources->banks().metadata(id);
+                const auto metadata = resources->data().metadata(id);
                 if (!metadata) return std::unexpected(metadata.error().detail);
-                const auto bytes = resources->banks().load(id);
+                const auto bytes = resources->data().load(id);
                 if (!bytes) return std::unexpected(bytes.error().detail);
                 const auto bitmap = templates.resolve(id, metadata->type, *bytes);
                 if (!bitmap) return std::unexpected(bitmap.error().detail);

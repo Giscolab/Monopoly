@@ -658,16 +658,16 @@ namespace monopoly::data
     }
 
     std::expected<LegacyMeshData, MeshDataError> openLegacyMeshData(
-        const DataBankRegistry& registry, DataId id, MeshParseLimits limits)
+        const DataSource& source, DataId id, MeshParseLimits limits)
     {
-        const auto metadata = registry.metadata(id);
+        const auto metadata = source.metadata(id);
         if (!metadata)
             return std::unexpected(MeshDataError{ MeshDataErrorCode::DataLoadFailed,
                 0, "Cannot inspect HMD DAT item", metadata.error() });
         if (metadata->type != LegacyDataType::Hmd)
             return std::unexpected(error(MeshDataErrorCode::TypeMismatch,
                 0, "DAT item is not an unmapped HMD payload"));
-        const auto payload = registry.load(id);
+        const auto payload = source.load(id);
         if (!payload)
             return std::unexpected(MeshDataError{ MeshDataErrorCode::DataLoadFailed,
                 0, "Cannot load HMD DAT item", payload.error() });

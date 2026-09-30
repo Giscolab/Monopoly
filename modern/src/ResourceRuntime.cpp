@@ -59,14 +59,23 @@ namespace monopoly::data
 
     ResourceSnapshot::ResourceSnapshot(
         ResourcePaths paths, ResourceContext context)
-        : paths_(std::move(paths)), context_(context)
+        : paths_(std::move(paths)),
+          context_(context),
+          banks_(std::make_shared<DataBankRegistry>()),
+          data_(banks_)
     {
+    }
+
+
+    const DataSource& ResourceSnapshot::data() const noexcept
+    {
+        return *data_;
     }
 
 
     const DataBankRegistry& ResourceSnapshot::banks() const noexcept
     {
-        return banks_;
+        return *banks_;
     }
 
 
@@ -120,7 +129,7 @@ namespace monopoly::data
                     ": " + error.detail;
                 return std::unexpected(std::move(error));
             }
-            auto archive = staged->banks_.mount(
+            auto archive = staged->banks_->mount(
                 *path, legacyGroupValue(definition.group), options);
             if (!archive)
             {
@@ -146,7 +155,7 @@ namespace monopoly::data
                 return std::unexpected(result.error());
             }
         }
-        auto selected = staged->language_.select(staged->banks_, context.language);
+        auto selected = staged->language_.select(*staged->banks_, context.language);
         if (!selected)
         {
             return std::unexpected(selected.error());

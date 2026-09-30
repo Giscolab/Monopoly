@@ -114,6 +114,6 @@ namespace monopoly::data
     // reader, y compris si la banque est ensuite demontee.
     [[nodiscard]] std::expected<LegacyChunkReader, DataError>
     openLegacyChunkReader(
-        const DataBankRegistry& registry,
+        const DataSource& source,
         DataId id);
 }

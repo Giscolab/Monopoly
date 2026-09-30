@@ -38,8 +38,8 @@ namespace monopoly::statsui
                     continue;
 
                 const auto id = *description.contentsDataId;
-                const auto metadata = resources->banks().metadata(id);
-                const auto bytes = resources->banks().load(id);
+                const auto metadata = resources->data().metadata(id);
+                const auto bytes = resources->data().load(id);
                 if (!metadata || !bytes)
                     return std::unexpected("UDStats Bank bitmap dependency failed");
                 if (metadata->type == data::LegacyDataType::Bitmap)

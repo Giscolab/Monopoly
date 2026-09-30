@@ -177,9 +177,9 @@ namespace monopoly::optionsui
             const auto id = creditsBitmap(resources->context().board);
             if (!credits_ || credits_->dataId != id)
             {
-                const auto metadata = resources->banks().metadata(id);
+                const auto metadata = resources->data().metadata(id);
                 if (!metadata) return std::unexpected(metadata.error().detail);
-                const auto bytes = resources->banks().load(id);
+                const auto bytes = resources->data().load(id);
                 if (!bytes) return std::unexpected(bytes.error().detail);
                 const auto asset = bitmapCache_.resolve(id, metadata->type, *bytes);
                 if (!asset) return std::unexpected(asset.error().detail);

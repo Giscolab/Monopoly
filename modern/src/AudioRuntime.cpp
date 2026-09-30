@@ -171,13 +171,13 @@ namespace monopoly::audio
         if (!ready)
             return ready;
 
-        const auto metadata = resources_->banks().metadata(waveDataId);
+        const auto metadata = resources_->data().metadata(waveDataId);
         if (!metadata)
             return std::unexpected(dataFailure(metadata.error()));
         if (metadata->type != data::LegacyDataType::Wave)
             return std::unexpected("audio DataId is not a legacy Wave item");
 
-        const auto loaded = resources_->banks().load(waveDataId);
+        const auto loaded = resources_->data().load(waveDataId);
         if (!loaded)
             return std::unexpected(dataFailure(loaded.error()));
         if ((*loaded)->empty())

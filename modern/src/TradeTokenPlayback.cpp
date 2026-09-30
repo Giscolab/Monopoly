@@ -36,10 +36,10 @@ namespace monopoly::tradeui
                     continue;
 
                 const auto id = *description.contentsDataId;
-                const auto metadata = resources->banks().metadata(id);
+                const auto metadata = resources->data().metadata(id);
                 if (!metadata)
                     return std::unexpected(metadata.error().detail);
-                const auto bytes = resources->banks().load(id);
+                const auto bytes = resources->data().load(id);
                 if (!bytes)
                     return std::unexpected(bytes.error().detail);
 

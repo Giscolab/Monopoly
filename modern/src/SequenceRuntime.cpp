@@ -459,7 +459,7 @@ namespace monopoly::sequence
     }
 
     std::expected<std::shared_ptr<const SequenceProgram>, RuntimeError>
-    SequenceProgram::load(const data::DataBankRegistry& registry, data::DataId id,
+    SequenceProgram::load(const data::DataSource& source, data::DataId id,
         std::size_t offset, DescriptionLimits limits)
     {
         if (limits.maximumDepth == 0 || limits.maximumDepth > 128 ||
@@ -472,7 +472,7 @@ namespace monopoly::sequence
         // sequence. DataUAP is handled below; MESHX/HMD uses a 3D mesh with
         // the ArtLib basic cadence (60 Hz), StayAtEnd, and modelDataID=DataID.
         // These are the paths used by UDBoard for raw overlays and CurrentBoard.
-        auto metadata = registry.metadata(id);
+        auto metadata = source.metadata(id);
         if (!metadata)
             return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 id, offset, metadata.error()));
@@ -537,7 +537,7 @@ namespace monopoly::sequence
             if (program->descriptions_.size() >= limits.maximumDescriptions)
                 return std::unexpected(error(RuntimeErrorCode::DescriptionLimit,
                     currentId, currentOffset, "description count budget exceeded"));
-            const auto currentMetadata = registry.metadata(currentId);
+            const auto currentMetadata = source.metadata(currentId);
             if (!currentMetadata) return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 currentId, currentOffset, currentMetadata.error()));
             if (currentMetadata->type == data::LegacyDataType::Wave)
@@ -560,7 +560,7 @@ namespace monopoly::sequence
                 visited.emplace(key, Entry{index, false, 1});
                 return index;
             }
-            auto reader = data::openLegacyChunkReader(registry, currentId);
+            auto reader = data::openLegacyChunkReader(source, currentId);
             if (!reader) return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 currentId, currentOffset, reader.error()));
             const auto positioned = reader->seek(currentOffset);
@@ -595,14 +595,14 @@ namespace monopoly::sequence
                     indirect->subsequenceDataId, currentId);
                 if (target != data::EmptyDataId && target != currentId)
                 {
-                    const auto targetMetadata = registry.metadata(target);
+                    const auto targetMetadata = source.metadata(target);
                     if (targetMetadata && targetMetadata->type == data::LegacyDataType::Wave)
                         rawSoundChild = target;
                 }
             }
             auto schedule = [&]() -> std::expected<SequenceChildSchedule, ChildScheduleError> {
                 if (!rawSoundChild)
-                    return openSequenceChildSchedule(registry, currentId, currentOffset,
+                    return openSequenceChildSchedule(source, currentId, currentOffset,
                         limits.maximumReferences - references);
                 auto bytes = std::make_shared<data::DataBytes>();
                 for (const auto word : {0x05000014U, 0U, 15U << 24U, 1U, *rawSoundChild})
@@ -673,11 +673,11 @@ namespace monopoly::sequence
     {
         if (!resources) return std::unexpected(error(RuntimeErrorCode::DataFailure,
             id, offset, "resource snapshot is null"));
-        auto result = load(resources->banks(), id, offset, limits);
+        auto result = load(resources->data(), id, offset, limits);
         if (!result) return result;
         // Created privately above; no mutable alias is exposed to callers.
         auto program = std::const_pointer_cast<SequenceProgram>(*result);
-        const auto metadata = resources->banks().metadata(id);
+        const auto metadata = resources->data().metadata(id);
         if (!metadata)
             return std::unexpected(caused(RuntimeErrorCode::DataFailure,
                 id, offset, metadata.error()));
@@ -688,7 +688,7 @@ namespace monopoly::sequence
             // Absolute EmptyItem is legal; relative tag zero was already
             // resolved with the containing group while building descriptions.
             if (contents == data::EmptyDataId) return {};
-            auto bytes = resources->banks().load(contents);
+            auto bytes = resources->data().load(contents);
             if (!bytes)
             {
                 auto failure = caused(RuntimeErrorCode::DataFailure,
@@ -827,7 +827,7 @@ namespace monopoly::sequence
                 if (def.contentsDataId)
                 {
                     auto loaded =
-                        resources->banks().load(*def.contentsDataId);
+                        resources->data().load(*def.contentsDataId);
                     if (!loaded)
                         return std::unexpected(caused(
                             RuntimeErrorCode::DataFailure,
@@ -885,7 +885,7 @@ namespace monopoly::sequence
             {
                 if (def.contentsDataId)
                 {
-                    auto loaded = resources->banks().load(*def.contentsDataId);
+                    auto loaded = resources->data().load(*def.contentsDataId);
                     if (!loaded)
                         return std::unexpected(caused(
                             RuntimeErrorCode::DataFailure,

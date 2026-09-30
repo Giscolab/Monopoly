@@ -320,6 +320,7 @@ namespace monopoly::data
         case DataErrorCode::UnsortedIndexTable:
             return "UnsortedIndexTable";
         case DataErrorCode::DuplicateIndexKey: return "DuplicateIndexKey";
+        case DataErrorCode::DuplicateDataId: return "DuplicateDataId";
         case DataErrorCode::IndexedItemNotFound:
             return "IndexedItemNotFound";
         case DataErrorCode::TypeMismatch: return "TypeMismatch";
@@ -1406,11 +1407,11 @@ namespace monopoly::data
 
 
     std::expected<DataId, DataError> lookupIndexedDataId(
-        const DataBankRegistry& registry,
+        const DataSource& source,
         DataId indexTableId,
         std::uint32_t indexValue)
     {
-        auto metadata = registry.metadata(indexTableId);
+        auto metadata = source.metadata(indexTableId);
 
         if (!metadata)
         {
@@ -1428,7 +1429,7 @@ namespace monopoly::data
             });
         }
 
-        auto bytes = registry.load(indexTableId);
+        auto bytes = source.load(indexTableId);
 
         if (!bytes)
         {
@@ -1459,12 +1460,12 @@ namespace monopoly::data
     }
 
     std::expected<DataId, DataError> lookupIndexedDataIdLegacy(
-        const DataBankRegistry& registry,
+        const DataSource& source,
         DataId indexTableId,
         std::uint32_t indexValue)
     {
         const auto result = lookupIndexedDataId(
-            registry, indexTableId, indexValue);
+            source, indexTableId, indexValue);
         if (result) return *result;
 
         if (result.error().code == DataErrorCode::TypeMismatch ||

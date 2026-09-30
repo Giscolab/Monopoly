@@ -200,6 +200,6 @@ namespace monopoly::data
     // Keeps the DAT lease after unmount/clear; never treats a MeshX pointer
     // payload as serialized HMD data.
     [[nodiscard]] std::expected<LegacyMeshData, MeshDataError>
-    openLegacyMeshData(const DataBankRegistry& registry, DataId id,
+    openLegacyMeshData(const DataSource& source, DataId id,
         MeshParseLimits limits = {});
 }

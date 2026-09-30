@@ -92,12 +92,12 @@ namespace monopoly::boarddisplay
     {
         const auto resources = playback.resources();
         if (!resources) return std::unexpected("UDBoard backdrop has no resource snapshot");
-        const auto metadata = resources->banks().metadata(id);
+        const auto metadata = resources->data().metadata(id);
         if (!metadata) return std::unexpected(metadata.error().detail);
         if (metadata->type != data::LegacyDataType::Bitmap)
             return std::unexpected("UDBoard backdrop source is not DataBMP");
 
-        const auto bytes = resources->banks().load(id);
+        const auto bytes = resources->data().load(id);
         if (!bytes) return std::unexpected(bytes.error().detail);
         const auto decoded = data::decodeLegacyBitmapRGBA8(**bytes);
         if (!decoded) return std::unexpected(decoded.error().detail);

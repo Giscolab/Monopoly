@@ -148,7 +148,7 @@ namespace monopoly::boarddisplay
             }
             else
             {
-                const auto bytes = playback.resources()->banks().load(desired);
+                const auto bytes = playback.resources()->data().load(desired);
                 if (!bytes) return std::unexpected(bytes.error().detail);
                 const auto metadata = data::inspectLegacyUap(**bytes);
                 if (!metadata) return std::unexpected(metadata.error().detail);

@@ -149,8 +149,8 @@ namespace monopoly::chat
                 if (!std::holds_alternative<data::SequenceBitmapData>(description.record.data) ||
                     !description.contentsDataId) continue;
                 const auto content = *description.contentsDataId;
-                const auto metadata = playback.resources()->banks().metadata(content);
-                const auto bytes = playback.resources()->banks().load(content);
+                const auto metadata = playback.resources()->data().metadata(content);
+                const auto bytes = playback.resources()->data().load(content);
                 if (!metadata || !bytes) return std::unexpected("UDChat border bitmap is unavailable");
                 data::BitmapRuntimeCache decoder;
                 auto asset = decoder.resolve(content, metadata->type, *bytes);

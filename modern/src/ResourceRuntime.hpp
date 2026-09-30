@@ -30,6 +30,11 @@ namespace monopoly::data
     class ResourceSnapshot final
     {
     public:
+        // Format-agnostic DATA access for gameplay/runtime consumers.
+        [[nodiscard]] const DataSource& data() const noexcept;
+
+        // Legacy archive registry stays exposed only for archive-specific
+        // lifecycle/language compatibility while native backends are introduced.
         [[nodiscard]] const DataBankRegistry& banks() const noexcept;
         [[nodiscard]] std::shared_ptr<const LanguageSnapshot>
         language() const noexcept;
@@ -42,7 +47,8 @@ namespace monopoly::data
 
         ResourcePaths paths_;
         ResourceContext context_;
-        DataBankRegistry banks_;
+        std::shared_ptr<DataBankRegistry> banks_;
+        std::shared_ptr<const DataSource> data_;
         LanguageService language_;
     };
 

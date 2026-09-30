@@ -77,6 +77,7 @@ namespace monopoly::data
         InvalidIndexTable,
         UnsortedIndexTable,
         DuplicateIndexKey,
+        DuplicateDataId,
         IndexedItemNotFound,
         TypeMismatch,
         InvalidUtf16,
@@ -259,7 +260,41 @@ namespace monopoly::data
     };
 
 
-    class DataBankRegistry final
+    // Read-only logical DATA surface consumed by the modern runtime.
+    // Legacy DAT banks are one backend; future native asset providers can
+    // implement the same contract without exposing archive/container details.
+    class DataSource
+    {
+    public:
+        virtual ~DataSource() = default;
+
+        [[nodiscard]] virtual std::expected<ArchiveItemMetadata, DataError>
+        metadata(DataId id) const = 0;
+
+        [[nodiscard]] virtual std::expected<LegacyDataType, DataError>
+        initialDataType(DataId id) const = 0;
+
+        [[nodiscard]] virtual std::expected<std::uint32_t, DataError>
+        initialSize(DataId id) const = 0;
+
+        [[nodiscard]] virtual std::expected<std::uint32_t, DataError>
+        loadedRawSize(DataId id) const = 0;
+
+        [[nodiscard]] virtual std::expected<SharedDataBytes, DataError>
+        load(DataId id) const = 0;
+
+        [[nodiscard]] virtual std::expected<std::size_t, DataError>
+        readRaw(
+            DataId id,
+            std::span<std::byte> destination,
+            std::uint32_t startOffset = 0) const = 0;
+
+        [[nodiscard]] virtual std::expected<bool, DataError>
+        isLoaded(DataId id) const = 0;
+    };
+
+
+    class DataBankRegistry final : public DataSource
     {
     public:
         [[nodiscard]] std::expected<
@@ -276,28 +311,28 @@ namespace monopoly::data
         archive(std::uint16_t group) const;
 
         [[nodiscard]] std::expected<ArchiveItemMetadata, DataError>
-        metadata(DataId id) const;
+        metadata(DataId id) const override;
 
         [[nodiscard]] std::expected<LegacyDataType, DataError>
-        initialDataType(DataId id) const;
+        initialDataType(DataId id) const override;
 
         [[nodiscard]] std::expected<std::uint32_t, DataError>
-        initialSize(DataId id) const;
+        initialSize(DataId id) const override;
 
         [[nodiscard]] std::expected<std::uint32_t, DataError>
-        loadedRawSize(DataId id) const;
+        loadedRawSize(DataId id) const override;
 
         [[nodiscard]] std::expected<SharedDataBytes, DataError>
-        load(DataId id) const;
+        load(DataId id) const override;
 
         [[nodiscard]] std::expected<std::size_t, DataError>
         readRaw(
             DataId id,
             std::span<std::byte> destination,
-            std::uint32_t startOffset = 0) const;
+            std::uint32_t startOffset = 0) const override;
 
         [[nodiscard]] std::expected<bool, DataError>
-        isLoaded(DataId id) const;
+        isLoaded(DataId id) const override;
 
         // LE_DATA_Unload at registry scope. Already-unloaded items are a
         // successful no-op. Existing SharedDataBytes leases remain valid;
@@ -353,7 +388,7 @@ namespace monopoly::data
 
     [[nodiscard]] std::expected<DataId, DataError>
     lookupIndexedDataId(
-        const DataBankRegistry& registry,
+        const DataSource& source,
         DataId indexTableId,
         std::uint32_t indexValue);
 
@@ -362,7 +397,7 @@ namespace monopoly::data
     // I/O, archive and corruption failures remain typed errors.
     [[nodiscard]] std::expected<DataId, DataError>
     lookupIndexedDataIdLegacy(
-        const DataBankRegistry& registry,
+        const DataSource& source,
         DataId indexTableId,
         std::uint32_t indexValue);
 }
