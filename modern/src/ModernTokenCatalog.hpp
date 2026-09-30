@@ -33,4 +33,10 @@ namespace monopoly::data
 
     [[nodiscard]] const ModernTokenDefinition*
     modernTokenForLegacyMesh(DataId id) noexcept;
+
+    // One known HMD DataId per retail token, used only to trigger optional
+    // modern-asset preloading. Runtime animation variants still route through
+    // tokenForLegacyMesh().
+    [[nodiscard]] DataId
+    representativeLegacyMesh(std::uint8_t token) noexcept;
 }

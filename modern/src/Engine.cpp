@@ -15,6 +15,8 @@
 #include "AIUtility.hpp"
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
+#include "ModernGltfMesh.hpp"
+#include "ModernTokenCatalog.hpp"
 #include "Timers.hpp"
 #include "UIMessages.hpp"
 #include "ExtendedInitialization.hpp"
@@ -102,6 +104,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -137,6 +140,11 @@ namespace monopoly::engine
         std::vector<sequence::SequenceNodeId> activeSequenceSounds;
         bool audioDisabled{};
         std::unordered_set<std::string> reportedAudioFailures;
+        std::array<
+            std::shared_ptr<const data::MeshRenderData>,
+            data::ModernTokenCount> modernTokenMeshes{};
+        std::array<bool, data::ModernTokenCount> modernTokenAttempted{};
+        std::unordered_set<std::string> reportedModernAssetFailures;
         bool tokenVoiceQueueLockHeld{};
         std::optional<std::uint8_t> activePieceMoveToken;
         std::optional<World3DRenderer> worldRenderer;
@@ -967,13 +975,106 @@ namespace monopoly::engine
         }
     }
 
+    namespace
+    {
+        [[nodiscard]] data::ModernMeshResolver
+        modernTokenMeshResolver()
+        {
+            return [](data::DataId id)
+                -> std::expected<
+                    std::optional<std::shared_ptr<const data::MeshRenderData>>,
+                    data::MeshRuntimeError>
+            {
+                const auto* definition =
+                    data::modernTokenForLegacyMesh(id);
+                if (!definition)
+                    return std::optional<
+                        std::shared_ptr<const data::MeshRenderData>>{};
+
+                const auto token =
+                    static_cast<std::size_t>(definition->token);
+                if (modernTokenAttempted[token])
+                {
+                    if (modernTokenMeshes[token])
+                        return std::optional{
+                            modernTokenMeshes[token]};
+                    return std::optional<
+                        std::shared_ptr<const data::MeshRenderData>>{};
+                }
+
+                modernTokenAttempted[token] = true;
+                const char* basePath = SDL_GetBasePath();
+                if (!basePath || *basePath == '\0')
+                    return std::optional<
+                        std::shared_ptr<const data::MeshRenderData>>{};
+
+                const auto path =
+                    std::filesystem::path(basePath) /
+                    std::filesystem::path(definition->relativeGlbPath);
+                std::error_code filesystemError;
+                if (!std::filesystem::is_regular_file(
+                        path, filesystemError))
+                    return std::optional<
+                        std::shared_ptr<const data::MeshRenderData>>{};
+
+                auto loaded = data::loadModernGltfMesh(path);
+                if (!loaded)
+                {
+                    std::string diagnostic =
+                        "Modern token " +
+                        std::string(definition->slug) +
+                        " rejected: " +
+                        loaded.error().detail;
+                    if (reportedModernAssetFailures.emplace(
+                            diagnostic).second)
+                        std::cerr << diagnostic
+                                  << " - using retail HMD fallback.\n";
+                    return std::optional<
+                        std::shared_ptr<const data::MeshRenderData>>{};
+                }
+
+                modernTokenMeshes[token] = std::move(*loaded);
+                std::cerr << "Modern token asset: "
+                          << definition->slug << " <- "
+                          << path.string() << '\n';
+                return std::optional{
+                    modernTokenMeshes[token]};
+            };
+        }
+
+
+        void resetModernTokenMeshes() noexcept
+        {
+            modernTokenMeshes = {};
+            modernTokenAttempted = {};
+            reportedModernAssetFailures.clear();
+        }
+    }
+
+
     SequencePlayback* sequencePlayback()
     {
         if (!gpuDevice) return nullptr;
         if (!playback)
             if (auto resources = startup::resources())
             {
-                playback = std::make_unique<SequencePlayback>(std::move(resources));
+                auto modernResolver = modernTokenMeshResolver();
+                // UDPieces.cpp preloads the retail token HMD corpus. Mirror
+                // that intent for optional modern token GLBs: assets already
+                // present beside the executable are decoded once up front.
+                for (const auto& definition :
+                    data::modernTokenDefinitions())
+                {
+                    const auto probe =
+                        data::representativeLegacyMesh(
+                            definition.token);
+                    if (probe != data::EmptyDataId)
+                        (void)modernResolver(probe);
+                }
+
+                playback = std::make_unique<SequencePlayback>(
+                    std::move(resources),
+                    std::move(modernResolver));
                 europeanDeedSelection.reset();
             }
         return playback.get();
@@ -1078,6 +1179,7 @@ namespace monopoly::engine
             resetPresentationOwners();
             sequenceVideoRuntime.reset();
             playback.reset();
+            resetModernTokenMeshes();
             // The renderer survives the menu transition; the old scene does not.
             if (worldRenderer)
                 if (auto* cache = worldRenderer->meshCache()) cache->clear();
@@ -2518,6 +2620,7 @@ namespace monopoly::engine
         fontDisabled = false;
         sequenceVideoRuntime.reset();
         playback.reset();
+        resetModernTokenMeshes();
         activeBoardSequence.reset();
         activeWorldCamera.reset();
         overlayRenderer.reset();

@@ -79,4 +79,25 @@ namespace monopoly::data
         const auto token = tokenForLegacyMesh(id);
         return token ? modernTokenDefinition(*token) : nullptr;
     }
+
+
+    DataId representativeLegacyMesh(std::uint8_t token) noexcept
+    {
+        constexpr std::array<DataTag, ModernTokenCount> tags{{
+            0x0023, // cannon
+            0x0032, // race car
+            0x0038, // dog
+            0x008D, // top hat
+            0x00AD, // iron
+            0x0094, // horse
+            0x00BF, // boot
+            0x0018, // ship
+            0x00CC, // thimble
+            0x000E, // wheelbarrow
+            0x0006  // moneybag
+        }};
+        return token < tags.size()
+            ? packDataId(LegacyGroupId::ThreeD, tags[token])
+            : EmptyDataId;
+    }
 }

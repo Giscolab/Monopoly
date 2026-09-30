@@ -14,6 +14,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
 - Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les consommateurs DATA passent désormais par une interface logique `DataSource` : les DAT sont le backend de repli, avec surcharges par `DataId` et manifestes de payloads hors archive. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
 - Présentation moderne : plein écran bureau par défaut, modes fenêtré/exclusif, 1080p/1440p/4K selon le mode d’affichage, VSync/Mailbox/Immediate, deux frames GPU en vol, F11, télémétrie résolution/FPS et canevas 3D 800x450 16:9 indépendant de l’UI 800x600. Voir [présentation](PRESENTATION.md).
+- Assets Blender/glTF : export headless déterministe des six pions actuellement présents, loader GLB statique basé sur `fastgltf v0.9.0`, catalogue HMD→pion et résolution moderne avec fallback HMD. Les six GLB sont décodés au démarrage lorsqu’ils sont installés ; PBR, textures, morph targets et qualification visuelle restent à faire. Voir [contrat Blender/glTF](BLENDER_INTEGRATION_SPEC.md).
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
@@ -37,7 +38,7 @@ Ces points remplacent les anciennes mentions vagues « partiel » ou « futur »
 | A04 | LANG / FONTS / GRAFIX | 96 DPI d’origine raccordés ; formatage, UTF-16, métriques et clipping encore à comparer. |
 | A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Le LRU des blocs DAT et la libération des bitmaps/meshes CPU et GPU sont raccordés ; les consommateurs runtime ne dépendent plus directement du registre DAT et peuvent recevoir des payloads logiques hors archive avec fallback retail. Les scènes actives et substitutions de textures restent possédées. Le décodage des formats modernes natifs et le retrait complet des banques retail restent à poursuivre. |
 | A06 | Séquenceur | Préchargement, attributs après enfants, sélection et persistance des tweekers, événements de fin et callback souris consommé sont raccordés. Labels et autres usages C++ ou DAT restent à comparer. Model est le type 4, Preloader le type 8 ; le renderer source actif n’accepte pas Model. L’absence d’appel C++ seule n’exclut pas un usage par données. |
-| A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. |
+| A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. Le premier backend GLB statique et le fallback par pion sont raccordés ; PBR, textures, morph targets, calibration d’échelle/orientation et intégration du plateau Blender restent ouverts. |
 
 MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint/UIMG0/ground/envmap sont commentés dans `hmdload.cpp`. Le chemin `NewMesh` alternatif n’est pas celui sélectionné par les appelants actifs. Ces éléments ne sont pas des tâches actives sans nouvelle preuve contraire. Les sept modules exclus et leurs justifications figurent dans la matrice.
 
@@ -89,7 +90,7 @@ Les commits `e956f30`, `bfefa14` et `bda7326` modernisent la présentation sans 
 
 Validation de référence : **140/140 suites CTest passées** — code `7aab3c0`, Windows/MSVC Debug, 27 septembre 2026.
 
-Les commits DATA `10ca017..c1c5cdc` ainsi que la présentation `e956f30..bda7326` ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Aucune nouvelle campagne CTest n’a été lancée pour ces lots ; la référence 140/140 reste donc `7aab3c0`.
+Les commits DATA `10ca017..c1c5cdc`, la présentation `e956f30..bda7326`, l’audio GSM610 et le premier pont Blender/GLB ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Un lancement avec les DAT retail et les six GLB exportés a confirmé leur découverte et leur décodage. Aucune nouvelle campagne CTest n’a été lancée pour ces lots ; la référence 140/140 reste donc `7aab3c0`.
 
 Application compilée ; CTest global réussi en 8,25 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios humains/IA et TCP, les refus d’actions, les cartes et faillites, les régressions de séquences et de caches, ainsi que les lectures de pixels GPU ; elle ne remplace pas Q01–Q05.
 

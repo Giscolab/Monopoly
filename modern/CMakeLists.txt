@@ -179,7 +179,12 @@ FetchContent_Declare(
     GIT_TAG v0.9.0
     GIT_SHALLOW TRUE
 )
+# SDL enables shared-library builds globally. Keep the glTF parser private and
+# static so MonopolyModern does not gain another runtime DLL dependency.
+set(MONOPOLY_SAVED_BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS}")
+set(BUILD_SHARED_LIBS OFF)
 FetchContent_MakeAvailable(fastgltf)
+set(BUILD_SHARED_LIBS "${MONOPOLY_SAVED_BUILD_SHARED_LIBS}")
 
 # ArtLib voice chat uses Microsoft GSM 6.10 WAV #49 framing. The classic
 # Degener/Bormann libgsm implementation exposes compatible WAV49 packing;
@@ -255,6 +260,7 @@ add_library(
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
+    src/ModernGltfMesh.cpp
     src/ModernTokenCatalog.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
@@ -283,6 +289,7 @@ target_link_libraries(
     MonopolyDataCore
     PUBLIC
     ${MONOPOLY_ZLIB_TARGET}
+    fastgltf::fastgltf
 )
 
 if(MSVC)

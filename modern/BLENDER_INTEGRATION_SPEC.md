@@ -159,6 +159,27 @@ The existing `MeshRenderData` is the renderer-facing geometry contract:
 The GLB path should produce an equivalent modern render asset without converting
 the GLB back into HMD or DAT.
 
+## Static GLB implementation status — 30 September 2026
+
+The static bridge is now implemented with pinned `fastgltf v0.9.0`, linked
+statically into `MonopolyDataCore`.
+
+`ModernGltfMesh` currently decodes embedded GLB triangle geometry into
+`MeshRenderData` with node transforms, POSITION, NORMAL, optional TEXCOORD_0,
+indices, bounds and baseColorFactor. Allocation budgets reuse `MeshRuntimeLimits`.
+
+`ModernTokenCatalog` maps the complete retail HMD families back to their
+logical token index. `MeshRuntimeCache` asks the modern resolver first and
+falls back to HMD when an asset is absent or rejected.
+
+A real runtime startup with the six generated GLBs beside the Debug executable
+successfully decoded all six existing modern token assets: race car, dog,
+top hat, boot, ship and thimble. This proves asset discovery and GLB decoding;
+visual scale/orientation/placement still require in-game qualification.
+
+Textures, PBR maps and morph targets intentionally remain unsupported in this
+first bridge so they cannot be rendered incorrectly by the legacy Gouraud path.
+
 ## Material contract
 
 The legacy path currently exposes diffuse material + optional texture. Modern GLB
