@@ -4,8 +4,13 @@
 
 namespace monopoly::logicalviewport
 {
+    // The legacy 2D/UI contract remains 4:3. The historical 3D viewport is
+    // independently 800x450 (16:9) and can therefore use the full modern
+    // presentation surface without stretching the UI.
     inline constexpr double LogicalWidth = 800.0;
     inline constexpr double LogicalHeight = 600.0;
+    inline constexpr double World3DWidth = 800.0;
+    inline constexpr double World3DHeight = 450.0;
 
     struct Transform
     {
@@ -44,6 +49,12 @@ namespace monopoly::logicalviewport
     // preserving its aspect ratio. Any unused area forms centered letterbox
     // or pillarbox bars. A non-positive extent produces an invalid transform.
     [[nodiscard]] Transform makeTransform(
+        int targetWidth,
+        int targetHeight
+    ) noexcept;
+
+    // Fits the historical 16:9 3D canvas independently of the 4:3 UI.
+    [[nodiscard]] Transform makeWorld3DTransform(
         int targetWidth,
         int targetHeight
     ) noexcept;

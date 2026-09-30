@@ -1,6 +1,7 @@
 #include "Application.hpp"
 #include "AIMessageIngress.hpp"
 #include "Engine.hpp"
+#include "Display.hpp"
 #include "SequencePlayback.hpp"
 #include "Game.hpp"
 #include "LogicalViewport.hpp"
@@ -25,8 +26,25 @@
 
 namespace
 {
-    [[nodiscard]] std::optional<
-        monopoly::logicalviewport::LogicalPoint>
+    struct MouseLogicalMapping
+    {
+        monopoly::logicalviewport::LogicalPoint point;
+        double scale{};
+    };
+
+
+    [[nodiscard]] bool contains(
+        const monopoly::logicalviewport::PixelRect& rect,
+        double x,
+        double y) noexcept
+    {
+        return x >= rect.x && y >= rect.y &&
+            x < rect.x + rect.width &&
+            y < rect.y + rect.height;
+    }
+
+
+    [[nodiscard]] std::optional<MouseLogicalMapping>
     mouseToLogical(
         SDL_Window* window,
         float x,
@@ -34,17 +52,41 @@ namespace
     {
         int width = 0;
         int height = 0;
-
         if (!SDL_GetWindowSize(window, &width, &height))
-        {
             return std::nullopt;
+
+        const auto windowX = static_cast<double>(x);
+        const auto windowY = static_cast<double>(y);
+        const auto& displayState = monopoly::display::stateReadOnly();
+
+        if (displayState.viewportInUse != monopoly::display::Viewport3D::Off &&
+            monopoly::display::isBoardVisible(displayState.desired2DView))
+        {
+            const auto worldTransform =
+                monopoly::logicalviewport::makeWorld3DTransform(width, height);
+            const auto viewport =
+                monopoly::display::worldViewport(displayState.viewportInUse);
+            const auto pixels = monopoly::logicalviewport::logicalToPixelRect(
+                worldTransform,
+                {static_cast<double>(viewport.left),
+                 static_cast<double>(viewport.top),
+                 static_cast<double>(viewport.right - viewport.left),
+                 static_cast<double>(viewport.bottom - viewport.top)});
+
+            if (contains(pixels, windowX, windowY))
+                if (const auto point =
+                        monopoly::logicalviewport::windowToLogical(
+                            worldTransform, windowX, windowY))
+                    return MouseLogicalMapping{*point, worldTransform.scale};
         }
 
-        return monopoly::logicalviewport::windowToLogical(
-            monopoly::logicalviewport::makeTransform(width, height),
-            static_cast<double>(x),
-            static_cast<double>(y)
-        );
+        const auto uiTransform =
+            monopoly::logicalviewport::makeTransform(width, height);
+        if (const auto point = monopoly::logicalviewport::windowToLogical(
+                uiTransform, windowX, windowY))
+            return MouseLogicalMapping{*point, uiTransform.scale};
+
+        return std::nullopt;
     }
 
 
@@ -102,7 +144,8 @@ namespace
         }
 
         std::array<std::int32_t, 2> worldPoint{
-            static_cast<std::int32_t>(point->x), static_cast<std::int32_t>(point->y)};
+            static_cast<std::int32_t>(point->point.x),
+            static_cast<std::int32_t>(point->point.y)};
         const auto* session = monopoly::engine::sequencePlayback();
         if (session)
             worldPoint = monopoly::engine::SequenceWorld2DSlot::transformPoint(
@@ -111,20 +154,14 @@ namespace
         const auto previousPosition = monopoly::mouse::stateReadOnly();
         monopoly::mouse::updatePosition(worldPoint[0], worldPoint[1], true);
 
-        int width = 0;
-        int height = 0;
         std::int64_t logicalDeltaX = 0;
         std::int64_t logicalDeltaY = 0;
-        if (SDL_GetWindowSize(window, &width, &height))
+        if (point->scale > 0.0)
         {
-            const auto transform = monopoly::logicalviewport::makeTransform(width, height);
-            if (transform.valid())
-            {
-                logicalDeltaX = static_cast<std::int64_t>(
-                    std::lround(static_cast<double>(deltaX) / transform.scale));
-                logicalDeltaY = static_cast<std::int64_t>(
-                    std::lround(static_cast<double>(deltaY) / transform.scale));
-            }
+            logicalDeltaX = static_cast<std::int64_t>(
+                std::lround(static_cast<double>(deltaX) / point->scale));
+            logicalDeltaY = static_cast<std::int64_t>(
+                std::lround(static_cast<double>(deltaY) / point->scale));
         }
         if (session)
         {

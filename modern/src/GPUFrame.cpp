@@ -43,7 +43,7 @@ namespace monopoly::engine::gpuframe
                 World3DRendererErrorCode::InvalidTargetSize,
                 "World3D target exceeds logical viewport range", {}, {}});
         const auto rect = world.view()->viewport;
-        const auto transform = logicalviewport::makeTransform(
+        const auto transform = logicalviewport::makeWorld3DTransform(
             static_cast<int>(width), static_cast<int>(height));
         const auto pixels = logicalviewport::logicalToPixelRect(transform,
             {static_cast<double>(rect.left), static_cast<double>(rect.top),
@@ -170,7 +170,7 @@ namespace monopoly::engine::gpuframe
                         std::numeric_limits<int>::max()))
                 {
                     const auto transform =
-                        logicalviewport::makeTransform(
+                        logicalviewport::makeWorld3DTransform(
                             static_cast<int>(width),
                             static_cast<int>(height)
                         );

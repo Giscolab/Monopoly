@@ -18,41 +18,58 @@ namespace monopoly::logicalviewport
             pixelHeight > 0.0;
     }
 
+    namespace
+    {
+        Transform fitCanvas(
+            int targetWidth,
+            int targetHeight,
+            double logicalWidth,
+            double logicalHeight) noexcept
+        {
+            if (targetWidth <= 0 || targetHeight <= 0 ||
+                logicalWidth <= 0.0 || logicalHeight <= 0.0)
+                return {};
+
+            const double width = static_cast<double>(targetWidth);
+            const double height = static_cast<double>(targetHeight);
+            const double scale = std::min(
+                width / logicalWidth,
+                height / logicalHeight);
+            const double pixelWidth = logicalWidth * scale;
+            const double pixelHeight = logicalHeight * scale;
+
+            return {
+                scale,
+                (width - pixelWidth) / 2.0,
+                (height - pixelHeight) / 2.0,
+                pixelWidth,
+                pixelHeight
+            };
+        }
+    }
+
+
     Transform makeTransform(
         int targetWidth,
         int targetHeight) noexcept
     {
-        if (targetWidth <= 0 || targetHeight <= 0)
-        {
-            return {};
-        }
+        return fitCanvas(
+            targetWidth,
+            targetHeight,
+            LogicalWidth,
+            LogicalHeight);
+    }
 
-        const double width =
-            static_cast<double>(targetWidth);
 
-        const double height =
-            static_cast<double>(targetHeight);
-
-        const double scale =
-            std::min(
-                width / LogicalWidth,
-                height / LogicalHeight
-            );
-
-        const double pixelWidth =
-            LogicalWidth * scale;
-
-        const double pixelHeight =
-            LogicalHeight * scale;
-
-        return
-        {
-            scale,
-            (width - pixelWidth) / 2.0,
-            (height - pixelHeight) / 2.0,
-            pixelWidth,
-            pixelHeight
-        };
+    Transform makeWorld3DTransform(
+        int targetWidth,
+        int targetHeight) noexcept
+    {
+        return fitCanvas(
+            targetWidth,
+            targetHeight,
+            World3DWidth,
+            World3DHeight);
     }
 
     std::optional<LogicalPoint> windowToLogical(
