@@ -1,0 +1,79 @@
+# Présentation moderne
+
+Le runtime conserve deux espaces logiques distincts :
+
+- UI/2D historique : 800x600, pour préserver les coordonnées et les écrans retail.
+- Monde 3D historique : 800x450, donc déjà 16:9.
+
+Le rendu 3D est maintenant projeté indépendamment sur la surface moderne.
+Sur un écran 16:9, le viewport 3D principal peut donc remplir la présentation
+sans étirer l'UI 4:3. Les viewports Status et Trade gardent leurs proportions
+historiques relatives dans ce canevas 16:9.
+
+## Mode de fenêtre
+
+Le mode par défaut est le plein écran sans bordure à la résolution du bureau.
+
+Options disponibles :
+
+```powershell
+.\MonopolyModern.exe --windowed
+.\MonopolyModern.exe --windowed --resolution 1920x1080
+.\MonopolyModern.exe --exclusive-fullscreen --resolution 2560x1440
+.\MonopolyModern.exe --exclusive-fullscreen --resolution 3840x2160
+```
+
+`--fullscreen` demande explicitement le plein écran sans bordure.
+`--resolution WIDTHxHEIGHT` configure la fenêtre ou le mode exclusif.
+En plein écran sans bordure, la résolution du bureau reste la référence.
+
+F11 bascule entre le plein écran sans bordure et la taille de fenêtre configurée.
+
+## Présentation GPU
+
+Le swapchain SDL_GPU est configuré explicitement en SDR avec deux frames
+maximum en vol. Le mode par défaut est VSync :
+
+```powershell
+.\MonopolyModern.exe --present-mode vsync
+.\MonopolyModern.exe --present-mode mailbox
+.\MonopolyModern.exe --present-mode immediate
+```
+
+Si Mailbox ou Immediate n'est pas pris en charge par le GPU/fenêtre,
+le runtime revient à VSync au lieu d'échouer.
+
+Le moteur de jeu conserve son horloge fixe historique de 60 Hz via
+`std::chrono::steady_clock`. Le rythme de rendu est indépendant :
+un écran 120/144 Hz peut présenter davantage de frames sans accélérer
+la simulation.
+
+## Mesure réelle
+
+Le titre de la fenêtre affiche environ une fois par seconde :
+
+```text
+Monopoly Modern - 1920x1080 - 60.0 FPS
+```
+
+La résolution affichée est la taille physique en pixels de la fenêtre/surface,
+pas le canevas logique 800x600. Le FPS est le nombre de frames GPU soumises
+par seconde ; il sert au diagnostic de performance, pas à une promesse
+indépendante du matériel.
+
+## Coordonnées souris
+
+Quand un viewport 3D est actif, les événements situés dans sa zone visible
+sont remappés avec le canevas 800x450 16:9. En dehors du viewport 3D,
+les écrans et contrôles restent remappés avec le canevas UI 800x600.
+
+Cette séparation évite de déformer les écrans historiques tout en préparant
+le plateau et les futurs assets Blender/glTF à une présentation 1080p,
+1440p ou 4K.
+
+## Suite
+
+Cette étape modernise la présentation, pas encore le matériau visuel.
+Le pipeline 3D actuel reste compatible avec les ressources HMD/DAT pendant
+la transition. Les prochaines couches prévues sont l'audio de jeu, puis
+l'import glTF/GLB et l'évolution du rendu des matériaux.

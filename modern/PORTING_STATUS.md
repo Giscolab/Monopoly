@@ -13,6 +13,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 - **GIS-8** : capture SDL3, PCM 11025 Hz/8-bit/mono, GSM 6.10 WAV49, DAT1/DATN, playback et transport TCP de voix. Les sessions de jeu C01 ont leur admission, ownership, routage et retour local ; le scénario intégré TCP est validé localement au code `cf1ba45`, voir [sessions TCP](NETWORK_GAME.md). La qualification entre machines et du matériel reste ouverte.
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
 - Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les consommateurs DATA passent désormais par une interface logique `DataSource` : les DAT sont le backend de repli, avec surcharges par `DataId` et manifestes de payloads hors archive. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
+- Présentation moderne : plein écran bureau par défaut, modes fenêtré/exclusif, 1080p/1440p/4K selon le mode d’affichage, VSync/Mailbox/Immediate, deux frames GPU en vol, F11, télémétrie résolution/FPS et canevas 3D 800x450 16:9 indépendant de l’UI 800x600. Voir [présentation](PRESENTATION.md).
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
@@ -82,11 +83,13 @@ Le commit `7aab3c0` rétablit la décision IBar après les échanges pendant le 
 
 Les commits `10ca017`, `2b46b1d`, `18bbf2a` et `c1c5cdc` ouvrent ensuite la migration des ressources : interface `DataSource` indépendante du conteneur, fallback DAT par `LayeredDataSource`, catalogue LANG routé par la même source logique, puis chargement optionnel de payloads hors archive via `--data-overrides`. Les DAT restent le fallback requis tant que les formats natifs modernes ne couvrent pas tous les contrats.
 
+Les commits `e956f30`, `bfefa14` et `bda7326` modernisent la présentation sans toucher aux règles : configuration plein écran/résolution/swapchain, mapping 3D natif 16:9 avec entrée souris correspondante, F11 et télémétrie FPS/résolution. Le canevas UI 800x600 reste isolé pour préserver les écrans retail pendant leur future modernisation.
+
 ## Validation de référence
 
 Validation de référence : **140/140 suites CTest passées** — code `7aab3c0`, Windows/MSVC Debug, 27 septembre 2026.
 
-Les commits DATA `10ca017..c1c5cdc` ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Aucune nouvelle campagne CTest n’a été lancée pour ce lot ; la référence 140/140 reste donc `7aab3c0`.
+Les commits DATA `10ca017..c1c5cdc` ainsi que la présentation `e956f30..bda7326` ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Aucune nouvelle campagne CTest n’a été lancée pour ces lots ; la référence 140/140 reste donc `7aab3c0`.
 
 Application compilée ; CTest global réussi en 8,25 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios humains/IA et TCP, les refus d’actions, les cartes et faillites, les régressions de séquences et de caches, ainsi que les lectures de pixels GPU ; elle ne remplace pas Q01–Q05.
 
