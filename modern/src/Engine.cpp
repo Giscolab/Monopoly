@@ -108,11 +108,12 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 namespace monopoly::engine
 {
-    void disableAudioPlayback(std::string_view context,
+    void handleAudioPlaybackFailure(std::string_view context,
         const std::string& error) noexcept;
 
     namespace
@@ -135,6 +136,7 @@ namespace monopoly::engine
         udsound::Runtime monopolySoundRuntime;
         std::vector<sequence::SequenceNodeId> activeSequenceSounds;
         bool audioDisabled{};
+        std::unordered_set<std::string> reportedAudioFailures;
         bool tokenVoiceQueueLockHeld{};
         std::optional<std::uint8_t> activePieceMoveToken;
         std::optional<World3DRenderer> worldRenderer;
@@ -598,7 +600,7 @@ namespace monopoly::engine
                 static_cast<std::uint32_t>(std::rand()));
             if (!played)
             {
-                disableAudioPlayback("Token voice disabled audio", played.error());
+                handleAudioPlaybackFailure("Token voice disabled audio", played.error());
                 return {};
             }
             if (watchAfterStart && played->started)
@@ -606,7 +608,7 @@ namespace monopoly::engine
             auto watched = monopolySoundRuntime.syncTokenVoices(*output);
             if (!watched)
             {
-                disableAudioPlayback("Token voice watch disabled audio", watched.error());
+                handleAudioPlaybackFailure("Token voice watch disabled audio", watched.error());
                 return {};
             }
             reconcileTokenVoiceQueueLock(*watched);
@@ -624,7 +626,7 @@ namespace monopoly::engine
                 static_cast<std::uint32_t>(std::rand()));
             if (!played)
             {
-                disableAudioPlayback("Pennybags voice disabled audio", played.error());
+                handleAudioPlaybackFailure("Pennybags voice disabled audio", played.error());
                 return {};
             }
             if (watchAfterStart && played->started)
@@ -632,7 +634,7 @@ namespace monopoly::engine
             auto watched = monopolySoundRuntime.syncTokenVoices(*output);
             if (!watched)
             {
-                disableAudioPlayback("Pennybags voice watch disabled audio", watched.error());
+                handleAudioPlaybackFailure("Pennybags voice watch disabled audio", watched.error());
                 return {};
             }
             reconcileTokenVoiceQueueLock(*watched);
@@ -649,7 +651,7 @@ namespace monopoly::engine
                 display::stateReadOnly().optionHostCommentsOn, wave, policy);
             if (!played)
             {
-                disableAudioPlayback("Pennybags specific disabled audio", played.error());
+                handleAudioPlaybackFailure("Pennybags specific disabled audio", played.error());
                 return {};
             }
             if (watchAfterStart && played->started)
@@ -657,7 +659,7 @@ namespace monopoly::engine
             auto watched = monopolySoundRuntime.syncTokenVoices(*output);
             if (!watched)
             {
-                disableAudioPlayback("Pennybags specific watch disabled audio", watched.error());
+                handleAudioPlaybackFailure("Pennybags specific watch disabled audio", watched.error());
                 return {};
             }
             reconcileTokenVoiceQueueLock(*watched);
@@ -721,7 +723,7 @@ namespace monopoly::engine
                             *output, static_cast<std::uint8_t>(std::rand() % udsound::SirenCount));
                         if (!siren)
                         {
-                            disableAudioPlayback("Paddywagon siren disabled audio", siren.error());
+                            handleAudioPlaybackFailure("Paddywagon siren disabled audio", siren.error());
                             return {};
                         }
                     }
@@ -1354,9 +1356,33 @@ namespace monopoly::engine
         return &monopolySoundRuntime;
     }
 
-    void disableAudioPlayback(std::string_view context, const std::string& error) noexcept
+    void handleAudioPlaybackFailure(
+        std::string_view context,
+        const std::string& error) noexcept
     {
-        std::cerr << context << ": " << error << '\r\n';
+        std::string diagnostic(context);
+        diagnostic += ": ";
+        diagnostic += error;
+        if (reportedAudioFailures.emplace(diagnostic).second)
+            std::cerr << diagnostic << '\r\n';
+
+        // A bad/missing asset must not silence every other sound. Only errors
+        // that indicate loss of the SDL audio backend quarantine playback for
+        // the remainder of this session.
+        const std::string_view detail(error);
+        const bool backendFailure =
+            detail.starts_with("SDL_InitSubSystem(audio):") ||
+            detail.starts_with("SDL_OpenAudioDeviceStream:") ||
+            detail.starts_with("SDL_SetAudio") ||
+            detail.starts_with("SDL_ResumeAudioStreamDevice") ||
+            detail.starts_with("SDL_PauseAudioStreamDevice") ||
+            detail.starts_with("SDL_PutAudioStreamData") ||
+            detail.starts_with("SDL_FlushAudioStream") ||
+            detail.starts_with("audio seek");
+
+        if (!backendFailure)
+            return;
+
         monopolySoundRuntime.reset(audioRuntime.get());
         if (audioRuntime) audioRuntime->stopAll();
         activeSequenceSounds.clear();
@@ -1370,7 +1396,7 @@ namespace monopoly::engine
         if (auto* output = audioPlayback())
         {
             const auto result = monopolySoundRuntime.warning(*output);
-            if (!result) disableAudioPlayback("Warning sound disabled audio", result.error());
+            if (!result) handleAudioPlaybackFailure("Warning sound disabled audio", result.error());
         }
     }
 
@@ -1379,7 +1405,7 @@ namespace monopoly::engine
         if (auto* output = audioPlayback())
         {
             const auto result = monopolySoundRuntime.click(*output);
-            if (!result) disableAudioPlayback("Click sound disabled audio", result.error());
+            if (!result) handleAudioPlaybackFailure("Click sound disabled audio", result.error());
         }
     }
 
@@ -1388,7 +1414,7 @@ namespace monopoly::engine
         if (auto* output = audioPlayback())
         {
             const auto result = monopolySoundRuntime.build(*output);
-            if (!result) disableAudioPlayback("Build sound disabled audio", result.error());
+            if (!result) handleAudioPlaybackFailure("Build sound disabled audio", result.error());
         }
     }
 
@@ -1397,7 +1423,7 @@ namespace monopoly::engine
         if (auto* output = audioPlayback())
         {
             const auto result = monopolySoundRuntime.unbuild(*output);
-            if (!result) disableAudioPlayback("Unbuild sound disabled audio", result.error());
+            if (!result) handleAudioPlaybackFailure("Unbuild sound disabled audio", result.error());
         }
     }
 
@@ -1406,7 +1432,7 @@ namespace monopoly::engine
         if (auto* output = audioPlayback())
         {
             const auto result = monopolySoundRuntime.saveFailure(*output);
-            if (!result) disableAudioPlayback("Save failure sound disabled audio", result.error());
+            if (!result) handleAudioPlaybackFailure("Save failure sound disabled audio", result.error());
         }
     }
 
@@ -2294,7 +2320,7 @@ namespace monopoly::engine
             {
                 const auto soundSync = syncMonopolyAudio(ruleState, displayState);
                 if (!soundSync)
-                    disableAudioPlayback("Monopoly audio playback disabled", soundSync.error());
+                    handleAudioPlaybackFailure("Monopoly audio playback disabled", soundSync.error());
             }
             if (const auto consumed = iBarBackdropPlayback.consumedPressedButton())
                 ibar::clearPendingPressedButton(*consumed);
@@ -2410,7 +2436,7 @@ namespace monopoly::engine
                 const auto audioSync = syncSequenceAudio(*session);
                 if (!audioSync)
                 {
-                    disableAudioPlayback("Sequence audio playback disabled", audioSync.error());
+                    handleAudioPlaybackFailure("Sequence audio playback disabled", audioSync.error());
                 }
             }
             World3DRect viewport = desiredWorldViewport;
@@ -2487,6 +2513,7 @@ namespace monopoly::engine
         monopolySoundRuntime.reset(audioRuntime.get());
         audioRuntime.reset();
         audioDisabled = false;
+        reportedAudioFailures.clear();
         fontRuntime.reset();
         fontDisabled = false;
         sequenceVideoRuntime.reset();
