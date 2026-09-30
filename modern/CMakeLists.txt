@@ -169,6 +169,18 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL3)
 
+# Modern Blender assets use glTF 2.0/GLB. Pin the parser so asset decoding is
+# reproducible and independent from system packages.
+set(FASTGLTF_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(FASTGLTF_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    fastgltf
+    GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+    GIT_TAG v0.9.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(fastgltf)
+
 # ArtLib voice chat uses Microsoft GSM 6.10 WAV #49 framing. The classic
 # Degener/Bormann libgsm implementation exposes compatible WAV49 packing;
 # pin the exact source revision and compile only its codec library.
