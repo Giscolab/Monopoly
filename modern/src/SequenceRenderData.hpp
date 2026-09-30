@@ -23,6 +23,7 @@ namespace monopoly::sequence
     {
         SequenceNodeId node{};
         data::DataId contentsDataId{};
+        data::DataId rootSequenceDataId{};
         std::uint16_t priority{};
         std::int32_t clock{};
         Matrix3D worldTransform{};

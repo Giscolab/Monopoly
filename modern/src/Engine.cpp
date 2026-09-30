@@ -980,14 +980,20 @@ namespace monopoly::engine
         [[nodiscard]] data::ModernMeshResolver
         modernTokenMeshResolver()
         {
-            return [](data::DataId id)
+            return [](
+                data::DataId id,
+                std::optional<data::DataId> rootSequenceDataId)
                 -> std::expected<
                     std::optional<std::shared_ptr<const data::MeshRenderData>>,
                     data::MeshRuntimeError>
             {
                 const auto* definition =
                     data::modernTokenForLegacyMesh(id);
-                if (!definition)
+                if (!definition ||
+                    !definition->staticIdleReplacement ||
+                    !rootSequenceDataId ||
+                    *rootSequenceDataId !=
+                        data::idleSequenceDataId(definition->token))
                     return std::optional<
                         std::shared_ptr<const data::MeshRenderData>>{};
 
@@ -1066,17 +1072,21 @@ namespace monopoly::engine
             if (auto resources = startup::resources())
             {
                 auto modernResolver = modernTokenMeshResolver();
-                // UDPieces.cpp preloads the retail token HMD corpus. Mirror
-                // that intent for optional modern token GLBs: assets already
-                // present beside the executable are decoded once up front.
+                // Decode only static-idle-safe modern tokens up front. Motion
+                // sequences keep their historical HMD frames until a modern
+                // animation clip can replace the complete sequence.
                 for (const auto& definition :
                     data::modernTokenDefinitions())
                 {
                     const auto probe =
                         data::representativeLegacyMesh(
                             definition.token);
-                    if (probe != data::EmptyDataId)
-                        (void)modernResolver(probe);
+                    if (definition.staticIdleReplacement &&
+                        probe != data::EmptyDataId)
+                        (void)modernResolver(
+                            probe,
+                            data::idleSequenceDataId(
+                                definition.token));
                 }
 
                 playback = std::make_unique<SequencePlayback>(

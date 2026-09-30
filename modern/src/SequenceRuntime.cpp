@@ -1798,7 +1798,14 @@ namespace monopoly::sequence
                                 definition.dataId);
                     }
 
+                    const Node* root = node.get();
+                    while (root->parent)
+                        root = root->parent;
+                    const auto rootSequenceDataId =
+                        root->definition().dataId;
+
                     result.push_back({node->id, *definition.contentsDataId,
+                        rootSequenceDataId,
                         node->priority, node->clock.clock(),
                         std::get<Matrix3D>(node->worldTransform),
                         node->meshChoice,

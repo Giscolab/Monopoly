@@ -3,11 +3,13 @@
 #include "ModernTokenCatalog.hpp"
 #include "ResourcePaths.hpp"
 #include "ResourceRuntime.hpp"
+#include "SequenceRuntime.hpp"
 
 #include <array>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <set>
 #include <span>
 
 namespace
@@ -138,6 +140,133 @@ int main(int argc, char** argv)
         printVector(oldDimensions.center);
         std::cout << '\t';
         printVector(newDimensions.center);
+        std::cout << '\n';
+    }
+
+    std::array<std::set<std::size_t>, ModernTokenCount> poseCounts;
+    std::array<std::size_t, ModernTokenCount> hmdCounts{};
+    std::array<std::size_t, ModernTokenCount> decodeFailures{};
+
+    for (std::uint32_t rawTag = 0; rawTag <= 0x00E2U; ++rawTag)
+    {
+        const auto id = packDataId(
+            LegacyGroupId::ThreeD,
+            static_cast<DataTag>(rawTag));
+        const auto token = tokenForLegacyMesh(id);
+        if (!token)
+            continue;
+
+        ++hmdCounts[*token];
+        auto asset = legacy.resolve(id);
+        if (!asset || !(*asset)->mesh)
+        {
+            ++decodeFailures[*token];
+            continue;
+        }
+        poseCounts[*token].insert((*asset)->mesh->poseCount());
+    }
+
+    std::cout << "\nretail MIMe pose inventory\n"
+              << "token\tslug\thmd_count\tpose_counts\tdecode_failures\n";
+    for (const auto& definition : modernTokenDefinitions())
+    {
+        const auto token = static_cast<std::size_t>(definition.token);
+        std::cout << static_cast<unsigned>(definition.token)
+                  << '\t' << definition.slug
+                  << '\t' << hmdCounts[token] << '\t';
+        bool first = true;
+        for (const auto count : poseCounts[token])
+        {
+            if (!first) std::cout << ',';
+            std::cout << count;
+            first = false;
+        }
+        std::cout << '\t' << decodeFailures[token] << '\n';
+    }
+
+    constexpr DataTag CornerBase = 0x00F6;
+    constexpr DataTag MoveBase = 0x010D;
+    constexpr std::uint32_t AnimsPerToken = 0x0159 - 0x00F6;
+
+    std::cout << "\nretail token sequence mesh inventory\n"
+              << "token\tslug\tidle_sequence\tidle_hmds\t"
+                 "movement_hmd_count\tmovement_hmds\n";
+
+    for (const auto& definition : modernTokenDefinitions())
+    {
+        const auto token = static_cast<std::uint32_t>(definition.token);
+        const auto idleTag = static_cast<DataTag>(
+            static_cast<std::uint32_t>(MoveBase) +
+            token * AnimsPerToken);
+        const auto idleId = packDataId(LegacyGroupId::ThreeD, idleTag);
+
+        std::set<DataTag> idleMeshes;
+        std::set<DataTag> movementMeshes;
+
+        const auto collectMeshes =
+            [&](DataId sequenceId, std::set<DataTag>& output)
+        {
+            auto program = monopoly::sequence::SequenceProgram::load(
+                resources, sequenceId);
+            if (!program)
+                return;
+            for (const auto& description : (*program)->descriptions())
+            {
+                if (!description.contentsDataId)
+                    continue;
+                const auto mapped =
+                    tokenForLegacyMesh(*description.contentsDataId);
+                if (mapped && *mapped == definition.token)
+                    output.insert(dataTag(*description.contentsDataId));
+            }
+        };
+
+        collectMeshes(idleId, idleMeshes);
+
+        // Movement code uses move base + 0..10 and corner base + 0..4.
+        // Both bases are offset by the same 99-sequence token stride.
+        for (std::uint32_t offset = 0; offset <= 10; ++offset)
+        {
+            collectMeshes(
+                packDataId(
+                    LegacyGroupId::ThreeD,
+                    static_cast<DataTag>(
+                        static_cast<std::uint32_t>(MoveBase) +
+                        token * AnimsPerToken + offset)),
+                movementMeshes);
+        }
+        for (std::uint32_t offset = 0; offset <= 4; ++offset)
+        {
+            collectMeshes(
+                packDataId(
+                    LegacyGroupId::ThreeD,
+                    static_cast<DataTag>(
+                        static_cast<std::uint32_t>(CornerBase) +
+                        token * AnimsPerToken + offset)),
+                movementMeshes);
+        }
+
+        const auto printTags = [](const std::set<DataTag>& tags)
+        {
+            bool first = true;
+            for (const auto tag : tags)
+            {
+                if (!first) std::cout << ',';
+                std::cout << "0x" << std::hex
+                          << static_cast<unsigned>(tag)
+                          << std::dec;
+                first = false;
+            }
+        };
+
+        std::cout << static_cast<unsigned>(definition.token)
+                  << '\t' << definition.slug
+                  << "\t0x" << std::hex
+                  << static_cast<unsigned>(idleTag)
+                  << std::dec << '\t';
+        printTags(idleMeshes);
+        std::cout << '\t' << movementMeshes.size() << '\t';
+        printTags(movementMeshes);
         std::cout << '\n';
     }
 

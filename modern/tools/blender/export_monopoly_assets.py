@@ -11,8 +11,8 @@ TOKEN_ASSETS = {
     "Pion automobile": ("race_car", 1),
     "Pion terrier": ("dog", 2),
     "Pion haut-de-forme": ("top_hat", 3),
-    "Pion bottine": ("boot", 6),
-    "Pion cuirasse": ("ship", 7),
+    "Pion bottine": ("boot", 7),
+    "Pion cuirasse": ("ship", 6),
     "Pion de a coudre": ("thimble", 8),
 }
 

@@ -20,6 +20,7 @@ namespace monopoly::data
         float unitsPerMeter{20.25F};
         float yawDegrees{-90.0F};
         std::array<float, 3> localOffset{};
+        bool staticIdleReplacement{};
     };
 
     inline constexpr std::size_t ModernTokenCount = 11;
@@ -45,4 +46,7 @@ namespace monopoly::data
     // tokenForLegacyMesh().
     [[nodiscard]] DataId
     representativeLegacyMesh(std::uint8_t token) noexcept;
+
+    [[nodiscard]] DataId
+    idleSequenceDataId(std::uint8_t token) noexcept;
 }

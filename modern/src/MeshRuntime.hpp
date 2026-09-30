@@ -193,7 +193,9 @@ namespace monopoly::data
 
     using ModernMeshResolver = std::function<
         std::expected<std::optional<std::shared_ptr<const MeshRenderData>>,
-            MeshRuntimeError>(DataId)>;
+            MeshRuntimeError>(
+                DataId,
+                std::optional<DataId> rootSequenceDataId)>;
 
     // Cache scoped to one immutable ResourceSnapshot. A published replacement
     // therefore cannot silently change the bytes behind an existing asset.
@@ -204,7 +206,9 @@ namespace monopoly::data
             MeshTextureResolver textureResolver = {}, MeshRuntimeLimits limits = {},
             ModernMeshResolver modernMeshResolver = {});
         [[nodiscard]] std::expected<std::shared_ptr<const MeshRuntimeAsset>, MeshRuntimeError>
-        resolve(DataId id);
+        resolve(
+            DataId id,
+            std::optional<DataId> rootSequenceDataId = std::nullopt);
         // Prepare a complete replacement before publishing it; only this DataId
         // changes. Empty images restore the original embedded texture payloads.
         [[nodiscard]] std::expected<void, MeshRuntimeError> replaceTextureImages(
@@ -222,6 +226,11 @@ namespace monopoly::data
         MeshTextureResolver textureResolver_;
         MeshRuntimeLimits limits_;
         ModernMeshResolver modernMeshResolver_;
+        // Modern and legacy assets must not share one cache entry: the same
+        // retail HMD can appear in both an idle sequence (modern override) and
+        // a movement sequence (retail fallback).
+        std::unordered_map<DataId, std::shared_ptr<const MeshRuntimeAsset>>
+            modernAssets_;
         std::unordered_map<DataId, std::shared_ptr<const MeshRuntimeAsset>> assets_;
         std::unordered_map<DataId,
             std::vector<std::shared_ptr<const HmdTextureImage>>> textureOverrides_;

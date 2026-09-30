@@ -11,7 +11,9 @@ namespace monopoly::sequence
         result.reserve(instances.size());
         for (const auto& instance : instances)
         {
-            auto asset = meshes.resolve(instance.contentsDataId);
+            auto asset = meshes.resolve(
+                instance.contentsDataId,
+                instance.rootSequenceDataId);
             if (!asset)
             {
                 return std::unexpected(SequenceRenderDataError{
@@ -39,6 +41,7 @@ namespace monopoly::sequence
             // while legacy MIMe pose selection continues to drive only HMD.
             // The glTF morph adapter will consume this same meshChoice later.
             result.push_back({instance.node, instance.contentsDataId,
+                instance.rootSequenceDataId,
                 instance.priority, instance.clock, instance.worldTransform,
                 std::move(*asset), instance.meshChoice, instance.bounds,
                 std::move(renderData)});

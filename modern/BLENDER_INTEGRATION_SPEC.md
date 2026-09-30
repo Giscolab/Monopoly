@@ -34,8 +34,8 @@ Six of the eleven retail tokens currently exist as grouped assets:
 | Pion automobile | race_car | 1 |
 | Pion terrier | dog | 2 |
 | Pion haut-de-forme | top_hat | 3 |
-| Pion bottine | boot | 6 |
-| Pion cuirasse | ship | 7 |
+| Pion bottine | boot | 7 |
+| Pion cuirasse | ship | 6 |
 | Pion de a coudre | thimble | 8 |
 
 Missing modern token assets are:
@@ -172,9 +172,12 @@ indices, bounds and baseColorFactor. Allocation budgets reuse `MeshRuntimeLimits
 logical token index. `MeshRuntimeCache` asks the modern resolver first and
 falls back to HMD when an asset is absent or rejected.
 
-A real runtime startup with the six generated GLBs beside the Debug executable
-successfully decoded all six existing modern token assets: race car, dog,
-top hat, boot, ship and thimble.
+The exporter and calibration probe successfully decode all six generated assets.
+Runtime replacement is intentionally narrower: race car, top hat, ship, boot and
+thimble are eligible only in their static resting-idle sequence. The dog remains
+retail for now because its resting idle already cycles through four distinct HMD
+frames. Movement sequences always keep their retail HMD frames until a complete
+modern animation replacement exists.
 
 The six existing assets now have explicit authoring calibration. Height is
 matched against one representative retail HMD per token; Blender's longitudinal
@@ -233,59 +236,64 @@ Procedural Blender materials must be either:
 
 The recovered Blender scene currently contains no animation data.
 
-The first modern token animation system should use Blender Shape Keys exported as
-glTF morph targets, not an armature. This mirrors the existing HMD MIMe model
-closely and minimizes engine risk.
+A retail-DAT inventory changed the integration plan: every playable-token HMD
+examined has `poseCount() == 1`. Token motion is therefore not a MIMe pose
+interpolation problem. The CNK sequences animate tokens by switching between
+multiple HMD assets over time.
 
-The existing runtime already produces:
+Examples from the real retail banks:
 
-`SequenceMeshChoice3D { meshIndexA, meshIndexB, meshProportion }`
+- race car resting idle: one HMD; movement set: 5 HMDs;
+- dog resting idle: 4 HMDs; movement set: 14 HMDs;
+- top hat resting idle: one HMD; movement set: 3 HMDs;
+- horse resting idle: 6 HMDs; movement set: 8 HMDs;
+- ship resting idle: one HMD; movement set: 2 HMDs;
+- boot resting idle: one HMD; movement set: 8 HMDs;
+- thimble resting idle: one HMD; movement set: 5 HMDs.
 
-and dynamically publishes evaluated vertex buffers. The modern animation adapter
-should map that same pose selection/interpolation contract onto morph targets.
-Gameplay sequences remain the animation authority.
+`SequenceMeshChoice3D` remains relevant for genuine MIMe meshes elsewhere, but
+it is not the token-animation authority.
 
-Initial morph target support:
+The runtime now carries the top-level/root CNK DataId with every 3D mesh
+instance. Modern token resolution is context-sensitive: a static GLB may replace
+a single-HMD resting idle while the exact same HMD DataId still resolves to the
+retail asset inside a movement CNK. Modern and legacy mesh cache entries are kept
+separate so one context cannot poison the other.
 
-- POSITION deltas required;
-- NORMAL deltas supported where exported;
-- base mesh is pose 0;
-- deterministic pose index mapping stored in asset metadata;
-- interpolation driven by the existing sequence clock.
-
-Skeletal animation remains a later option for future character-like tokens. It is
-not required to replace the 1999 token animations.
+A future complete modern token animation must replace a whole retail sequence,
+not isolated HMD frames. The sequence clock, board transforms and gameplay
+timing remain authoritative. The Blender representation may use Actions,
+armatures, shape keys or a deterministic frame/pose table; the chosen form must
+map the complete CNK/HMD state sequence without changing timing or rules.
 
 ## Migration order
 
 1. Keep retail HMD/DAT rendering as the known-good fallback.
-2. Export and load one static modern token by retail token index.
-3. Verify world scale, pivot, orientation, culling and placement.
-4. Add modern PBR material rendering.
-5. Enable all six existing static token GLBs.
-6. Create/bake the missing five token assets.
-7. Add Shape Keys / morph targets and reuse existing sequence pose interpolation.
-8. Split and integrate board/building/environment assets.
-9. Remove a DAT/HMD dependency only when every consumer of that asset has a
+2. Export/load the six recovered GLBs and calibrate scale, pivot and orientation.
+3. Use static GLBs only for single-HMD resting-idle sequences; keep movement
+   and multi-HMD idles retail.
+4. Add the dedicated modern PBR shader/material path.
+5. Author complete modern animation clips/state maps for the six recovered
+   tokens, replacing a whole CNK sequence only when its timing is reproduced.
+6. Create/bake the missing five token assets and their required animations.
+7. Split and integrate board/building/environment assets.
+8. Remove a DAT/HMD dependency only when every consumer of that asset has a
    validated modern replacement.
 
 ## Codex 6.1 boundary
 
 Do not spend a deep Codex pass on discovery.
 
-Before a Codex 6.1 integration task, this contract, deterministic GLB exports and
-the renderer-facing structures must already be fixed. The high-value task is then
-narrow:
+Discovery, parser integration, bounded static GLB decode, token routing,
+calibration and HMD fallback are already implemented. A deep Codex pass should
+therefore be reserved for one bounded problem at a time:
 
-- add a pinned glTF/GLB parser dependency;
-- implement bounded GLB decode;
-- convert static primitives to the modern mesh asset representation;
-- route modern assets by token index;
-- preserve HMD fallback;
-- add the modern material pipeline;
-- do not modify gameplay or Source/.
+- generate and integrate the modern PBR shader path across DXIL/MSL targets; or
+- implement a whole-sequence modern token animation adapter driven by the
+  existing CNK clock/state, not by MIMe pose indices.
 
-Morph targets can be a second bounded task if the static integration is clean.
+Do not modify gameplay or Source/. Do not spend a deep pass rediscovering the
+Blender scene or the retail token animation mechanism.
 
 ## Acceptance criteria for the first runtime integration
 

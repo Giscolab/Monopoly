@@ -518,23 +518,27 @@ namespace monopoly::data
     }
 
     std::expected<std::shared_ptr<const MeshRuntimeAsset>, MeshRuntimeError>
-    MeshRuntimeCache::resolve(DataId id)
+    MeshRuntimeCache::resolve(
+        DataId id,
+        std::optional<DataId> rootSequenceDataId)
     {
         if (!resources_)
             return std::unexpected(runtimeError(MeshRuntimeErrorCode::MissingResources,
                 "MESHX cache requires an immutable resource snapshot"));
-        if (const auto found = assets_.find(id); found != assets_.end())
-            return found->second;
 
-        // Modern presentation assets are optional and transactional. Missing
-        // modern files return optional-empty and fall through to retail HMD.
-        // A malformed modern asset also falls back so a bad replacement can
-        // never make the known-good game unplayable.
+        // Ask the context-sensitive modern resolver before consulting the
+        // legacy cache. A given HMD may be modern in its resting sequence but
+        // must remain retail inside a movement sequence.
         if (modernMeshResolver_)
         {
-            const auto modern = modernMeshResolver_(id);
+            const auto modern =
+                modernMeshResolver_(id, rootSequenceDataId);
             if (modern && *modern)
             {
+                if (const auto found = modernAssets_.find(id);
+                    found != modernAssets_.end())
+                    return found->second;
+
                 auto asset = std::make_shared<const MeshRuntimeAsset>(
                     MeshRuntimeAsset{
                         id,
@@ -542,10 +546,13 @@ namespace monopoly::data
                         {},
                         std::move(**modern)
                     });
-                assets_.emplace(id, asset);
+                modernAssets_.emplace(id, asset);
                 return asset;
             }
         }
+
+        if (const auto found = assets_.find(id); found != assets_.end())
+            return found->second;
 
         auto source = openLegacyMeshData(resources_->data(), id);
         if (!source)
@@ -614,13 +621,27 @@ namespace monopoly::data
         return {};
     }
 
-    std::size_t MeshRuntimeCache::size() const noexcept { return assets_.size(); }
+    std::size_t MeshRuntimeCache::size() const noexcept
+    {
+        return assets_.size() + modernAssets_.size();
+    }
+
     std::size_t MeshRuntimeCache::releaseUnused() noexcept
     {
-        return std::erase_if(assets_, [](const auto& entry)
-        { return entry.second.use_count() == 1; });
+        const auto legacyReleased =
+            std::erase_if(assets_, [](const auto& entry)
+            { return entry.second.use_count() == 1; });
+        const auto modernReleased =
+            std::erase_if(modernAssets_, [](const auto& entry)
+            { return entry.second.use_count() == 1; });
+        return legacyReleased + modernReleased;
     }
-    void MeshRuntimeCache::clear() noexcept { assets_.clear(); }
+
+    void MeshRuntimeCache::clear() noexcept
+    {
+        assets_.clear();
+        modernAssets_.clear();
+    }
     std::shared_ptr<const ResourceSnapshot> MeshRuntimeCache::resources() const noexcept
     { return resources_; }
 }

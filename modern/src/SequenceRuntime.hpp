@@ -239,6 +239,10 @@ namespace monopoly::sequence
     {
         SequenceNodeId node{};
         data::DataId contentsDataId{};
+        // Top-level CNK that owns this live mesh. Modern presentation can use
+        // this to distinguish a resting token sequence from movement sequences
+        // even when both reference the same HMD.
+        data::DataId rootSequenceDataId{};
         std::uint16_t priority{};
         std::int32_t clock{};
         Matrix3D worldTransform{};
