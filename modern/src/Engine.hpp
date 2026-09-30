@@ -14,6 +14,7 @@ namespace monopoly::fonts
 
 namespace monopoly::statsui { class AccountRuntime; }
 namespace monopoly::uimsg { struct Message; }
+namespace monopoly::presentation { enum class PresentMode; }
 
 namespace monopoly::udsound
 {
@@ -35,7 +36,9 @@ namespace monopoly::engine
     void stopVoiceChat() noexcept;
     void startOpeningMovies(bool startedByLobby);
     [[nodiscard]] bool consumeOpeningMovieInput(const uimsg::Message& message);
-    bool initialize(SDL_Window* window);
+    bool initialize(
+        SDL_Window* window,
+        presentation::PresentMode presentMode);
     bool runCyclicFunctions();
     void shutdown();
 }

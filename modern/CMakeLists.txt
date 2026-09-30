@@ -585,6 +585,7 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/Application.cpp
+    src/Presentation.cpp
     src/Game.cpp
 )
 

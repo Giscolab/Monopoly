@@ -6,6 +6,7 @@
 #include "LogicalViewport.hpp"
 #include "Messaging.hpp"
 #include "MousePointer.hpp"
+#include "Presentation.hpp"
 #include "ChatRuntime.hpp"
 #include "TcpMessageTransport.hpp"
 #include "StartupResources.hpp"
@@ -155,7 +156,16 @@ namespace monopoly
 
         std::vector<std::string_view> arguments;
         for (int index = 1; index < argc; ++index) arguments.emplace_back(argv[index]);
-        const auto resourceOptions = startup::parseResourceArguments(arguments);
+        const auto presentationOptions =
+            presentation::parseArguments(arguments);
+        if (!presentationOptions)
+        {
+            std::cerr << presentationOptions.error() << '\n';
+            return 1;
+        }
+
+        const auto resourceOptions = startup::parseResourceArguments(
+            presentationOptions->remaining);
         if (!resourceOptions)
         {
             std::cerr << resourceOptions.error() << '\n';
@@ -173,7 +183,11 @@ namespace monopoly
             const auto mode = networkArguments[0];
             const auto usage = []
             {
-                std::cerr << "Usage: MonopolyModern [--data-root <absolute folder>] "
+                std::cerr << "Usage: MonopolyModern "
+                    "[--windowed | --fullscreen | --exclusive-fullscreen] "
+                    "[--resolution WIDTHxHEIGHT] "
+                    "[--present-mode vsync|mailbox|immediate] "
+                    "[--data-root <absolute folder>] "
                     "[--data-overrides <absolute manifest.tsv>] "
                     "[--check-resources] [--voice-host IPv4:port | "
                     "--voice-connect IPv4:port | --network-host IPv4:port | "
@@ -249,12 +263,13 @@ namespace monopoly
             return setup == startup::ResourceSetupResult::Cancelled ? 0 : 1;
         }
 
+        const auto [initialWidth, initialHeight] =
+            presentation::initialWindowSize(*presentationOptions);
         SDL_Window* window = SDL_CreateWindow(
             "Monopoly Modern",
-            800,
-            600,
-            SDL_WINDOW_RESIZABLE |
-                SDL_WINDOW_HIGH_PIXEL_DENSITY
+            initialWidth,
+            initialHeight,
+            presentation::windowFlags(*presentationOptions)
         );
 
         if (window == nullptr)
@@ -264,9 +279,26 @@ namespace monopoly
             return 1;
         }
 
+        const auto configuredWindow =
+            presentation::configureWindow(window, *presentationOptions);
+        if (!configuredWindow)
+        {
+            std::cerr << "Window presentation setup failed: "
+                << configuredWindow.error() << '\n';
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+
+        std::cout << "Presentation: "
+            << presentation::windowModeName(presentationOptions->windowMode)
+            << ", requested "
+            << presentation::presentModeName(presentationOptions->presentMode)
+            << '\n';
+
         SDL_StartTextInput(window);
 
-        if (!engine::initialize(window))
+        if (!engine::initialize(window, presentationOptions->presentMode))
         {
             SDL_StopTextInput(window);
             SDL_DestroyWindow(window);

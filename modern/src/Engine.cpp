@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
+#include "Presentation.hpp"
 #include "VoiceChatAudioRuntime.hpp"
 #include "VoiceChatLegacyContract.hpp"
 #include "VoiceChatRuntime.hpp"
@@ -1571,7 +1572,9 @@ namespace monopoly::engine
     statsui::AccountRuntime* statsAccounts() noexcept
     { return statsAccountRuntime ? &*statsAccountRuntime : nullptr; }
 
-    bool initialize(SDL_Window* window)
+    bool initialize(
+        SDL_Window* window,
+        presentation::PresentMode presentMode)
     {
         if (window == nullptr)
         {
@@ -1656,6 +1659,31 @@ namespace monopoly::engine
             uimsg::shutdown();
             gameWindow = nullptr;
             return false;
+        }
+
+        const auto configuredPresentation =
+            presentation::configureSwapchain(
+                gpuDevice,
+                gameWindow,
+                presentMode);
+        if (!configuredPresentation)
+        {
+            std::cerr << "GPU presentation setup failed: "
+                << configuredPresentation.error() << '\r\n';
+            SDL_ReleaseWindowFromGPUDevice(gpuDevice, gameWindow);
+            SDL_DestroyGPUDevice(gpuDevice);
+            gpuDevice = nullptr;
+            timers::shutdown();
+            uimsg::shutdown();
+            gameWindow = nullptr;
+            return false;
+        }
+        if (*configuredPresentation !=
+            presentation::toSDLPresentMode(presentMode))
+        {
+            std::cerr
+                << "Requested GPU present mode is unsupported; "
+                << "falling back to VSync.\r\n";
         }
 
         // display.cpp original charge le fond 3D pendant
