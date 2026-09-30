@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LanguageResources.hpp"
+#include "LayeredDataSource.hpp"
 #include "ResourcePaths.hpp"
 
 #include <memory>
@@ -61,7 +62,8 @@ namespace monopoly::data
         [[nodiscard]] std::expected<void, DataError> initialize(
             ResourcePaths paths,
             ResourceContext context = {},
-            ArchiveOpenOptions options = {});
+            ArchiveOpenOptions options = {},
+            std::span<const DataSourceOverride> overrides = {});
 
         [[nodiscard]] std::shared_ptr<const ResourceSnapshot>
         snapshot() const noexcept;

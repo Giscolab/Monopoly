@@ -99,7 +99,10 @@ namespace monopoly::data
 
 
     std::expected<void, DataError> ResourceRuntime::initialize(
-        ResourcePaths paths, ResourceContext context, ArchiveOpenOptions options)
+        ResourcePaths paths,
+        ResourceContext context,
+        ArchiveOpenOptions options,
+        std::span<const DataSourceOverride> overrides)
     {
         if (context.board != BoardEdition::Usa &&
             context.board != BoardEdition::Europe)
@@ -159,6 +162,36 @@ namespace monopoly::data
         if (!selected)
         {
             return std::unexpected(selected.error());
+        }
+
+        // The gameplay DATA surface may now be layered with modern loose or
+        // generated payloads while the untouched IDs continue through retail
+        // DAT. LanguageService still owns legacy archive snapshots, so keep
+        // groups 5/9/10 on that single backend until its catalog is migrated.
+        for (const auto& replacement : overrides)
+        {
+            const auto group = dataGroup(replacement.id);
+            if (group == legacyGroupValue(LegacyGroupId::LanguageGraphics) ||
+                group == legacyGroupValue(LegacyGroupId::LanguageText) ||
+                group == legacyGroupValue(LegacyGroupId::LanguageDialog))
+            {
+                return std::unexpected(DataError{
+                    DataErrorCode::InvalidGroup,
+                    {},
+                    dataTag(replacement.id),
+                    "language DATA overrides require the language catalog backend migration"
+                });
+            }
+        }
+
+        if (!overrides.empty())
+        {
+            auto layered = LayeredDataSource::create(staged->data_, overrides);
+            if (!layered)
+            {
+                return std::unexpected(layered.error());
+            }
+            staged->data_ = std::move(*layered);
         }
 
         std::scoped_lock lock(mutex_);
