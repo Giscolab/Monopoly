@@ -35,12 +35,16 @@ namespace
         {
             std::filesystem::create_directories(root / "tokens/ship_variants");
             std::filesystem::create_directories(root / "tokens/dog_variants");
+            std::filesystem::create_directories(root / "tokens/horse_variants");
         }
         ~Fixture() { std::error_code ignored; std::filesystem::remove_all(root, ignored); }
         std::filesystem::path path(std::size_t state) const
         {
-            return root / (kind == ModernTokenVariantKind::ShipMovement ?
-                shipMovementVariantDefinitions()[state].relativeGlbPath : dogIdleVariantDefinitions()[state].relativeGlbPath);
+            if (kind == ModernTokenVariantKind::ShipMovement)
+                return root / shipMovementVariantDefinitions()[state].relativeGlbPath;
+            if (kind == ModernTokenVariantKind::DogIdle)
+                return root / dogIdleVariantDefinitions()[state].relativeGlbPath;
+            return root / horseIdleVariantDefinitions()[state].relativeGlbPath;
         }
         void write(std::size_t state, float minimumY, bool reversed = false)
         {
@@ -63,9 +67,94 @@ namespace
             bytes.insert(bytes.end(), binary.begin(), binary.end());
             std::ofstream output(path(state), std::ios::binary | std::ios::trunc);
             output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-            if (!output) throw std::runtime_error("cannot create ship variant fixture");
+            if (!output) throw std::runtime_error("cannot create token variant fixture");
         }
     };
+
+    void testHorseIdleCompletePack()
+    {
+        using namespace monopoly;
+        constexpr auto HorseRoot = packDataId(LegacyGroupId::ThreeD, 0x02FC);
+        constexpr auto DogRoot = packDataId(LegacyGroupId::ThreeD, 0x01D3);
+        constexpr auto ShipRoot = packDataId(LegacyGroupId::ThreeD, 0x0360);
+        const auto priority = pieces::TokenPriority;
+        const auto last = static_cast<std::uint16_t>(priority + rules::MaxPlayers - 1);
+        for (const auto& state : horseIdleVariantDefinitions())
+        {
+            expect(qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot, priority) &&
+                qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot, last),
+                "every reviewed horse idle HMD qualifies at both player-priority boundaries");
+            expect(!qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot, priority - 1) &&
+                !qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot, last + 1) &&
+                !qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot, 0) &&
+                !qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot, pieces::Generic3DPriority) &&
+                !qualifiedModernTokenVariantSequence(state.legacyMeshId, HorseRoot + 1, priority) &&
+                !qualifiedModernTokenVariantSequence(state.legacyMeshId, std::nullopt, priority) &&
+                !qualifiedModernTokenVariantSequence(state.legacyMeshId, DogRoot, priority),
+                "horse idle requires its exact root and idle context independently of leaf priority");
+        }
+        expect(!qualifiedModernTokenVariantSequence(packDataId(LegacyGroupId::ThreeD, 0x0095), HorseRoot, priority) &&
+            !qualifiedModernTokenVariantSequence(packDataId(LegacyGroupId::Board, 0x0094), HorseRoot, priority),
+            "unreviewed horse poses and matching tags from another group retain retail");
+        Fixture fixture(ModernTokenVariantKind::HorseIdle);
+        for (std::size_t state = 0; state < horseIdleVariantDefinitions().size(); ++state)
+        {
+            ModernTokenVariantCache missing(fixture.root);
+            expect(!missing.resolve(horseIdleVariantDefinitions()[0].legacyMeshId, HorseRoot, priority) &&
+                missing.loadError(HorseRoot) && !missing.attempted(DogRoot) && !missing.attempted(ShipRoot),
+                "any missing horse state prevents publication of the entire six-state pack");
+            fixture.write(state, static_cast<float>(state) * .02F - .03F);
+            expect(!missing.resolve(horseIdleVariantDefinitions()[state].legacyMeshId, HorseRoot, last),
+                "horse load failure is remembered after file repair and across idle priorities");
+        }
+        fixture.kind = ModernTokenVariantKind::DogIdle;
+        for (std::size_t state = 0; state < dogIdleVariantDefinitions().size(); ++state) fixture.write(state, 0.F);
+        fixture.kind = ModernTokenVariantKind::ShipMovement;
+        fixture.write(0, 2.F); fixture.write(1, 3.F);
+        fixture.kind = ModernTokenVariantKind::HorseIdle;
+        ModernTokenVariantCache complete(fixture.root);
+        const auto dog = complete.resolve(dogIdleVariantDefinitions()[0].legacyMeshId, DogRoot, priority);
+        const auto ship = complete.resolve(shipMovementVariantDefinitions()[0].legacyMeshId, ShipRoot, pieces::Generic3DPriority);
+        std::array<std::shared_ptr<const MeshRenderData>, 6> poses;
+        for (std::size_t state = 0; state < poses.size(); ++state)
+        {
+            poses[state] = complete.resolve(horseIdleVariantDefinitions()[state].legacyMeshId, HorseRoot, priority);
+            const auto expectedY = (static_cast<float>(state) * .02F - .03F) * 211.87215F + 1.F;
+            expect(poses[state] && std::abs(poses[state]->bounds.minimum[1] - expectedY) < .001F,
+                "horse poses preserve shared exported grounding with calibrated Y offset");
+            expect(poses[state] && poses[state] == complete.resolve(horseIdleVariantDefinitions()[state].legacyMeshId,
+                HorseRoot, last), "horse immutable state is reused across player contexts");
+        }
+        expect(poses[0] && std::abs(poses[0]->bounds.minimum[0] + 1.F) < .001F &&
+            std::abs(poses[0]->bounds.maximum[2] - (211.87215F - 4.8420224136F)) < .001F,
+            "horse pack uses frozen negative90 yaw, units and shared offsets");
+        expect(dog && ship && poses[5] && complete.rejectPack(poses[5].get()) && complete.loadError(HorseRoot) &&
+            !complete.loadError(DogRoot) && !complete.loadError(ShipRoot) &&
+            dog == complete.resolve(dogIdleVariantDefinitions()[0].legacyMeshId, DogRoot, priority) &&
+            ship == complete.resolve(shipMovementVariantDefinitions()[0].legacyMeshId, ShipRoot, pieces::Generic3DPriority),
+            "one horse GPU failure invalidates only horse while healthy dog and ship remain cached");
+        for (const auto& state : horseIdleVariantDefinitions())
+            expect(!complete.resolve(state.legacyMeshId, HorseRoot, last), "rejected horse pack retains every state in retail");
+        ModernTokenVariantCache independent(fixture.root);
+        const auto healthyHorse = independent.resolve(horseIdleVariantDefinitions()[0].legacyMeshId, HorseRoot, priority);
+        const auto rejectedDog = independent.resolve(dogIdleVariantDefinitions()[0].legacyMeshId, DogRoot, priority);
+        expect(healthyHorse && rejectedDog && independent.rejectPack(rejectedDog.get()) && independent.loadError(DogRoot) &&
+            !independent.loadError(HorseRoot) && healthyHorse == independent.resolve(
+                horseIdleVariantDefinitions()[0].legacyMeshId, HorseRoot, last),
+            "dog GPU rejection cannot taint the independently loaded healthy horse pack");
+        {
+            std::ofstream malformed(fixture.path(5), std::ios::binary | std::ios::trunc);
+            malformed << "invalid horse GLB";
+        }
+        ModernTokenVariantCache invalid(fixture.root);
+        expect(!invalid.resolve(horseIdleVariantDefinitions()[0].legacyMeshId, HorseRoot, priority) &&
+            invalid.loadError(HorseRoot) && invalid.resolve(dogIdleVariantDefinitions()[0].legacyMeshId, DogRoot, priority) &&
+            !invalid.loadError(DogRoot), "malformed final horse state cannot publish early poses or taint healthy dog");
+        fixture.write(5, .07F, true);
+        ModernTokenVariantCache topology(fixture.root);
+        expect(!topology.resolve(horseIdleVariantDefinitions()[0].legacyMeshId, HorseRoot, priority) &&
+            topology.loadError(HorseRoot), "one mismatched horse topology rejects the complete six-state pack");
+    }
 
     void testDogIdleCompletePack()
     {
@@ -150,6 +239,7 @@ namespace
 
 int main()
 {
+    testHorseIdleCompletePack();
     testDogIdleCompletePack();
     using namespace monopoly;
     constexpr auto Root = packDataId(LegacyGroupId::ThreeD, 0x0360);

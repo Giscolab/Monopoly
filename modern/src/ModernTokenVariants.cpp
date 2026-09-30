@@ -22,18 +22,38 @@ namespace monopoly::data
             {packDataId(LegacyGroupId::ThreeD, 0x0041), "tokens/dog_variants/idle_0041.glb"},
             {packDataId(LegacyGroupId::ThreeD, 0x0042), "tokens/dog_variants/idle_0042.glb"},
             {packDataId(LegacyGroupId::ThreeD, 0x0043), "tokens/dog_variants/idle_0043.glb"}}};
+        constexpr DataId HorseIdleRoot = packDataId(LegacyGroupId::ThreeD, 0x02FC);
+        constexpr std::array<ModernTokenVariantDefinition, 6> HorseVariants{{
+            {packDataId(LegacyGroupId::ThreeD, 0x0094), "tokens/horse_variants/idle_0094.glb"},
+            {packDataId(LegacyGroupId::ThreeD, 0x00A8), "tokens/horse_variants/idle_00a8.glb"},
+            {packDataId(LegacyGroupId::ThreeD, 0x00A9), "tokens/horse_variants/idle_00a9.glb"},
+            {packDataId(LegacyGroupId::ThreeD, 0x00AA), "tokens/horse_variants/idle_00aa.glb"},
+            {packDataId(LegacyGroupId::ThreeD, 0x00AB), "tokens/horse_variants/idle_00ab.glb"},
+            {packDataId(LegacyGroupId::ThreeD, 0x00AC), "tokens/horse_variants/idle_00ac.glb"}}};
+        struct ExportedPackCalibration
+        {
+            ModernTokenVariantKind kind;
+            float unitsPerMeter;
+            float yawDegrees;
+            std::array<float, 3> offset;
+        };
+        constexpr std::array<ExportedPackCalibration, 2> ExportedCalibrations{{
+            {ModernTokenVariantKind::DogIdle, 154.80F, 90.0F, {-0.5F, 0.0F, -15.05967734F}},
+            {ModernTokenVariantKind::HorseIdle, 211.87215F, -90.0F, {-1.0F, 1.0F, -4.8420224136F}}}};
         const std::optional<MeshRuntimeError> NoError;
 
         std::optional<ModernTokenVariantKind> kindForRoot(std::optional<DataId> root) noexcept
         {
             if (root == ShipMovementRoot) return ModernTokenVariantKind::ShipMovement;
             if (root == DogIdleRoot) return ModernTokenVariantKind::DogIdle;
+            if (root == HorseIdleRoot) return ModernTokenVariantKind::HorseIdle;
             return std::nullopt;
         }
         std::span<const ModernTokenVariantDefinition> definitionsFor(ModernTokenVariantKind kind) noexcept
         {
             if (kind == ModernTokenVariantKind::ShipMovement) return ShipVariants;
             if (kind == ModernTokenVariantKind::DogIdle) return DogVariants;
+            if (kind == ModernTokenVariantKind::HorseIdle) return HorseVariants;
             return {};
         }
     }
@@ -42,6 +62,8 @@ namespace monopoly::data
     { return ShipVariants; }
     const std::array<ModernTokenVariantDefinition, 4>& dogIdleVariantDefinitions() noexcept
     { return DogVariants; }
+    const std::array<ModernTokenVariantDefinition, 6>& horseIdleVariantDefinitions() noexcept
+    { return HorseVariants; }
 
     bool qualifiedModernTokenVariantSequence(DataId meshId,
         std::optional<DataId> rootSequenceDataId, std::uint16_t priority) noexcept
@@ -50,7 +72,7 @@ namespace monopoly::data
         if (!kind) return false;
         if (*kind == ModernTokenVariantKind::ShipMovement && priority != pieces::Generic3DPriority)
             return false;
-        if (*kind == ModernTokenVariantKind::DogIdle &&
+        if (*kind != ModernTokenVariantKind::ShipMovement &&
             (priority < pieces::TokenPriority || priority >= pieces::TokenPriority + rules::MaxPlayers))
             return false;
         for (const auto& state : definitionsFor(*kind))
@@ -67,13 +89,14 @@ namespace monopoly::data
         options.yawDegrees = ship->yawDegrees;
         options.localOffset = ship->localOffset;
         options.groundToZero = false;
-        if (kind == ModernTokenVariantKind::DogIdle)
+        for (const auto& calibration : ExportedCalibrations)
         {
+            if (calibration.kind != kind) continue;
             // Frozen shared authoring frame, already grounded once at export.
-            // Individual dog pose minima must remain above/below zero.
-            options.unitsPerMeter = 154.80F;
-            options.yawDegrees = 90.0F;
-            options.localOffset = {-0.5F, 0.0F, -15.05967734F};
+            // Individual pose minima must remain above/below the base frame.
+            options.unitsPerMeter = calibration.unitsPerMeter;
+            options.yawDegrees = calibration.yawDegrees;
+            options.localOffset = calibration.offset;
         }
         auto staged = std::make_shared<ModernTokenVariantPack>();
         staged->definitions_ = definitionsFor(kind);
@@ -98,7 +121,7 @@ namespace monopoly::data
             if (rest.vertices.size() != state->vertices.size() || rest.indices != state->indices)
                 return std::unexpected(MeshRuntimeError{MeshRuntimeErrorCode::ModernAssetInvalid,
                     "token variant pack requires the same authored vertex/triangle correspondence"});
-        if (kind == ModernTokenVariantKind::DogIdle)
+        if (kind != ModernTokenVariantKind::ShipMovement)
             return std::shared_ptr<const ModernTokenVariantPack>(std::move(staged));
 
         // Both states share the REST grounding baseline. Independently
@@ -156,7 +179,10 @@ namespace monopoly::data
     }
 
     bool ModernTokenVariantCache::attempted() const noexcept
-    { return packs_[0].attempted || packs_[1].attempted; }
+    {
+        for (const auto& entry : packs_) if (entry.attempted) return true;
+        return false;
+    }
     bool ModernTokenVariantCache::attempted(DataId rootSequenceDataId) const noexcept
     {
         const auto kind = kindForRoot(rootSequenceDataId);

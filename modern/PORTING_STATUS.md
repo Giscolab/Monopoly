@@ -136,8 +136,18 @@ choix HMD, matrices, priorités et cycle de vie. C'est une preuve CPU, pas un
 rendu animé GPU. L'adaptateur des quatre états du chien passe 99 frames de
 production sans fallback ni erreur, avec mêmes horloges, matrices, choix HMD et
 cycle de vie que le retail. Le démarrage vivant de 25 secondes charge neuf idles
-statiques et ne prouve pas l'animation du chien à l'écran. Les six poses authored
-du cheval sont qualifiées ; leur adaptation runtime reste à réaliser.
+statiques et ne prouve pas l'animation du chien à l'écran. L'adaptateur des six
+états du cheval est compilé : 99/99 frames modernes sans erreur, appariées au
+retail avec mêmes horloges, matrices, choix HMD et cycle de vie. Les refus de
+contexte, l'échec indépendant d'un pack entier et le rejet GPU sont couverts.
+
+Le probe de production CNK puis SDL_GPU/PBR capture 23 frames demandées : les
+11 idles au tick zéro, quatre poses du chien, six du cheval et deux états de
+mouvement du bateau. Chaque capture 1920x1080 utilise des assets ModernGltf,
+un pipeline PBR chargé et contient des triangles/pixels visibles. La mosaïque
+`build/token-gpu-qualification/eleven_tokens_gpu.png` a été examinée. Ces frames
+isolées ne prouvent pas une animation continue en partie ; le démarrage borné
+reste la preuve de neuf chargements statiques seulement.
 
 Le plateau Paris aligné dispose d'une correspondance explicite de ses 40 cases
 avec les cellules retail ; son export omet les tangentes authored invalides et

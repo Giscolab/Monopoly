@@ -44,5 +44,29 @@
     ],
     "source_namespace": "Source GameInc DAT_3D = 8; source manifest CNK_kncmx0 tag 0x01D3 and HMD_dog08 through HMD_dog11 tags 0x0040 through 0x0043"
   },
+  "horse_idle_pack": {
+    "source_sequence": "CNK_knfmx0",
+    "sequence_data_id": "0x000802FC",
+    "root_priority_interval": [224, 229],
+    "priority_owner": "pieces::TokenPriority through TokenPriority + rules::MaxPlayers - 1; leaf render priorities remain authored",
+    "duration_ticks": 96,
+    "ticks_per_second": 60,
+    "geometry_owner": "Six authored per-HMD static GLB states; no glTF animation clips",
+    "timeline_owner": "Production CNK runtime owns clock, world transforms, visibility and exact HMD selection",
+    "calibration": {"units_per_meter": 211.87215, "yaw_degrees": -90, "local_offset": [-1, 1, -4.8420224136]},
+    "grounding": "All six exported states use the same representative authoring ground baseline zero; runtime applies shared calibration without regrounding any pose",
+    "publication": "All six states must load with identical indexed vertex/triangle correspondence before any state is published; a missing, malformed or GPU-rejected state retains the complete root in retail",
+    "cache_isolation": "Horse, dog and ship success, remembered failures and GPU rejection are independent; root-specific attempted and loadError APIs report only the selected pack",
+    "states": [
+      {"source_hmd": "0x00080094", "source_name": "HMD_horse01", "path": "assets/modern/tokens/horse_variants/idle_0094.glb"},
+      {"source_hmd": "0x000800A8", "source_name": "HMD_horse21", "path": "assets/modern/tokens/horse_variants/idle_00a8.glb"},
+      {"source_hmd": "0x000800A9", "source_name": "HMD_horse22", "path": "assets/modern/tokens/horse_variants/idle_00a9.glb"},
+      {"source_hmd": "0x000800AA", "source_name": "HMD_horse23", "path": "assets/modern/tokens/horse_variants/idle_00aa.glb"},
+      {"source_hmd": "0x000800AB", "source_name": "HMD_horse24", "path": "assets/modern/tokens/horse_variants/idle_00ab.glb"},
+      {"source_hmd": "0x000800AC", "source_name": "HMD_horse25", "path": "assets/modern/tokens/horse_variants/idle_00ac.glb"}
+    ],
+    "source_namespace": "Source GameInc DAT_3D = 8; source manifest CNK_knfmx0 tag 0x02FC and exact HMD tags 0x0094, 0x00A8 through 0x00AC",
+    "authoring_evidence": "Diagnostic modern/build/horse-idle-qualification/qualification.json: 182 exact retail controls, shared indexed topology, finite positive deformation Jacobians, reproducible fresh/repeat exports; diagnostic build artifacts are not shipped retail payloads"
+  },
   "verification_boundary": "Complete CPU sequence and loader contract; rendered authored shape correspondence requires separate visual qualification"
 }

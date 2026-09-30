@@ -24,7 +24,9 @@ namespace monopoly::data
     shipMovementVariantDefinitions() noexcept;
     [[nodiscard]] const std::array<ModernTokenVariantDefinition, 4>&
     dogIdleVariantDefinitions() noexcept;
-    enum class ModernTokenVariantKind { ShipMovement, DogIdle };
+    [[nodiscard]] const std::array<ModernTokenVariantDefinition, 6>&
+    horseIdleVariantDefinitions() noexcept;
+    enum class ModernTokenVariantKind { ShipMovement, DogIdle, HorseIdle };
     [[nodiscard]] bool qualifiedModernTokenVariantSequence(DataId meshId,
         std::optional<DataId> rootSequenceDataId, std::uint16_t priority) noexcept;
 
@@ -66,6 +68,6 @@ namespace monopoly::data
             std::shared_ptr<const ModernTokenVariantPack> pack;
             std::optional<MeshRuntimeError> error;
         };
-        std::array<Entry, 2> packs_;
+        std::array<Entry, 3> packs_;
     };
 }

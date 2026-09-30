@@ -102,3 +102,10 @@ frames avec fence exclut chargement et readback et ne mesure pas la boucle
 complète du jeu. Neuf chargements d'idles lors d'un démarrage borné ne constituent
 pas davantage une qualification visuelle ou de gameplay. Les sorties et limites
 de preuve figurent dans le [contrat Blender](BLENDER_INTEGRATION_SPEC.md).
+
+Le probe de frames de pions évalue un tick CNK de production puis le rendu PBR
+réel. Vingt-trois captures 1920x1080 couvrent les onze idles, quatre poses du
+chien, six du cheval et deux états du bateau. La mosaïque a été examinée ; ce
+contrôle de frames demandées ne constitue pas une animation continue en partie
+ni un film de gameplay. Il ne transforme pas les neuf chargements observés au
+démarrage en onze pions qualifiés dans une partie réelle.

@@ -181,15 +181,18 @@ falls back to HMD when an asset is absent or rejected.
 
 The exporter/probe decode the six recovered and five newly authored token assets.
 Nine single-HMD resting idles load in a bounded startup. Dog root `0x801D3`
-has a complete four-state adapter; horse and unqualified multi-HMD roots retain
-retail geometry. An explicit table qualifies 46 rigid CNK roots for
+has a complete four-state adapter and horse root `0x802FC` a six-state adapter;
+unqualified multi-HMD roots retain retail geometry. An explicit table qualifies 46 rigid CNK roots for
 modern geometry while CNK remains the timing/transform/visibility owner. Other
 movements retain retail frames. The ship two-state pack for root `0x80360` passes
 71 production timeline ticks against retail: clocks, HMD selection, matrices,
 priorities and lifecycle match. The dog adapter passes 99 production frames with
 modern geometry, no fallback/errors, and identical paired-retail clocks, matrices,
-HMD choices and lifecycle. These are CPU proofs, not live GPU animation proof.
-Six horse authoring poses are qualified, but its runtime adapter remains pending.
+HMD choices and lifecycle. Horse likewise passes 99 paired production frames
+with all states modern and no errors. Strict root/priority qualification,
+independent complete-pack failure and GPU rejection tests pass. These timeline
+comparisons are CPU proof; separately captured GPU frames do not prove continuous
+in-game animation.
 
 The recovered assets have explicit per-token authoring calibration. Height is
 matched against a representative retail HMD, and yaw/grounding/local offsets
@@ -202,7 +205,7 @@ The CMake targets are:
 ```text
 MonopolyExportModernAssets   # headless Blender -> build/modern-assets/tokens
 MonopolyRuntimeModernAssets  # stage generated GLBs beside MonopolyModern.exe
-MonopolyExportModernTokenVariants # production contracts and ship/dog state exports
+MonopolyExportModernTokenVariants # production contracts and ship/dog/horse states
 ```
 
 A normal MonopolyModern build stages already-generated modern assets but does
@@ -389,10 +392,17 @@ Blender scene or the retail token animation mechanism.
   tweekers and lifecycle. Report: build/qualified-rigid-production-20261001.json.
 - Ship passes 71 paired production ticks; dog passes 99 production frames with
   no fallback/errors and identical retail clocks/matrices/HMD choices/lifecycle.
-  Horse's six authoring poses are qualified, with runtime integration pending.
+  Horse's six-state adapter passes 99/99 modern frames with identical paired
+  retail clocks/matrices/HMD choices/lifecycle and no errors.
 - Full MonopolyModern build and focused sequence-render/runtime, variant,
   scene-catalog, environment and GPU-fallback suites pass. These focused checks
   do not replace a new global CTest campaign or an in-game visual qualification.
+- Production-CNK GPU qualification captures 23 requested frames: tick zero for
+  all 11 token idles, four dog poses, six horse poses and two ship movement
+  states. Every capture uses ModernGltf geometry and a loaded PBR pipeline,
+  with nonzero foreground/triangles in real 1920x1080 SDL_GPU readback.
+  The inspected montage is build/token-gpu-qualification/eleven_tokens_gpu.png.
+  These are requested static frames, not a live animation or gameplay movie.
 - Fresh framed Direct3D12 probe at 1920x1080: 4 objects, 246 batches, 915,731
   triangles; capture analysis counts 528,356 foreground and 57,267 colored pixels.
   **100 fenced frames in 0.0791715 s = 1263.08 FPS**, excluding load/setup/readback.
@@ -401,6 +411,22 @@ Blender scene or the retail token animation mechanism.
   `dat_borde.dat`, `dat_ln03.dat`, `dat_lm03.dat`, `dat_lk03.dat` payloads.
 
 ## Purpose-specific scene exports
+
+Reproduce one horse frame through production CNK and the real GPU path from the
+repository root (the output directory must exist):
+
+```powershell
+New-Item -ItemType Directory -Force modern/build/token-gpu-qualification
+.\modern\build\Debug\MonopolyModernSceneRenderProbe.exe `
+  modern/build/modern-assets modern/build/Debug/shaders modern/build/token-gpu-qualification `
+  --token-frame runtime-data 0x802FC 0 224
+```
+
+The four `--token-frame` arguments are retail runtime root, complete sequence
+DataId, parent tick and root activation priority. Optional `--benchmark` measures
+fenced renderer throughput; it excludes setup/load/readback and is not a game
+benchmark. The variants export target includes the production deformation
+contracts and the reconstruction dependency for newly authored tokens.
 
 `MonopolyExportModernSceneAssets` exports the board and one gameplay house via
 `--include-board --include-house --skip-tokens`. The whitelist includes only

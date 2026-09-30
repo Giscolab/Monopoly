@@ -765,6 +765,9 @@ if(MONOPOLY_BLENDER_EXECUTABLE
         COMMAND "$<TARGET_FILE:MonopolyTokenDeformationContract>"
             "${MONOPOLY_RETAIL_ASSET_ROOT}" 0x80038 0x80040,0x80041,0x80042,0x80043
             "${CMAKE_CURRENT_BINARY_DIR}/dog_contract_production.json"
+        COMMAND "$<TARGET_FILE:MonopolyTokenDeformationContract>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" 0x80094 0x80094,0x800A8,0x800A9,0x800AA,0x800AB,0x800AC
+            "${CMAKE_CURRENT_BINARY_DIR}/horse_contract_production.json"
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
             --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_ship_variants.py"
             -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
@@ -778,8 +781,15 @@ if(MONOPOLY_BLENDER_EXECUTABLE
             --correspondence "${CMAKE_CURRENT_BINARY_DIR}/dog_contract_production.json"
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
             --diagnostics "${CMAKE_CURRENT_BINARY_DIR}/dog-idle-qualification"
-        DEPENDS MonopolyTokenDeformationContract MonopolyExportModernAssets
-        COMMENT "Qualifying modern ship and dog variants using production-decoded retail controls"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
+            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_token_variants.py"
+            -- --token horse --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --base-glb "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens/horse.glb"
+            --correspondence "${CMAKE_CURRENT_BINARY_DIR}/horse_contract_production.json"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --diagnostics "${CMAKE_CURRENT_BINARY_DIR}/horse-idle-qualification"
+        DEPENDS MonopolyTokenDeformationContract MonopolyExportModernAssets MonopolyReconstructModernTokens
+        COMMENT "Qualifying modern ship, dog and horse variants using production-decoded retail controls"
         VERBATIM
     )
     add_custom_target(MonopolyExportAlignedBoardAssets

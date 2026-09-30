@@ -1,7 +1,14 @@
-"""Qualified whole-root token state transfer; first bounded profile is dog idle.
+"""Indexed token state transfer using production-decoded correspondence contracts.
 
-Reuses the ship GLB/transfer helpers. Failed packs remain diagnostic candidates
-and never publish a partial replacement into the requested runtime asset root.
+Reuses the ship GLB/transfer helpers. Default dog/horse idle packs are atomic:
+failed packs remain diagnostic candidates. Opt-in --contract-states selects all
+observed targets with the catalogue frame; --allow-partial-qualification emits
+only individually qualified pose_<tag>.glb files to a separate build output.
+Those files do not establish complete-sequence or in-game qualification.
+Example expansion arguments (after Blender's --): --token ship --source
+<recovered.blend> --base-glb <ship.glb> --correspondence <production.json>
+--output <build/complete-modern-variants> --diagnostics <build/qualification/ship>
+--contract-states --allow-partial-qualification --render.
 """
 import argparse
 import copy
@@ -16,10 +23,20 @@ from mathutils import Vector,Matrix,Quaternion
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from export_ship_variants import Transfer,accessor,digest,read_glb,write_accessor,write_glb
 
-PROFILES = {"dog":{"scale":154.80,"yaw_degrees":90,"offset":[-.5,0,-15.06],"rest_tag":0x38,
+PROFILES = {"dog":{"scale":154.80,"yaw_degrees":90,"offset":[-.5,0,-15.05967734],"rest_tag":0x38,
                    "states":[0x40,0x41,0x42,0x43],"control_count":75,"triangle_count":146},
             "horse":{"scale":211.87215,"yaw_degrees":-90,"offset":[-1,1,-4.84202],"rest_tag":0x94,
-                     "states":[0x94,0xa8,0xa9,0xaa,0xab,0xac],"control_count":182,"triangle_count":330}}
+                     "states":[0x94,0xa8,0xa9,0xaa,0xab,0xac],"control_count":182,"triangle_count":330},
+            "race_car":{"scale":122.94,"yaw_degrees":-90,"offset":[-2,0,13.02],"rest_tag":0x32,
+                        "states":[],"control_count":92,"triangle_count":147},
+            "top_hat":{"scale":86.15,"yaw_degrees":-90,"offset":[0,0,0],"rest_tag":0x8d,
+                       "states":[],"control_count":73,"triangle_count":144},
+            "ship":{"scale":87.55,"yaw_degrees":-90,"offset":[0,0,6.63],"rest_tag":0x18,
+                    "states":[],"control_count":110,"triangle_count":148},
+            "boot":{"scale":181.06,"yaw_degrees":-90,"offset":[0,0,25.94],"rest_tag":0xbf,
+                    "states":[],"control_count":66,"triangle_count":130},
+            "thimble":{"scale":130.89,"yaw_degrees":-90,"offset":[0,0,0],"rest_tag":0xcc,
+                       "states":[],"control_count":92,"triangle_count":180}}
 
 
 def bake_node_transforms(doc,binary):
@@ -138,7 +155,7 @@ def create_pose(original,binary,profile,baseline,transfer,tag,provenance):
             write_accessor(doc,data,n_id,normals/lengths[:,None])
     points = np.concatenate(points_all)
     determinants = np.asarray(determinants)
-    qualified = bool(np.isfinite(determinants).all() and determinants.min()>.1 and singular_count==0)
+    qualified = bool(np.isfinite(points).all() and np.isfinite(determinants).all() and determinants.min()>=.1 and singular_count==0)
     root = doc["nodes"][doc["scenes"][doc.get("scene",0)]["nodes"][0]]
     root["name"] = f"{root.get('extras',{}).get('asset_slug','token')}_idle_{tag:04x}"
     root.setdefault("extras",{}).update(provenance)
@@ -163,10 +180,20 @@ def main():
     parser.add_argument("--output",required=True)
     parser.add_argument("--diagnostics",required=True,help="Build directory for candidates and qualification evidence")
     parser.add_argument("--render",action="store_true")
+    parser.add_argument("--contract-states",action="store_true",help="Use every authoritative production-contract target with catalogue calibration; pose filenames")
+    parser.add_argument("--allow-partial-qualification",action="store_true",help="Contract-state diagnostics: publish only individually qualified poses; never activate a runtime pack")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
+    if args.allow_partial_qualification and not args.contract_states:
+        parser.error("partial qualification requires --contract-states")
     source,base,controls = Path(args.source).resolve(),Path(args.base_glb).resolve(),Path(args.correspondence).resolve()
     profile = copy.deepcopy(PROFILES[args.token])
     reference = json.loads(controls.read_text(encoding="utf-8"))
+    if args.contract_states:
+        if not reference["evidence"].get("production_geometry_decoder",False):
+            raise RuntimeError("contract-state expansion requires the production geometry decoder")
+        profile["states"] = sorted(int(key,16) for key in reference["target_positions_engine"])
+    if not profile["states"]:
+        parser.error("this profile requires --contract-states")
     rest = np.asarray(reference["rest_positions_engine"],dtype=np.float64)
     triangles = reference["rest_triangles"]
     referenced = sorted({i for tri in triangles for i in tri})
@@ -186,8 +213,9 @@ def main():
     center = (base_points.min(axis=0)+base_points.max(axis=0))/2
     control_center = (rest[referenced].min(axis=0)+rest[referenced].max(axis=0))/2
     sign = profile["yaw_degrees"]/90
-    profile["offset"][0] = float(control_center[0]-sign*center[2]*profile["scale"])
-    profile["offset"][2] = float(control_center[2]+sign*center[0]*profile["scale"])
+    if not args.contract_states:
+        profile["offset"][0] = float(control_center[0]-sign*center[2]*profile["scale"])
+        profile["offset"][2] = float(control_center[2]+sign*center[0]*profile["scale"])
     provenance = {"source_blend_sha256":digest(source),"base_glb_sha256":digest(base),"correspondence_sha256":digest(controls)}
     report = {"token":args.token,"rest_tag":profile["rest_tag"],"controls":len(referenced),
               "method":"affine plus exact interpolatory inverse-squared-distance residual",
@@ -204,11 +232,21 @@ def main():
         evidence = reference["evidence"]["targets"][key]
         if target.shape!=rest.shape or not np.isfinite(target).all() or not evidence["identical_triangle_multisets"]:
             raise RuntimeError(f"unqualified target {key}")
-        transfer = Transfer(rest[referenced],target[referenced])
-        error = np.linalg.norm(transfer(rest[referenced])-target[referenced],axis=1)
-        if error.max()>1e-8:
-            raise RuntimeError(f"target controls not reproduced: {key}")
-        doc,data,pose_report = create_pose(original,binary,profile,baseline,transfer,tag,provenance)
+        try:
+            transfer = Transfer(rest[referenced],target[referenced])
+            error = np.linalg.norm(transfer(rest[referenced])-target[referenced],axis=1)
+            if error.max()>1e-8:
+                raise RuntimeError(f"target controls not reproduced: {key}")
+            doc,data,pose_report = create_pose(original,binary,profile,baseline,transfer,tag,provenance)
+        except RuntimeError as error:
+            if not args.allow_partial_qualification:
+                raise
+            report["poses"][key] = {"qualified":False,"exclusion_reason":str(error)}
+            continue
+        if args.contract_states:
+            root = doc["nodes"][doc["scenes"][doc.get("scene",0)]["nodes"][0]]
+            root["name"] = f"{args.token}_pose_{tag:04x}"
+            root["extras"]["variant_state"] = f"pose_{tag:04x}"
         pose_report["control_max_error_engine_units"] = float(error.max())
         report["poses"][key] = pose_report
         candidates[tag] = (doc,data)
@@ -216,21 +254,35 @@ def main():
     diagnostic.mkdir(parents=True,exist_ok=True)
     all_qualified = all(pose["qualified"] for pose in report["poses"].values())
     report["pack_numerically_qualified"] = all_qualified
-    folder = Path(args.output).resolve()/"tokens"/f"{args.token}_variants" if all_qualified else diagnostic/"candidates"
+    partial = args.allow_partial_qualification
+    folder = Path(args.output).resolve()/"tokens"/f"{args.token}_variants" if all_qualified or partial else diagnostic/"candidates"
     folder.mkdir(parents=True,exist_ok=True)
     for tag,(doc,data) in candidates.items():
-        path = folder/f"idle_{tag:04x}.glb"
+        if partial and not report["poses"][f"0x{tag:x}"]["qualified"]:
+            continue
+        path = folder/f"{'pose' if args.contract_states else 'idle'}_{tag:04x}.glb"
         write_glb(path,doc,data)
         report["poses"][f"0x{tag:x}"].update({"bytes":path.stat().st_size,"sha256":digest(path)})
+    if args.contract_states:
+        report.update({"scope":"all observed production-contract targets; numerical qualification only, no sequence activation",
+                       "individually_published_tags":[tag for tag in profile["states"] if report["poses"][f"0x{tag:x}"]["qualified"]],
+                       "excluded_tags":[tag for tag in profile["states"] if not report["poses"][f"0x{tag:x}"]["qualified"]]})
     (diagnostic/"qualification.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     print("TOKEN_VARIANTS",json.dumps(report))
     if args.render:
-        render_comparison(folder,diagnostic,reference,profile)
-    if not all_qualified:
+        if args.contract_states:
+            states = [tag for tag in profile["states"] if report["poses"][f"0x{tag:x}"]["qualified"]]
+            for start in range(0,len(states),8):
+                page = copy.deepcopy(profile)
+                page["states"] = states[start:start+8]
+                render_comparison(folder,diagnostic,reference,page,"pose",f"{args.token}_observed_{start//8+1:02d}.png")
+        else:
+            render_comparison(folder,diagnostic,reference,profile)
+    if not all_qualified and not partial:
         raise RuntimeError(f"{args.token} idle transfer failed; diagnostic candidates retained, runtime pack not published")
 
 
-def render_comparison(folder,diagnostic,reference,profile):
+def render_comparison(folder,diagnostic,reference,profile,prefix="idle",image_name=None):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     chrome = bpy.data.materials.new("Diagnostic retail chrome")
@@ -247,7 +299,7 @@ def render_comparison(folder,diagnostic,reference,profile):
     columns = len(profile["states"])
     for column,tag in enumerate(profile["states"]):
         x=(column-(columns-1)/2)*3
-        bpy.ops.import_scene.gltf(filepath=str(folder/f"idle_{tag:04x}.glb"))
+        bpy.ops.import_scene.gltf(filepath=str(folder/f"{prefix}_{tag:04x}.glb"))
         for obj in list(bpy.context.selected_objects):
             if obj.parent is None:
                 obj.location.x += x
@@ -287,7 +339,7 @@ def render_comparison(folder,diagnostic,reference,profile):
     scene.cycles.use_denoising=True
     scene.render.resolution_x,scene.render.resolution_y,scene.render.resolution_percentage=columns*450,1000,100
     token = "horse" if profile["rest_tag"]==0x94 else "dog"
-    scene.render.filepath=str(diagnostic/f"{token}_idle_retail_comparison.png")
+    scene.render.filepath=str(diagnostic/(image_name or f"{token}_idle_retail_comparison.png"))
     bpy.ops.render.render(write_still=True)
 
 

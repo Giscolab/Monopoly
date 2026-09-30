@@ -151,6 +151,12 @@ diagnostique non aligné. Son export utilise les 40 cellules décodées du retai
 Maison, fontaine, gare et colonne Morris sont des fichiers séparés ; l'adaptateur
 de décor ne crée pas de dépendance DATA retail fictive.
 
+La cible des variantes produit les états complets bateau/chien/cheval après
+leurs contrats de déformation de production et la reconstruction des pions
+nouvellement sculptés. Un fichier d'état absent/rejeté invalide son pack entier,
+indépendamment des autres packs, et conserve le repli retail. Le probe de frame
+CNK/GPU est reproductible avec la commande du [contrat Blender](BLENDER_INTEGRATION_SPEC.md).
+
 `--modern-board=paris`, `--modern-buildings=house` et
 `--modern-environment=paris` activent ces chemins optionnels. Le plateau Paris
 requiert le contexte Europe/français/Paris/euro, sans plateau personnalisé ; les
