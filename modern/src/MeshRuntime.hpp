@@ -161,12 +161,25 @@ namespace monopoly::data
         const MeshXRuntime& mesh, std::int32_t poseA, std::int32_t poseB,
         float proportion);
 
+    enum class MeshAssetOrigin : std::uint8_t
+    {
+        LegacyHmd,
+        ModernGltf
+    };
+
     struct MeshRuntimeAsset
     {
         DataId dataId{};
+        MeshAssetOrigin origin{MeshAssetOrigin::LegacyHmd};
+        // Present only for legacy HMD assets. Modern glTF animation will have
+        // its own pose/morph owner rather than pretending to be MIMe data.
         std::shared_ptr<const MeshXRuntime> mesh;
         std::shared_ptr<const MeshRenderData> renderData;
     };
+
+    using ModernMeshResolver = std::function<
+        std::expected<std::optional<std::shared_ptr<const MeshRenderData>>,
+            MeshRuntimeError>(DataId)>;
 
     // Cache scoped to one immutable ResourceSnapshot. A published replacement
     // therefore cannot silently change the bytes behind an existing asset.
@@ -174,7 +187,8 @@ namespace monopoly::data
     {
     public:
         explicit MeshRuntimeCache(std::shared_ptr<const ResourceSnapshot> resources,
-            MeshTextureResolver textureResolver = {}, MeshRuntimeLimits limits = {});
+            MeshTextureResolver textureResolver = {}, MeshRuntimeLimits limits = {},
+            ModernMeshResolver modernMeshResolver = {});
         [[nodiscard]] std::expected<std::shared_ptr<const MeshRuntimeAsset>, MeshRuntimeError>
         resolve(DataId id);
         // Prepare a complete replacement before publishing it; only this DataId
@@ -193,6 +207,7 @@ namespace monopoly::data
         std::shared_ptr<const ResourceSnapshot> resources_;
         MeshTextureResolver textureResolver_;
         MeshRuntimeLimits limits_;
+        ModernMeshResolver modernMeshResolver_;
         std::unordered_map<DataId, std::shared_ptr<const MeshRuntimeAsset>> assets_;
         std::unordered_map<DataId,
             std::vector<std::shared_ptr<const HmdTextureImage>>> textureOverrides_;

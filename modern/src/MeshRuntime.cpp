@@ -506,9 +506,13 @@ namespace monopoly::data
 
     MeshRuntimeCache::MeshRuntimeCache(
         std::shared_ptr<const ResourceSnapshot> resources,
-        MeshTextureResolver textureResolver, MeshRuntimeLimits limits)
-        : resources_(std::move(resources)), textureResolver_(std::move(textureResolver)),
-          limits_(limits)
+        MeshTextureResolver textureResolver,
+        MeshRuntimeLimits limits,
+        ModernMeshResolver modernMeshResolver)
+        : resources_(std::move(resources)),
+          textureResolver_(std::move(textureResolver)),
+          limits_(limits),
+          modernMeshResolver_(std::move(modernMeshResolver))
     {
     }
 
@@ -520,6 +524,27 @@ namespace monopoly::data
                 "MESHX cache requires an immutable resource snapshot"));
         if (const auto found = assets_.find(id); found != assets_.end())
             return found->second;
+
+        // Modern presentation assets are optional and transactional. Missing
+        // modern files return optional-empty and fall through to retail HMD.
+        // A malformed modern asset also falls back so a bad replacement can
+        // never make the known-good game unplayable.
+        if (modernMeshResolver_)
+        {
+            const auto modern = modernMeshResolver_(id);
+            if (modern && *modern)
+            {
+                auto asset = std::make_shared<const MeshRuntimeAsset>(
+                    MeshRuntimeAsset{
+                        id,
+                        MeshAssetOrigin::ModernGltf,
+                        {},
+                        std::move(**modern)
+                    });
+                assets_.emplace(id, asset);
+                return asset;
+            }
+        }
 
         auto source = openLegacyMeshData(resources_->data(), id);
         if (!source)
@@ -541,7 +566,12 @@ namespace monopoly::data
         auto mesh = std::make_shared<const MeshXRuntime>(std::move(*built));
         auto renderData = std::make_shared<const MeshRenderData>(makeMeshRenderData(*mesh));
         auto asset = std::make_shared<const MeshRuntimeAsset>(
-            MeshRuntimeAsset{id, std::move(mesh), std::move(renderData)});
+            MeshRuntimeAsset{
+                id,
+                MeshAssetOrigin::LegacyHmd,
+                std::move(mesh),
+                std::move(renderData)
+            });
         assets_.emplace(id, asset);
         return asset;
     }
@@ -568,7 +598,12 @@ namespace monopoly::data
         auto mesh = std::make_shared<const MeshXRuntime>(std::move(*substituted));
         auto renderData = std::make_shared<const MeshRenderData>(makeMeshRenderData(*mesh));
         auto asset = std::make_shared<const MeshRuntimeAsset>(
-            MeshRuntimeAsset{id, std::move(mesh), std::move(renderData)});
+            MeshRuntimeAsset{
+                id,
+                MeshAssetOrigin::LegacyHmd,
+                std::move(mesh),
+                std::move(renderData)
+            });
         // Publish only after the complete replacement has passed validation.
         // Image configuration owns no HMD source lease and survives eviction.
         std::vector<std::shared_ptr<const HmdTextureImage>> configured(images.begin(), images.end());

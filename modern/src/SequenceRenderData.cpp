@@ -19,7 +19,9 @@ namespace monopoly::sequence
                     instance.node, instance.contentsDataId, asset.error()});
             }
             std::shared_ptr<const data::MeshRenderData> renderData = (*asset)->renderData;
-            if (instance.meshChoice.meshIndexA != 0 || instance.meshChoice.meshIndexB != 0)
+            if ((instance.meshChoice.meshIndexA != 0 ||
+                 instance.meshChoice.meshIndexB != 0) &&
+                (*asset)->mesh)
             {
                 auto evaluated = data::makeMeshRenderData(*(*asset)->mesh,
                     instance.meshChoice.meshIndexA, instance.meshChoice.meshIndexB,
@@ -33,6 +35,9 @@ namespace monopoly::sequence
                 renderData = std::make_shared<const data::MeshRenderData>(
                     std::move(*evaluated));
             }
+            // Static modern assets deliberately keep their base render data
+            // while legacy MIMe pose selection continues to drive only HMD.
+            // The glTF morph adapter will consume this same meshChoice later.
             result.push_back({instance.node, instance.contentsDataId,
                 instance.priority, instance.clock, instance.worldTransform,
                 std::move(*asset), instance.meshChoice, instance.bounds,

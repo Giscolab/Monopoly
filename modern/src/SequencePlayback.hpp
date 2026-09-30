@@ -17,8 +17,15 @@ namespace monopoly::engine
     class SequencePlayback final
     {
     public:
-        explicit SequencePlayback(std::shared_ptr<const data::ResourceSnapshot> resources)
-            : meshes_(std::move(resources)), commands_(runtime_) {}
+        explicit SequencePlayback(
+            std::shared_ptr<const data::ResourceSnapshot> resources,
+            data::ModernMeshResolver modernMeshResolver = {})
+            : meshes_(
+                std::move(resources),
+                {},
+                {},
+                std::move(modernMeshResolver)),
+              commands_(runtime_) {}
 
         [[nodiscard]] std::expected<void, std::string> start(
             data::DataId id, std::uint16_t priority = 0,

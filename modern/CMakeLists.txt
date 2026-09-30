@@ -243,6 +243,7 @@ add_library(
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
+    src/ModernTokenCatalog.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
     src/BitmapRuntime.cpp
