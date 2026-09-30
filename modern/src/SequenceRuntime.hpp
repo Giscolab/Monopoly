@@ -250,6 +250,10 @@ namespace monopoly::sequence
         std::optional<SequenceBounds3D> bounds;
         std::optional<data::DataId> textureMapDataId;
         std::optional<data::DataId> jointPositionsDataId;
+        // Qualification provenance; priority above stays the authored leaf
+        // ordering priority. Source L_Seqncr.cpp:3797-3799,5318-5319 gives
+        // user priority only to the root, not its disk-born children.
+        std::uint16_t rootSequencePriority{};
     };
     struct RuntimeLimits
     {

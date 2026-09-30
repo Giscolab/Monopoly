@@ -182,6 +182,60 @@ namespace
             secondSource.expired(), "an empty scene releases the last static GPU and CPU references");
     }
 
+    void testSameDataIdSceneVariants(SDL_GPUDevice* device)
+    {
+        engine::SequenceWorld3DSlot slot;
+        engine::World3DCamera camera;
+        camera.location = {0, 0, 0};
+        camera.fieldOfView = 1.5707963267948966F;
+        camera.nearPlane = 1;
+        camera.farPlane = 100;
+        expect(slot.configureView({0, 0, 800, 450}, camera).has_value(),
+            "same-DataId variant fixture configures its camera");
+        const auto id = data::packDataId(8, 60);
+        auto legacy = makeItem(401, id);
+        auto modern = makeItem(402, id);
+        auto modernAsset = std::make_shared<data::MeshRuntimeAsset>(*modern.asset);
+        auto modernData = std::make_shared<data::MeshRenderData>(*modernAsset->renderData);
+        modernData->vertices.front().position[0] = -0.25F;
+        modernData->batches.front().material.model = data::MeshMaterialModel::MetallicRoughness;
+        modernAsset->origin = data::MeshAssetOrigin::ModernGltf;
+        modernAsset->renderData = std::move(modernData);
+        modern.asset = std::move(modernAsset);
+        const std::weak_ptr<const data::MeshRuntimeAsset> modernSource = modern.asset;
+        engine::MeshGPUCache cache(device);
+        expect(slot.sync({legacy, modern}).has_value(),
+            "one retail DataId publishes simultaneous distinct legacy and modern CPU assets");
+        const auto scene = engine::buildWorld3DGPUScene(slot, cache);
+        const auto legacyGPU = cache.resolveForScene(legacy.asset);
+        const auto modernGPU = cache.resolveForScene(modern.asset);
+        expect(scene && scene->size() == 2 && legacyGPU && modernGPU &&
+            cache.size() == 2 && (*scene)[0].vertexBuffer == (*legacyGPU)->vertexBuffer &&
+            (*scene)[1].vertexBuffer == (*modernGPU)->vertexBuffer &&
+            (*scene)[0].vertexBuffer != (*scene)[1].vertexBuffer &&
+            (*scene)[0].indexBuffer != (*scene)[1].indexBuffer,
+            "building a second same-DataId batch preserves the first batch's exact uploaded buffers");
+        if (!legacyGPU || !modernGPU) return;
+        const auto legacyBuffer = (*legacyGPU)->vertexBuffer;
+        const auto modernBuffer = (*modernGPU)->vertexBuffer;
+        modern.worldTransform.values[12] = 1000;
+        expect(slot.sync({modern, legacy}).has_value(),
+            "modern variant moves offscreen while the legacy context remains visible");
+        const auto offscreen = engine::buildWorld3DGPUScene(slot, cache);
+        const auto retained = cache.resolveForScene(modern.asset);
+        expect(offscreen && offscreen->size() == 1 && cache.size() == 2 &&
+            retained && (*retained)->vertexBuffer == modernBuffer &&
+            offscreen->front().vertexBuffer == legacyBuffer,
+            "offscreen ownership retains its exact variant without replacing the visible same-DataId upload");
+        slot.clearView();
+        expect(slot.sync({legacy}).has_value(), "modern variant stops while the view is hidden");
+        modern.asset.reset();
+        engine::pruneWorld3DGPUScene(slot, cache);
+        expect(cache.size() == 1 && modernSource.expired() && cache.find(id) &&
+            cache.find(id)->vertexBuffer == legacyBuffer,
+            "exact asset pruning releases only the stopped same-DataId variant and its CPU owner");
+    }
+
     void testCPUSweepAfterGPUPruning(SDL_GPUDevice* device)
     {
         SyntheticSequenceResources fixture;
@@ -286,6 +340,7 @@ namespace
             cache.clear();
         }
         testSceneOwnershipPruning(device);
+        testSameDataIdSceneVariants(device);
         testCPUSweepAfterGPUPruning(device);
         SDL_DestroyGPUDevice(device);
         SDL_Quit();

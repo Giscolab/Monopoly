@@ -414,6 +414,67 @@ namespace
         }
     }
 
+    void testModernVariantIdentityAndRejection()
+    {
+        ResourceFixture fixture;
+        expect(writeResources(fixture.root, flatTriangle()),
+            "modern rejection fixture contains the retail fallback");
+        ResourceRuntime runtime;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        if (!paths || !runtime.initialize(*paths))
+        {
+            expect(false, "modern rejection resources initialize");
+            return;
+        }
+        const auto built = MeshXRuntime::build(parse(flatTriangle()));
+        if (!built) { expect(false, "modern rejection geometry initializes"); return; }
+        const auto firstData = std::make_shared<const MeshRenderData>(makeMeshRenderData(*built));
+        auto changed = makeMeshRenderData(*built);
+        changed.vertices.front().position[0] += 123.0F;
+        changed.bounds.minimum[0] -= 123.0F;
+        const auto secondData = std::make_shared<const MeshRenderData>(std::move(changed));
+        auto selected = firstData;
+        MeshRuntimeCache cache(runtime.snapshot(), {}, {},
+            [&](DataId, std::optional<DataId>, std::uint16_t)
+                -> std::expected<std::optional<std::shared_ptr<const MeshRenderData>>, MeshRuntimeError>
+            { return std::optional{selected}; });
+        const auto id = packDataId(LegacyGroupId::ThreeD, 0);
+        const auto root = packDataId(LegacyGroupId::ThreeD, 1);
+        const auto otherRoot = packDataId(LegacyGroupId::ThreeD, 2);
+        const auto first = cache.resolve(id, root, 100);
+        selected = secondData;
+        const auto second = cache.resolve(id, root, 100);
+        expect(first && second && *first != *second && (*first)->renderData == firstData &&
+            (*second)->renderData == secondData &&
+            (*second)->renderData->bounds.minimum[0] == secondData->bounds.minimum[0] && cache.size() == 2,
+            "same DATA id retains distinct immutable variant geometry and calibration bounds");
+        selected = firstData;
+        const auto revisited = cache.resolve(id, root, 100);
+        expect(revisited && first && *revisited == *first,
+            "returning to an earlier variant reuses its exact cached immutable asset");
+        expect(cache.rejectModernAsset(firstData.get()) && !cache.rejectModernAsset(firstData.get()),
+            "failed modern identity is rejected once even when already cached");
+        const auto rejected = cache.resolve(id, root, 100);
+        expect(rejected && (*rejected)->origin == MeshAssetOrigin::LegacyHmd && (*rejected)->mesh,
+            "GPU-rejected modern cache hit selects the original retail pose-capable mesh");
+        selected = secondData;
+        cache.rejectModernSequence(root);
+        const auto rejectedSibling = cache.resolve(id, root, 100);
+        const auto independent = cache.resolve(id, otherRoot, 100);
+        expect(rejectedSibling && (*rejectedSibling)->origin == MeshAssetOrigin::LegacyHmd &&
+            independent && second && *independent == *second,
+            "complete root rejection covers sibling variants while an unrelated root remains eligible");
+        cache.clear();
+        selected = firstData;
+        const auto afterEviction = cache.resolve(id, otherRoot, 100);
+        selected = secondData;
+        const auto rootAfterEviction = cache.resolve(id, root, 100);
+        expect(afterEviction && rootAfterEviction &&
+            (*afterEviction)->origin == MeshAssetOrigin::LegacyHmd &&
+            (*rootAfterEviction)->origin == MeshAssetOrigin::LegacyHmd,
+            "asset and complete-root GPU rejection survive CPU cache eviction without retrying");
+    }
+
     void testEmbeddedTextureResolution()
     {
         auto source = parse(texturedTriangleWithEmbeddedImage());
@@ -692,6 +753,7 @@ int main()
     testMimePoseEvaluation();
     testResourceScopedCache();
     testContextSensitiveModernCache();
+    testModernVariantIdentityAndRejection();
     testEmbeddedTextureResolution();
     testTextureResolutionAndHistoricalDrop();
     testTextureSubstitutionPreservesGeometry();

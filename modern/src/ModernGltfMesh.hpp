@@ -21,8 +21,9 @@ namespace monopoly::data
         MeshRuntimeLimits limits{};
     };
 
-    // Static GLB bridge used before PBR and morph-target support. It accepts
-    // embedded GLB geometry and glTF baseColorFactor materials only.
+    // Bounded static GLB bridge for embedded geometry and modern PBR factors,
+    // PNG/JPEG maps and samplers. Unsupported animation/skin/morph contracts
+    // return a presentation error so the caller can retain retail geometry.
     [[nodiscard]] std::expected<
         std::shared_ptr<const MeshRenderData>,
         MeshRuntimeError>

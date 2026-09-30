@@ -534,11 +534,15 @@ namespace monopoly::data
         {
             const auto modern =
                 modernMeshResolver_(id, rootSequenceDataId, priority);
-            if (modern && *modern)
+            if (modern && *modern &&
+                (!rootSequenceDataId || !rejectedModernSequences_.contains(*rootSequenceDataId)) &&
+                std::none_of(rejectedModernAssets_.begin(), rejectedModernAssets_.end(),
+                    [&](const auto& rejected) { return rejected == **modern; }))
             {
                 if (const auto found = modernAssets_.find(id);
                     found != modernAssets_.end())
-                    return found->second;
+                    for (const auto& cached : found->second)
+                        if (cached->renderData == **modern) return cached;
 
                 auto asset = std::make_shared<const MeshRuntimeAsset>(
                     MeshRuntimeAsset{
@@ -547,7 +551,7 @@ namespace monopoly::data
                         {},
                         std::move(**modern)
                     });
-                modernAssets_.emplace(id, asset);
+                modernAssets_[id].push_back(asset);
                 return asset;
             }
         }
@@ -622,9 +626,38 @@ namespace monopoly::data
         return {};
     }
 
+    bool MeshRuntimeCache::rejectModernAsset(const MeshRenderData* renderData)
+    {
+        if (!renderData || std::any_of(rejectedModernAssets_.begin(), rejectedModernAssets_.end(),
+                [&](const auto& rejected) { return rejected.get() == renderData; }))
+            return false;
+        for (const auto& [id, variants] : modernAssets_)
+        {
+            (void)id;
+            for (const auto& asset : variants)
+                if (asset->renderData.get() == renderData)
+                {
+                    rejectedModernAssets_.push_back(asset->renderData);
+                    return true;
+                }
+        }
+        return false;
+    }
+
+    void MeshRuntimeCache::rejectModernSequence(DataId rootSequenceDataId)
+    {
+        rejectedModernSequences_.insert(rootSequenceDataId);
+    }
+
     std::size_t MeshRuntimeCache::size() const noexcept
     {
-        return assets_.size() + modernAssets_.size();
+        auto total = assets_.size();
+        for (const auto& [id, variants] : modernAssets_)
+        {
+            (void)id;
+            total += variants.size();
+        }
+        return total;
     }
 
     std::size_t MeshRuntimeCache::releaseUnused() noexcept
@@ -632,9 +665,14 @@ namespace monopoly::data
         const auto legacyReleased =
             std::erase_if(assets_, [](const auto& entry)
             { return entry.second.use_count() == 1; });
-        const auto modernReleased =
-            std::erase_if(modernAssets_, [](const auto& entry)
-            { return entry.second.use_count() == 1; });
+        std::size_t modernReleased{};
+        for (auto iterator = modernAssets_.begin(); iterator != modernAssets_.end();)
+        {
+            modernReleased += std::erase_if(iterator->second,
+                [](const auto& asset) { return asset.use_count() == 1; });
+            if (iterator->second.empty()) iterator = modernAssets_.erase(iterator);
+            else ++iterator;
+        }
         return legacyReleased + modernReleased;
     }
 

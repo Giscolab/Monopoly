@@ -16,6 +16,7 @@ namespace monopoly::startup
     namespace
     {
         std::optional<std::filesystem::path> selectedDataOverrides;
+        data::ResourceContext selectedContext{};
 
         struct FolderResult
         {
@@ -59,10 +60,35 @@ namespace monopoly::startup
         std::span<const std::string_view> arguments)
     {
         ResourceArguments result;
+        bool editionSpecified{};
+        bool languageSpecified{};
         for (std::size_t index = 0; index < arguments.size(); ++index)
         {
             const auto argument = arguments[index];
-            if (argument == "--data-root")
+            if (argument.starts_with("--edition="))
+            {
+                if (editionSpecified)
+                    return std::unexpected("--edition was specified twice");
+                editionSpecified = true;
+                const auto value = argument.substr(std::string_view("--edition=").size());
+                if (value == "usa") result.context.board = data::BoardEdition::Usa;
+                else if (value == "europe") result.context.board = data::BoardEdition::Europe;
+                else return std::unexpected("--edition requires usa or europe");
+            }
+            else if (argument.starts_with("--language="))
+            {
+                if (languageSpecified)
+                    return std::unexpected("--language was specified twice");
+                languageSpecified = true;
+                const auto value = argument.substr(std::string_view("--language=").size());
+                if (value == "en-us") result.context.language = data::LanguageId::EnglishUs;
+                else if (value == "en-uk") result.context.language = data::LanguageId::EnglishUk;
+                else if (value == "fr") result.context.language = data::LanguageId::French;
+                else return std::unexpected("--language requires en-us, en-uk or fr");
+            }
+            else if (argument == "--edition" || argument == "--language")
+                return std::unexpected("resource context switches require --edition=usa|europe or --language=en-us|en-uk|fr");
+            else if (argument == "--data-root")
             {
                 if (result.dataRoot || index + 1 == arguments.size() ||
                     arguments[index + 1].empty() ||
@@ -105,6 +131,21 @@ namespace monopoly::startup
         return {};
     }
 
+    std::expected<void, std::string> selectResourceContext(data::ResourceContext context)
+    {
+        if (context.board != data::BoardEdition::Usa && context.board != data::BoardEdition::Europe)
+            return std::unexpected("resource board edition must be USA or Europe");
+        if (!data::findLanguageBankTriplet(context.language))
+            return std::unexpected("resource language must have a source-defined bank triplet");
+        selectedContext = context;
+        return {};
+    }
+
+    data::ResourceContext resourceContext() noexcept
+    {
+        return selectedContext;
+    }
+
 
     std::expected<void, std::string> selectDataOverrideManifest(
         std::string_view utf8Path)
@@ -141,7 +182,7 @@ namespace monopoly::startup
             else
             {
                 const auto* paths = udutils::resourcePaths();
-                const auto issues = data::inspectResourceInstallation(*paths);
+                const auto issues = data::inspectResourceInstallation(*paths, resourceContext());
                 const auto root = paths->roots().front().u8string();
                 std::cout << "Resource folder: "
                     << std::string(root.begin(), root.end()) << '\n';

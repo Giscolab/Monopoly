@@ -115,26 +115,33 @@ def bootstrap(cache: Path, lock: dict, cmake: str = "cmake") -> None:
     (cache / "host.json").write_text(json.dumps({"arch": arch}), encoding="utf-8")
 
 
-def verify_reflection(reflection: dict, stage: str, name: str = "World3D") -> None:
+def verify_reflection(reflection: dict, stage: str, name: str = "World3D",
+                      samplers: int | None = None) -> None:
+    if samplers is None:
+        samplers = 1 if name == "World3D" else 5
     expected_set = 1 if stage == "vert" else 3
     ubos = reflection.get("ubos", [])
     if len(ubos) != 1 or (ubos[0].get("set"), ubos[0].get("binding")) != (expected_set, 0):
         raise ValueError(f"{stage}: SDL uniform contract requires one buffer at set {expected_set}, binding 0")
-    if stage == "frag" and name == "World3D":
-        textures = reflection.get("textures", [])
-        if len(textures) != 1 or (textures[0].get("set"), textures[0].get("binding")) != (2, 0):
-            raise ValueError("frag: SDL requires one combined image sampler at set 2, binding 0; "
-                             "annotate texture and sampler with [[vk::combinedImageSampler]]")
-    elif reflection.get("textures"):
-        raise ValueError(f"{stage}: {name} does not declare sampled textures")
+    expected_textures = [(2, binding) for binding in range(samplers)] if stage == "frag" else []
+    textures = reflection.get("textures", [])
+    bindings = [(texture.get("set"), texture.get("binding")) for texture in textures]
+    if sorted(bindings, key=repr) != sorted(expected_textures, key=repr):
+        raise ValueError(f"{stage}: {name} requires combined image sampler bindings "
+                         f"{expected_textures}; annotate each texture and sampler with "
+                         "[[vk::combinedImageSampler]]")
     if any(reflection.get(key) for key in ["separate_images", "separate_samplers", "ssbos", "images"]):
         raise ValueError(f"{stage}: unexpected resources outside the World3D SDL contract")
 
 
 def compile_shaders(dxc: Path, cross: Path, source: Path, output: Path, lock: dict,
-                    name: str = "World3D", external: bool = False) -> None:
+                    name: str = "World3D", external: bool = False,
+                    samplers: int | None = None) -> None:
+    if samplers is None:
+        samplers = 1 if name == "World3D" else 5
     output.mkdir(parents=True, exist_ok=True)
-    manifest: dict = {"toolchain": lock, "sources": {}, "outputs": {},
+    manifest: dict = {"toolchain": lock, "sources": {}, "sources_normalized_lf": {}, "outputs": {},
+                      "fragment_samplers": samplers,
                       "external_compilers": external,
                       "compiler_hashes": {"dxc": digest(dxc), "spirv_cross": digest(cross)}}
     # Publish only after both stages and all formats pass contract checks.
@@ -143,6 +150,8 @@ def compile_shaders(dxc: Path, cross: Path, source: Path, output: Path, lock: di
         for stage, profile in [("vert", "vs_6_0"), ("frag", "ps_6_0")]:
             shader = source / f"{name}.{stage}.hlsl"
             manifest["sources"][shader.name] = digest(shader)
+            manifest["sources_normalized_lf"][shader.name] = hashlib.sha256(
+                shader.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
             base = f"{name}.{stage}"
             dxil, spv, msl = [staged / (base + extension) for extension in [".dxil", ".spv", ".msl"]]
             common = [dxc, "-T", profile, "-E", "main", "-O3", "-WX", shader]
@@ -151,15 +160,17 @@ def compile_shaders(dxc: Path, cross: Path, source: Path, output: Path, lock: di
             if dxil.read_bytes()[:4] != b"DXBC" or spv.read_bytes()[:4] != b"\x03\x02\x23\x07":
                 raise ValueError("compiler produced an invalid shader container")
             reflection = json.loads(run([cross, spv, "--reflect"], capture=True))
-            verify_reflection(reflection, stage, name)
+            verify_reflection(reflection, stage, name, samplers)
             run([cross, spv, "--msl", "--msl-version", "20100",
                  "--msl-decoration-binding", "--rename-entry-point", "main", "main0", stage,
                  "--output", msl])
             metal = msl.read_text(encoding="utf-8")
             if "main0(" not in metal or not re.search(r"\[\[buffer\(0\)\]\]", metal):
                 raise ValueError("MSL entry point/uniform binding does not match SDL")
-            if stage == "frag" and name == "World3D" and any(token not in metal for token in ["[[texture(0)]]", "[[sampler(0)]]"]):
-                raise ValueError("MSL texture/sampler binding does not match SDL")
+            if stage == "frag":
+                for binding in range(samplers):
+                    if any(token not in metal for token in [f"[[texture({binding})]]", f"[[sampler({binding})]]"]):
+                        raise ValueError(f"MSL texture/sampler binding {binding} does not match SDL")
             for path in [dxil, spv, msl]:
                 manifest["outputs"][path.name] = digest(path)
         for output_name in manifest["outputs"]:
@@ -173,6 +184,8 @@ def main() -> int:
     parser.add_argument("--cache", type=Path, default=MODERN / "build-shader-tools")
     parser.add_argument("--source", type=Path, default=MODERN / "shaders")
     parser.add_argument("--name", choices=["World3D", "ModernPBR"], default="World3D")
+    parser.add_argument("--samplers", type=int, choices=[0, 1, 5],
+                        help="fragment combined sampler count (World3D: 1; ModernPBR: 5; old factor-only PBR: 0)")
     parser.add_argument("--output", type=Path, required=False)
     parser.add_argument("--bootstrap", action="store_true", help="download locked dependencies and build SPIRV-Cross locally")
     parser.add_argument("--bootstrap-only", action="store_true")
@@ -180,6 +193,10 @@ def main() -> int:
     parser.add_argument("--dxc", type=Path, help="explicit external compiler; provenance is caller's responsibility")
     parser.add_argument("--spirv-cross", type=Path, help="explicit external compiler; provenance is caller's responsibility")
     args = parser.parse_args()
+    if args.name == "World3D" and args.samplers not in {None, 1}:
+        parser.error("World3D requires exactly one fragment sampler")
+    if args.name == "ModernPBR" and args.samplers not in {None, 0, 5}:
+        parser.error("ModernPBR supports zero or five fragment samplers")
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     cache = args.cache.resolve()
     if args.bootstrap or args.bootstrap_only:
@@ -195,7 +212,7 @@ def main() -> int:
     if not dxc.is_file() or not cross.is_file():
         parser.error("shader compiler missing; run --bootstrap or specify both compiler paths")
     compile_shaders(dxc.resolve(), cross.resolve(), args.source.resolve(), args.output.resolve(), lock,
-                    args.name, args.dxc is not None or args.spirv_cross is not None)
+                    args.name, args.dxc is not None or args.spirv_cross is not None, args.samplers)
     print(args.name, "shaders compiled and resource contracts verified:", args.output)
     return 0
 

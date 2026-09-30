@@ -31,6 +31,8 @@ namespace monopoly::sequence
         SequenceMeshChoice3D meshChoice{};
         std::optional<SequenceBounds3D> bounds;
         std::shared_ptr<const data::MeshRenderData> renderData;
+        // Kept separate from the leaf priority used for presentation ordering.
+        std::uint16_t rootSequencePriority{};
     };
 
     // Resolves the current CPU mesh intent transactionally. No SDL/GPU/render

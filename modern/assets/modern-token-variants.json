@@ -1,0 +1,48 @@
+{
+  "schema": 2,
+  "source_sequence": "CNK_kngmx1",
+  "sequence_data_id": "0x00080360",
+  "priority": 100,
+  "duration_ticks": 68,
+  "ticks_per_second": 60,
+  "geometry_owner": "Authored per-HMD static GLB states; no glTF animation clips",
+  "timeline_owner": "Production CNK runtime owns clock, world transforms, visibility and exact HMD selection",
+  "calibration_owner": "Existing ship token definition: 87.55 units per metre, yaw -90, offset [0,0,6.63]",
+  "grounding": "Decode every state without individual grounding; subtract the loaded rest minimum Y from both states",
+  "publication": "Load and validate every state plus identical vertex/triangle correspondence before publishing the immutable pack; any failure retains the whole root in retail",
+  "gpu_failure": "Rejecting either published render-data identity disables both states before retail views are republished",
+  "states": [
+    {
+      "source_hmd": "0x00080018",
+      "path": "assets/modern/tokens/ship_variants/rest.glb",
+      "parent_tick_intervals": [[0, 27], [36, 68]]
+    },
+    {
+      "source_hmd": "0x0008001B",
+      "path": "assets/modern/tokens/ship_variants/squash.glb",
+      "parent_tick_intervals": [[28, 35]]
+    }
+  ],
+  "dog_idle_pack": {
+    "source_sequence": "CNK_kncmx0",
+    "sequence_data_id": "0x000801D3",
+    "root_priority_interval": [224, 229],
+    "priority_owner": "pieces::TokenPriority through TokenPriority + rules::MaxPlayers - 1; leaf render priorities remain authored",
+    "duration_ticks": 32,
+    "ticks_per_second": 60,
+    "geometry_owner": "Four authored per-HMD static GLB states; no glTF animation clips",
+    "timeline_owner": "Production CNK runtime owns clock, world transforms, visibility and exact HMD selection",
+    "calibration": {"units_per_meter": 154.80, "yaw_degrees": 90, "local_offset": [-0.5, 0, -15.05967734]},
+    "grounding": "All four exported states subtract the same representative authoring minimum Y 0.02800000086426735 metres; runtime does not reground, preserving each signed pose minimum",
+    "publication": "All four states must load with identical indexed vertex/triangle correspondence before any state is published; a missing, malformed or GPU-rejected state retains the complete root in retail",
+    "cache_isolation": "Dog and ship success, remembered failures and GPU rejection are independent; root-specific attempted and loadError APIs report only that pack",
+    "states": [
+      {"source_hmd": "0x00080040", "source_name": "HMD_dog08", "path": "assets/modern/tokens/dog_variants/idle_0040.glb"},
+      {"source_hmd": "0x00080041", "source_name": "HMD_dog09", "path": "assets/modern/tokens/dog_variants/idle_0041.glb"},
+      {"source_hmd": "0x00080042", "source_name": "HMD_dog10", "path": "assets/modern/tokens/dog_variants/idle_0042.glb"},
+      {"source_hmd": "0x00080043", "source_name": "HMD_dog11", "path": "assets/modern/tokens/dog_variants/idle_0043.glb"}
+    ],
+    "source_namespace": "Source GameInc DAT_3D = 8; source manifest CNK_kncmx0 tag 0x01D3 and HMD_dog08 through HMD_dog11 tags 0x0040 through 0x0043"
+  },
+  "verification_boundary": "Complete CPU sequence and loader contract; rendered authored shape correspondence requires separate visual qualification"
+}

@@ -23,7 +23,12 @@ Each invocation produces DXIL, SPIR-V and MSL for both stages. MSL uses `main0`;
 DXIL and SPIR-V use `main`. Reflection verifies the SDL uniform register spaces
 and the combined sampler contract, and MSL binding checks verify buffer/texture
 indices. World3D needs `[[vk::combinedImageSampler]]` on its texture and sampler
-declarations for Vulkan. ModernPBR declares no sampled textures. These checks do
+declarations for Vulkan. ModernPBR requires five combined image samplers at set 2,
+bindings 0 through 4. Use `--name ModernPBR --samplers 0` when regenerating the
+earlier factor-only checkpoint. Vertex stages require zero sampled textures.
+Manifests record exact source-byte hashes plus CRLF-normalized LF hashes, allowing
+source-content comparisons across Windows and Unix checkouts without losing the
+provenance of the actual compiler inputs. These checks do
 not replace Vulkan/Metal/D3D12 runtime validation.
 
 For CMake integration, make an `add_custom_command` produce all six shader files

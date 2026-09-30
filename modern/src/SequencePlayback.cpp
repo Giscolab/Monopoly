@@ -437,6 +437,14 @@ namespace monopoly::engine
         return {};
     }
 
+    std::expected<void, std::string> SequencePlayback::setNativeSceneItems(
+        std::vector<sequence::SequenceMeshRenderItem> items)
+    {
+        if (items.empty() && nativeSceneItems_.empty()) return {};
+        nativeSceneItems_ = std::move(items);
+        return publishRuntimeViews();
+    }
+
     std::expected<void, std::string> SequencePlayback::publishRuntimeViews()
     {
         for (const auto& outcome : commands_.outcomes())
@@ -455,6 +463,7 @@ namespace monopoly::engine
             return std::unexpected(items.error().cause.detail);
         }
 
+        items->insert(items->end(), nativeSceneItems_.begin(), nativeSceneItems_.end());
         const auto bitmapItems = sequence::collectSequenceBitmapRenderData(
             runtime_, meshes_.resources(), &runtimeBitmaps_);
         if (!bitmapItems)

@@ -14,12 +14,57 @@ cbuffer MaterialUniforms : register(b0, space3)
     float4 spotlightDirectionFalloff;
     float4 spotlightAttenuationTheta;
     float4 spotlightPhi;
+    float4 mapFlags;
+    float4 mapParameters;
 };
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+Texture2D baseColorMap : register(t0, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState baseColorSampler : register(s0, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+Texture2D metallicRoughnessMap : register(t1, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState metallicRoughnessSampler : register(s1, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+Texture2D normalMap : register(t2, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState normalSampler : register(s2, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+Texture2D emissiveMap : register(t3, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState emissiveSampler : register(s3, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+Texture2D occlusionMap : register(t4, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState occlusionSampler : register(s4, space2);
+
 struct PixelInput
 {
     float4 position : SV_Position;
     float3 worldPosition : TEXCOORD0;
     float3 normal : TEXCOORD1;
+    float2 uv : TEXCOORD2;
+    float4 tangent : TEXCOORD3;
 };
 static const float PI = 3.14159265358979323846f;
 
@@ -37,32 +82,34 @@ float visibilityGGX(float nDotV, float nDotL, float alphaSquared)
     const float ggxL = nDotV * sqrt(nDotL * nDotL * (1.0f - alphaSquared) + alphaSquared);
     return 0.5f / max(ggxV + ggxL, 0.000001f);
 }
-float3 directLight(float3 n, float3 v, float3 l, float3 radiance)
+float3 directLight(float3 n, float3 v, float3 l, float3 radiance,
+    float3 albedo, float metallic, float roughness)
 {
     const float nDotL = saturate(dot(n, l));
     const float nDotV = saturate(dot(n, v));
     if (nDotL <= 0.0f || nDotV <= 0.0f) return 0.0f;
     const float3 h = safeNormalize(v + l);
     const float nDotH = saturate(dot(n, h));
-    const float metallic = saturate(metallicRoughness.x);
-    const float roughness = clamp(metallicRoughness.y, 0.045f, 1.0f);
+    roughness = clamp(roughness, 0.045f, 1.0f);
     const float alpha = roughness * roughness;
     const float alphaSquared = alpha * alpha;
     const float nDotHSquared = nDotH * nDotH;
     const float divisor = (1.0f - nDotHSquared) + alphaSquared * nDotHSquared;
     const float distribution = alphaSquared / (PI * divisor * divisor);
-    const float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), baseColor.rgb, metallic);
+    const float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
     const float3 fresnel = fresnelSchlick(dot(v, h), f0);
-    const float3 diffuse = (1.0f - fresnel) * (1.0f - metallic) * baseColor.rgb / PI;
+    const float3 diffuse = (1.0f - fresnel) * (1.0f - metallic) * albedo / PI;
     const float3 specular = distribution * visibilityGGX(nDotV, nDotL, alphaSquared) * fresnel;
     return (diffuse + specular) * radiance * nDotL;
 }
-float3 directionalLight(float3 n, float3 v, float4 colorEnabled, float3 direction)
+float3 directionalLight(float3 n, float3 v, float4 colorEnabled, float3 direction,
+    float3 albedo, float metallic, float roughness)
 {
     return colorEnabled.w > 0.5f
-        ? directLight(n, v, safeNormalize(-direction), colorEnabled.rgb) : 0.0f;
+        ? directLight(n, v, safeNormalize(-direction), colorEnabled.rgb, albedo, metallic, roughness) : 0.0f;
 }
-float3 spotlight(float3 n, float3 v, float3 position)
+float3 spotlight(float3 n, float3 v, float3 position,
+    float3 albedo, float metallic, float roughness)
 {
     if (spotlightColorEnabled.w <= 0.5f) return 0.0f;
     const float3 delta = spotlightPositionRange.xyz - position;
@@ -79,7 +126,8 @@ float3 spotlight(float3 n, float3 v, float3 position)
     const float3 attenuation = spotlightAttenuationTheta.xyz;
     const float denominator = attenuation.x + attenuation.y * distanceToLight
         + attenuation.z * distanceToLight * distanceToLight;
-    return directLight(n, v, l, spotlightColorEnabled.rgb * cone / max(denominator, 0.000001f));
+    return directLight(n, v, l, spotlightColorEnabled.rgb * cone / max(denominator, 0.000001f),
+        albedo, metallic, roughness);
 }
 float3 linearToSRGB(float3 color)
 {
@@ -89,18 +137,69 @@ float3 linearToSRGB(float3 color)
         color.g <= 0.0031308f ? color.g * 12.92f : 1.055f * pow(color.g, 1.0f / 2.4f) - 0.055f,
         color.b <= 0.0031308f ? color.b * 12.92f : 1.055f * pow(color.b, 1.0f / 2.4f) - 0.055f);
 }
+float3 mappedNormal(PixelInput input, float3 n)
+{
+    // Derivatives are evaluated before data-dependent branches.
+    const float3 dpdx = ddx(input.worldPosition);
+    const float3 dpdy = ddy(input.worldPosition);
+    const float2 duvdx = ddx(input.uv);
+    const float2 duvdy = ddy(input.uv);
+    if (mapFlags.z <= 0.5f) return n;
+    float3 tangent = input.tangent.xyz - n * dot(n, input.tangent.xyz);
+    float3 bitangent;
+    if (abs(input.tangent.w) > 0.5f && dot(tangent, tangent) > 0.00000001f)
+    {
+        tangent = safeNormalize(tangent);
+        bitangent = cross(n, tangent) * input.tangent.w;
+    }
+    else
+    {
+        const float determinant = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
+        if (abs(determinant) < 0.00000001f) return n;
+        tangent = (dpdx * duvdy.y - dpdy * duvdx.y) / determinant;
+        const float3 rawBitangent = (dpdy * duvdx.x - dpdx * duvdy.x) / determinant;
+        tangent = tangent - n * dot(n, tangent);
+        if (dot(tangent, tangent) < 0.00000001f) return n;
+        tangent = safeNormalize(tangent);
+        const float handedness = dot(cross(n, tangent), rawBitangent) < 0.0f ? -1.0f : 1.0f;
+        bitangent = cross(n, tangent) * handedness;
+    }
+    float3 sampled = normalMap.Sample(normalSampler, input.uv).xyz * 2.0f - 1.0f;
+    sampled.xy *= mapParameters.y;
+    return safeNormalize(tangent * sampled.x + bitangent * sampled.y + n * sampled.z);
+}
 float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
 {
-    const float3 n = safeNormalize(frontFace ? input.normal : -input.normal);
+    float4 sampledBaseColor = baseColor;
+    if (mapFlags.x > 0.5f) sampledBaseColor *= baseColorMap.Sample(baseColorSampler, input.uv);
+    if (metallicRoughness.w > 0.5f && sampledBaseColor.a < mapParameters.w) discard;
+    const float3 albedo = sampledBaseColor.rgb;
+    float metallic = metallicRoughness.x;
+    float roughness = metallicRoughness.y;
+    if (mapFlags.y > 0.5f)
+    {
+        const float4 texel = metallicRoughnessMap.Sample(metallicRoughnessSampler, input.uv);
+        roughness *= texel.g;
+        metallic *= texel.b;
+    }
+    metallic = saturate(metallic);
+    const float3 n = mappedNormal(input, safeNormalize(input.normal)) * (frontFace ? 1.0f : -1.0f);
     const float3 v = safeNormalize(cameraPosition.xyz - input.worldPosition);
-    const float metallic = saturate(metallicRoughness.x);
-    const float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), baseColor.rgb, metallic);
+    const float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
     const float3 fresnel = fresnelSchlick(saturate(dot(n, v)), f0);
-    // Factor-only ambient approximation; no environment map is available.
-    float3 color = sceneAmbient.rgb * ((1.0f - fresnel) * (1.0f - metallic) * baseColor.rgb + f0);
-    color += directionalLight(n, v, boardReflectionColorEnabled, boardReflectionDirection.xyz);
-    color += directionalLight(n, v, sunColorEnabled, sunDirection.xyz);
-    color += spotlight(n, v, input.worldPosition);
-    color += emissiveStrength.rgb * max(emissiveStrength.w, 0.0f);
-    return float4(metallicRoughness.z > 0.5f ? color : linearToSRGB(color), baseColor.a);
+    // Ambient approximation; no environment map is available.
+    float3 color = sceneAmbient.rgb * ((1.0f - fresnel) * (1.0f - metallic) * albedo + f0);
+    if (mapParameters.x > 0.5f)
+    {
+        const float occlusion = occlusionMap.Sample(occlusionSampler, input.uv).r;
+        color *= lerp(1.0f, occlusion, saturate(mapParameters.z));
+    }
+    color += directionalLight(n, v, boardReflectionColorEnabled, boardReflectionDirection.xyz,
+        albedo, metallic, roughness);
+    color += directionalLight(n, v, sunColorEnabled, sunDirection.xyz, albedo, metallic, roughness);
+    color += spotlight(n, v, input.worldPosition, albedo, metallic, roughness);
+    float3 emissive = emissiveStrength.rgb * max(emissiveStrength.w, 0.0f);
+    if (mapFlags.w > 0.5f) emissive *= emissiveMap.Sample(emissiveSampler, input.uv).rgb;
+    color += emissive;
+    return float4(metallicRoughness.z > 0.5f ? color : linearToSRGB(color), 1.0f);
 }

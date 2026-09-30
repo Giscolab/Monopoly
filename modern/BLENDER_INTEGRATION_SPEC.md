@@ -38,7 +38,7 @@ Six of the eleven retail tokens currently exist as grouped assets:
 | Pion cuirasse | ship | 6 |
 | Pion de a coudre | thimble | 8 |
 
-Missing modern token assets are:
+Absent from the recovered authoring file (now separately authored sculptures):
 
 - cannon — retail index 0
 - iron — retail index 4
@@ -73,12 +73,13 @@ that are glTF-compatible or baked to textures.
 Generated files are build artifacts and must not be committed until an asset is
 explicitly approved for production.
 
-Proposed runtime layout:
+Runtime and separate diagnostic asset layout:
 
 ```text
 assets/modern/
   board/
-    paris_board.glb
+    paris_board.glb          # diagnostic, not runtime-aligned
+    paris_board_runtime.glb  # mapped to 40 retail cells
   tokens/
     race_car.glb
     dog.glb
@@ -90,7 +91,9 @@ assets/modern/
     house.glb
     hotel.glb
   environment/
-    paris_environment.glb
+    paris_fountain.glb
+    paris_station.glb
+    paris_morris_column.glb
 ```
 
 The checked-in headless exporter is:
@@ -126,28 +129,30 @@ right-handed Y-up data. Conversion to Monopoly engine coordinates is owned by on
 loader boundary only; renderer and gameplay code must not each apply their own
 axis correction.
 
-The current board uses about 486 x 486 legacy world units while the Blender board
-is about 24 x 24 meters. This suggests an initial scale of 20.25 engine units per
-Blender meter. That value is a hypothesis for loader calibration, not yet a
-production constant; it must be checked against the retail board mesh bounds
-before publication.
+Token height, yaw and pivot use per-token calibration against decoded HMDs.
+The aligned runtime board is a separate export: its loader uses 200 units/metre
+and local offset `(2430, 0, 2430)`, followed by the existing CNK board scale of
+0.10. Its 40 case positions are mapped to actual retail cell geometry. The
+uncalibrated diagnostic board export is not interchangeable with that asset.
 
 ## Geometry contract
 
 First implementation supports:
 
-- indexed triangle primitives;
+- indexed triangle primitives, or sequential indices generated after validation;
 - POSITION — required;
 - NORMAL — required for production assets;
-- TEXCOORD_0 — optional;
-- TANGENT — optional until normal mapping is enabled;
+- TEXCOORD_0 — required when a texture map is present;
+- TANGENT — optional; valid authored vectors are transformed/orthogonalized,
+  while absent vectors request the shader's derivative basis;
 - one or more primitives/material groups per node;
 - node transform hierarchy;
-- 16-bit or 32-bit glTF indices;
+- unsigned 8-, 16- or 32-bit glTF indices;
 - bounded allocations using the existing MeshRuntime safety budgets.
 
-Unsupported attributes/extensions fail explicitly. They are never silently
-reinterpreted as HMD data.
+Animated scenes, skins, morph targets, sparse accessors, alpha BLEND, external
+images, nonzero texture-coordinate sets and texture transforms are explicitly
+unsupported by this static bridge. They are never reinterpreted as HMD data.
 
 The existing `MeshRenderData` is the renderer-facing geometry contract:
 
@@ -159,46 +164,53 @@ The existing `MeshRenderData` is the renderer-facing geometry contract:
 The GLB path should produce an equivalent modern render asset without converting
 the GLB back into HMD or DAT.
 
-## Static GLB implementation status — 30 September 2026
+## Static GLB implementation status — 1 October 2026
 
 The static bridge is now implemented with pinned `fastgltf v0.9.0`, linked
 statically into `MonopolyDataCore`.
 
-`ModernGltfMesh` currently decodes embedded GLB triangle geometry into
-`MeshRenderData` with node transforms, POSITION, NORMAL, optional TEXCOORD_0,
-indices, bounds and baseColorFactor. Allocation budgets reuse `MeshRuntimeLimits`.
+`ModernGltfMesh` decodes bounded GLB triangle geometry, node transforms,
+POSITION/NORMAL/UV0, optional tangents, indices, bounds and material factors.
+PNG/JPEG images must be embedded buffer views. Immutable modern RGBA owners
+remain distinct from HMD image metadata. Allocation budgets cover geometry,
+encoded/decoded images and decoder working storage.
 
 `ModernTokenCatalog` maps the complete retail HMD families back to their
 logical token index. `MeshRuntimeCache` asks the modern resolver first and
 falls back to HMD when an asset is absent or rejected.
 
-The exporter and calibration probe successfully decode all six generated assets.
-Runtime replacement is intentionally narrower: race car, top hat, ship, boot and
-thimble are eligible only in their static resting-idle sequence. The dog remains
-retail for now because its resting idle already cycles through four distinct HMD
-frames. Movement sequences always keep their retail HMD frames until a complete
-modern animation replacement exists.
+The exporter/probe decode the six recovered and five newly authored token assets.
+Nine single-HMD resting idles load in a bounded startup. Dog root `0x801D3`
+has a complete four-state adapter; horse and unqualified multi-HMD roots retain
+retail geometry. An explicit table qualifies 46 rigid CNK roots for
+modern geometry while CNK remains the timing/transform/visibility owner. Other
+movements retain retail frames. The ship two-state pack for root `0x80360` passes
+71 production timeline ticks against retail: clocks, HMD selection, matrices,
+priorities and lifecycle match. The dog adapter passes 99 production frames with
+modern geometry, no fallback/errors, and identical paired-retail clocks, matrices,
+HMD choices and lifecycle. These are CPU proofs, not live GPU animation proof.
+Six horse authoring poses are qualified, but its runtime adapter remains pending.
 
-The six existing assets now have explicit authoring calibration. Height is
-matched against one representative retail HMD per token; Blender's longitudinal
-X axis is rotated -90 degrees around Y to match the retail Z direction, each GLB
-is grounded to Y=0, and local X/Z offsets reproduce the retail HMD pivot. The
-calibration probe shows essentially identical local centers and identical
-heights for the six replacements without non-uniformly deforming their meshes.
+The recovered assets have explicit per-token authoring calibration. Height is
+matched against a representative retail HMD, and yaw/grounding/local offsets
+reproduce its measured pivot. The dog variant basis uses +90 degrees around Y
+and common offset `(-0.5, 0, -15.05967734)`; a universal -90-degree correction is
+incorrect. Static-idle eligibility remains separate from these measurements.
 
 The CMake targets are:
 
 ```text
 MonopolyExportModernAssets   # headless Blender -> build/modern-assets/tokens
 MonopolyRuntimeModernAssets  # stage generated GLBs beside MonopolyModern.exe
+MonopolyExportModernTokenVariants # production contracts and ship/dog state exports
 ```
 
 A normal MonopolyModern build stages already-generated modern assets but does
 not require Blender. Missing GLBs therefore remain a normal HMD fallback case.
 
-The modern GPU path now uses separate factor-only GGX metallic/roughness
-shaders and pipelines. It supports baseColorFactor, metallicFactor,
-roughnessFactor, emissiveFactor/strength and double-sided materials. Legacy
+The modern GPU path uses separate GGX metallic/roughness shaders and pipelines.
+It supports baseColorFactor, metallicFactor, roughnessFactor,
+emissiveFactor/strength, double-sided materials and all five PBR map roles. Legacy
 HMD batches keep the Gouraud path, including retail shadows. Missing modern
 shader files log a diagnostic and temporarily draw through legacy diffuse.
 
@@ -207,17 +219,18 @@ see [shader tooling](tools/SHADER_TOOLCHAIN.md). Generated ModernPBR assets are
 staged by normal builds. `MonopolyCompileShaders` regenerates both shader
 families into the build directory without changing checked-in binaries.
 
-Texture-backed PBR maps, animated GLB playback and environment lighting remain
-unsupported at this checkpoint. The ambient factor approximation is not IBL.
-Procedural Blender graphs still need compatible material conversion or baking.
+Animated GLB playback and image-based environment lighting remain unsupported.
+The ambient factor approximation is not IBL. Optional scene decorations are
+geometry, not an environment-lighting implementation. Procedural Blender graphs
+still need compatible conversion or baking.
 
 ## Material contract
 
-The legacy path currently exposes diffuse material + optional texture. Modern GLB
-requires a parallel material representation before it can look like the Blender
-authoring scene.
+Legacy batches retain diffuse material plus their optional HMD texture. Modern
+GLB batches carry immutable image/map/sampler ownership through the existing
+mesh GPU cache and a dedicated shader path.
 
-Target v1 material inputs:
+Implemented material inputs:
 
 - baseColorFactor;
 - baseColorTexture;
@@ -226,7 +239,34 @@ Target v1 material inputs:
 - metallic/roughness texture when present;
 - normal texture;
 - emissive factor / texture;
-- alpha mode where actually required.
+- occlusion texture and strength;
+- OPAQUE (output alpha one) and MASK (factor/texture alpha cutoff).
+
+Base color and emissive maps are sampled as sRGB; metallic/roughness, normal and
+occlusion maps are linear. Shared pixels can have distinct GPU interpretations.
+Sampler wraps, filters and mip levels are retained. BLEND falls back explicitly
+until transparent pipelines and sorting exist.
+
+The recovered tokens and gameplay-house prototype have factor-only Principled
+graphs and need no procedural bake. `tools/blender/bake_monopoly_materials.py`
+bakes actual linked channels on disposable evaluated subsets. The asphalt
+proof bakes Noise/ColorRamp base color and actual Bump into tangent normals;
+roughness/metallic occupy glTF G/B channels. Collapsed evaluated triangles are
+removed with recorded area tolerance, split normals are preserved, and UVs are
+checked for degeneracy. Blender's zero tangents on thin bevel corners are omitted
+so the runtime derives a basis. Two fresh processes produced identical GLB,
+geometry, PNG and pixel hashes. This subset is not proof that every procedural
+material has been converted.
+
+The recovered top-hat factor-only materials were also baked as an explicit
+self-test into an isolated build/material-bake-qualification directory. Two
+fresh exports and production loader runs agree: three base-color/MR bindings,
+six 512px PNGs, 6 MiB decoded RGBA, 70,053 encoded PNG bytes and a 188,636-byte
+GLB. Normal/emissive/occlusion maps remain absent because the source has no such
+map inputs. GLB, geometry, PNG and pixel hashes repeat; source hash is unchanged.
+An isolated native Blender comparison at 256px/32 samples has full-frame RGB
+mean absolute difference 0.00043311. It qualifies factor conversion, not procedural
+fidelity, engine shading or gameplay.
 
 The legacy Gouraud shader remains available for HMD fallback assets. Modern GLB
 materials get a separate shader/pipeline path; do not weaken retail fidelity to
@@ -261,10 +301,11 @@ it is not the token-animation authority.
 
 The runtime now carries the top-level/root CNK DataId with every 3D mesh
 instance. Modern token resolution is context-sensitive: a static GLB may replace
-a single-HMD resting idle only at player priorities 224..229 while the exact same
-HMD DataId still resolves to the
-retail asset inside a movement CNK. Modern and legacy mesh cache entries are kept
-separate so one context cannot poison the other.
+a single-HMD resting idle only at root activation priorities 224..229; qualified
+rigid movement roots use activation priority 100. Authored leaf draw priority
+(including zero) remains separate and is preserved. The same HMD DataId resolves
+to retail in an unqualified root. Modern/legacy immutable owners and cache entries
+remain distinct so one context cannot poison another.
 
 A future complete modern token animation must replace a whole retail sequence,
 not isolated HMD frames. The sequence clock, board transforms and gameplay
@@ -276,13 +317,14 @@ map the complete CNK/HMD state sequence without changing timing or rules.
 
 1. Keep retail HMD/DAT rendering as the known-good fallback.
 2. Export/load the six recovered GLBs and calibrate scale, pivot and orientation.
-3. Use static GLBs only for single-HMD resting-idle sequences; keep movement
-   and multi-HMD idles retail.
-4. Add the dedicated modern PBR shader/material path.
+3. Qualify static resting idles and whole rigid CNK roots; retain retail geometry
+   for unqualified changes of form.
+4. Keep the implemented PBR map/material path qualified independently of assets.
 5. Author complete modern animation clips/state maps for the six recovered
    tokens, replacing a whole CNK sequence only when its timing is reproduced.
-6. Create/bake the missing five token assets and their required animations.
-7. Split and integrate board/building/environment assets.
+6. Visually qualify the five newly authored token sculptures and their required animations.
+7. Qualify optional board/building/environment adapters in real gameplay and
+   finish remaining procedural material conversion.
 8. Remove a DAT/HMD dependency only when every consumer of that asset has a
    validated modern replacement.
 
@@ -294,7 +336,7 @@ Discovery, parser integration, bounded static GLB decode, token routing,
 calibration and HMD fallback are already implemented. A deep Codex pass should
 therefore be reserved for one bounded problem at a time:
 
-- generate and integrate the modern PBR shader path across DXIL/MSL targets; or
+- qualify remaining material/asset fidelity across the existing GPU path; or
 - implement a whole-sequence modern token animation adapter driven by the
   existing CNK clock/state, not by MIMe pose indices.
 
@@ -313,14 +355,13 @@ Blender scene or the retail token animation mechanism.
 - A failed modern asset reports its error and falls back instead of corrupting the
   active resource snapshot.
 
-## Qualification 2026-09-30
+## Qualification 2026-10-01
 
-- Priority-safe idle routing: `6299180`, built and pushed; focused mesh-cache
-  context tests passed. A 25-second real startup at 1280x720 loaded race_car,
-  top_hat, ship, boot and thimble; movement visuals were not exercised.
-- Static GLB malformed-input fixtures passed (22 checks), including first-mesh
-  budgets, invalid references, invalid transforms and unsupported skinning.
-- Factor-only PBR real SDL_GPU readbacks passed: distinct pipeline, factor
+- Root activation priority and leaf ordering remain distinct (idle 224..229,
+  movement 100, authored leaf zero preserved); cache/context regressions pass.
+- Static GLB/image/material fixtures passed (54 CPU checks), including first-mesh
+  budgets, references, transforms, unsupported animation/sparse/skin and maps.
+- PBR real SDL_GPU readbacks passed (86 checks): distinct pipeline, factor/map
   response, emissive/sRGB, culling, two-sided normals and mixed legacy/PBR draws.
   DXIL executed on this Windows machine; MSL and SPIR-V were compiled and
   reflected, not runtime-qualified on other platforms.
@@ -329,4 +370,70 @@ Blender scene or the retail token animation mechanism.
   ticks. Generated metadata stays in build/token_animation_inventory.json.
   This is standalone CPU render intent with decoded-default root placement;
   board dispatch/placement and external media clocks remain separate context.
-- No modern movement clip or reconstructed missing token is active yet.
+- Embedded bounded PNG/JPEG and five PBR maps are implemented. Wrapping/filtering, mipmaps,
+  sRGB roles, authored/derived tangent bases, OPAQUE and MASK are covered.
+  BLEND, animated glTF scenes and sparse accessors deliberately retain fallback.
+- Five missing tokens are newly authored sculptures, not recovered assets.
+  `MonopolyReconstructModernTokens` reproduces separate deterministic exports
+  and a derived authoring file under build/authoring, preserving the original.
+  Height/pivot calibration comes from production-decoded retail geometry.
+  A fresh 25-second runtime remains alive and logs nine static idle loads.
+  This does not show a live dog animation or qualify gameplay.
+- `assets/modern-token-sequences.json` records 46 fully traced rigid CNK roots
+  paired with their sole representative HMD. These roots use modern geometry
+  with existing CNK matrices, visibility, sounds and tweekers at priority100.
+  This is CPU timing/context proof, not visual gameplay qualification or an
+  authored glTF animation clip. Other movements remain retail.
+- All 46 qualified rigid roots pass paired production execution with modern
+  geometry at every frame and identical retail clocks/HMD selection/matrices,
+  tweekers and lifecycle. Report: build/qualified-rigid-production-20261001.json.
+- Ship passes 71 paired production ticks; dog passes 99 production frames with
+  no fallback/errors and identical retail clocks/matrices/HMD choices/lifecycle.
+  Horse's six authoring poses are qualified, with runtime integration pending.
+- Full MonopolyModern build and focused sequence-render/runtime, variant,
+  scene-catalog, environment and GPU-fallback suites pass. These focused checks
+  do not replace a new global CTest campaign or an in-game visual qualification.
+- Fresh framed Direct3D12 probe at 1920x1080: 4 objects, 246 batches, 915,731
+  triangles; capture analysis counts 528,356 foreground and 57,267 colored pixels.
+  **100 fenced frames in 0.0791715 s = 1263.08 FPS**, excluding load/setup/readback.
+  This is isolated renderer throughput, not a full-game benchmark. Source tree integrity
+  remains at the locked baseline. Europe/French startup is blocked by missing
+  `dat_borde.dat`, `dat_ln03.dat`, `dat_lm03.dat`, `dat_lk03.dat` payloads.
+
+## Purpose-specific scene exports
+
+`MonopolyExportModernSceneAssets` exports the board and one gameplay house via
+`--include-board --include-house --skip-tokens`. The whitelist includes only
+the plateau, central identity and Case 00..39 collections, not scenery or placed
+houses. Temporary evaluated copies convert text/apply modifiers; neither this
+operation nor token export saves over the recovered authoring file.
+
+Fresh board export: 21,329,928 bytes, 206 nodes/205 meshes; house: 17,912 bytes,
+3 nodes/2 meshes. Both have identity scene roots and measured glTF Y-up metre
+bounds in extras and JSON sidecars. Three repeat exports produced equal hashes.
+Those diagnostic exports remain separate from `board/paris_board_runtime.glb`,
+the aligned runtime board with explicit 40-case mapping and derivative tangents.
+Its current derivative keeps X/Z alignment, sets the playing floor to Y=0,
+compresses case relief by a positive factor of 0.1 and lowers pavement below that floor.
+The smaller 0.01 candidate produced depth fighting in the production renderer;
+the accepted 0.1 derivative retains solid color strips in the fresh GPU capture.
+Repeat exports agree; gameplay contact and independent ray-based qualification
+are checked separately. The current aligned board has 386,402 vertices,
+381,690 triangles, 205 batches and one PNG. Independent bounded geometry checks
+pass: all 40 case reference planes are Y=0, and 720 contact-ray samples hit world
+heights in [-0.002, 0.064107]. At 440 house centre/corner rays the playing-color
+swatch top is 0.016 world units above historical feet Y=0, a small geometric
+overlap, not a numerical-error bound. These checks do not qualify gameplay.
+`MonopolyExportAlignedBoardAssets` uses decoded retail cell geometry;
+`MonopolyExportModernEnvironment` exports fountain, station and Morris-column
+chunks independently. These targets run only when requested. Normal builds stage
+existing generated assets and do not require Blender.
+
+Runtime flags opt into `--modern-board=paris`, `--modern-buildings=house` and
+`--modern-environment=paris`. Paris board replacement also requires compatible
+Europe/French/Paris/Euro context, qualified root/priority and no custom board.
+Decorations require the actual modern board and inherit its CNK transform;
+failed assets retain retail geometry or omit optional scenery. The adapters have
+real SDL_GPU probe evidence, but French startup and in-game qualification remain
+blocked/pending. Most board/decor procedural graphs remain unbaked. Scenery hotels
+are not calibrated gameplay-hotel prototypes.

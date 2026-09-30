@@ -26,6 +26,7 @@ namespace monopoly::engine
         bool legacyShadow{};
         data::MeshMaterial material{};
         std::optional<data::MeshTextureRegion> texture;
+        std::array<SDL_GPUTextureSamplerBinding, 5> modernTextures{};
     };
 
     // Retire stopped mesh assets even when the interface has no 3D view.

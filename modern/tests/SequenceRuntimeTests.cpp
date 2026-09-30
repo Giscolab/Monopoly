@@ -652,7 +652,7 @@ namespace
         auto meshes = runtime.meshInstances();
         expect(meshes.size() == 1 && meshes.front().node == root &&
             meshes.front().contentsDataId == packDataId(2, 9) &&
-            meshes.front().priority == 42,
+            meshes.front().priority == 42 && meshes.front().rootSequencePriority == 42,
             "active mesh intent exposes resolved content and runtime identity without renderer state");
         expect(runtime.update(4).has_value() && runtime.meshInstances().size() == 1,
             "3D mesh leaf participates in normal clock updates without fake rendering");

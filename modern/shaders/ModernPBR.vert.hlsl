@@ -9,12 +9,15 @@ struct VertexInput
     float3 position : TEXCOORD0;
     float3 normal : TEXCOORD1;
     float2 uv : TEXCOORD2;
+    float4 tangent : TEXCOORD3;
 };
 struct VertexOutput
 {
     float4 position : SV_Position;
     float3 worldPosition : TEXCOORD0;
     float3 normal : TEXCOORD1;
+    float2 uv : TEXCOORD2;
+    float4 tangent : TEXCOORD3;
 };
 
 VertexOutput main(VertexInput input)
@@ -32,5 +35,10 @@ VertexOutput main(VertexInput input)
     output.normal = abs(determinant) > 0.00000001f
         ? mul(input.normal, cofactor) / determinant
         : mul(input.normal, (float3x3)world);
+    output.uv = input.uv;
+    const float3 transformedTangent = mul(input.tangent.xyz, (float3x3)world);
+    const float3 n = normalize(output.normal);
+    const float3 tangent = transformedTangent - n * dot(n, transformedTangent);
+    output.tangent = float4(tangent, input.tangent.w * (determinant < 0.0f ? -1.0f : 1.0f));
     return output;
 }

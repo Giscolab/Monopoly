@@ -436,7 +436,8 @@ namespace monopoly::engine
                 const bool targetSRGB = colorFormat_ == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB ||
                     colorFormat_ == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB;
                 modernFragment.metallicRoughness = {batch.material.metallic,
-                    batch.material.roughness, targetSRGB ? 1.0F : 0.0F, 0.0F};
+                    batch.material.roughness, targetSRGB ? 1.0F : 0.0F,
+                    batch.material.alphaMode == data::ModernAlphaMode::Mask ? 1.0F : 0.0F};
                 modernFragment.emissiveStrength = vector4(
                     batch.material.emissive, batch.material.emissiveStrength);
                 modernFragment.cameraPosition = vector4(projection.camera.location, 1.0F);
@@ -450,6 +451,16 @@ namespace monopoly::engine
                 modernFragment.spotlightDirectionFalloff = vertexUniforms.spotlightDirectionFalloff;
                 modernFragment.spotlightAttenuationTheta = vertexUniforms.spotlightAttenuationTheta;
                 modernFragment.spotlightPhi = vertexUniforms.spotlightPhi;
+                modernFragment.mapFlags = {
+                    batch.material.baseColorTexture ? 1.0F : 0.0F,
+                    batch.material.metallicRoughnessTexture ? 1.0F : 0.0F,
+                    batch.material.normalTexture ? 1.0F : 0.0F,
+                    batch.material.emissiveTexture ? 1.0F : 0.0F};
+                modernFragment.mapParameters = {
+                    batch.material.occlusionTexture ? 1.0F : 0.0F,
+                    batch.material.normalTexture ? batch.material.normalTexture->scale : 1.0F,
+                    batch.material.occlusionTexture ? batch.material.occlusionTexture->scale : 1.0F,
+                    batch.material.alphaCutoff};
                 SDL_PushGPUVertexUniformData(commandBuffer, 0U,
                     &modernVertex, static_cast<Uint32>(sizeof(modernVertex)));
                 SDL_PushGPUFragmentUniformData(commandBuffer, 0U,
@@ -472,7 +483,15 @@ namespace monopoly::engine
             const SDL_GPUTextureSamplerBinding textureBinding{
                 batch.gpuTexture != nullptr ? batch.gpuTexture : whiteTexture_,
                 bilinearFiltering_ ? linearSampler_ : textureSampler_};
-            if (!modern) SDL_BindGPUFragmentSamplers(pass, 0U, &textureBinding, 1U);
+            if (modern)
+            {
+                auto maps = batch.modernTextures;
+                for (auto& binding : maps)
+                    if (!binding.texture) binding = {whiteTexture_, linearSampler_};
+                SDL_BindGPUFragmentSamplers(pass, 0U, maps.data(),
+                    static_cast<Uint32>(maps.size()));
+            }
+            else SDL_BindGPUFragmentSamplers(pass, 0U, &textureBinding, 1U);
 
             SDL_DrawGPUIndexedPrimitives(pass,
                 batch.indexCount, 1U, batch.firstIndex, 0, 0U);

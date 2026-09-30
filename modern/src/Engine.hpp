@@ -15,6 +15,7 @@ namespace monopoly::fonts
 namespace monopoly::statsui { class AccountRuntime; }
 namespace monopoly::uimsg { struct Message; }
 namespace monopoly::presentation { enum class PresentMode; }
+namespace monopoly::data { struct ModernSceneOptions; }
 
 namespace monopoly::udsound
 {
@@ -23,6 +24,7 @@ namespace monopoly::udsound
 
 namespace monopoly::engine
 {
+    void configureModernScene(data::ModernSceneOptions options) noexcept;
     class SequencePlayback;
     // Available after DATA startup; no implicit retail sequence is invented.
     SequencePlayback* sequencePlayback();

@@ -13,6 +13,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace monopoly::data
@@ -85,12 +86,47 @@ namespace monopoly::data
         std::array<float, 3> position{};
         std::array<float, 3> normal{};
         std::array<float, 2> uv{-1.0F, -1.0F};
+        // w == 0 means no authored tangent; the modern shader derives a basis.
+        std::array<float, 4> tangent{};
     };
 
     enum class MeshMaterialModel : std::uint8_t
     {
         LegacyDiffuse,
         MetallicRoughness
+    };
+
+    struct ModernTextureImage
+    {
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::vector<std::uint8_t> rgba;
+    };
+
+    enum class ModernTextureColorSpace : std::uint8_t { Linear, Srgb };
+    enum class ModernAlphaMode : std::uint8_t { Opaque, Mask };
+    enum class ModernTextureWrap : std::uint8_t { Repeat, ClampToEdge, MirroredRepeat };
+    enum class ModernTextureFilter : std::uint8_t
+    {
+        Nearest, Linear, NearestMipmapNearest, LinearMipmapNearest,
+        NearestMipmapLinear, LinearMipmapLinear
+    };
+    struct ModernTextureSampler
+    {
+        ModernTextureWrap wrapS{ModernTextureWrap::Repeat};
+        ModernTextureWrap wrapT{ModernTextureWrap::Repeat};
+        ModernTextureFilter minFilter{ModernTextureFilter::Linear};
+        ModernTextureFilter magFilter{ModernTextureFilter::Linear};
+        [[nodiscard]] bool operator==(const ModernTextureSampler&) const noexcept = default;
+    };
+    struct ModernTextureBinding
+    {
+        std::shared_ptr<const ModernTextureImage> image;
+        ModernTextureSampler sampler;
+        ModernTextureColorSpace colorSpace{ModernTextureColorSpace::Linear};
+        std::uint32_t texCoord{};
+        // Normal scale or occlusion strength; other maps retain one.
+        float scale{1.0F};
     };
 
     struct MeshMaterial
@@ -103,6 +139,13 @@ namespace monopoly::data
         std::array<float, 3> emissive{};
         float emissiveStrength{1.0F};
         bool doubleSided{};
+        ModernAlphaMode alphaMode{ModernAlphaMode::Opaque};
+        float alphaCutoff{0.5F};
+        std::optional<ModernTextureBinding> baseColorTexture;
+        std::optional<ModernTextureBinding> metallicRoughnessTexture;
+        std::optional<ModernTextureBinding> normalTexture;
+        std::optional<ModernTextureBinding> emissiveTexture;
+        std::optional<ModernTextureBinding> occlusionTexture;
     };
 
     struct MeshGroupRuntime
@@ -191,6 +234,8 @@ namespace monopoly::data
         std::shared_ptr<const MeshRenderData> renderData;
     };
 
+    // Resolver priority is the owning root sequence priority; child render
+    // priorities remain independent and preserve historical draw ordering.
     using ModernMeshResolver = std::function<
         std::expected<std::optional<std::shared_ptr<const MeshRenderData>>,
             MeshRuntimeError>(
@@ -211,6 +256,10 @@ namespace monopoly::data
             DataId id,
             std::optional<DataId> rootSequenceDataId = std::nullopt,
             std::uint16_t priority = 0);
+        // GPU rejection is scoped to immutable geometry and complete sequence
+        // roots; both survive eviction so later poses do not retry bad assets.
+        [[nodiscard]] bool rejectModernAsset(const MeshRenderData* renderData);
+        void rejectModernSequence(DataId rootSequenceDataId);
         // Prepare a complete replacement before publishing it; only this DataId
         // changes. Empty images restore the original embedded texture payloads.
         [[nodiscard]] std::expected<void, MeshRuntimeError> replaceTextureImages(
@@ -231,8 +280,10 @@ namespace monopoly::data
         // Modern and legacy assets must not share one cache entry: the same
         // retail HMD can appear in both an idle sequence (modern override) and
         // a movement sequence (retail fallback).
-        std::unordered_map<DataId, std::shared_ptr<const MeshRuntimeAsset>>
+        std::unordered_map<DataId, std::vector<std::shared_ptr<const MeshRuntimeAsset>>>
             modernAssets_;
+        std::vector<std::shared_ptr<const MeshRenderData>> rejectedModernAssets_;
+        std::unordered_set<DataId> rejectedModernSequences_;
         std::unordered_map<DataId, std::shared_ptr<const MeshRuntimeAsset>> assets_;
         std::unordered_map<DataId,
             std::vector<std::shared_ptr<const HmdTextureImage>>> textureOverrides_;

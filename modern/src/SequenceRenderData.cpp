@@ -14,7 +14,7 @@ namespace monopoly::sequence
             auto asset = meshes.resolve(
                 instance.contentsDataId,
                 instance.rootSequenceDataId,
-                instance.priority);
+                instance.rootSequencePriority);
             if (!asset)
             {
                 return std::unexpected(SequenceRenderDataError{
@@ -45,7 +45,7 @@ namespace monopoly::sequence
                 instance.rootSequenceDataId,
                 instance.priority, instance.clock, instance.worldTransform,
                 std::move(*asset), instance.meshChoice, instance.bounds,
-                std::move(renderData)});
+                std::move(renderData), instance.rootSequencePriority});
         }
         return result;
     }

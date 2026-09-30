@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -253,17 +254,26 @@ namespace
         const SDL_GPUViewport viewport{0, 0, 64, 64, 0, 1};
         std::uint16_t nextId = 0x0100;
         const auto itemFor = [&](const data::MeshMaterial& material,
-            bool back = false, float x = 0.0F) {
+            bool back = false, float x = 0.0F,
+            std::optional<std::array<float, 2>> fixedUV = std::nullopt,
+            std::array<float, 3> normal = {0, 0, -1}) {
             sequence::SequenceMeshRenderItem item;
             item.node = 1;
             item.contentsDataId = data::packDataId(8, nextId++);
             item.worldTransform = sequence::translate3D(x, 0, 0);
             auto asset = std::make_shared<data::MeshRuntimeAsset>(
                 *makeAsset(item.contentsDataId));
+            asset->origin = material.model == data::MeshMaterialModel::MetallicRoughness
+                ? data::MeshAssetOrigin::ModernGltf : data::MeshAssetOrigin::LegacyHmd;
             auto render = std::make_shared<data::MeshRenderData>(*asset->renderData);
             render->batches.front().material = material;
             // PBR normals face the camera, so N dot V is positive.
-            for (auto& vertex : render->vertices) vertex.normal = {0, 0, -1};
+            for (auto& vertex : render->vertices)
+            {
+                vertex.normal = normal;
+                vertex.tangent = {1, 0, 0, 1};
+                if (fixedUV) vertex.uv = *fixedUV;
+            }
             if (back) render->indices = {0, 1, 2};
             asset->renderData = std::move(render);
             item.asset = std::move(asset);
@@ -382,6 +392,199 @@ namespace
             countRedPixels(legacyOnly) > 0 && litPixels(modernOnly) > 0 &&
             matches && legacyOnly == restored,
             "mixed legacy/PBR draws preserve each standalone framebuffer in both orders and restore legacy pixels");
+
+        // Different animation contexts can resolve the same retail DataId to
+        // legacy and modern CPU assets concurrently. Both uploaded buffer sets
+        // must survive scene construction until the indexed draws execute.
+        auto sameIdModern = modern;
+        sameIdModern.contentsDataId = legacy.contentsDataId;
+        auto sameIdAsset = std::make_shared<data::MeshRuntimeAsset>(*modern.asset);
+        sameIdAsset->dataId = legacy.contentsDataId;
+        sameIdModern.asset = std::move(sameIdAsset);
+        Pixels sameIdForward{}, sameIdReverse{}, sameIdRestored{};
+        const bool sameIdForwardRead = draw({legacy, sameIdModern}, sameIdForward);
+        const auto legacyUpload = renderer.meshCache()->resolveForScene(legacy.asset);
+        const auto modernUpload = renderer.meshCache()->resolveForScene(sameIdModern.asset);
+        expect(legacyUpload && modernUpload && *legacyUpload != *modernUpload &&
+            (*legacyUpload)->vertexBuffer != (*modernUpload)->vertexBuffer &&
+            (*legacyUpload)->indexBuffer != (*modernUpload)->indexBuffer &&
+            renderer.meshCache()->size() == 2,
+            "same-DataId legacy/modern contexts retain two distinct immutable GPU uploads");
+        const bool sameIdReverseRead = draw({sameIdModern, legacy}, sameIdReverse);
+        const bool sameIdRestoredRead = draw({legacy}, sameIdRestored);
+        expect(sameIdForwardRead && sameIdReverseRead && sameIdRestoredRead &&
+            sameIdForward == combined && sameIdReverse == combined &&
+            sameIdRestored == legacyOnly && renderer.meshCache()->size() == 1,
+            "same-DataId legacy/PBR batches execute correctly in both orders and prune only the stopped variant");
+
+        const auto bindingFor = [](std::array<std::uint8_t, 4> rgba,
+            data::ModernTextureColorSpace colorSpace) {
+            auto image = std::make_shared<data::ModernTextureImage>();
+            image->width = image->height = 1;
+            image->rgba.assign(rgba.begin(), rgba.end());
+            data::ModernTextureBinding binding;
+            binding.image = std::move(image);
+            binding.colorSpace = colorSpace;
+            return binding;
+        };
+        const auto closePixels = [](const Pixels& a, const Pixels& b) {
+            for (std::size_t i = 0; i < a.size(); ++i)
+                if (std::abs(static_cast<int>(a[i]) - static_cast<int>(b[i])) > 3)
+                    return false;
+            return true;
+        };
+        constexpr auto srgb = data::ModernTextureColorSpace::Srgb;
+        constexpr auto linear = data::ModernTextureColorSpace::Linear;
+        // Compare sampled maps to independently authored linear factors on the
+        // same geometry. A wrong color space produces large framebuffer deltas.
+        data::MeshMaterial mapped;
+        mapped.model = data::MeshMaterialModel::MetallicRoughness;
+        mapped.metallic = 0.25F;
+        mapped.roughness = 0.8F;
+        lighting.ambient = {0.15F, 0.15F, 0.15F};
+        lighting.sun = {{0.3F, 0.3F, 0.3F}, {0, 0, 1}, true};
+        renderer.setLighting(lighting);
+        mapped.baseColorTexture = bindingFor({128, 128, 128, 255}, srgb);
+        auto reference = mapped;
+        reference.baseColorTexture.reset();
+        reference.diffuse = {0.2158605F, 0.2158605F, 0.2158605F, 1};
+        Pixels sampled{}, referencePixels{};
+        bool sampledRead = draw({itemFor(mapped)}, sampled);
+        bool referenceRead = draw({itemFor(reference)}, referencePixels);
+        expect(sampledRead && referenceRead && litPixels(sampled) > 0 && closePixels(sampled, referencePixels),
+            "sRGB base-color map samples match decoded linear factors on the real GPU");
+
+        mapped = reference;
+        mapped.metallic = mapped.roughness = 1;
+        mapped.metallicRoughnessTexture = bindingFor({255, 192, 64, 255}, linear);
+        reference = mapped;
+        reference.metallicRoughnessTexture.reset();
+        reference.roughness = 192.0F / 255.0F;
+        reference.metallic = 64.0F / 255.0F;
+        sampledRead = draw({itemFor(mapped)}, sampled);
+        referenceRead = draw({itemFor(reference)}, referencePixels);
+        expect(sampledRead && referenceRead && closePixels(sampled, referencePixels),
+            "linear metallic-roughness map uses green roughness and blue metallic channels");
+
+        mapped = reference;
+        mapped.normalTexture = bindingFor({192, 128, 224, 255}, linear);
+        reference = mapped;
+        reference.normalTexture.reset();
+        std::array<float, 3> sampledNormal{129.0F / 255.0F, -1.0F / 255.0F, -193.0F / 255.0F};
+        const auto length = std::sqrt(sampledNormal[0] * sampledNormal[0] +
+            sampledNormal[1] * sampledNormal[1] + sampledNormal[2] * sampledNormal[2]);
+        for (auto& component : sampledNormal) component /= length;
+        sampledRead = draw({itemFor(mapped)}, sampled);
+        referenceRead = draw({itemFor(reference, false, 0, std::nullopt, sampledNormal)}, referencePixels);
+        expect(sampledRead && referenceRead && closePixels(sampled, referencePixels),
+            "linear normal map matches an independently transformed authored tangent-space normal");
+        mapped.normalTexture->scale = 0;
+        sampledRead = draw({itemFor(mapped)}, sampled);
+        referenceRead = draw({itemFor(reference)}, referencePixels);
+        expect(sampledRead && referenceRead && closePixels(sampled, referencePixels),
+            "normal-map scale zero restores the geometric normal in GPU shading");
+
+        mapped = reference;
+        mapped.occlusionTexture = bindingFor({128, 0, 255, 255}, linear);
+        lighting.sun.enabled = false;
+        renderer.setLighting(lighting);
+        sampledRead = draw({itemFor(mapped)}, sampled);
+        for (auto& component : lighting.ambient) component *= 128.0F / 255.0F;
+        renderer.setLighting(lighting);
+        referenceRead = draw({itemFor(reference)}, referencePixels);
+        expect(sampledRead && referenceRead && closePixels(sampled, referencePixels),
+            "linear occlusion red channel attenuates ambient by its sampled value");
+        lighting.ambient = {0, 0, 0};
+        lighting.sun.enabled = true;
+        renderer.setLighting(lighting);
+        sampledRead = draw({itemFor(mapped)}, sampled);
+        referenceRead = draw({itemFor(reference)}, referencePixels);
+        expect(sampledRead && referenceRead && sampled == referencePixels,
+            "occlusion map preserves direct-light framebuffer pixels exactly");
+
+        lighting.sun.enabled = false;
+        renderer.setLighting(lighting);
+        mapped = {};
+        mapped.model = data::MeshMaterialModel::MetallicRoughness;
+        mapped.emissive = {1, 1, 1};
+        mapped.emissiveTexture = bindingFor({128, 128, 128, 255}, srgb);
+        sampledRead = draw({itemFor(mapped)}, sampled);
+        expect(sampledRead && sampled[inside] >= 125 && sampled[inside] <= 131 &&
+            sampled[inside + 1] == sampled[inside] && sampled[inside + 2] == sampled[inside],
+            "sRGB emissive map round-trips a midtone through linear lighting and output encoding");
+
+        mapped.baseColorTexture = bindingFor({255, 255, 255, 128}, srgb);
+        mapped.diffuse[3] = 0.5F;
+        mapped.alphaMode = data::ModernAlphaMode::Mask;
+        mapped.alphaCutoff = 0.25F;
+        Pixels maskKept{}, maskDiscarded{}, opaqueAlpha{};
+        const bool maskKeptRead = draw({itemFor(mapped)}, maskKept);
+        mapped.alphaCutoff = 0.3F;
+        const bool maskDiscardedRead = draw({itemFor(mapped)}, maskDiscarded);
+        expect(maskKeptRead && maskDiscardedRead && litPixels(maskKept) > 0 &&
+            maskKept[inside + 3] == 255 && litPixels(maskDiscarded) == 0,
+            "GPU alpha mask applies cutoff to factor times texture alpha and discards rejected fragments");
+        mapped.alphaMode = data::ModernAlphaMode::Opaque;
+        mapped.baseColorTexture = bindingFor({255, 255, 255, 0}, srgb);
+        mapped.diffuse[3] = 0;
+        const bool opaqueAlphaRead = draw({itemFor(mapped)}, opaqueAlpha);
+        expect(opaqueAlphaRead && opaqueAlpha == maskKept,
+            "opaque modern materials ignore zero factor/texture alpha and write fully opaque GPU pixels");
+        mapped.baseColorTexture.reset();
+        mapped.diffuse[3] = 1;
+
+        auto pattern = std::make_shared<data::ModernTextureImage>();
+        pattern->width = 2; pattern->height = 1;
+        pattern->rgba = {255, 0, 0, 255, 0, 255, 0, 255};
+        mapped.emissiveTexture->image = pattern;
+        mapped.emissiveTexture->sampler.minFilter = data::ModernTextureFilter::Nearest;
+        mapped.emissiveTexture->sampler.magFilter = data::ModernTextureFilter::Nearest;
+        Pixels repeated{}, clamped{}, mirrored{}, nearest{}, filtered{};
+        const std::array<float, 2> outsideUV{1.25F, 0.5F};
+        const bool repeatRead = draw({itemFor(mapped, false, 0, outsideUV)}, repeated);
+        mapped.emissiveTexture->sampler.wrapS = data::ModernTextureWrap::ClampToEdge;
+        const bool clampRead = draw({itemFor(mapped, false, 0, outsideUV)}, clamped);
+        mapped.emissiveTexture->sampler.wrapS = data::ModernTextureWrap::MirroredRepeat;
+        const bool mirrorRead = draw({itemFor(mapped, false, 0, outsideUV)}, mirrored);
+        expect(repeatRead && clampRead && mirrorRead && repeated[inside] == 255 &&
+            repeated[inside + 1] == 0 && clamped[inside] == 0 && clamped[inside + 1] == 255 &&
+            mirrored == clamped,
+            "modern GPU samplers honor repeat, clamp and mirrored wrap for out-of-range UVs");
+        const std::array<float, 2> boundaryUV{0.5F, 0.5F};
+        const bool nearestRead = draw({itemFor(mapped, false, 0, boundaryUV)}, nearest);
+        mapped.emissiveTexture->sampler.magFilter = data::ModernTextureFilter::Linear;
+        mapped.emissiveTexture->sampler.minFilter = data::ModernTextureFilter::Linear;
+        const bool filteredRead = draw({itemFor(mapped, false, 0, boundaryUV)}, filtered);
+        expect(nearestRead && filteredRead && nearest != filtered &&
+            filtered[inside] >= 184 && filtered[inside] <= 192 &&
+            filtered[inside + 1] >= 184 && filtered[inside + 1] <= 192,
+            "modern linear filtering blends sRGB texels in linear light instead of mixing encoded bytes");
+
+        auto checker = std::make_shared<data::ModernTextureImage>();
+        checker->width = checker->height = 64;
+        for (std::size_t y = 0; y < 64; ++y)
+            for (std::size_t x = 0; x < 64; ++x)
+            {
+                const auto value = static_cast<std::uint8_t>((x + y) % 2 ? 255 : 0);
+                checker->rgba.insert(checker->rgba.end(), {value, value, value, 255});
+            }
+        mapped.emissiveTexture->image = checker;
+        mapped.emissiveTexture->sampler.minFilter = data::ModernTextureFilter::Nearest;
+        mapped.emissiveTexture->sampler.magFilter = data::ModernTextureFilter::Nearest;
+        Pixels unmipped{}, mipped{};
+        const bool unmippedRead = draw({itemFor(mapped)}, unmipped);
+        mapped.emissiveTexture->sampler.minFilter = data::ModernTextureFilter::NearestMipmapNearest;
+        const auto mipItem = itemFor(mapped);
+        const bool mippedRead = draw({mipItem}, mipped);
+        const auto uploaded = renderer.meshCache()->resolve(mipItem.asset);
+        const auto* mipResource = uploaded ? (*uploaded)->modernTexture(*mapped.emissiveTexture) : nullptr;
+        std::size_t grayPixels{};
+        for (std::size_t i = 0; i < mipped.size(); i += 4)
+            if (mipped[i] >= 100 && mipped[i] <= 205 && mipped[i] == mipped[i + 1] &&
+                mipped[i] == mipped[i + 2]) ++grayPixels;
+        expect(unmippedRead && mippedRead && mipResource && mipResource->mipLevels == 7 &&
+            unmipped != mipped && grayPixels > 10,
+            "generated mip levels minify a real checker texture to stable intermediate GPU pixels");
         renderer.setLighting({});
     }
     void testRealRendererWhenAvailable()

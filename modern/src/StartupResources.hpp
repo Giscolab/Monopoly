@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ResourceRuntime.hpp"
+
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -15,12 +17,18 @@ namespace monopoly::startup
         std::optional<std::string> dataRoot;
         std::optional<std::string> dataOverrides;
         bool checkOnly{};
+        data::ResourceContext context{};
         std::vector<std::string_view> remaining;
     };
 
     // Resource switches can be combined with the existing network arguments.
     [[nodiscard]] std::expected<ResourceArguments, std::string>
         parseResourceArguments(std::span<const std::string_view> arguments);
+
+    // Process-local selection shared by installation qualification and startup.
+    [[nodiscard]] std::expected<void, std::string>
+        selectResourceContext(data::ResourceContext context);
+    [[nodiscard]] data::ResourceContext resourceContext() noexcept;
 
     // Uses SDL's process-local environment; never writes into the installation.
     [[nodiscard]] std::expected<void, std::string>

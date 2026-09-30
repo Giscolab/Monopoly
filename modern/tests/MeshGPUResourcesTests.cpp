@@ -200,6 +200,52 @@ namespace
             expect(cache.size() == 0 && !cache.find(data::packDataId(8, 6)) &&
                 !cache.find(data::packDataId(8, 7)),
                 "GPU cache eviction releases mesh and texture ownership before device shutdown");
+
+            auto modernImage = std::make_shared<data::ModernTextureImage>();
+            modernImage->width = modernImage->height = 2;
+            modernImage->rgba = {
+                128, 128, 128, 255, 128, 128, 128, 255,
+                128, 128, 128, 255, 128, 128, 128, 255};
+            std::weak_ptr<const data::ModernTextureImage> retainedImage = modernImage;
+            auto modernAsset = std::make_shared<data::MeshRuntimeAsset>(
+                *asset(data::packDataId(8, 8)));
+            auto modernRender = std::make_shared<data::MeshRenderData>(*modernAsset->renderData);
+            auto& material = modernRender->batches.front().material;
+            material.model = data::MeshMaterialModel::MetallicRoughness;
+            data::ModernTextureBinding colorBinding;
+            colorBinding.image = modernImage;
+            colorBinding.colorSpace = data::ModernTextureColorSpace::Srgb;
+            colorBinding.sampler.minFilter = data::ModernTextureFilter::LinearMipmapLinear;
+            material.baseColorTexture = colorBinding;
+            material.emissiveTexture = colorBinding;
+            auto linearBinding = colorBinding;
+            linearBinding.colorSpace = data::ModernTextureColorSpace::Linear;
+            material.metallicRoughnessTexture = linearBinding;
+            modernAsset->renderData = modernRender;
+            const auto modernUpload = cache.resolve(modernAsset);
+            const auto modernAgain = cache.resolve(modernAsset);
+            expect(modernUpload && modernAgain && *modernUpload == *modernAgain &&
+                (*modernUpload)->modernTextures.size() == 2,
+                "modern GPU cache reuses image/sampler/color-space identity and separates linear from sRGB views");
+            if (modernUpload)
+            {
+                const auto* color = (*modernUpload)->modernTexture(colorBinding);
+                const auto* linear = (*modernUpload)->modernTexture(linearBinding);
+                expect(color && linear && color->texture && color->sampler &&
+                    linear->texture && linear->sampler && color->texture != linear->texture &&
+                    color->mipLevels == 2 && linear->mipLevels == 2,
+                    "shared modern pixels create owned sampled GPU resources with complete mip chains");
+            }
+            colorBinding.image.reset();
+            linearBinding.image.reset();
+            modernImage.reset();
+            modernRender.reset();
+            modernAsset.reset();
+            expect(!retainedImage.expired(),
+                "modern GPU cache retains decoded image ownership after CPU callers release the asset");
+            cache.clear();
+            expect(cache.size() == 0 && retainedImage.expired(),
+                "modern GPU cache clear releases the final decoded image owner before device destruction");
         }
         SDL_DestroyGPUDevice(device);
         SDL_Quit();

@@ -94,10 +94,11 @@ namespace monopoly::engine
                 shaders.error().detail,
                 shaders.error()});
 
-        static_assert(sizeof(MeshGPUVertex) == sizeof(float) * 8U);
+        static_assert(sizeof(MeshGPUVertex) == sizeof(float) * 12U);
         static_assert(offsetof(MeshGPUVertex, position) == 0U);
         static_assert(offsetof(MeshGPUVertex, normal) == sizeof(float) * 3U);
         static_assert(offsetof(MeshGPUVertex, uv) == sizeof(float) * 6U);
+        static_assert(offsetof(MeshGPUVertex, tangent) == sizeof(float) * 8U);
 
         const SDL_GPUVertexBufferDescription vertexBuffer{
             0U,
@@ -105,13 +106,15 @@ namespace monopoly::engine
             SDL_GPU_VERTEXINPUTRATE_VERTEX,
             0U
         };
-        const std::array<SDL_GPUVertexAttribute, 3> attributes{{
+        const std::array<SDL_GPUVertexAttribute, 4> attributes{{
             {0U, 0U, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
                 static_cast<Uint32>(offsetof(MeshGPUVertex, position))},
             {1U, 0U, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
                 static_cast<Uint32>(offsetof(MeshGPUVertex, normal))},
             {2U, 0U, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-                static_cast<Uint32>(offsetof(MeshGPUVertex, uv))}
+                static_cast<Uint32>(offsetof(MeshGPUVertex, uv))},
+            {3U, 0U, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
+                static_cast<Uint32>(offsetof(MeshGPUVertex, tangent))}
         }};
 
         SDL_GPUColorTargetDescription colorTarget{};
@@ -126,7 +129,7 @@ namespace monopoly::engine
         info.vertex_input_state.num_vertex_buffers = 1U;
         info.vertex_input_state.vertex_attributes = attributes.data();
         info.vertex_input_state.num_vertex_attributes =
-            static_cast<Uint32>(attributes.size());
+            modernPBR ? static_cast<Uint32>(attributes.size()) : 3U;
         info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;

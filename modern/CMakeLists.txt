@@ -78,6 +78,7 @@ if(Python3_Interpreter_FOUND)
         COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/compile_world3d_shaders.py"
             --bootstrap --name ModernPBR
+            --cmake "${CMAKE_COMMAND}"
             --cache "${CMAKE_CURRENT_BINARY_DIR}/shader-tools"
             --output "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders"
         COMMAND "${Python3_EXECUTABLE}"
@@ -208,6 +209,15 @@ set(BUILD_SHARED_LIBS OFF)
 FetchContent_MakeAvailable(fastgltf)
 set(BUILD_SHARED_LIBS "${MONOPOLY_SAVED_BUILD_SHARED_LIBS}")
 
+# Embedded modern GLB PNG/JPEG decoding; source hash is fixed and nothing is
+# installed globally. Only ModernImageDecoder.cpp defines the implementation.
+FetchContent_Declare(stb
+    URL https://codeload.github.com/nothings/stb/tar.gz/2c980bb59875b0d32144a71867fbdebb2f77cd20
+    URL_HASH SHA256=9a955b1b49a4410088a2e0ee2a9c057c3c907d0c1d75454144cb980aca0ba515
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+)
+FetchContent_MakeAvailable(stb)
+
 # ArtLib voice chat uses Microsoft GSM 6.10 WAV #49 framing. The classic
 # Degener/Bormann libgsm implementation exposes compatible WAV49 packing;
 # pin the exact source revision and compile only its codec library.
@@ -283,7 +293,11 @@ add_library(
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
     src/ModernGltfMesh.cpp
+    src/ModernImageDecoder.cpp
     src/ModernTokenCatalog.cpp
+    src/ModernSceneCatalog.cpp
+    src/ModernTokenVariants.cpp
+    src/ModernEnvironment.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
     src/BitmapRuntime.cpp
@@ -306,6 +320,7 @@ target_include_directories(
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+target_include_directories(MonopolyDataCore SYSTEM PRIVATE ${stb_SOURCE_DIR})
 
 target_link_libraries(
     MonopolyDataCore
@@ -328,6 +343,7 @@ add_library(
     STATIC
     src/MeshGPUResources.cpp
     src/World3DGPUScene.cpp
+    src/SequencePlaybackGPU.cpp
     src/World3DShaderAssets.cpp
     src/World3DPipeline.cpp
     src/World3DRenderer.cpp
@@ -400,6 +416,18 @@ if(MSVC)
     target_compile_options(MonopolyTokenAnimationTimeline PRIVATE /W4 /permissive- /utf-8)
 endif()
 
+add_executable(MonopolyTokenDeformationContract tools/TokenDeformationContract.cpp)
+target_link_libraries(MonopolyTokenDeformationContract PRIVATE MonopolyDataCore)
+if(MSVC)
+    target_compile_options(MonopolyTokenDeformationContract PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+add_executable(MonopolyModernSceneRenderProbe tools/ModernSceneRenderProbe.cpp)
+target_link_libraries(MonopolyModernSceneRenderProbe PRIVATE MonopolyGPU3DCore)
+if(MSVC)
+    target_compile_options(MonopolyModernSceneRenderProbe PRIVATE /W4 /permissive- /utf-8)
+endif()
+
 if(BUILD_TESTING)
     add_executable(MonopolyModernGltfMeshTests tests/ModernGltfMeshTests.cpp)
     target_link_libraries(MonopolyModernGltfMeshTests PRIVATE MonopolyDataCore)
@@ -407,6 +435,31 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyModernGltfMeshTests PRIVATE /W4 /permissive- /utf-8)
     endif()
     add_test(NAME Monopoly.ModernGltfMesh COMMAND MonopolyModernGltfMeshTests)
+    add_executable(MonopolyModernTokenCatalogTests tests/ModernTokenCatalogTests.cpp)
+    target_link_libraries(MonopolyModernTokenCatalogTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyModernTokenCatalogTests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME Monopoly.ModernTokenCatalog COMMAND MonopolyModernTokenCatalogTests)
+    add_executable(MonopolyModernSceneCatalogTests tests/ModernSceneCatalogTests.cpp)
+    target_link_libraries(MonopolyModernSceneCatalogTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyModernSceneCatalogTests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME Monopoly.ModernSceneCatalog COMMAND MonopolyModernSceneCatalogTests)
+    add_executable(MonopolyModernTokenVariantsTests tests/ModernTokenVariantsTests.cpp)
+    target_link_libraries(MonopolyModernTokenVariantsTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.ModernTokenVariants COMMAND MonopolyModernTokenVariantsTests)
+    add_executable(MonopolySequencePlaybackGPUTests tests/SequencePlaybackGPUTests.cpp)
+    target_link_libraries(MonopolySequencePlaybackGPUTests PRIVATE MonopolyGPU3DCore)
+    add_test(NAME Monopoly.SequencePlaybackGPU COMMAND MonopolySequencePlaybackGPUTests)
+    add_executable(MonopolyModernEnvironmentTests tests/ModernEnvironmentTests.cpp)
+    target_link_libraries(MonopolyModernEnvironmentTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.ModernEnvironment COMMAND MonopolyModernEnvironmentTests)
+    add_executable(MonopolyStartupResourcesTests tests/StartupResourcesTests.cpp
+        src/StartupResources.cpp src/UDUtils.cpp)
+    target_link_libraries(MonopolyStartupResourcesTests PRIVATE MonopolyDataCore SDL3::SDL3)
+    add_test(NAME Monopoly.StartupResources COMMAND MonopolyStartupResourcesTests)
 endif()
 
 # Offline resource assembly. No SDL window, no changes under Source/ and no
@@ -652,12 +705,12 @@ add_custom_target(MonopolyRuntimeModernAssets
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens"
     COMMAND ${CMAKE_COMMAND} -E rm -rf
-        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/tokens"
+        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
     COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/tokens"
+        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens"
-        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/tokens"
+        "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+        "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
     COMMENT "Staging optional modern GLB assets beside MonopolyModern"
     VERBATIM
 )
@@ -683,6 +736,72 @@ if(MONOPOLY_BLENDER_EXECUTABLE
             --
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         COMMENT "Exporting modern Monopoly GLB assets from Blender"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportModernSceneAssets
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
+            -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --include-board --include-house --skip-tokens
+        COMMENT "Exporting separate measured board and gameplay-house prototypes"
+        VERBATIM
+    )
+    add_custom_target(MonopolyReconstructModernTokens
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
+            -b --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/reconstruct_missing_tokens.py"
+            -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --authoring "${CMAKE_CURRENT_BINARY_DIR}/authoring"
+            --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+        COMMENT "Authoring five missing token sculptures without overwriting recovered Blender source"
+        VERBATIM
+    )
+    set(MONOPOLY_RETAIL_ASSET_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../runtime-data"
+        CACHE PATH "Retail installation used only by explicit asset qualification/export targets")
+    add_custom_target(MonopolyExportModernTokenVariants
+        COMMAND "$<TARGET_FILE:MonopolyTokenDeformationContract>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" 0x80018 0x8001B
+            "${CMAKE_CURRENT_BINARY_DIR}/ship_contract_production.json"
+        COMMAND "$<TARGET_FILE:MonopolyTokenDeformationContract>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" 0x80038 0x80040,0x80041,0x80042,0x80043
+            "${CMAKE_CURRENT_BINARY_DIR}/dog_contract_production.json"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
+            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_ship_variants.py"
+            -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --base-glb "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens/ship.glb"
+            --correspondence "${CMAKE_CURRENT_BINARY_DIR}/ship_contract_production.json"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
+            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_token_variants.py"
+            -- --token dog --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --base-glb "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens/dog.glb"
+            --correspondence "${CMAKE_CURRENT_BINARY_DIR}/dog_contract_production.json"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --diagnostics "${CMAKE_CURRENT_BINARY_DIR}/dog-idle-qualification"
+        DEPENDS MonopolyTokenDeformationContract MonopolyExportModernAssets
+        COMMENT "Qualifying modern ship and dog variants using production-decoded retail controls"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportAlignedBoardAssets
+        COMMAND "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --dump-board "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
+            -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --skip-tokens --align-retail-board
+            --retail-board-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-reference-obj/boardmed.obj"
+        DEPENDS MonopolyModernAssetProbe
+        COMMENT "Exporting a separately aligned French Euro board using decoded retail cell geometry"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportModernEnvironment
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
+            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_environment.py"
+            -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+        COMMENT "Exporting separate optional Paris decorations"
         VERBATIM
     )
 endif()

@@ -1811,7 +1811,7 @@ namespace monopoly::sequence
                         node->meshChoice,
                         initialBounds3D(
                             definition.attributes, node->dimensionality),
-                        textureMapDataId, jointPositionsDataId});
+                        textureMapDataId, jointPositionsDataId, root->priority});
                 }
                 self(self, node->children);
             }

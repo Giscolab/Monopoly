@@ -8,16 +8,16 @@ namespace monopoly::engine
 {
     void pruneWorld3DGPUScene(const SequenceWorld3DSlot& slot, MeshGPUCache& cache)
     {
-        std::vector<data::DataId> activeMeshes;
+        std::vector<const data::MeshRuntimeAsset*> activeMeshes;
         const auto activeNodes = slot.order();
         // Visibility only controls drawing, not the lifetime of a live mesh.
         for (const auto node : activeNodes)
             if (const auto* object = slot.find(node); object && object->asset)
-                activeMeshes.push_back(object->asset->dataId);
+                activeMeshes.push_back(object->asset.get());
         // Per-node animation buffers can outlive their node even when another
         // live instance still owns the same static DataId. Retire both layers.
         cache.pruneDynamicVertices(activeNodes);
-        cache.prune(activeMeshes);
+        cache.pruneAssets(activeMeshes);
     }
 
     std::expected<std::vector<World3DGPUIndexedBatch>, MeshGPUError>
@@ -35,7 +35,7 @@ namespace monopoly::engine
             const auto renderData = object->renderData ?
                 object->renderData : object->asset->renderData;
             if (!renderData) continue;
-            auto gpu = cache.resolve(object->asset);
+            auto gpu = cache.resolveForScene(object->asset);
             if (!gpu) return std::unexpected(gpu.error());
             SDL_GPUBuffer* vertexBuffer = (*gpu)->vertexBuffer;
             if (renderData != object->asset->renderData)
@@ -66,6 +66,21 @@ namespace monopoly::engine
                             "textured HMD batch has no uploaded SDL_GPU texture"});
                 }
 
+                std::array<SDL_GPUTextureSamplerBinding, 5> modernTextures{};
+                const std::array<const std::optional<data::ModernTextureBinding>*, 5> maps{
+                    &batch.material.baseColorTexture, &batch.material.metallicRoughnessTexture,
+                    &batch.material.normalTexture, &batch.material.emissiveTexture,
+                    &batch.material.occlusionTexture};
+                for (std::size_t index = 0; index < maps.size(); ++index)
+                {
+                    if (!*maps[index]) continue;
+                    const auto* resource = (*gpu)->modernTexture(**maps[index]);
+                    if (!resource)
+                        return std::unexpected(MeshGPUError{
+                            MeshGPUErrorCode::MissingTexturePixels,
+                            "modern map has no uploaded immutable GPU texture"});
+                    modernTextures[index] = {resource->texture, resource->sampler};
+                }
                 result.push_back({
                     object->node,
                     object->contentsDataId,
@@ -80,7 +95,7 @@ namespace monopoly::engine
                     static_cast<std::uint32_t>(batch.indexCount),
                     data::isLegacyShadowMesh(object->contentsDataId),
                     batch.material,
-                    batch.texture});
+                    batch.texture, modernTextures});
             }
         }
         cache.pruneDynamicVertices(activeDynamicVertices);

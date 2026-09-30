@@ -9,11 +9,13 @@
 #include <array>
 #include <vector>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <tuple>
 
 namespace monopoly::engine
 {
+    class MeshGPUCache;
     class SequencePlayback final
     {
     public:
@@ -90,6 +92,13 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<void, std::string> processUserCommands();
         [[nodiscard]] std::expected<void, std::string> stopAll();
         [[nodiscard]] std::expected<void, std::string> update(std::int32_t tick);
+        // Optional native decorations share render slots, not gameplay sequences.
+        [[nodiscard]] std::expected<void, std::string> setNativeSceneItems(
+            std::vector<sequence::SequenceMeshRenderItem> items);
+        // Reject failed modern GPU uploads before frame submission and republish
+        // complete retail sequence poses through the existing CPU mesh cache.
+        [[nodiscard]] std::expected<void, std::string> prepareModernMeshes(MeshGPUCache& cache,
+            const std::function<void(const data::MeshRenderData*)>& rejectPack = {});
         [[nodiscard]] std::expected<void, std::string> configureBoardTextures(
             data::BoardMeshKind mesh, data::TextureResolution resolution,
             int city, int currency, const std::filesystem::path& customRoot = {});
@@ -124,6 +133,7 @@ namespace monopoly::engine
         data::DataTag nextRuntimeVideoTag_{1};
 
         data::MeshRuntimeCache meshes_;
+        std::vector<sequence::SequenceMeshRenderItem> nativeSceneItems_;
         using BoardTextureSelection = std::tuple<data::BoardMeshKind,
             data::TextureResolution, data::BoardEdition, data::LanguageId, int, int,
             std::filesystem::path>;

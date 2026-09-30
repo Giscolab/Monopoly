@@ -14,7 +14,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
 - Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les consommateurs DATA passent désormais par une interface logique `DataSource` : les DAT sont le backend de repli, avec surcharges par `DataId` et manifestes de payloads hors archive. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
 - Présentation moderne : plein écran bureau par défaut, modes fenêtré/exclusif, 1080p/1440p/4K selon le mode d’affichage, VSync/Mailbox/Immediate, deux frames GPU en vol, F11, télémétrie résolution/FPS et canevas 3D 800x450 16:9 indépendant de l’UI 800x600. Voir [présentation](PRESENTATION.md).
-- Assets Blender/glTF : export headless déterministe des six pions récupérés, staging CMake optionnel, loader GLB statique basé sur `fastgltf v0.9.0`, calibration hauteur/orientation/pivot et fallback HMD contextuel. Le source retail confirme l’ordre `ship=6`, `shoe=7`. Les GLB statiques ne remplacent que les idles mono-HMD sûrs ; les mouvements et les idles multi-HMD (chien/cheval) restent retail pour préserver leurs animations. Le contrat matériau conserve baseColor, metallic, roughness, emissive et double-sided ; shaders PBR, textures, animations modernes complètes et qualification visuelle restent à faire. Voir [contrat Blender/glTF](BLENDER_INTEGRATION_SPEC.md).
+- Assets Blender/glTF : six pions récupérés et cinq sculptures nouvelles exportés séparément, staging optionnel, loader statique borné et fallback HMD selon la racine CNK et sa priorité d'activation. Le chemin PBR comprend les cinq cartes, samplers, mipmaps, bases tangentes et alpha OPAQUE/MASK. Les racines rigides qualifiées conservent le timing CNK ; les autres changements de forme restent retail. Plateau, maison et trois éléments de décor ont des adaptateurs optionnels. Les animations complètes et la qualification visuelle en partie restent ouvertes. Voir [contrat Blender/glTF](BLENDER_INTEGRATION_SPEC.md).
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
@@ -38,7 +38,7 @@ Ces points remplacent les anciennes mentions vagues « partiel » ou « futur »
 | A04 | LANG / FONTS / GRAFIX | 96 DPI d’origine raccordés ; formatage, UTF-16, métriques et clipping encore à comparer. |
 | A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Le LRU des blocs DAT et la libération des bitmaps/meshes CPU et GPU sont raccordés ; les consommateurs runtime ne dépendent plus directement du registre DAT et peuvent recevoir des payloads logiques hors archive avec fallback retail. Les scènes actives et substitutions de textures restent possédées. Le décodage des formats modernes natifs et le retrait complet des banques retail restent à poursuivre. |
 | A06 | Séquenceur | Préchargement, attributs après enfants, sélection et persistance des tweekers, événements de fin et callback souris consommé sont raccordés. Labels et autres usages C++ ou DAT restent à comparer. Model est le type 4, Preloader le type 8 ; le renderer source actif n’accepte pas Model. L’absence d’appel C++ seule n’exclut pas un usage par données. |
-| A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. Le backend GLB, la calibration et le fallback par contexte de séquence sont raccordés. L’audit DAT montre que les animations de pions changent de HMD (poseCount MIMe = 1), donc un futur remplacement moderne doit couvrir la séquence entière. Le chemin PBR GPU à facteurs est raccordé et qualifié par lecture de pixels ; les textures PBR, animations modernes et intégration du plateau Blender restent ouverts. |
+| A07 | PC3D | Backend GLB, calibration, fallback par contexte CNK, cinq cartes PBR et alpha OPAQUE/MASK raccordés et couverts par contrôles CPU/GPU ciblés. Les adaptateurs optionnels plateau/maison/décor passent un rendu SDL_GPU séparé. L'audit des pions confirme des changements de HMD, et non des poses MIMe : les variantes doivent couvrir une racine entière. Silhouettes animées, matériaux procéduraux restants et qualification visuelle d'une partie restent ouverts. |
 
 MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint/UIMG0/ground/envmap sont commentés dans `hmdload.cpp`. Le chemin `NewMesh` alternatif n’est pas celui sélectionné par les appelants actifs. Ces éléments ne sont pas des tâches actives sans nouvelle preuve contraire. Les sept modules exclus et leurs justifications figurent dans la matrice.
 
@@ -55,14 +55,15 @@ MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint
 | ID | Données | Périmètre et condition de résolution |
 |---|---|---|
 | D01 | Six références Europe d’historique absentes du corpus livré ; aucune valeur inventée. | Les appels sont dans les branches Europe de `UDIBar.cpp`, désactivées par `USA_VERSION=1` dans le build source livré. Les définitions/données Europe restent nécessaires pour cette édition ; l’achat utilise déjà LANG 3178. |
+| D02 | Banques Europe/français absentes de l'installation locale : `dat_borde.dat`, `dat_ln03.dat`, `dat_lm03.dat`, `dat_lk03.dat`. | La sélection explicite Europe/français est raccordée et signale ces absences ; le démarrage français réel et le plateau Paris dans une partie restent bloqués jusqu'à fourniture des payloads. Les en-têtes ne remplacent pas les banques. |
 
 ## Qualification sur données et plateformes réelles
 
 | ID | Qualification | Limite actuelle |
 |---|---|---|
-| Q01 | Parties jouables avec DAT/LANG/CNK retail, règles, IA, UI et langues. | Les payloads retail nécessaires ne sont pas fournis. Des fixtures ne prouvent pas une partie complète. |
+| Q01 | Parties jouables avec DAT/LANG/CNK retail, règles, IA, UI et langues. | Les banques USA locales permettent des démarrages bornés ; neuf chargements d'idles modernes ne prouvent pas une partie. Le démarrage Europe/français est bloqué par D02. |
 | Q02 | Voix entre deux processus puis deux machines, capture et écoute physiques. | Les tests de transport/codec ne prouvent pas le parcours utilisateur ni le matériel. Voir [réseau et voix](NETWORK_VOICE.md). |
-| Q03 | Textures/UV/HMD, éditions, devises et scénarios Board Editor personnalisés. | Corpus BMP disponible ; HMD retail et vues externes personnalisées manquants. Le plateau standard ne dépend pas de ces vues externes. |
+| Q03 | Textures/UV/HMD, éditions, devises et scénarios Board Editor personnalisés. | Géométrie HMD locale décodée et contrôles PBR disponibles ; la comparaison visuelle des éditions/devises et des vues personnalisées reste à qualifier. Le plateau standard ne dépend pas de ces vues externes. |
 | Q04 | Films Indeo/Bink réels et synchronisation audiovisuelle, installation FFmpeg. | Runtime et tests disponibles ; médias retail absents. |
 | Q05 | Linux/macOS, POSIX, Vulkan/Metal et disponibilité de FullHelp. | La validation de référence est Windows/D3D12, pas une qualification de toutes les plateformes. |
 
@@ -104,22 +105,60 @@ Les journaux locaux de cette référence sont `modern/build/trade-return-culling
 - L’audit structurel n’est pas un audit de fidélité. Les compteurs d’inventaire ne sont pas des pourcentages d’achèvement : familles et sous-contrats se recouvrent.
 - Ne modifier manuellement ni le SVG ni le rapport généré. Supprimer une tâche seulement après correction vérifiée ou exclusion justifiée ; conserver les décisions utiles dans la matrice, les anciens checkpoints dans l’historique Git.
 
-## Modern assets — qualification du 30 septembre 2026
+## Modern assets — qualification locale du 1er octobre 2026
 
-Le correctif de priorité `6299180` est poussé : GLB statiques uniquement pour
-les racines idle prévues, aux priorités joueurs 224..229. Chien et déplacements
-restent HMD. MonopolyDataCore et MonopolyModern ont compilé ; les tests ciblés
-du cache passent. Un démarrage réel de 25 secondes en 1280x720 charge les cinq
-pions autorisés, sans preuve visuelle d'une partie ou de déplacements.
+Le chargement statique GLB vérifie budgets, fichiers, références, accesseurs,
+indices et transformations. Les PNG/JPEG embarqués et cinq cartes PBR sont
+raccordés, avec rôles sRGB/linéaires, samplers, mipmaps, normales tangentes et
+alpha OPAQUE/MASK. Les **54 contrôles CPU GLB et 86 contrôles GPU** passent.
+BLEND, scènes glTF animées et accesseurs sparse restent explicitement refusés.
+Les caches distinguent les propriétaires immuables modernes/retail partageant
+un DATA id. Le tree Git de `Source/` conserve le baseline verrouillé.
+DXIL est exécuté sous Windows ; SPIR-V/MSL sont compilés et réfléchis, sans
+qualification de rendu Linux/macOS.
 
-Le chargement GLB est borné et vérifie références, accesseurs, indices et
-transformations. Les 22 contrôles de fixtures passent. Les nouveaux shaders
-PBR à facteurs utilisent des pipelines distincts ; les lectures réelles SDL_GPU
-valident matériaux, émission/sRGB, culling et mélange avec Gouraud. DXIL est
-exécuté sous Windows ; SPIR-V/MSL sont compilés, sans qualification Linux/macOS.
-Les cartes PBR et animations GLB ne sont pas encore actives.
+La provenance de priorité est conservée : activation de racine idle à 224..229,
+racine mouvement à 100, priorité de feuille de dessin issue du CNK, y compris
+la valeur 0. Le resolver utilise le contexte de racine, sans réécrire l'ordre de
+présentation de la feuille. Les 46 racines rigides ont été exercées par le
+SequenceRuntime de production : géométrie moderne à chaque frame, sans échec,
+horloges, choix HMD, matrices, tweekers et cycle de vie identiques au retail.
+Le rapport local est `build/qualified-rigid-production-20261001.json`.
+L'inventaire couvre les 1 089 CNK sur 600 ticks ; ses sorties CPU autonomes ne
+remplacent pas les appels et médias d'une partie réelle.
 
-L'outil de timeline réutilise SequenceRuntime et inventorie les 1 089 CNK de
-pions sur 600 ticks avec les DAT locaux. Les sorties restent sous build/.
-L'inventaire représente des séquences autonomes et ne remplace pas une
-qualification des appels de jeu, de la pose sur le plateau ou des médias.
+Six pions sont récupérés ; les cinq absents sont des sculptures nouvelles.
+Leur hauteur/pivot/orientation sont calibrés sur des HMD décodés. Neuf idles
+statiques se chargent dans un démarrage borné ; cette mesure ne qualifie pas le
+gameplay. Le pack de deux états du bateau pour la racine `0x80360` passe les
+71 ticks de sa timeline de production, appariés au retail avec mêmes horloges,
+choix HMD, matrices, priorités et cycle de vie. C'est une preuve CPU, pas un
+rendu animé GPU. L'adaptateur des quatre états du chien passe 99 frames de
+production sans fallback ni erreur, avec mêmes horloges, matrices, choix HMD et
+cycle de vie que le retail. Le démarrage vivant de 25 secondes charge neuf idles
+statiques et ne prouve pas l'animation du chien à l'écran. Les six poses authored
+du cheval sont qualifiées ; leur adaptation runtime reste à réaliser.
+
+Le plateau Paris aligné dispose d'une correspondance explicite de ses 40 cases
+avec les cellules retail ; son export omet les tangentes authored invalides et
+utilise une base dérivée de UV non dégénérées. Les adaptateurs plateau/maison et
+les trois décors optionnels sont raccordés. Le probe SDL_GPU soumet **4 objets,
+246 batches, 915 731 triangles** ; la mesure de cadence et sa portée sont
+consignées dans le [contrat Blender](BLENDER_INTEGRATION_SPEC.md). Un benchmark
+avec fence exclut chargement et readback et ne représente pas la boucle complète
+du jeu. Le démarrage français requis pour Paris reste bloqué par D02.
+
+MonopolyModern compile et les suites ciblées séquences, variantes, catalogue de
+scène, décor et fallback GPU passent. Ce lot ciblé ne remplace pas la campagne
+CTest globale historique ni les qualifications Q01–Q05. Le plateau aligné garde
+ses positions X/Z, avec sol de jeu Y=0 et relief réduit ; la qualification de
+géométrie par rayons indépendants passe dans les bornes consignées au contrat.
+Le contact pendant une partie reste à qualifier.
+
+Les cibles Blender sont explicites ; un build ordinaire stage les fichiers déjà
+générés sans lancer Blender. Un bake reproductible du vrai graphe procédural
+d'asphalte a validé trois cartes embarquées, mais les autres matériaux
+procéduraux du plateau/décor restent à convertir ou à cuire.
+Le self-test de bake du chapeau utilise ses vrais facteurs, sans cartes normales,
+émissives ou AO inventées ; exports répétés, loader et comparaison Blender sont
+consignés dans le contrat, sans affirmation de fidélité procédurale ou de partie.

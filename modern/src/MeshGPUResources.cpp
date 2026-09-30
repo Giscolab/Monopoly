@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <new>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -130,6 +132,219 @@ namespace monopoly::engine
             return result;
         }
 
+        bool usesMipmaps(data::ModernTextureFilter filter) noexcept
+        {
+            return filter != data::ModernTextureFilter::Nearest &&
+                filter != data::ModernTextureFilter::Linear;
+        }
+        SDL_GPUSamplerAddressMode addressMode(data::ModernTextureWrap wrap) noexcept
+        {
+            switch (wrap)
+            {
+            case data::ModernTextureWrap::ClampToEdge: return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+            case data::ModernTextureWrap::MirroredRepeat: return SDL_GPU_SAMPLERADDRESSMODE_MIRRORED_REPEAT;
+            default: return SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+            }
+        }
+        SDL_GPUFilter imageFilter(data::ModernTextureFilter filter) noexcept
+        {
+            using Filter = data::ModernTextureFilter;
+            return filter == Filter::Nearest || filter == Filter::NearestMipmapNearest ||
+                filter == Filter::NearestMipmapLinear ? SDL_GPU_FILTER_NEAREST : SDL_GPU_FILTER_LINEAR;
+        }
+        std::expected<MeshGPUModernTextureResource, MeshGPUError> uploadModernTexture(
+            SDL_GPUDevice* device, const data::ModernTextureBinding& binding)
+        {
+            if (!binding.image)
+                return std::unexpected(error(MeshGPUErrorCode::MissingTexturePixels,
+                    "modern texture has no immutable RGBA source image"));
+            if (binding.sampler.minFilter > data::ModernTextureFilter::LinearMipmapLinear ||
+                binding.sampler.magFilter > data::ModernTextureFilter::Linear ||
+                binding.sampler.wrapS > data::ModernTextureWrap::MirroredRepeat ||
+                binding.sampler.wrapT > data::ModernTextureWrap::MirroredRepeat ||
+                binding.colorSpace > data::ModernTextureColorSpace::Srgb)
+                return std::unexpected(error(MeshGPUErrorCode::InvalidTexturePixels,
+                    "modern texture contains an invalid sampler or color-space enum"));
+            const auto& image = *binding.image;
+            if (!image.width || !image.height ||
+                static_cast<std::uint64_t>(image.width) * 4U > std::numeric_limits<std::uint32_t>::max() ||
+                image.height > std::numeric_limits<std::uint32_t>::max() /
+                    (static_cast<std::uint64_t>(image.width) * 4U))
+                return std::unexpected(error(MeshGPUErrorCode::SizeOverflow,
+                    "modern RGBA image exceeds Uint32 transfer range"));
+            const std::uint64_t rawBytes = static_cast<std::uint64_t>(image.width) * image.height * 4U;
+            if (rawBytes != image.rgba.size() || binding.texCoord != 0U)
+                return std::unexpected(error(MeshGPUErrorCode::InvalidTexturePixels,
+                    "modern texture requires valid width*height RGBA8 and TEXCOORD_0"));
+            if (binding.sampler.magFilter != data::ModernTextureFilter::Nearest &&
+                binding.sampler.magFilter != data::ModernTextureFilter::Linear)
+                return std::unexpected(error(MeshGPUErrorCode::InvalidTexturePixels,
+                    "modern magnification filter must be nearest or linear"));
+            const auto rowBytes = alignUp(static_cast<std::uint64_t>(image.width) * 4U,
+                D3D12TextureRowAlignment);
+            if (image.height > std::numeric_limits<std::uint32_t>::max() / rowBytes)
+                return std::unexpected(error(MeshGPUErrorCode::SizeOverflow,
+                    "aligned modern texture upload exceeds Uint32 transfer range"));
+            const auto transferBytes = rowBytes * image.height;
+            if (transferBytes > std::numeric_limits<std::uint32_t>::max())
+                return std::unexpected(error(MeshGPUErrorCode::SizeOverflow,
+                    "modern texture upload exceeds Uint32 transfer range"));
+            MeshGPUModernTextureResource result;
+            result.source = binding;
+            const bool mipmaps = usesMipmaps(binding.sampler.minFilter);
+            if (mipmaps)
+                for (auto size = std::max(image.width, image.height); size > 1U; size >>= 1U)
+                    ++result.mipLevels;
+            SDL_GPUTextureCreateInfo textureInfo{};
+            textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
+            textureInfo.format = binding.colorSpace == data::ModernTextureColorSpace::Srgb
+                ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            textureInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            if (result.mipLevels > 1U) textureInfo.usage |= SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+            if (!SDL_GPUTextureSupportsFormat(device, textureInfo.format,
+                    textureInfo.type, textureInfo.usage))
+                return std::unexpected(error(MeshGPUErrorCode::UnsupportedTextureFormat,
+                    "device does not support modern texture color space/mipmap render usage"));
+            textureInfo.width = image.width;
+            textureInfo.height = image.height;
+            textureInfo.layer_count_or_depth = 1U;
+            textureInfo.num_levels = result.mipLevels;
+            textureInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+            result.texture = SDL_CreateGPUTexture(device, &textureInfo);
+            if (!result.texture)
+                return std::unexpected(error(MeshGPUErrorCode::TextureCreationFailed));
+            const auto cleanup = [&]()
+            {
+                if (result.sampler) SDL_ReleaseGPUSampler(device, result.sampler);
+                SDL_ReleaseGPUTexture(device, result.texture);
+            };
+            SDL_GPUSamplerCreateInfo samplerInfo{};
+            samplerInfo.min_filter = imageFilter(binding.sampler.minFilter);
+            samplerInfo.mag_filter = imageFilter(binding.sampler.magFilter);
+            using Filter = data::ModernTextureFilter;
+            samplerInfo.mipmap_mode = binding.sampler.minFilter == Filter::NearestMipmapLinear ||
+                binding.sampler.minFilter == Filter::LinearMipmapLinear
+                ? SDL_GPU_SAMPLERMIPMAPMODE_LINEAR : SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+            samplerInfo.address_mode_u = addressMode(binding.sampler.wrapS);
+            samplerInfo.address_mode_v = addressMode(binding.sampler.wrapT);
+            samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+            samplerInfo.min_lod = 0.0F;
+            samplerInfo.max_lod = static_cast<float>(result.mipLevels - 1U);
+            result.sampler = SDL_CreateGPUSampler(device, &samplerInfo);
+            if (!result.sampler)
+            {
+                cleanup();
+                return std::unexpected(error(MeshGPUErrorCode::SamplerCreationFailed));
+            }
+            SDL_GPUTransferBufferCreateInfo transferInfo{};
+            transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            transferInfo.size = static_cast<Uint32>(transferBytes);
+            auto* transfer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
+            if (!transfer)
+            {
+                cleanup();
+                return std::unexpected(error(MeshGPUErrorCode::TransferBufferCreationFailed));
+            }
+            auto* mapped = static_cast<std::uint8_t*>(SDL_MapGPUTransferBuffer(device, transfer, false));
+            if (!mapped)
+            {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                cleanup();
+                return std::unexpected(error(MeshGPUErrorCode::TransferMapFailed));
+            }
+            std::memset(mapped, 0, static_cast<std::size_t>(transferBytes));
+            for (std::uint32_t row = 0; row < image.height; ++row)
+                std::memcpy(mapped + static_cast<std::size_t>(row * rowBytes),
+                    image.rgba.data() + static_cast<std::size_t>(row) * image.width * 4U,
+                    static_cast<std::size_t>(image.width) * 4U);
+            SDL_UnmapGPUTransferBuffer(device, transfer);
+            auto* command = SDL_AcquireGPUCommandBuffer(device);
+            if (!command)
+            {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                cleanup();
+                return std::unexpected(error(MeshGPUErrorCode::CommandBufferCreationFailed));
+            }
+            auto* copy = SDL_BeginGPUCopyPass(command);
+            if (!copy)
+            {
+                SDL_CancelGPUCommandBuffer(command);
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                cleanup();
+                return std::unexpected(error(MeshGPUErrorCode::CopyPassCreationFailed));
+            }
+            SDL_GPUTextureTransferInfo source{};
+            source.transfer_buffer = transfer;
+            source.pixels_per_row = static_cast<Uint32>(rowBytes / 4U);
+            source.rows_per_layer = image.height;
+            SDL_GPUTextureRegion destination{};
+            destination.texture = result.texture;
+            destination.w = image.width;
+            destination.h = image.height;
+            destination.d = 1U;
+            SDL_UploadToGPUTexture(copy, &source, &destination, false);
+            SDL_EndGPUCopyPass(copy);
+            if (result.mipLevels > 1U) SDL_GenerateMipmapsForGPUTexture(command, result.texture);
+            if (!SDL_SubmitGPUCommandBuffer(command))
+            {
+                SDL_ReleaseGPUTransferBuffer(device, transfer);
+                cleanup();
+                return std::unexpected(error(MeshGPUErrorCode::SubmitFailed));
+            }
+            SDL_ReleaseGPUTransferBuffer(device, transfer);
+            return result;
+        }
+        std::expected<void, MeshGPUError> uploadModernTextures(
+            SDL_GPUDevice* device, MeshGPUResource& resource, const data::MeshRenderData& renderData)
+        {
+            // Allocate CPU ownership storage before creating any modern GPU handles.
+            // Subsequent pushes move only shared ownership pointers and POD metadata.
+            std::size_t mapCount{};
+            for (const auto& batch : renderData.batches)
+            {
+                if (batch.material.model != data::MeshMaterialModel::MetallicRoughness) continue;
+                const std::size_t count = static_cast<std::size_t>(batch.material.baseColorTexture.has_value()) +
+                    static_cast<std::size_t>(batch.material.metallicRoughnessTexture.has_value()) +
+                    static_cast<std::size_t>(batch.material.normalTexture.has_value()) +
+                    static_cast<std::size_t>(batch.material.emissiveTexture.has_value()) +
+                    static_cast<std::size_t>(batch.material.occlusionTexture.has_value());
+                if (count > resource.modernTextures.max_size() - mapCount)
+                    return std::unexpected(error(MeshGPUErrorCode::SizeOverflow,
+                        "modern texture ownership storage exceeds vector range"));
+                mapCount += count;
+            }
+            try
+            {
+                resource.modernTextures.reserve(mapCount);
+            }
+            catch (const std::bad_alloc&)
+            {
+                return std::unexpected(error(MeshGPUErrorCode::HostAllocationFailed,
+                    "modern texture ownership allocation failed"));
+            }
+            catch (const std::length_error&)
+            {
+                return std::unexpected(error(MeshGPUErrorCode::SizeOverflow,
+                    "modern texture ownership allocation exceeds vector range"));
+            }
+            for (const auto& batch : renderData.batches)
+            {
+                if (batch.material.model != data::MeshMaterialModel::MetallicRoughness) continue;
+                const std::array<const std::optional<data::ModernTextureBinding>*, 5> maps{
+                    &batch.material.baseColorTexture, &batch.material.metallicRoughnessTexture,
+                    &batch.material.normalTexture, &batch.material.emissiveTexture,
+                    &batch.material.occlusionTexture};
+                for (const auto* map : maps)
+                {
+                    if (!*map || resource.modernTexture(**map)) continue;
+                    auto uploaded = uploadModernTexture(device, **map);
+                    if (!uploaded) return std::unexpected(uploaded.error());
+                    resource.modernTextures.push_back(std::move(*uploaded));
+                }
+            }
+            return {};
+        }
+
         std::expected<void, MeshGPUError> uploadDynamicVertexBuffer(
             SDL_GPUDevice* device, SDL_GPUBuffer* buffer,
             std::span<const MeshGPUVertex> vertices, std::uint32_t vertexBytes,
@@ -219,6 +434,7 @@ namespace monopoly::engine
             }
             packed.uv[0] = vertex.uv[0];
             packed.uv[1] = vertex.uv[1];
+            for (std::size_t i = 0; i < 4; ++i) packed.tangent[i] = vertex.tangent[i];
             plan.vertices.push_back(packed);
         }
         plan.indices = renderData.indices;
@@ -243,6 +459,12 @@ namespace monopoly::engine
                 texture.texture = nullptr;
                 texture.source.reset();
             }
+        for (auto& texture : resource.modernTextures)
+        {
+            if (device_ && texture.texture) SDL_ReleaseGPUTexture(device_, texture.texture);
+            if (device_ && texture.sampler) SDL_ReleaseGPUSampler(device_, texture.sampler);
+        }
+        resource.modernTextures.clear();
         resource.vertexBuffer = nullptr;
         resource.indexBuffer = nullptr;
         resource.textures.clear();
@@ -276,6 +498,18 @@ namespace monopoly::engine
     std::expected<const MeshGPUResource*, MeshGPUError>
     MeshGPUCache::resolve(std::shared_ptr<const data::MeshRuntimeAsset> asset)
     {
+        return resolveImpl(std::move(asset), false);
+    }
+
+    std::expected<const MeshGPUResource*, MeshGPUError>
+    MeshGPUCache::resolveForScene(std::shared_ptr<const data::MeshRuntimeAsset> asset)
+    {
+        return resolveImpl(std::move(asset), true);
+    }
+
+    std::expected<const MeshGPUResource*, MeshGPUError>
+    MeshGPUCache::resolveImpl(std::shared_ptr<const data::MeshRuntimeAsset> asset, bool coexist)
+    {
         if (device_ == nullptr)
             return std::unexpected(error(MeshGPUErrorCode::MissingDevice,
                 "GPU mesh cache has no SDL_GPUDevice"));
@@ -283,9 +517,12 @@ namespace monopoly::engine
             return std::unexpected(error(MeshGPUErrorCode::MissingAsset,
                 "GPU mesh upload requires immutable CPU render data"));
 
-        if (const auto found = resources_.find(asset->dataId);
-            found != resources_.end() && found->second.source == asset)
+        if (const auto found = resources_.find(asset.get()); found != resources_.end())
+        {
+            if (!coexist) eraseOtherAssets(asset->dataId, asset.get());
+            found->second.lastResolvedOrder = ++resolvedOrder_;
             return &found->second;
+        }
 
         auto plan = makeMeshGPUUploadPlan(*asset->renderData);
         if (!plan) return std::unexpected(plan.error());
@@ -466,17 +703,44 @@ namespace monopoly::engine
             upload.texture = nullptr;
         }
 
-        if (auto found = resources_.find(replacement.dataId); found != resources_.end())
+        auto modernUploaded = uploadModernTextures(device_, replacement, *asset->renderData);
+        if (!modernUploaded)
         {
-            eraseDynamicForDataId(replacement.dataId);
-            release(found->second);
-            found->second = std::move(replacement);
-            return &found->second;
+            cleanupReplacement();
+            return std::unexpected(modernUploaded.error());
         }
-        auto [inserted, created] = resources_.emplace(
-            replacement.dataId, std::move(replacement));
-        (void)created;
-        return &inserted->second;
+
+        // Allocate the empty cache node before transferring raw GPU handles.
+        // An emplace of the populated replacement can destroy its moved value
+        // during a failed rehash without releasing the SDL resources it owns.
+        static_assert(noexcept(std::declval<MeshGPUResource&>() =
+            std::declval<MeshGPUResource&&>()));
+        try
+        {
+            const auto* identity = replacement.source.get();
+            auto [inserted, created] = resources_.try_emplace(identity);
+            if (!created)
+            {
+                eraseDynamicForAsset(identity);
+                release(inserted->second);
+            }
+            inserted->second = std::move(replacement);
+            inserted->second.lastResolvedOrder = ++resolvedOrder_;
+            if (!coexist) eraseOtherAssets(inserted->second.dataId, identity);
+            return &inserted->second;
+        }
+        catch (const std::bad_alloc&)
+        {
+            cleanupReplacement();
+            return std::unexpected(error(MeshGPUErrorCode::HostAllocationFailed,
+                "GPU mesh cache ownership allocation failed"));
+        }
+        catch (const std::length_error&)
+        {
+            cleanupReplacement();
+            return std::unexpected(error(MeshGPUErrorCode::SizeOverflow,
+                "GPU mesh cache ownership exceeds container range"));
+        }
     }
 
     std::expected<const MeshGPUDynamicVertexResource*, MeshGPUError>
@@ -491,7 +755,7 @@ namespace monopoly::engine
             return std::unexpected(error(MeshGPUErrorCode::MissingAsset,
                 "dynamic vertex upload requires static asset and evaluated render data"));
 
-        auto staticResource = resolve(asset);
+        auto staticResource = resolveForScene(asset);
         if (!staticResource)
             return std::unexpected(staticResource.error());
         auto plan = makeMeshGPUUploadPlan(*renderData);
@@ -604,12 +868,12 @@ namespace monopoly::engine
     {
         for (auto iterator = resources_.begin(); iterator != resources_.end();)
         {
-            if (std::find(activeIds.begin(), activeIds.end(), iterator->first) != activeIds.end())
+            if (std::find(activeIds.begin(), activeIds.end(), iterator->second.dataId) != activeIds.end())
             {
                 ++iterator;
                 continue;
             }
-            eraseDynamicForDataId(iterator->first);
+            eraseDynamicForAsset(iterator->first);
             // ReleaseGPUBuffer/Texture defer physical destruction until safe;
             // dropping the CPU source reference needs no GPU idle wait.
             release(iterator->second);
@@ -619,8 +883,15 @@ namespace monopoly::engine
 
     const MeshGPUResource* MeshGPUCache::find(data::DataId id) const noexcept
     {
-        const auto found = resources_.find(id);
-        return found == resources_.end() ? nullptr : &found->second;
+        const MeshGPUResource* latest = nullptr;
+        for (const auto& [identity, resource] : resources_)
+        {
+            (void)identity;
+            if (resource.dataId == id && (!latest ||
+                resource.lastResolvedOrder > latest->lastResolvedOrder))
+                latest = &resource;
+        }
+        return latest;
     }
 
     std::size_t MeshGPUCache::size() const noexcept
@@ -629,10 +900,62 @@ namespace monopoly::engine
     void MeshGPUCache::erase(data::DataId id) noexcept
     {
         eraseDynamicForDataId(id);
-        const auto found = resources_.find(id);
-        if (found == resources_.end()) return;
-        release(found->second);
-        resources_.erase(found);
+        for (auto iterator = resources_.begin(); iterator != resources_.end();)
+        {
+            if (iterator->second.dataId != id)
+            {
+                ++iterator;
+                continue;
+            }
+            release(iterator->second);
+            iterator = resources_.erase(iterator);
+        }
+    }
+
+    void MeshGPUCache::eraseDynamicForAsset(const data::MeshRuntimeAsset* asset) noexcept
+    {
+        for (auto iterator = dynamicVertices_.begin(); iterator != dynamicVertices_.end();)
+        {
+            if (iterator->second.sourceAsset.get() != asset)
+            {
+                ++iterator;
+                continue;
+            }
+            release(iterator->second);
+            iterator = dynamicVertices_.erase(iterator);
+        }
+    }
+
+    void MeshGPUCache::eraseOtherAssets(data::DataId id,
+        const data::MeshRuntimeAsset* retained) noexcept
+    {
+        for (auto iterator = resources_.begin(); iterator != resources_.end();)
+        {
+            if (iterator->second.dataId != id || iterator->first == retained)
+            {
+                ++iterator;
+                continue;
+            }
+            eraseDynamicForAsset(iterator->first);
+            release(iterator->second);
+            iterator = resources_.erase(iterator);
+        }
+    }
+
+    void MeshGPUCache::pruneAssets(
+        std::span<const data::MeshRuntimeAsset* const> activeAssets) noexcept
+    {
+        for (auto iterator = resources_.begin(); iterator != resources_.end();)
+        {
+            if (std::find(activeAssets.begin(), activeAssets.end(), iterator->first) != activeAssets.end())
+            {
+                ++iterator;
+                continue;
+            }
+            eraseDynamicForAsset(iterator->first);
+            release(iterator->second);
+            iterator = resources_.erase(iterator);
+        }
     }
 
     void MeshGPUCache::clear() noexcept

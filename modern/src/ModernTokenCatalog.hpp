@@ -49,4 +49,12 @@ namespace monopoly::data
 
     [[nodiscard]] DataId
     idleSequenceDataId(std::uint8_t token) noexcept;
+
+    // Complete-sequence qualification for static glTF geometry. CNK timing,
+    // visibility and world transforms stay authoritative. Unknown movement
+    // roots and tokens with shape-changing idle frames retain retail meshes.
+    // Movement eligibility is an explicit reviewed root/representative-HMD
+    // whitelist; an idle-safe token does not qualify all of its movement.
+    [[nodiscard]] bool qualifiedModernTokenSequence(DataId meshId,
+        std::optional<DataId> rootSequenceDataId, std::uint16_t priority) noexcept;
 }

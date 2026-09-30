@@ -17,6 +17,9 @@
 #include "LegacyAssets.hpp"
 #include "ModernGltfMesh.hpp"
 #include "ModernTokenCatalog.hpp"
+#include "ModernSceneCatalog.hpp"
+#include "ModernTokenVariants.hpp"
+#include "ModernEnvironment.hpp"
 #include "Timers.hpp"
 #include "UIMessages.hpp"
 #include "ExtendedInitialization.hpp"
@@ -144,6 +147,11 @@ namespace monopoly::engine
             std::shared_ptr<const data::MeshRenderData>,
             data::ModernTokenCount> modernTokenMeshes{};
         std::array<bool, data::ModernTokenCount> modernTokenAttempted{};
+        data::ModernSceneOptions modernSceneOptions{};
+        std::array<std::shared_ptr<const data::MeshRenderData>, 2> modernSceneMeshes{};
+        std::array<bool, 2> modernSceneAttempted{};
+        std::unique_ptr<data::ModernTokenVariantCache> modernTokenVariants;
+        std::unique_ptr<ModernEnvironment> modernEnvironment;
         std::unordered_set<std::string> reportedModernAssetFailures;
         bool tokenVoiceQueueLockHeld{};
         std::optional<std::uint8_t> activePieceMoveToken;
@@ -977,6 +985,48 @@ namespace monopoly::engine
 
     namespace
     {
+        [[nodiscard]] std::optional<std::shared_ptr<const data::MeshRenderData>>
+        resolveModernScene(data::DataId id, std::optional<data::DataId> root,
+            std::uint16_t priority)
+        {
+            const auto resources = startup::resources();
+            if (!resources) return {};
+            const auto& state = display::stateReadOnly();
+            const data::ModernSceneContext context{resources->context().board,
+                state.city, resources->context().language, state.system,
+                state.customBoardPath};
+            for (const auto kind : {data::ModernSceneKind::ParisBoard, data::ModernSceneKind::House})
+            {
+                if (!data::qualifiedModernSceneSequence(kind, id, root, priority,
+                        modernSceneOptions, context)) continue;
+                const auto options = data::modernSceneLoadOptions(kind);
+                if (!options) return {};
+                const auto index = static_cast<std::size_t>(kind);
+                if (modernSceneAttempted[index])
+                    return modernSceneMeshes[index]
+                        ? std::optional{modernSceneMeshes[index]} : std::nullopt;
+                modernSceneAttempted[index] = true;
+                const char* base = SDL_GetBasePath();
+                if (!base || !*base) return {};
+                const auto& definition = data::modernSceneDefinition(kind);
+                const auto path = std::filesystem::path(base) / "assets/modern" /
+                    std::filesystem::path(definition.relativeGlbPath);
+                std::error_code filesystemError;
+                if (!std::filesystem::is_regular_file(path, filesystemError)) return {};
+                auto loaded = data::loadModernGltfMesh(path, *options);
+                if (!loaded)
+                {
+                    std::cerr << "Modern scene rejected: " << path.string() << ": "
+                        << loaded.error().detail << " - using retail HMD fallback.\n";
+                    return {};
+                }
+                modernSceneMeshes[index] = std::move(*loaded);
+                std::cerr << "Modern scene asset: " << path.string() << '\n';
+                return std::optional{modernSceneMeshes[index]};
+            }
+            return {};
+        }
+
         [[nodiscard]] data::ModernMeshResolver
         modernTokenMeshResolver()
         {
@@ -988,17 +1038,32 @@ namespace monopoly::engine
                     std::optional<std::shared_ptr<const data::MeshRenderData>>,
                     data::MeshRuntimeError>
             {
+                if (auto scene = resolveModernScene(id, rootSequenceDataId, priority))
+                    return scene;
+                if (data::qualifiedModernTokenVariantSequence(id, rootSequenceDataId, priority))
+                {
+                    const char* base = SDL_GetBasePath();
+                    if (!base || !*base) return std::optional<std::shared_ptr<const data::MeshRenderData>>{};
+                    if (!modernTokenVariants)
+                        modernTokenVariants = std::make_unique<data::ModernTokenVariantCache>(
+                            std::filesystem::path(base) / "assets/modern");
+                    const bool previouslyAttempted = modernTokenVariants->attempted(*rootSequenceDataId);
+                    if (auto variant = modernTokenVariants->resolve(id, rootSequenceDataId, priority))
+                    {
+                        if (!previouslyAttempted)
+                            std::cerr << "Modern token sequence pack: root "
+                                << *rootSequenceDataId << " - complete modern states loaded.\n";
+                        return std::optional{std::move(variant)};
+                    }
+                    if (!previouslyAttempted && modernTokenVariants->loadError(*rootSequenceDataId))
+                        std::cerr << "Modern token sequence pack rejected: "
+                            << modernTokenVariants->loadError(*rootSequenceDataId)->detail
+                            << " - using complete retail sequence.\n";
+                    return std::optional<std::shared_ptr<const data::MeshRenderData>>{};
+                }
                 const auto* definition =
                     data::modernTokenForLegacyMesh(id);
-                const bool idlePriority =
-                    priority >= pieces::TokenPriority &&
-                    priority < pieces::TokenPriority + rules::MaxPlayers;
-                if (!definition ||
-                    !definition->staticIdleReplacement ||
-                    !idlePriority ||
-                    !rootSequenceDataId ||
-                    *rootSequenceDataId !=
-                        data::idleSequenceDataId(definition->token))
+                if (!data::qualifiedModernTokenSequence(id, rootSequenceDataId, priority))
                     return std::optional<
                         std::shared_ptr<const data::MeshRenderData>>{};
 
@@ -1065,10 +1130,19 @@ namespace monopoly::engine
         {
             modernTokenMeshes = {};
             modernTokenAttempted = {};
+            modernSceneMeshes = {};
+            modernSceneAttempted = {};
+            modernTokenVariants.reset();
+            modernEnvironment.reset();
             reportedModernAssetFailures.clear();
         }
     }
 
+
+    void configureModernScene(data::ModernSceneOptions options) noexcept
+    {
+        modernSceneOptions = options;
+    }
 
     SequencePlayback* sequencePlayback()
     {
@@ -1077,9 +1151,9 @@ namespace monopoly::engine
             if (auto resources = startup::resources())
             {
                 auto modernResolver = modernTokenMeshResolver();
-                // Decode only static-idle-safe modern tokens up front. Motion
-                // sequences keep their historical HMD frames until a modern
-                // animation clip can replace the complete sequence.
+                // Warm the existing idle-safe modern geometry. Qualified
+                // rigid movement reuses it with complete CNK transforms;
+                // unqualified sequences retain their historical HMD frames.
                 for (const auto& definition :
                     data::modernTokenDefinitions())
                 {
@@ -1840,7 +1914,7 @@ namespace monopoly::engine
         // display.cpp original charge le fond 3D pendant
         // DISPLAY_initialize().
         //
-        // Ce bitmap n'est pas indispensable au dÃ©marrage :
+        // Ce bitmap n'est pas indispensable au dÃƒÂ©marrage :
         // en cas d'absence on conserve simplement un fond noir.
         if (!legacyassets::initialize(gpuDevice))
         {
@@ -1856,8 +1930,8 @@ namespace monopoly::engine
 
     bool runCyclicFunctions()
     {
-        // Le vieux timer Windows tournait indÃ©pendamment Ã  60 Hz.
-        // Notre implÃ©mentation moderne rattrape ici les ticks Ã©coulÃ©s.
+        // Le vieux timer Windows tournait indÃƒÂ©pendamment ÃƒÂ  60 Hz.
+        // Notre implÃƒÂ©mentation moderne rattrape ici les ticks ÃƒÂ©coulÃƒÂ©s.
         timers::pump();
 
         messaging::pumpNetwork();
@@ -1902,7 +1976,7 @@ namespace monopoly::engine
             }
         }
 
-        // Ensuite viendront les Ã©quivalents de :
+        // Ensuite viendront les ÃƒÂ©quivalents de :
         // LI_SEQNCR_TimerTick()
         // LI_ANIM3D_TickScene()
 
@@ -2551,6 +2625,34 @@ namespace monopoly::engine
 
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
+            std::vector<sequence::SequenceMeshRenderItem> decorations;
+            if (modernSceneOptions.environment)
+            {
+                const auto boardInstances = session->runtime().meshInstances();
+                for (const auto node : session->world().order())
+                {
+                    const auto* board = session->world().find(node);
+                    if (!board || board->contentsDataId != data::modernSceneDefinition(
+                            data::ModernSceneKind::ParisBoard).legacyMeshId ||
+                        !board->asset ||
+                        board->asset->origin != data::MeshAssetOrigin::ModernGltf) continue;
+                    const bool boardRootPriority = std::any_of(boardInstances.begin(), boardInstances.end(),
+                        [&](const auto& instance)
+                        {
+                            return instance.node == node &&
+                                instance.rootSequencePriority == display::Board3DPriority;
+                        });
+                    if (!boardRootPriority) continue;
+                    if (!modernEnvironment)
+                        modernEnvironment = std::make_unique<ModernEnvironment>(
+                            std::filesystem::path(SDL_GetBasePath()) / "assets/modern", true);
+                    decorations = modernEnvironment->items(board->worldTransform,
+                        static_cast<std::uint32_t>(tick));
+                    break;
+                }
+            }
+            const auto nativeSync = session->setNativeSceneItems(std::move(decorations));
+            if (!nativeSync) return SDL_SetError("Native scene: %s", nativeSync.error().c_str());
             // Hidden 3D views skip rendering but must still retire stopped meshes.
             if (worldRenderer)
                 if (auto* cache = worldRenderer->meshCache())
@@ -2609,6 +2711,28 @@ namespace monopoly::engine
             if (!loaded) return SDL_SetError("World2D pipeline: %s", loaded.error().c_str());
             overlayRenderer = std::move(*loaded);
         }
+        if (session && worldRenderer)
+            if (auto* cache = worldRenderer->meshCache())
+            {
+                bool parisBoardRejected{};
+                const auto prepared = session->prepareModernMeshes(*cache,
+                    [&parisBoardRejected](const data::MeshRenderData* failed)
+                    {
+                        const auto paris = static_cast<std::size_t>(data::ModernSceneKind::ParisBoard);
+                        if (modernSceneMeshes[paris].get() == failed)
+                            parisBoardRejected = true;
+                        if (modernTokenVariants) (void)modernTokenVariants->rejectPack(failed);
+                        if (modernEnvironment) (void)modernEnvironment->rejectGeometry(failed);
+                    });
+                if (!prepared)
+                    return SDL_SetError("Modern asset fallback: %s", prepared.error().c_str());
+                if (parisBoardRejected)
+                {
+                    const auto removed = session->setNativeSceneItems({});
+                    if (!removed)
+                        return SDL_SetError("Native scene fallback: %s", removed.error().c_str());
+                }
+            }
         return gpuframe::present(gpuDevice, gameWindow,
             worldRenderer ? &*worldRenderer : nullptr,
             session ? &session->world() : nullptr,

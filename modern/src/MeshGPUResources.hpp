@@ -20,6 +20,7 @@ namespace monopoly::engine
         float position[3]{};
         float normal[3]{};
         float uv[2]{};
+        float tangent[4]{};
     };
 
     struct MeshGPUUploadPlan
@@ -45,6 +46,9 @@ namespace monopoly::engine
         VertexBufferCreationFailed,
         IndexBufferCreationFailed,
         TextureCreationFailed,
+        UnsupportedTextureFormat,
+        SamplerCreationFailed,
+        HostAllocationFailed,
         TransferBufferCreationFailed,
         TransferMapFailed,
         CommandBufferCreationFailed,
@@ -80,6 +84,14 @@ namespace monopoly::engine
         std::shared_ptr<const data::MeshRenderData> sourceRenderData;
     };
 
+    struct MeshGPUModernTextureResource
+    {
+        data::ModernTextureBinding source;
+        SDL_GPUTexture* texture{};
+        SDL_GPUSampler* sampler{};
+        std::uint32_t mipLevels{1U};
+    };
+
     struct MeshGPUResource
     {
         data::DataId dataId{};
@@ -89,6 +101,18 @@ namespace monopoly::engine
         std::uint32_t indexCount{};
         std::unordered_map<std::uint64_t, MeshGPUTextureResource> textures;
         std::shared_ptr<const data::MeshRuntimeAsset> source;
+        std::vector<MeshGPUModernTextureResource> modernTextures;
+        std::uint64_t lastResolvedOrder{};
+        [[nodiscard]] const MeshGPUModernTextureResource* modernTexture(
+            const data::ModernTextureBinding& binding) const noexcept
+        {
+            for (const auto& resource : modernTextures)
+                if (resource.source.image == binding.image &&
+                    resource.source.colorSpace == binding.colorSpace &&
+                    resource.source.sampler == binding.sampler)
+                    return &resource;
+            return nullptr;
+        }
 
         [[nodiscard]] SDL_GPUTexture* texture(std::uint64_t key) const noexcept
         {
@@ -97,8 +121,8 @@ namespace monopoly::engine
         }
     };
 
-    // SDL_GPU upload cache. It owns GPU buffers and HMD-derived RGBA textures
-    // exclusively and must be cleared/destroyed before its SDL_GPUDevice.
+    // SDL_GPU upload cache. It owns geometry, HMD textures and modern
+    // color-space/sampler-specific textures exclusively. Clear it before device destruction.
     // Replacing the same DataId with a different immutable CPU asset uploads
     // the whole replacement first, then swaps ownership transactionally.
     class MeshGPUCache final
@@ -113,6 +137,10 @@ namespace monopoly::engine
 
         [[nodiscard]] std::expected<const MeshGPUResource*, MeshGPUError>
             resolve(std::shared_ptr<const data::MeshRuntimeAsset> asset);
+        // Scene batches retain raw SDL handles until commands are recorded.
+        // Distinct immutable assets sharing a DATA id must coexist meanwhile.
+        [[nodiscard]] std::expected<const MeshGPUResource*, MeshGPUError>
+            resolveForScene(std::shared_ptr<const data::MeshRuntimeAsset> asset);
         [[nodiscard]] const MeshGPUResource* find(data::DataId id) const noexcept;
         [[nodiscard]] std::size_t size() const noexcept;
         [[nodiscard]] std::expected<const MeshGPUDynamicVertexResource*, MeshGPUError>
@@ -126,6 +154,7 @@ namespace monopoly::engine
         // Keep every live scene asset, including offscreen/shared instances.
         // SDL defers GPU destruction until submitted commands no longer use it.
         void prune(std::span<const data::DataId> activeIds) noexcept;
+        void pruneAssets(std::span<const data::MeshRuntimeAsset* const> activeAssets) noexcept;
         void erase(data::DataId id) noexcept;
         void clear() noexcept;
         [[nodiscard]] SDL_GPUDevice* device() const noexcept { return device_; }
@@ -134,8 +163,13 @@ namespace monopoly::engine
         void release(MeshGPUResource& resource) noexcept;
         void release(MeshGPUDynamicVertexResource& resource) noexcept;
         void eraseDynamicForDataId(data::DataId id) noexcept;
+        void eraseDynamicForAsset(const data::MeshRuntimeAsset* asset) noexcept;
+        void eraseOtherAssets(data::DataId id, const data::MeshRuntimeAsset* retained) noexcept;
+        [[nodiscard]] std::expected<const MeshGPUResource*, MeshGPUError>
+            resolveImpl(std::shared_ptr<const data::MeshRuntimeAsset> asset, bool coexist);
         SDL_GPUDevice* device_{};
-        std::unordered_map<data::DataId, MeshGPUResource> resources_;
+        std::unordered_map<const data::MeshRuntimeAsset*, MeshGPUResource> resources_;
+        std::uint64_t resolvedOrder_{};
         std::unordered_map<std::uint64_t, MeshGPUDynamicVertexResource> dynamicVertices_;
     };
 }

@@ -71,9 +71,34 @@ Cette séparation évite de déformer les écrans historiques tout en préparant
 le plateau et les futurs assets Blender/glTF à une présentation 1080p,
 1440p ou 4K.
 
-## Suite
+## Matériaux et scènes modernes
 
-Cette étape modernise la présentation, pas encore le matériau visuel.
-Le pipeline 3D actuel reste compatible avec les ressources HMD/DAT pendant
-la transition. Les prochaines couches prévues sont l'audio de jeu, puis
-l'import glTF/GLB et l'évolution du rendu des matériaux.
+Le pipeline HMD conserve ses shaders Gouraud et ses ombres. Les meshes GLB
+utilisent un chemin PBR distinct : facteurs métal/rugosité, cinq cartes,
+samplers/mipmaps, normales tangentes, émission et alpha OPAQUE/MASK. Les
+54 contrôles CPU GLB et 86 contrôles GPU ciblés passent ; BLEND et les scènes
+glTF animées conservent un refus explicite. Le décor Paris n'implémente pas
+d'éclairage IBL.
+
+Les options suivantes demandent les adaptateurs de scène ; elles restent
+dépendantes des ressources et du contexte de jeu :
+
+```powershell
+.\MonopolyModern.exe --edition=europe --language=fr `
+  --modern-board=paris --modern-buildings=house --modern-environment=paris
+```
+
+Le plateau aligné possède la correspondance des 40 cases retail ; maison,
+fontaine, gare et colonne Morris sont des exports distincts. Leur placement
+hérite des transformations CNK, sans modifier les règles. Le plateau Paris ne
+remplace que le contexte Europe/français/Paris/euro sans plateau personnalisé.
+L'installation locale manque encore des quatre banques Europe/français : cette
+commande ne peut donc pas qualifier actuellement un démarrage français réel.
+Voir les [ressources requises](RESOURCE_SETUP.md).
+
+Un probe SDL_GPU séparé soumet 4 objets, 246 batches et 915 731 triangles. Sa
+mesure de cadence est documentée dans le contrat Blender. Un chronométrage de
+frames avec fence exclut chargement et readback et ne mesure pas la boucle
+complète du jeu. Neuf chargements d'idles lors d'un démarrage borné ne constituent
+pas davantage une qualification visuelle ou de gameplay. Les sorties et limites
+de preuve figurent dans le [contrat Blender](BLENDER_INTEGRATION_SPEC.md).

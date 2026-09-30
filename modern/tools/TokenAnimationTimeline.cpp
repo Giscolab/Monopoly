@@ -1,10 +1,13 @@
 // Offline CPU render-intent extractor. Redirect stdout into a build directory.
 // No DAT/CNK/HMD payloads are copied; playback uses the production decoder/runtime.
 #include "ModernTokenCatalog.hpp"
+#include "ModernTokenVariants.hpp"
 #include "ResourcePaths.hpp"
 #include "ResourceRuntime.hpp"
 #include "SequenceRuntime.hpp"
+#include "SequenceRenderData.hpp"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -14,9 +17,11 @@
 #include <iostream>
 #include <limits>
 #include <locale>
+#include <memory>
 #include <set>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace
 {
@@ -98,7 +103,8 @@ namespace
     }
 
     void frame(const sequence::SequenceRuntime& runtime, std::int32_t tick,
-        sequence::SequenceNodeId root)
+        sequence::SequenceNodeId root, bool modernEnabled = false,
+        std::span<const sequence::SequenceMeshRenderItem> rendered = {})
     {
         const auto rootView = runtime.inspect(root);
         std::cout << "{\"record\":\"frame\",\"tick\":" << tick
@@ -121,8 +127,25 @@ namespace
                 << ",\"priority\":" << mesh.priority << ",\"mesh_a\":" << mesh.meshChoice.meshIndexA
                 << ",\"mesh_b\":" << mesh.meshChoice.meshIndexB << ",\"mesh_proportion\":";
             real(mesh.meshChoice.meshProportion);
+            std::cout << ",\"root_sequence_priority\":" << mesh.rootSequencePriority;
             std::cout << ",\"world\":";
             matrix(mesh.worldTransform.values);
+            if (modernEnabled)
+            {
+                const auto item = std::find_if(rendered.begin(), rendered.end(),
+                    [&](const auto& candidate) { return candidate.node == mesh.node; });
+                if (item != rendered.end())
+                {
+                    std::cout << ",\"asset_origin\":";
+                    quoted(item->asset->origin == data::MeshAssetOrigin::ModernGltf ? "modern_gltf" : "legacy_hmd");
+                    std::cout << ",\"vertex_count\":" << item->renderData->vertices.size()
+                        << ",\"index_count\":" << item->renderData->indices.size()
+                        << ",\"calibrated_bounds_minimum\":";
+                    matrix(item->renderData->bounds.minimum);
+                    std::cout << ",\"calibrated_bounds_maximum\":";
+                    matrix(item->renderData->bounds.maximum);
+                }
+            }
             if (node)
             {
                 std::cout << ",\"parent\":" << node->parent << ",\"data_id\":" << node->dataId
@@ -135,13 +158,37 @@ namespace
             }
             std::cout << '}';
         }
-        std::cout << "]}\n";
+        std::cout << ']';
+        if (modernEnabled)
+        {
+            std::size_t modern{}, retail{};
+            for (const auto& item : rendered)
+                if (data::tokenForLegacyMesh(item.contentsDataId))
+                    (item.asset->origin == data::MeshAssetOrigin::ModernGltf ? modern : retail)++;
+            std::cout << ",\"modern_token_mesh_count\":" << modern << ",\"retail_token_mesh_count\":" << retail;
+        }
+        std::cout << "}\n";
     }
 
     int run(int argc, char** argv)
     {
-        const bool summaryOnly = argc > 1 && std::string_view(argv[argc - 1]) == "--summary";
-        if (summaryOnly) --argc;
+        bool summaryOnly = false;
+        std::optional<std::filesystem::path> modernAssets;
+        std::vector<char*> positional{argv[0]};
+        for (int index = 1; index < argc; ++index)
+        {
+            const std::string_view argument = argv[index];
+            if (argument == "--summary") summaryOnly = true;
+            else if (argument == "--modern-assets")
+            {
+                if (modernAssets || index + 1 == argc)
+                { std::cerr << "--modern-assets requires one assets/modern directory\n"; return 2; }
+                modernAssets = std::filesystem::absolute(argv[++index]);
+            }
+            else positional.push_back(argv[index]);
+        }
+        argc = static_cast<int>(positional.size());
+        argv = positional.data();
         std::uint32_t id{}, duration{}, step{1}, priority{}, endingAction{};
         constexpr std::uint32_t MaximumTicks = 36'000;
         if (argc < 4 || argc > 8 || !number(argv[2], id) || !number(argv[3], duration)
@@ -152,7 +199,7 @@ namespace
         {
             std::cerr << "usage: MonopolyTokenAnimationTimeline <retail-root> <sequence-data-id> "
                 "<max-ticks:0..36000> [sample-step:1..36000] [context] "
-                "[priority:0..65535] [ending-action:0..3] [--summary]\n"
+                "[priority:0..65535] [ending-action:0..3] [--summary] [--modern-assets <assets/modern>]\n"
                 "IDs accept decimal or 0x hexadecimal; ticks use the 60 Hz ArtLib parent clock.\n"
                 "JSONL goes to stdout; redirect it into a build directory.\n";
             return 2;
@@ -166,6 +213,58 @@ namespace
         const auto snapshot = resources.snapshot();
         const auto program = sequence::SequenceProgram::load(snapshot, id, 0, {32, 1024, 8192});
         if (!program) { std::cerr << program.error().detail << '\n'; return 1; }
+        std::unique_ptr<data::ModernTokenVariantCache> variants;
+        std::unique_ptr<data::MeshRuntimeCache> meshCache;
+        std::array<bool, data::ModernTokenCount> attempted{};
+        std::array<std::shared_ptr<const data::MeshRenderData>, data::ModernTokenCount> rigidMeshes;
+        std::size_t modernLoadFailures{};
+        if (modernAssets)
+        {
+            variants = std::make_unique<data::ModernTokenVariantCache>(*modernAssets);
+            data::ModernMeshResolver resolver = [&](data::DataId meshId,
+                std::optional<data::DataId> rootId, std::uint16_t meshPriority)
+                -> std::expected<std::optional<std::shared_ptr<const data::MeshRenderData>>, data::MeshRuntimeError>
+            {
+                if (data::qualifiedModernTokenVariantSequence(meshId, rootId, meshPriority))
+                {
+                    if (auto mesh = variants->resolve(meshId, rootId, meshPriority)) return std::optional{std::move(mesh)};
+                    return std::optional<std::shared_ptr<const data::MeshRenderData>>{};
+                }
+                if (!data::qualifiedModernTokenSequence(meshId, rootId, meshPriority))
+                    return std::optional<std::shared_ptr<const data::MeshRenderData>>{};
+                const auto* definition = data::modernTokenForLegacyMesh(meshId);
+                const auto token = static_cast<std::size_t>(definition->token);
+                if (!attempted[token])
+                {
+                    attempted[token] = true;
+                    data::ModernGltfLoadOptions loadOptions;
+                    loadOptions.unitsPerMeter = definition->unitsPerMeter;
+                    loadOptions.yawDegrees = definition->yawDegrees;
+                    loadOptions.localOffset = definition->localOffset;
+                    loadOptions.groundToZero = true;
+                    const auto path = *modernAssets / std::filesystem::path(definition->relativeGlbPath)
+                        .lexically_relative("assets/modern");
+                    const auto loaded = data::loadModernGltfMesh(path, loadOptions);
+                    if (loaded) rigidMeshes[token] = *loaded;
+                    else { ++modernLoadFailures; std::cerr << loaded.error().detail << '\n'; }
+                }
+                if (rigidMeshes[token]) return std::optional{rigidMeshes[token]};
+                return std::optional<std::shared_ptr<const data::MeshRenderData>>{};
+            };
+            // Resolve every referenced state before timeline execution. The
+            // shared variant utility publishes all states or none, regardless
+            // of which HMD the first tick happens to display.
+            for (const auto& description : (*program)->descriptions())
+                if (description.contentsDataId && data::tokenForLegacyMesh(*description.contentsDataId))
+                {
+                    const auto prepared = resolver(*description.contentsDataId, id, static_cast<std::uint16_t>(priority));
+                    if (!prepared) { std::cerr << prepared.error().detail << '\n'; return 1; }
+                }
+            if (variants->loadError(id))
+            { ++modernLoadFailures; std::cerr << variants->loadError(id)->detail << '\n'; }
+            meshCache = std::make_unique<data::MeshRuntimeCache>(snapshot,
+                data::MeshTextureResolver{}, data::MeshRuntimeLimits{}, std::move(resolver));
+        }
         sequence::SequenceRuntime runtime({4096, 8192});
         sequence::ClockStartOptions options;
         // Production transitions enable dropped frames, then override the
@@ -183,6 +282,8 @@ namespace
         std::set<data::DataId> referencedMeshes, observedMeshes;
         std::optional<std::int32_t> firstRootEndTick;
         std::size_t rootEndCount{};
+        std::size_t modernMeshSamples{}, retailMeshSamples{}, ticksWithoutTokenMesh{};
+        std::set<data::DataId> modernObservedHmds, retailObservedHmds;
 
         std::cout.imbue(std::locale::classic());
         std::cout << std::setprecision(std::numeric_limits<float>::max_digits10);
@@ -196,7 +297,10 @@ namespace
         std::cout << ",\"board\":" << unsigned(snapshot->context().board)
             << ",\"language\":" << unsigned(snapshot->context().language)
             << ",\"matrix_convention\":\"ArtLib row-vector\","
-               "\"media_clocks\":\"unsupplied\",\"root_transform\":\"decoded_default\"}\n";
+               "\"media_clocks\":\"unsupplied\",\"root_transform\":\"decoded_default\"";
+        if (modernAssets)
+            std::cout << ",\"modern_assets_enabled\":true,\"qualification\":\"CPU render data; no GPU or visual proof\"";
+        std::cout << "}\n";
         }
         for (const auto& description : (*program)->descriptions())
         {
@@ -229,9 +333,31 @@ namespace
                 }
             for (const auto& mesh : runtime.meshInstances())
                 if (data::tokenForLegacyMesh(mesh.contentsDataId)) observedMeshes.insert(mesh.contentsDataId);
+            std::vector<sequence::SequenceMeshRenderItem> rendered;
+            if (meshCache)
+            {
+                auto collected = sequence::collectSequenceMeshRenderData(runtime, *meshCache);
+                if (!collected)
+                {
+                    std::cerr << "tick " << tick << ", mesh " << collected.error().contentsDataId
+                        << ": " << collected.error().cause.detail << '\n';
+                    return 1;
+                }
+                rendered = std::move(*collected);
+                std::size_t tokenCount{};
+                for (const auto& item : rendered)
+                    if (data::tokenForLegacyMesh(item.contentsDataId))
+                    {
+                        ++tokenCount;
+                        if (item.asset->origin == data::MeshAssetOrigin::ModernGltf)
+                        { ++modernMeshSamples; modernObservedHmds.insert(item.contentsDataId); }
+                        else { ++retailMeshSamples; retailObservedHmds.insert(item.contentsDataId); }
+                    }
+                if (!tokenCount) ++ticksWithoutTokenMesh;
+            }
             if (!summaryOnly) events(runtime.events(), static_cast<std::int32_t>(tick));
             if (!summaryOnly && (tick % step == 0 || tick == duration))
-                frame(runtime, static_cast<std::int32_t>(tick), *root);
+                frame(runtime, static_cast<std::int32_t>(tick), *root, modernAssets.has_value(), rendered);
         }
         std::cout << "{\"record\":\"summary\",\"schema\":1,\"sequence_data_id\":" << id
             << ",\"max_ticks\":" << duration << ",\"priority\":" << priority
@@ -255,7 +381,25 @@ namespace
         std::cout << "],\"observed_hmds\":[";
         first = true;
         for (const auto mesh : observedMeshes) { if (!first) std::cout << ','; first = false; std::cout << mesh; }
-        std::cout << "]}\n";
+        std::cout << ']';
+        if (modernAssets)
+        {
+            const bool modernWindow = modernMeshSamples != 0 && retailMeshSamples == 0;
+            std::cout << ",\"modern_assets_enabled\":true,\"modern_token_mesh_samples\":" << modernMeshSamples
+                << ",\"retail_token_mesh_samples\":" << retailMeshSamples
+                << ",\"ticks_without_token_mesh\":" << ticksWithoutTokenMesh
+                << ",\"modern_load_failures\":" << modernLoadFailures
+                << ",\"window_fully_modern\":" << (modernWindow ? "true" : "false")
+                << ",\"root_fully_modern\":" << (modernWindow && firstRootEndTick ? "true" : "false")
+                << ",\"modern_hmds\":[";
+            first = true;
+            for (const auto mesh : modernObservedHmds) { if (!first) std::cout << ','; first = false; std::cout << mesh; }
+            std::cout << "],\"fallback_hmds\":[";
+            first = true;
+            for (const auto mesh : retailObservedHmds) { if (!first) std::cout << ','; first = false; std::cout << mesh; }
+            std::cout << "],\"qualification\":\"CPU render data; no GPU or visual proof\"";
+        }
+        std::cout << "}\n";
         return std::cout ? 0 : 1;
     }
 }

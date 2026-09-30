@@ -1,4 +1,5 @@
 #include "ModernGltfMesh.hpp"
+#include "ModernImageDecoder.hpp"
 
 #include <fastgltf/core.hpp>
 #include <fastgltf/math.hpp>
@@ -11,6 +12,7 @@
 #include <new>
 #include <stdexcept>
 #include <variant>
+#include <unordered_map>
 #include <utility>
 
 namespace monopoly::data
@@ -28,7 +30,7 @@ namespace monopoly::data
         }
 
 
-        [[nodiscard]] MeshMaterial materialFor(
+        [[nodiscard]] MeshMaterial materialFactors(
             const fastgltf::Asset& asset,
             const fastgltf::Primitive& primitive)
         {
@@ -139,21 +141,6 @@ namespace monopoly::data
         }
 
 
-        [[nodiscard]] bool hasUnsupportedMaterialTexture(
-            const fastgltf::Asset& asset,
-            const fastgltf::Primitive& primitive)
-        {
-            if (!primitive.materialIndex ||
-                *primitive.materialIndex >= asset.materials.size())
-                return false;
-            const auto& material =
-                asset.materials[*primitive.materialIndex];
-            return material.pbrData.baseColorTexture.has_value() ||
-                material.pbrData.metallicRoughnessTexture.has_value() ||
-                material.normalTexture.has_value() ||
-                material.emissiveTexture.has_value();
-        }
-
         [[nodiscard]] bool validBufferView(const fastgltf::Asset& asset,
             std::size_t index)
         {
@@ -251,6 +238,148 @@ namespace monopoly::data
                     if (node >= asset.nodes.size()) return false;
             return true;
         }
+
+        using ImageCache = std::unordered_map<std::size_t,
+            std::shared_ptr<const ModernTextureImage>>;
+        constexpr std::size_t MaximumMeshImageBytes = 256U * 1024U * 1024U;
+
+        [[nodiscard]] std::expected<ModernTextureBinding, MeshRuntimeError> textureBindingFor(
+            const fastgltf::Asset& asset, const fastgltf::TextureInfo& info,
+            ModernTextureColorSpace colorSpace, float scale,
+            ImageCache& images, std::size_t& decodedImageBytes)
+        {
+            if (info.texCoordIndex != 0 || info.transform)
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                    "modern GLB maps require TEXCOORD_0 without texture transforms"));
+            if (!std::isfinite(scale) || info.textureIndex >= asset.textures.size())
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB texture reference or map scale is invalid"));
+            const auto& texture = asset.textures[info.textureIndex];
+            if (!texture.imageIndex || *texture.imageIndex >= asset.images.size())
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB texture requires a valid image reference"));
+            ModernTextureBinding result;
+            result.colorSpace = colorSpace;
+            result.scale = scale;
+            if (texture.samplerIndex)
+            {
+                if (*texture.samplerIndex >= asset.samplers.size())
+                    return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                        "modern GLB sampler reference is out of range"));
+                const auto& sampler = asset.samplers[*texture.samplerIndex];
+                const auto wrap = [](fastgltf::Wrap source) -> std::optional<ModernTextureWrap>
+                {
+                    switch (source)
+                    {
+                    case fastgltf::Wrap::Repeat: return ModernTextureWrap::Repeat;
+                    case fastgltf::Wrap::ClampToEdge: return ModernTextureWrap::ClampToEdge;
+                    case fastgltf::Wrap::MirroredRepeat: return ModernTextureWrap::MirroredRepeat;
+                    default: return std::nullopt;
+                    }
+                };
+                const auto filter = [](fastgltf::Filter source) -> std::optional<ModernTextureFilter>
+                {
+                    switch (source)
+                    {
+                    case fastgltf::Filter::Nearest: return ModernTextureFilter::Nearest;
+                    case fastgltf::Filter::Linear: return ModernTextureFilter::Linear;
+                    case fastgltf::Filter::NearestMipMapNearest: return ModernTextureFilter::NearestMipmapNearest;
+                    case fastgltf::Filter::LinearMipMapNearest: return ModernTextureFilter::LinearMipmapNearest;
+                    case fastgltf::Filter::NearestMipMapLinear: return ModernTextureFilter::NearestMipmapLinear;
+                    case fastgltf::Filter::LinearMipMapLinear: return ModernTextureFilter::LinearMipmapLinear;
+                    default: return std::nullopt;
+                    }
+                };
+                const auto wrapS = wrap(sampler.wrapS), wrapT = wrap(sampler.wrapT);
+                const auto min = filter(sampler.minFilter.value_or(fastgltf::Filter::Linear));
+                const auto mag = filter(sampler.magFilter.value_or(fastgltf::Filter::Linear));
+                if (!wrapS || !wrapT || !min || !mag ||
+                    (*mag != ModernTextureFilter::Nearest && *mag != ModernTextureFilter::Linear))
+                    return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                        "modern GLB sampler wrap or filter is invalid"));
+                result.sampler = {*wrapS, *wrapT, *min, *mag};
+            }
+            const auto imageIndex = *texture.imageIndex;
+            if (const auto cached = images.find(imageIndex); cached != images.end())
+            {
+                result.image = cached->second;
+                return result;
+            }
+            const auto* source = std::get_if<fastgltf::sources::BufferView>(
+                &asset.images[imageIndex].data);
+            if (!source)
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                    "modern GLB images must be embedded buffer views; external and data URIs are unsupported"));
+            if (!validBufferView(asset, source->bufferViewIndex))
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB image buffer view is outside its embedded payload"));
+            ModernImageEncoding encoding;
+            if (source->mimeType == fastgltf::MimeType::PNG) encoding = ModernImageEncoding::Png;
+            else if (source->mimeType == fastgltf::MimeType::JPEG) encoding = ModernImageEncoding::Jpeg;
+            else return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                "modern GLB embedded image MIME must be PNG or JPEG"));
+            const auto bytes = fastgltf::DefaultBufferDataAdapter{}(asset, source->bufferViewIndex);
+            ModernImageDecodeLimits limits;
+            limits.maximumDecodedBytes = std::min(limits.maximumDecodedBytes,
+                MaximumMeshImageBytes - decodedImageBytes);
+            auto decoded = decodeModernImage(std::span<const std::byte>(bytes.data(), bytes.size()),
+                encoding, limits);
+            if (!decoded) return std::unexpected(decoded.error());
+            result.image = *decoded;
+            decodedImageBytes += result.image->rgba.size();
+            images.emplace(imageIndex, result.image);
+            return result;
+        }
+
+        [[nodiscard]] std::expected<MeshMaterial, MeshRuntimeError> materialFor(
+            const fastgltf::Asset& asset, const fastgltf::Primitive& primitive,
+            ImageCache& images, std::size_t& decodedImageBytes)
+        {
+            auto result = materialFactors(asset, primitive);
+            if (!primitive.materialIndex) return result;
+            const auto& material = asset.materials[*primitive.materialIndex];
+            if (material.alphaMode == fastgltf::AlphaMode::Blend)
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                    "modern GLB alpha blending requires transparent sorting and pipelines"));
+            result.alphaMode = material.alphaMode == fastgltf::AlphaMode::Mask ?
+                ModernAlphaMode::Mask : ModernAlphaMode::Opaque;
+            result.alphaCutoff = static_cast<float>(material.alphaCutoff);
+            if (!std::isfinite(result.alphaCutoff) || result.alphaCutoff < 0.0F)
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB alpha cutoff must be finite and nonnegative"));
+            const auto bind = [&](const auto& source, std::optional<ModernTextureBinding>& target,
+                                  ModernTextureColorSpace colorSpace, float scale = 1.0F)
+                -> std::expected<void, MeshRuntimeError>
+            {
+                if (!source) return {};
+                auto binding = textureBindingFor(asset, *source, colorSpace, scale, images, decodedImageBytes);
+                if (!binding) return std::unexpected(binding.error());
+                target = std::move(*binding);
+                return {};
+            };
+            if (auto bound = bind(material.pbrData.baseColorTexture, result.baseColorTexture,
+                    ModernTextureColorSpace::Srgb); !bound) return std::unexpected(bound.error());
+            if (auto bound = bind(material.pbrData.metallicRoughnessTexture, result.metallicRoughnessTexture,
+                    ModernTextureColorSpace::Linear); !bound) return std::unexpected(bound.error());
+            if (auto bound = bind(material.normalTexture, result.normalTexture, ModernTextureColorSpace::Linear,
+                    material.normalTexture ? static_cast<float>(material.normalTexture->scale) : 1.0F);
+                !bound) return std::unexpected(bound.error());
+            if (auto bound = bind(material.emissiveTexture, result.emissiveTexture,
+                    ModernTextureColorSpace::Srgb); !bound) return std::unexpected(bound.error());
+            if (auto bound = bind(material.occlusionTexture, result.occlusionTexture, ModernTextureColorSpace::Linear,
+                    material.occlusionTexture ? static_cast<float>(material.occlusionTexture->strength) : 1.0F);
+                !bound) return std::unexpected(bound.error());
+            if (result.occlusionTexture &&
+                (result.occlusionTexture->scale < 0.0F || result.occlusionTexture->scale > 1.0F))
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB occlusion strength must be between zero and one"));
+            if ((result.baseColorTexture || result.metallicRoughnessTexture || result.normalTexture ||
+                 result.emissiveTexture || result.occlusionTexture) &&
+                primitive.findAttribute("TEXCOORD_0") == primitive.attributes.end())
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB textured primitive requires TEXCOORD_0"));
+            return result;
+        }
     }
 
 
@@ -270,6 +399,20 @@ namespace monopoly::data
                 MeshRuntimeErrorCode::ModernAssetInvalid,
                 "invalid modern GLB path or world scale"));
 
+        // GltfFileStream's constructor calls throwing file_size before isOpen.
+        // Validate missing/unreadable paths and cap parser input before opening.
+        std::error_code fileError;
+        const bool regular = std::filesystem::is_regular_file(path, fileError);
+        const auto inputBytes = regular && !fileError
+            ? std::filesystem::file_size(path, fileError) : 0;
+        if (!regular || fileError)
+            return std::unexpected(error(MeshRuntimeErrorCode::SourceLoadFailed,
+                "modern GLB file is unavailable: " + path.string()));
+        constexpr std::uintmax_t MaxGlbInputBytes = 256U * 1024U * 1024U;
+        if (inputBytes > MaxGlbInputBytes)
+            return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                "modern GLB input exceeds the 256 MiB parser budget"));
+
         fastgltf::GltfFileStream stream(path);
         if (!stream.isOpen())
             return std::unexpected(error(
@@ -277,7 +420,8 @@ namespace monopoly::data
                 "modern GLB file cannot be opened: " +
                     path.string()));
 
-        fastgltf::Parser parser;
+        fastgltf::Parser parser(fastgltf::Extensions::KHR_texture_transform |
+            fastgltf::Extensions::KHR_materials_emissive_strength);
         auto loaded = parser.loadGltfBinary(
             stream,
             path.parent_path(),
@@ -291,6 +435,16 @@ namespace monopoly::data
                         loaded.error()))));
 
         auto asset = std::move(loaded.get());
+        if (!asset.animations.empty())
+            return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                "modern GLB animations require the animation adapter"));
+        // Sparse reference/byte checks alone do not validate ordered, in-range
+        // sparse indices. Keep the static bridge explicit until that semantic
+        // validation is supported before accessor decoding.
+        if (std::ranges::any_of(asset.accessors,
+                [](const auto& accessor) { return accessor.sparse.has_value(); }))
+            return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                "modern GLB sparse accessors require bounded semantic validation"));
         if (!validHierarchy(asset))
             return std::unexpected(error(
                 MeshRuntimeErrorCode::ModernAssetInvalid,
@@ -304,6 +458,8 @@ namespace monopoly::data
         bool boundsInitialized = false;
         bool failed = false;
         MeshRuntimeError failure{};
+        ImageCache images;
+        std::size_t decodedImageBytes{};
 
         const auto sceneIndex =
             asset.defaultScene.value_or(std::size_t{0});
@@ -365,12 +521,11 @@ namespace monopoly::data
                             "modern GLB morph targets are reserved for the animation pass");
                         return;
                     }
-                    if (hasUnsupportedMaterialTexture(asset, primitive))
+                    auto material = materialFor(asset, primitive, images, decodedImageBytes);
+                    if (!material)
                     {
                         failed = true;
-                        failure = error(
-                            MeshRuntimeErrorCode::ModernAssetUnsupported,
-                            "textured/PBR GLB material requires the modern material pipeline");
+                        failure = std::move(material.error());
                         return;
                     }
 
@@ -425,6 +580,16 @@ namespace monopoly::data
                         baseVertex + positionAccessor.count);
 
                     const auto uv = primitive.findAttribute("TEXCOORD_0");
+                    const auto tangent = primitive.findAttribute("TANGENT");
+                    if (tangent != primitive.attributes.end() &&
+                        (!validAccessor(asset, tangent->accessorIndex, fastgltf::AccessorType::Vec4) ||
+                         asset.accessors[tangent->accessorIndex].count != positionAccessor.count))
+                    {
+                        failed = true;
+                        failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                            "modern GLB tangent accessor must match the vertex count");
+                        return;
+                    }
                     if (uv != primitive.attributes.end() &&
                         (!validAccessor(asset, uv->accessorIndex,
                             fastgltf::AccessorType::Vec2) ||
@@ -479,6 +644,30 @@ namespace monopoly::data
                             worldNormal[0],
                             worldNormal[1],
                             worldNormal[2]};
+
+                        if (tangent != primitive.attributes.end())
+                        {
+                            const auto sourceTangent = fastgltf::getAccessorElement<fastgltf::math::fvec4>(
+                                asset, asset.accessors[tangent->accessorIndex], index);
+                            const auto linear = fastgltf::math::fmat3x3(world);
+                            auto direction = rotateAroundY(linear * fastgltf::math::fvec3(
+                                sourceTangent[0], sourceTangent[1], sourceTangent[2]), options.yawDegrees);
+                            direction -= worldNormal * fastgltf::math::dot(worldNormal, direction);
+                            const auto length = fastgltf::math::length(direction);
+                            const auto determinant = fastgltf::math::determinant(linear);
+                            if (!std::isfinite(length) || length <= 0.0F ||
+                                !std::isfinite(determinant) || determinant == 0.0F ||
+                                (sourceTangent[3] != -1.0F && sourceTangent[3] != 1.0F))
+                            {
+                                failed = true;
+                                failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                                    "modern GLB authored tangent is invalid or singular");
+                                return;
+                            }
+                            direction /= length;
+                            vertex.tangent = {direction[0], direction[1], direction[2],
+                                sourceTangent[3] * (determinant < 0.0F ? -1.0F : 1.0F)};
+                        }
 
                         if (uv != primitive.attributes.end())
                         {
@@ -583,7 +772,7 @@ namespace monopoly::data
                     result->batches.push_back(MeshRenderBatch{
                         firstIndex,
                         indexCount,
-                        materialFor(asset, primitive),
+                        std::move(*material),
                         std::nullopt
                     });
                 }
@@ -622,6 +811,11 @@ namespace monopoly::data
         }
 
         return std::const_pointer_cast<const MeshRenderData>(result);
+    }
+    catch (const std::filesystem::filesystem_error& failure)
+    {
+        return std::unexpected(error(MeshRuntimeErrorCode::SourceLoadFailed,
+            "modern GLB file access failed: " + std::string(failure.what())));
     }
     catch (const std::bad_alloc&)
     {

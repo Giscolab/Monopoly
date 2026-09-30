@@ -1,10 +1,15 @@
 #include "SequenceRenderData.hpp"
 #include "LegacyDataArchiveBuilder.hpp"
+#include "ModernTokenCatalog.hpp"
+#include "PieceRuntime.hpp"
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <vector>
 
 namespace
 {
@@ -76,7 +81,7 @@ namespace
         ~Fixture() { std::error_code ignored; std::filesystem::remove_all(root, ignored); }
     };
     bool writeResources(const std::filesystem::path& root,
-        const DataBytes& sequenceBytes, const DataBytes& hmdBytes)
+        const DataBytes& sequenceBytes, const DataBytes& hmdBytes, bool tokenRoots = false)
     {
         const std::array names{"dat_main.dat","dat_pat.dat","dat_bord.dat","dat_brd2.dat",
             "dat_3d.dat","dat_ln01.dat","dat_lm01.dat","dat_lk01.dat"};
@@ -84,7 +89,17 @@ namespace
         {
             std::vector<ArchiveBuildItem> items;
             if (i == 0) items.push_back({LegacyDataType::Chunky, sequenceBytes});
-            else if (i == 4) items.push_back({LegacyDataType::Hmd, hmdBytes});
+            else if (i == 4)
+            {
+                if (tokenRoots)
+                {
+                    items.resize(0x0238, ArchiveBuildItem{LegacyDataType::Native, {std::byte{1}}});
+                    items[0x008D] = {LegacyDataType::Hmd, hmdBytes};
+                    items[0x0236] = {LegacyDataType::Chunky, sequenceBytes};
+                    items[0x0237] = {LegacyDataType::Chunky, sequenceBytes};
+                }
+                else items.push_back({LegacyDataType::Hmd, hmdBytes});
+            }
             else if (i == 5)
             {
                 items.push_back({LegacyDataType::IndexTable,
@@ -96,6 +111,84 @@ namespace
             if (!writeLegacyDataArchive(root / "Dat_Mon" / names[i], items)) return false;
         }
         return true;
+    }
+
+    void testRootPriorityQualificationWithAuthoredLeafPriority()
+    {
+        using namespace monopoly;
+        Fixture fixture;
+        constexpr auto Mesh = packDataId(LegacyGroupId::ThreeD, 0x008D);
+        constexpr auto Idle = packDataId(LegacyGroupId::ThreeD, 0x0236);
+        constexpr auto Movement = packDataId(LegacyGroupId::ThreeD, 0x0237);
+        auto payload = words({0, 0x41000008U, 2});
+        const auto dimensions = chunk(129, DataBytes{std::byte{3}});
+        payload.insert(payload.end(), dimensions.begin(), dimensions.end());
+        const auto child = meshSequence(Mesh); // Authored child priority is zero.
+        payload.insert(payload.end(), child.begin(), child.end());
+        expect(writeResources(fixture.root, chunk(1, payload), flatHmd(), true),
+            "reviewed token root fixture contains grouping with authored zero-priority mesh child");
+        ResourceRuntime resources;
+        const auto paths = ResourcePaths::create(std::array{fixture.root});
+        if (!paths || !resources.initialize(*paths))
+        { expect(false, "token priority resource fixture initializes"); return; }
+        const auto snapshot = resources.snapshot();
+        const auto idleProgram = SequenceProgram::load(snapshot, Idle);
+        const auto movementProgram = SequenceProgram::load(snapshot, Movement);
+        if (!idleProgram || !movementProgram)
+        { expect(false, "reviewed token root programs load"); return; }
+        SequenceRuntime idle, movement, wrongPriority;
+        const SequenceTransform pose = translate3D(1.F, 2.F, 3.F);
+        const auto idleRoot = idle.start(*idleProgram, pieces::TokenPriority, {}, pose);
+        const auto movementRoot = movement.start(*movementProgram, pieces::Generic3DPriority, {}, pose);
+        const auto wrongRoot = wrongPriority.start(*movementProgram, 0, {}, pose);
+        if (!idleRoot || !movementRoot || !wrongRoot || !idle.update(0) ||
+            !movement.update(0) || !wrongPriority.update(0))
+        { expect(false, "root priorities start and update independently from child priorities"); return; }
+        const auto idleMeshes = idle.meshInstances();
+        const auto movingMeshes = movement.meshInstances();
+        expect(idleMeshes.size() == 1 && idleMeshes.front().priority == 0 &&
+            idleMeshes.front().rootSequencePriority == pieces::TokenPriority &&
+            movingMeshes.size() == 1 && movingMeshes.front().priority == 0 &&
+            movingMeshes.front().rootSequencePriority == pieces::Generic3DPriority,
+            "runtime preserves authored leaf zero while publishing root idle224 or movement100 provenance");
+
+        // Synthetic immutable modern geometry isolates routing; retail geometry
+        // still goes through the real archive/mesh decoder in both cache orders.
+        auto modernGeometry = std::make_shared<const MeshRenderData>();
+        for (const bool modernFirst : {false, true})
+        {
+            std::vector<std::uint16_t> observedPriorities;
+            ModernMeshResolver resolver = [&](DataId id, std::optional<DataId> root, std::uint16_t priority)
+                -> std::expected<std::optional<std::shared_ptr<const MeshRenderData>>, MeshRuntimeError>
+            {
+                observedPriorities.push_back(priority);
+                if (qualifiedModernTokenSequence(id, root, priority)) return std::optional{modernGeometry};
+                return std::optional<std::shared_ptr<const MeshRenderData>>{};
+            };
+            MeshRuntimeCache cache(snapshot, {}, {}, resolver);
+            const std::array<SequenceRuntime*, 3> order = modernFirst ?
+                std::array<SequenceRuntime*, 3>{&idle, &movement, &wrongPriority} :
+                std::array<SequenceRuntime*, 3>{&wrongPriority, &movement, &idle};
+            for (const auto* runtime : order)
+            {
+                const auto rendered = collectSequenceMeshRenderData(*runtime, cache);
+                const bool modern = runtime != &wrongPriority;
+                const std::uint16_t expectedRootPriority = runtime == &idle ? pieces::TokenPriority :
+                    (runtime == &movement ? pieces::Generic3DPriority : 0);
+                expect(rendered && rendered->size() == 1 && (*rendered)[0].priority == 0 &&
+                    (*rendered)[0].rootSequencePriority == expectedRootPriority &&
+                    ((*rendered)[0].asset->origin == MeshAssetOrigin::ModernGltf) == modern &&
+                    (*rendered)[0].worldTransform.values[12] == 1.F &&
+                    (*rendered)[0].worldTransform.values[13] == 2.F &&
+                    (*rendered)[0].worldTransform.values[14] == 3.F,
+                    "actual runtime root qualification preserves zero leaf priority, transforms and retail fallback in either cache order");
+            }
+            expect(observedPriorities.size() == 3 &&
+                std::find(observedPriorities.begin(), observedPriorities.end(), pieces::TokenPriority) != observedPriorities.end() &&
+                std::find(observedPriorities.begin(), observedPriorities.end(), pieces::Generic3DPriority) != observedPriorities.end() &&
+                std::find(observedPriorities.begin(), observedPriorities.end(), 0) != observedPriorities.end(),
+                "resolver receives each actual root priority rather than applying a permissive leaf-zero workaround");
+        }
     }
 
     void testAnimatedSequenceToRenderData()
@@ -185,6 +278,7 @@ namespace
 
 int main()
 {
+    testRootPriorityQualificationWithAuthoredLeafPriority();
     testAnimatedSequenceToRenderData();
     testSequenceToRenderData();
     std::cout << "Sequence render-data failures: " << failures << '\n';

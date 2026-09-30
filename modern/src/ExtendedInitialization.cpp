@@ -37,7 +37,7 @@ namespace monopoly::startup
             std::cerr << "Resource paths have not been initialized.\n";
             return false;
         }
-        return mainExtendedInitialization(*paths);
+        return mainExtendedInitialization(*paths, resourceContext());
     }
 
 

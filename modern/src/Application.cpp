@@ -8,6 +8,7 @@
 #include "Messaging.hpp"
 #include "MousePointer.hpp"
 #include "Presentation.hpp"
+#include "ModernSceneCatalog.hpp"
 #include "ChatRuntime.hpp"
 #include "TcpMessageTransport.hpp"
 #include "StartupResources.hpp"
@@ -201,11 +202,24 @@ namespace monopoly
             return 1;
         }
 
+        const auto modernOptions = data::parseModernSceneArguments(presentationOptions->remaining);
+        if (!modernOptions)
+        {
+            std::cerr << modernOptions.error() << '\n';
+            return 1;
+        }
+        engine::configureModernScene(modernOptions->options);
         const auto resourceOptions = startup::parseResourceArguments(
-            presentationOptions->remaining);
+            modernOptions->remaining);
         if (!resourceOptions)
         {
             std::cerr << resourceOptions.error() << '\n';
+            return 1;
+        }
+        const auto contextSelected = startup::selectResourceContext(resourceOptions->context);
+        if (!contextSelected)
+        {
+            std::cerr << contextSelected.error() << '\n';
             return 1;
         }
         const auto& networkArguments = resourceOptions->remaining;
@@ -224,6 +238,9 @@ namespace monopoly
                     "[--windowed | --fullscreen | --exclusive-fullscreen] "
                     "[--resolution WIDTHxHEIGHT] "
                     "[--present-mode vsync|mailbox|immediate] "
+                    "[--modern-board=retail|paris] [--modern-buildings=retail|house] "
+                    "[--modern-environment=retail|paris] "
+                    "[--edition=usa|europe] [--language=en-us|en-uk|fr] "
                     "[--data-root <absolute folder>] "
                     "[--data-overrides <absolute manifest.tsv>] "
                     "[--check-resources] [--voice-host IPv4:port | "
