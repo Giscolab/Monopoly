@@ -196,15 +196,20 @@ MonopolyRuntimeModernAssets  # stage generated GLBs beside MonopolyModern.exe
 A normal MonopolyModern build stages already-generated modern assets but does
 not require Blender. Missing GLBs therefore remain a normal HMD fallback case.
 
-The CPU material contract now preserves glTF metallic/roughness, emissive,
-emissive strength and double-sided state in addition to baseColorFactor.
-The currently generated shader binaries still implement the legacy Gouraud
-path, so those PBR values are deliberately not faked in that shader. PBR shader
-generation is the next renderer step. On the current workstation no `dxc`,
-`spirv-cross`, `glslangValidator` or `shadercross` command is installed.
+The modern GPU path now uses separate factor-only GGX metallic/roughness
+shaders and pipelines. It supports baseColorFactor, metallicFactor,
+roughnessFactor, emissiveFactor/strength and double-sided materials. Legacy
+HMD batches keep the Gouraud path, including retail shadows. Missing modern
+shader files log a diagnostic and temporarily draw through legacy diffuse.
 
-Texture-backed PBR maps and morph targets remain intentionally unsupported in
-the first GLB bridge until their dedicated GPU/animation paths are connected.
+Pinned project-local DXC and SPIRV-Cross compile DXIL, SPIR-V and MSL;
+see [shader tooling](tools/SHADER_TOOLCHAIN.md). Generated ModernPBR assets are
+staged by normal builds. `MonopolyCompileShaders` regenerates both shader
+families into the build directory without changing checked-in binaries.
+
+Texture-backed PBR maps, animated GLB playback and environment lighting remain
+unsupported at this checkpoint. The ambient factor approximation is not IBL.
+Procedural Blender graphs still need compatible material conversion or baking.
 
 ## Material contract
 
@@ -256,7 +261,8 @@ it is not the token-animation authority.
 
 The runtime now carries the top-level/root CNK DataId with every 3D mesh
 instance. Modern token resolution is context-sensitive: a static GLB may replace
-a single-HMD resting idle while the exact same HMD DataId still resolves to the
+a single-HMD resting idle only at player priorities 224..229 while the exact same
+HMD DataId still resolves to the
 retail asset inside a movement CNK. Modern and legacy mesh cache entries are kept
 separate so one context cannot poison the other.
 
@@ -306,3 +312,21 @@ Blender scene or the retail token animation mechanism.
 - The frame telemetry remains usable to measure the 60 FPS target.
 - A failed modern asset reports its error and falls back instead of corrupting the
   active resource snapshot.
+
+## Qualification 2026-09-30
+
+- Priority-safe idle routing: `6299180`, built and pushed; focused mesh-cache
+  context tests passed. A 25-second real startup at 1280x720 loaded race_car,
+  top_hat, ship, boot and thimble; movement visuals were not exercised.
+- Static GLB malformed-input fixtures passed (22 checks), including first-mesh
+  budgets, invalid references, invalid transforms and unsupported skinning.
+- Factor-only PBR real SDL_GPU readbacks passed: distinct pipeline, factor
+  response, emissive/sRGB, culling, two-sided normals and mixed legacy/PBR draws.
+  DXIL executed on this Windows machine; MSL and SPIR-V were compiled and
+  reflected, not runtime-qualified on other platforms.
+- `MonopolyTokenAnimationTimeline` and `tools/token_animation_inventory.py`
+  inventoried all 1,089 token CNKs against local runtime-data over 600 parent
+  ticks. Generated metadata stays in build/token_animation_inventory.json.
+  This is standalone CPU render intent with decoded-default root placement;
+  board dispatch/placement and external media clocks remain separate context.
+- No modern movement clip or reconstructed missing token is active yet.

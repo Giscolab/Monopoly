@@ -111,6 +111,8 @@ namespace monopoly::engine
         { return meshCache_.get(); }
         [[nodiscard]] const World3DPipeline& pipeline() const noexcept
         { return pipeline_; }
+        [[nodiscard]] const World3DPipeline* modernPipeline() const noexcept
+        { return modernPipeline_ ? &*modernPipeline_ : nullptr; }
 
     private:
         [[nodiscard]] bool ensureDepthTarget(
@@ -120,6 +122,10 @@ namespace monopoly::engine
 
         SDL_GPUDevice* device_{};
         World3DPipeline pipeline_;
+        std::optional<World3DPipeline> modernPipeline_;
+        bool modernPipelineAttempted_{};
+        std::filesystem::path shaderDirectory_;
+        SDL_GPUTextureFormat colorFormat_{SDL_GPU_TEXTUREFORMAT_INVALID};
         std::unique_ptr<MeshGPUCache> meshCache_;
         SDL_GPUSampler* textureSampler_{};
         SDL_GPUSampler* linearSampler_{};

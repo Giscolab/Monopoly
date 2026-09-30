@@ -46,6 +46,7 @@ namespace monopoly::engine
         device_ = std::exchange(other.device_, nullptr);
         pipeline_ = std::exchange(other.pipeline_, nullptr);
         shadowPipeline_ = std::exchange(other.shadowPipeline_, nullptr);
+        doubleSidedPipeline_ = std::exchange(other.doubleSidedPipeline_, nullptr);
         depthFormat_ = std::exchange(other.depthFormat_, SDL_GPU_TEXTUREFORMAT_INVALID);
         shaders_ = std::move(other.shaders_);
         return *this;
@@ -53,11 +54,14 @@ namespace monopoly::engine
 
     void World3DPipeline::reset() noexcept
     {
+        if (device_ && doubleSidedPipeline_)
+            SDL_ReleaseGPUGraphicsPipeline(device_, doubleSidedPipeline_);
         if (device_ && shadowPipeline_)
             SDL_ReleaseGPUGraphicsPipeline(device_, shadowPipeline_);
         if (device_ && pipeline_)
             SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
         shadowPipeline_ = nullptr;
+        doubleSidedPipeline_ = nullptr;
         pipeline_ = nullptr;
         shaders_.reset();
         depthFormat_ = SDL_GPU_TEXTUREFORMAT_INVALID;
@@ -67,7 +71,7 @@ namespace monopoly::engine
     std::expected<World3DPipeline, World3DPipelineError> World3DPipeline::load(
         SDL_GPUDevice* device,
         const std::filesystem::path& shaderDirectory,
-        SDL_GPUTextureFormat colorFormat)
+        SDL_GPUTextureFormat colorFormat, bool modernPBR)
     {
         if (!device)
             return std::unexpected(World3DPipelineError{
@@ -83,7 +87,7 @@ namespace monopoly::engine
                 World3DPipelineErrorCode::UnsupportedDepthFormat,
                 "device exposes no supported World3D depth target", {}});
 
-        auto shaders = World3DShaderSet::load(device, shaderDirectory);
+        auto shaders = World3DShaderSet::load(device, shaderDirectory, modernPBR);
         if (!shaders)
             return std::unexpected(World3DPipelineError{
                 World3DPipelineErrorCode::ShaderLoadFailed,
@@ -150,6 +154,27 @@ namespace monopoly::engine
             return std::unexpected(World3DPipelineError{
                 World3DPipelineErrorCode::PipelineCreateFailed,
                 SDL_GetError(), {}});
+
+        if (modernPBR)
+        {
+            info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+            SDL_GPUGraphicsPipeline* doubleSided =
+                SDL_CreateGPUGraphicsPipeline(device, &info);
+            if (!doubleSided)
+            {
+                SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+                return std::unexpected(World3DPipelineError{
+                    World3DPipelineErrorCode::PipelineCreateFailed,
+                    SDL_GetError(), {}});
+            }
+            World3DPipeline result;
+            result.device_ = device;
+            result.pipeline_ = pipeline;
+            result.doubleSidedPipeline_ = doubleSided;
+            result.depthFormat_ = *depthFormat;
+            result.shaders_ = std::move(*shaders);
+            return result;
+        }
 
         // UDPieces.cpp + UDUTILS_ConvertToShadow use D3DBLEND_ZERO /
         // D3DBLEND_SRCALPHA for the eleven token-shadow meshes. Their texture

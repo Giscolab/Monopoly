@@ -1,0 +1,18 @@
+{
+  "dxc": {
+    "version": "v1.9.2609",
+    "windows": {
+      "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/dxc_2026_09_29.zip",
+      "sha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1"
+    },
+    "linux": {
+      "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/linux_dxc_2026_09_28.x86_x64.tar.gz",
+      "sha256": "96faadc7f5c282d2ffda49804beb4c3ee38127bc252b723234e3c5cdf7aa39a1"
+    }
+  },
+  "spirv_cross": {
+    "revision": "aa217aeb6c9f0ace7a0ab233b28807edf45eb165",
+    "url": "https://codeload.github.com/KhronosGroup/SPIRV-Cross/tar.gz/aa217aeb6c9f0ace7a0ab233b28807edf45eb165",
+    "sha256": "b99db6ee6182dbeb102257e755bf6d4978c23dcfd3329033304779279bc27212"
+  }
+}

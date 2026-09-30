@@ -38,7 +38,7 @@ Ces points remplacent les anciennes mentions vagues « partiel » ou « futur »
 | A04 | LANG / FONTS / GRAFIX | 96 DPI d’origine raccordés ; formatage, UTF-16, métriques et clipping encore à comparer. |
 | A05 | DATA | Contrats mémoire/LRU et sentinelles exigés par les appelants. Le LRU des blocs DAT et la libération des bitmaps/meshes CPU et GPU sont raccordés ; les consommateurs runtime ne dépendent plus directement du registre DAT et peuvent recevoir des payloads logiques hors archive avec fallback retail. Les scènes actives et substitutions de textures restent possédées. Le décodage des formats modernes natifs et le retrait complet des banques retail restent à poursuivre. |
 | A06 | Séquenceur | Préchargement, attributs après enfants, sélection et persistance des tweekers, événements de fin et callback souris consommé sont raccordés. Labels et autres usages C++ ou DAT restent à comparer. Model est le type 4, Preloader le type 8 ; le renderer source actif n’accepte pas Model. L’absence d’appel C++ seule n’exclut pas un usage par données. |
-| A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. Le backend GLB, la calibration et le fallback par contexte de séquence sont raccordés. L’audit DAT montre que les animations de pions changent de HMD (poseCount MIMe = 1), donc un futur remplacement moderne doit couvrir la séquence entière. PBR GPU, textures, animations modernes et intégration du plateau Blender restent ouverts. |
+| A07 | PC3D | Caméras, scènes et matériaux au-delà des contrats HMD consommés déjà fermés. Le backend GLB, la calibration et le fallback par contexte de séquence sont raccordés. L’audit DAT montre que les animations de pions changent de HMD (poseCount MIMe = 1), donc un futur remplacement moderne doit couvrir la séquence entière. Le chemin PBR GPU à facteurs est raccordé et qualifié par lecture de pixels ; les textures PBR, animations modernes et intégration du plateau Blender restent ouverts. |
 
 MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint/UIMG0/ground/envmap sont commentés dans `hmdload.cpp`. Le chemin `NewMesh` alternatif n’est pas celui sélectionné par les appelants actifs. Ces éléments ne sont pas des tâches actives sans nouvelle preuve contraire. Les sept modules exclus et leurs justifications figurent dans la matrice.
 
@@ -103,3 +103,23 @@ Les journaux locaux de cette référence sont `modern/build/trade-return-culling
 - La documentation Doxygen inclut le plan, la matrice et le rapport généré. Les changements de ces documents déclenchent leur publication.
 - L’audit structurel n’est pas un audit de fidélité. Les compteurs d’inventaire ne sont pas des pourcentages d’achèvement : familles et sous-contrats se recouvrent.
 - Ne modifier manuellement ni le SVG ni le rapport généré. Supprimer une tâche seulement après correction vérifiée ou exclusion justifiée ; conserver les décisions utiles dans la matrice, les anciens checkpoints dans l’historique Git.
+
+## Modern assets — qualification du 30 septembre 2026
+
+Le correctif de priorité `6299180` est poussé : GLB statiques uniquement pour
+les racines idle prévues, aux priorités joueurs 224..229. Chien et déplacements
+restent HMD. MonopolyDataCore et MonopolyModern ont compilé ; les tests ciblés
+du cache passent. Un démarrage réel de 25 secondes en 1280x720 charge les cinq
+pions autorisés, sans preuve visuelle d'une partie ou de déplacements.
+
+Le chargement GLB est borné et vérifie références, accesseurs, indices et
+transformations. Les 22 contrôles de fixtures passent. Les nouveaux shaders
+PBR à facteurs utilisent des pipelines distincts ; les lectures réelles SDL_GPU
+valident matériaux, émission/sRGB, culling et mélange avec Gouraud. DXIL est
+exécuté sous Windows ; SPIR-V/MSL sont compilés, sans qualification Linux/macOS.
+Les cartes PBR et animations GLB ne sont pas encore actives.
+
+L'outil de timeline réutilise SequenceRuntime et inventorie les 1 089 CNK de
+pions sur 600 ticks avec les DAT locaux. Les sorties restent sous build/.
+L'inventaire représente des séquences autonomes et ne remplace pas une
+qualification des appels de jeu, de la pose sur le plateau ou des médias.

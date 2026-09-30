@@ -3,7 +3,13 @@ cbuffer MaterialUniforms : register(b0, space3)
     float4 materialDiffuse;
 };
 
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
 Texture2D legacyTexture : register(t0, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
 SamplerState legacySampler : register(s0, space2);
 
 struct PixelInput

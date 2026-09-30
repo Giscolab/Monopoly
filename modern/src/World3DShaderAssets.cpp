@@ -20,7 +20,7 @@ namespace monopoly::engine
         };
 
         std::expected<ShaderAssetChoice, World3DShaderError>
-        chooseFormat(SDL_GPUDevice* device)
+        chooseFormat(SDL_GPUDevice* device, bool modernPBR)
         {
             if (!device)
                 return std::unexpected(World3DShaderError{
@@ -31,6 +31,8 @@ namespace monopoly::engine
                 return ShaderAssetChoice{SDL_GPU_SHADERFORMAT_DXIL, ".dxil", "main", false};
             if (formats & SDL_GPU_SHADERFORMAT_MSL)
                 return ShaderAssetChoice{SDL_GPU_SHADERFORMAT_MSL, ".msl", "main0", true};
+            if (modernPBR && (formats & SDL_GPU_SHADERFORMAT_SPIRV))
+                return ShaderAssetChoice{SDL_GPU_SHADERFORMAT_SPIRV, ".spv", "main", false};
             if (formats & SDL_GPU_SHADERFORMAT_SPIRV)
                 return std::unexpected(World3DShaderError{
                     World3DShaderErrorCode::UnsupportedFormat, {},
@@ -65,7 +67,7 @@ namespace monopoly::engine
             SDL_GPUDevice* device,
             const std::filesystem::path& path,
             const ShaderAssetChoice& choice,
-            SDL_GPUShaderStage stage)
+            SDL_GPUShaderStage stage, bool modernPBR)
         {
             auto bytes = readShader(path, choice.text);
             if (!bytes) return std::unexpected(bytes.error());
@@ -77,7 +79,7 @@ namespace monopoly::engine
             info.format = choice.format;
             info.stage = stage;
             info.num_uniform_buffers = 1;
-            info.num_samplers = stage == SDL_GPU_SHADERSTAGE_FRAGMENT ? 1U : 0U;
+            info.num_samplers = stage == SDL_GPU_SHADERSTAGE_FRAGMENT && !modernPBR ? 1U : 0U;
 
             SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
             if (!shader)
@@ -120,17 +122,19 @@ namespace monopoly::engine
     }
 
     std::expected<World3DShaderSet, World3DShaderError> World3DShaderSet::load(
-        SDL_GPUDevice* device, const std::filesystem::path& shaderDirectory)
+        SDL_GPUDevice* device, const std::filesystem::path& shaderDirectory,
+        bool modernPBR)
     {
-        auto choice = chooseFormat(device);
+        auto choice = chooseFormat(device, modernPBR);
         if (!choice) return std::unexpected(choice.error());
 
-        const auto vertexPath = shaderDirectory / (std::string("World3D.vert") + choice->suffix);
-        const auto fragmentPath = shaderDirectory / (std::string("World3D.frag") + choice->suffix);
-        auto vertex = createShader(device, vertexPath, *choice, SDL_GPU_SHADERSTAGE_VERTEX);
+        const std::string name = modernPBR ? "ModernPBR" : "World3D";
+        const auto vertexPath = shaderDirectory / (name + ".vert" + choice->suffix);
+        const auto fragmentPath = shaderDirectory / (name + ".frag" + choice->suffix);
+        auto vertex = createShader(device, vertexPath, *choice, SDL_GPU_SHADERSTAGE_VERTEX, modernPBR);
         if (!vertex) return std::unexpected(vertex.error());
 
-        auto fragment = createShader(device, fragmentPath, *choice, SDL_GPU_SHADERSTAGE_FRAGMENT);
+        auto fragment = createShader(device, fragmentPath, *choice, SDL_GPU_SHADERSTAGE_FRAGMENT, modernPBR);
         if (!fragment)
         {
             SDL_ReleaseGPUShader(device, *vertex);

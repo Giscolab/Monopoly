@@ -1,0 +1,37 @@
+{
+  "compiler_hashes": {
+    "dxc": "aa7965b3763d9c710baaa5a28cedcc633449962a75d1391d161a85304a41b3e2",
+    "spirv_cross": "3276b40b4af222f8e446b3ad7e8045ff86bf854054bcca717d74aec5d8e30e41"
+  },
+  "external_compilers": false,
+  "outputs": {
+    "ModernPBR.frag.dxil": "30ab70d83d18124eb11c59802c97c7791e27f70c397cd632b8096d11be7d42fe",
+    "ModernPBR.frag.msl": "423b3d590fcb3144c0198adf27a50fe1579ff1a4a13f7f21fd2fd60cdfafeca0",
+    "ModernPBR.frag.spv": "f9fbfeb4f3ecf59bc0823d50add6e4f5c75c92566161e2b5a08d8bf84f6464c5",
+    "ModernPBR.vert.dxil": "2221ed09f763498617905e97246c4a2e4baff6d922b4945acf9d4adec4b868e1",
+    "ModernPBR.vert.msl": "f5d5ccefe392cff1589c9d512fac665d969deb94de64e5443820142c4b67a60c",
+    "ModernPBR.vert.spv": "b5cb8629ebe91eefe93670c862d2c4de2d7a47d1ab2c6e695dc87bc005303c44"
+  },
+  "sources": {
+    "ModernPBR.frag.hlsl": "af5ccc8f2e05eb281386f97bbfcd566d824a3e6684636bf2767796710c8d6700",
+    "ModernPBR.vert.hlsl": "0893767a316938b36b4d35230828d43403f3ec842ab212c1f25802618f207959"
+  },
+  "toolchain": {
+    "dxc": {
+      "linux": {
+        "sha256": "96faadc7f5c282d2ffda49804beb4c3ee38127bc252b723234e3c5cdf7aa39a1",
+        "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/linux_dxc_2026_09_28.x86_x64.tar.gz"
+      },
+      "version": "v1.9.2609",
+      "windows": {
+        "sha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1",
+        "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/dxc_2026_09_29.zip"
+      }
+    },
+    "spirv_cross": {
+      "revision": "aa217aeb6c9f0ace7a0ab233b28807edf45eb165",
+      "sha256": "b99db6ee6182dbeb102257e755bf6d4978c23dcfd3329033304779279bc27212",
+      "url": "https://codeload.github.com/KhronosGroup/SPIRV-Cross/tar.gz/aa217aeb6c9f0ace7a0ab233b28807edf45eb165"
+    }
+  }
+}

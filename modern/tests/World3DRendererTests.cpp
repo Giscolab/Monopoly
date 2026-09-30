@@ -245,6 +245,145 @@ namespace
             missing.error().code == engine::World3DRendererErrorCode::MissingDevice,
             "renderer rejects a missing SDL_GPU device before asset loading");
     }
+
+    void testModernPBR(engine::World3DRenderer& renderer,
+        SDL_GPUDevice* device, SDL_GPUTexture* target)
+    {
+        using Pixels = std::array<std::uint8_t, 64U * 64U * 4U>;
+        const SDL_GPUViewport viewport{0, 0, 64, 64, 0, 1};
+        std::uint16_t nextId = 0x0100;
+        const auto itemFor = [&](const data::MeshMaterial& material,
+            bool back = false, float x = 0.0F) {
+            sequence::SequenceMeshRenderItem item;
+            item.node = 1;
+            item.contentsDataId = data::packDataId(8, nextId++);
+            item.worldTransform = sequence::translate3D(x, 0, 0);
+            auto asset = std::make_shared<data::MeshRuntimeAsset>(
+                *makeAsset(item.contentsDataId));
+            auto render = std::make_shared<data::MeshRenderData>(*asset->renderData);
+            render->batches.front().material = material;
+            // PBR normals face the camera, so N dot V is positive.
+            for (auto& vertex : render->vertices) vertex.normal = {0, 0, -1};
+            if (back) render->indices = {0, 1, 2};
+            asset->renderData = std::move(render);
+            item.asset = std::move(asset);
+            return item;
+        };
+        const auto draw = [&](const std::vector<sequence::SequenceMeshRenderItem>& items,
+            Pixels& output) {
+            auto slot = makeSlot();
+            if (!slot.sync(items)) return false;
+            auto* command = SDL_AcquireGPUCommandBuffer(device);
+            if (!command) return false;
+            if (!clearTarget(command, target))
+            { (void)SDL_CancelGPUCommandBuffer(command); return false; }
+            const auto stats = renderer.render(command, target, 64U, 64U, viewport, slot);
+            if (!stats)
+            {
+                std::cout << "[GPU] PBR render error: " << stats.error().detail << '\n';
+                (void)SDL_CancelGPUCommandBuffer(command);
+                return false;
+            }
+            const bool read = downloadTarget(device, command, target, output);
+            return read && stats->objects == items.size() && stats->batches == items.size();
+        };
+        const auto litPixels = [](const Pixels& output) {
+            std::size_t count{};
+            for (std::size_t i = 0; i < output.size(); i += 4)
+                if (output[i] || output[i + 1] || output[i + 2]) ++count;
+            return count;
+        };
+
+        data::MeshMaterial material;
+        material.model = data::MeshMaterialModel::MetallicRoughness;
+        material.diffuse = {0.15F, 0.05F, 0.025F, 1};
+        material.metallic = 0;
+        material.roughness = 0.9F;
+        engine::World3DLighting lighting;
+        lighting.ambient = {0.08F, 0.08F, 0.08F};
+        lighting.sun = {{0.6F, 0.6F, 0.6F}, {0, 0, 1}, true};
+        renderer.setLighting(lighting);
+        Pixels dielectric{}, metal{}, smooth{}, changedBase{};
+        const bool dielectricRead = draw({itemFor(material)}, dielectric);
+        const auto* modernPipeline = renderer.modernPipeline();
+        expect(dielectricRead && modernPipeline && modernPipeline->handle() &&
+            modernPipeline->doubleSidedHandle() &&
+            modernPipeline->handle() != renderer.pipeline().handle() &&
+            modernPipeline->doubleSidedHandle() != modernPipeline->handle(),
+            "factor-only modern material executes a distinct PBR GPU pipeline with a two-sided variant");
+        material.metallic = 1;
+        const bool metalRead = draw({itemFor(material)}, metal);
+        expect(dielectricRead && metalRead && litPixels(dielectric) > 0 &&
+            litPixels(metal) > 0 && dielectric != metal,
+            "metallic factor changes real PBR framebuffer shading");
+        material.roughness = 0.3F;
+        const bool smoothRead = draw({itemFor(material)}, smooth);
+        expect(metalRead && smoothRead && metal != smooth,
+            "roughness factor changes the real GPU specular response");
+        material.diffuse = {0.025F, 0.15F, 0.05F, 1};
+        const bool baseRead = draw({itemFor(material)}, changedBase);
+        expect(smoothRead && baseRead && smooth != changedBase,
+            "linear base-color factor changes real PBR pixels without a texture");
+
+        // Isolate emissive from all light. These linear values must be encoded
+        // once for the UNORM target: 0.25 -> ~137 and 0.0625 -> ~71.
+        lighting = {};
+        lighting.ambient = {0, 0, 0};
+        renderer.setLighting(lighting);
+        material.emissive = {0.5F, 0.125F, 0};
+        material.emissiveStrength = 0;
+        Pixels dark{}, emissive{};
+        const bool darkRead = draw({itemFor(material)}, dark);
+        material.emissiveStrength = 0.5F;
+        const bool emissiveRead = draw({itemFor(material)}, emissive);
+        constexpr std::size_t inside = (34U * 64U + 32U) * 4U;
+        expect(darkRead && emissiveRead && litPixels(dark) == 0 &&
+            emissive[inside] >= 134 && emissive[inside] <= 140 &&
+            emissive[inside + 1] >= 68 && emissive[inside + 1] <= 74 &&
+            emissive[inside + 2] == 0 && emissive[inside + 3] == 255,
+            "emissive strength lights an unlit PBR surface and encodes linear factors once");
+
+        Pixels culled{}, twoSided{}, front{};
+        material.doubleSided = false;
+        const bool frontRead = draw({itemFor(material)}, front);
+        const bool culledRead = draw({itemFor(material, true)}, culled);
+        material.doubleSided = true;
+        const bool twoSidedRead = draw({itemFor(material, true)}, twoSided);
+        expect(frontRead && culledRead && twoSidedRead && litPixels(front) > 0 &&
+            litPixels(culled) == 0 && twoSided == front,
+            "modern single-sided back faces are culled while double-sided emissive backs render");
+
+        // Nonoverlapping triangles allow byte-exact comparison with separately
+        // drawn legacy and modern images, including both pipeline switch orders.
+        renderer.setLighting({});
+        data::MeshMaterial legacyMaterial;
+        legacyMaterial.diffuse = {1, 0, 0, 1};
+        auto legacy = itemFor(legacyMaterial, false, -3);
+        auto modern = itemFor(material, false, 3);
+        modern.node = 2;
+        Pixels legacyOnly{}, modernOnly{}, combined{}, reverse{}, restored{};
+        const bool legacyRead = draw({legacy}, legacyOnly);
+        const bool modernRead = draw({modern}, modernOnly);
+        const bool combinedRead = draw({legacy, modern}, combined);
+        legacy.priority = 1;
+        const bool reverseRead = draw({modern, legacy}, reverse);
+        const bool restoredRead = draw({legacy}, restored);
+        bool matches = combinedRead && reverseRead;
+        for (std::size_t i = 0; i < combined.size(); i += 4)
+        {
+            const bool modernPixel = modernOnly[i] || modernOnly[i + 1] || modernOnly[i + 2];
+            for (std::size_t channel = 0; channel < 4; ++channel)
+            {
+                const auto expected = modernPixel ? modernOnly[i + channel] : legacyOnly[i + channel];
+                matches = matches && combined[i + channel] == expected && reverse[i + channel] == expected;
+            }
+        }
+        expect(legacyRead && modernRead && restoredRead &&
+            countRedPixels(legacyOnly) > 0 && litPixels(modernOnly) > 0 &&
+            matches && legacyOnly == restored,
+            "mixed legacy/PBR draws preserve each standalone framebuffer in both orders and restore legacy pixels");
+        renderer.setLighting({});
+    }
     void testRealRendererWhenAvailable()
     {
         if (!SDL_Init(SDL_INIT_VIDEO))
@@ -808,6 +947,7 @@ namespace
             "bilinear filtering interpolates the actual 2x2 HMD pattern in GPU readback");
         expect(restoredRead && pointPixels == restoredPixels,
             "switching filtering off restores point-sampled GPU pixels exactly");
+        testModernPBR(*renderer, device, target);
         std::cout << "[GPU] releasing renderer and target\n";
         renderer->reset();
         SDL_ReleaseGPUTexture(device, target);

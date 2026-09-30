@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <new>
+#include <stdexcept>
+#include <variant>
 #include <utility>
 
 namespace monopoly::data
@@ -150,6 +153,104 @@ namespace monopoly::data
                 material.normalTexture.has_value() ||
                 material.emissiveTexture.has_value();
         }
+
+        [[nodiscard]] bool validBufferView(const fastgltf::Asset& asset,
+            std::size_t index)
+        {
+            if (index >= asset.bufferViews.size()) return false;
+            const auto& view = asset.bufferViews[index];
+            if (view.bufferIndex >= asset.buffers.size()) return false;
+            const auto bytes = std::visit(fastgltf::visitor{
+                [](const auto&) -> std::size_t { return 0; },
+                [](const fastgltf::sources::Array& value) { return value.bytes.size_bytes(); },
+                [](const fastgltf::sources::Vector& value) { return value.bytes.size(); },
+                [](const fastgltf::sources::ByteView& value) { return value.bytes.size(); }
+            }, asset.buffers[view.bufferIndex].data);
+            return view.byteOffset <= bytes && view.byteLength <= bytes - view.byteOffset;
+        }
+
+        [[nodiscard]] bool validAccessor(const fastgltf::Asset& asset,
+            std::size_t index, fastgltf::AccessorType type)
+        {
+            if (index >= asset.accessors.size()) return false;
+            const auto& accessor = asset.accessors[index];
+            if (accessor.type != type || accessor.count == 0 ||
+                accessor.componentType == fastgltf::ComponentType::Invalid)
+                return false;
+            const auto elementBytes = fastgltf::getElementByteSize(
+                accessor.type, accessor.componentType);
+            const auto fits = [&](std::size_t viewIndex, std::size_t offset,
+                                  std::size_t count, std::size_t size,
+                                  bool strided)
+            {
+                if (!validBufferView(asset, viewIndex)) return false;
+                const auto& view = asset.bufferViews[viewIndex];
+                const auto stride = strided ? view.byteStride.value_or(size) : size;
+                if (size == 0 || stride < size || offset > view.byteLength)
+                    return false;
+                const auto available = view.byteLength - offset;
+                return count == 0 || (size <= available &&
+                    count - 1 <= (available - size) / stride);
+            };
+            if (accessor.bufferViewIndex &&
+                !fits(*accessor.bufferViewIndex, accessor.byteOffset,
+                    accessor.count, elementBytes, true)) return false;
+            if (!accessor.bufferViewIndex && !accessor.sparse) return false;
+            if (accessor.sparse)
+            {
+                const auto& sparse = *accessor.sparse;
+                if (sparse.count > accessor.count ||
+                    (sparse.indexComponentType != fastgltf::ComponentType::UnsignedByte &&
+                     sparse.indexComponentType != fastgltf::ComponentType::UnsignedShort &&
+                     sparse.indexComponentType != fastgltf::ComponentType::UnsignedInt) ||
+                    !fits(sparse.indicesBufferView, sparse.indicesByteOffset,
+                        sparse.count, fastgltf::getComponentByteSize(sparse.indexComponentType), false) ||
+                    !fits(sparse.valuesBufferView, sparse.valuesByteOffset,
+                        sparse.count, elementBytes, false)) return false;
+            }
+            return true;
+        }
+
+        // Validate the hierarchy before fastgltf's recursive traversal. A deep
+        // or cyclic document must not exhaust the stack before geometry checks.
+        [[nodiscard]] bool validHierarchy(const fastgltf::Asset& asset)
+        {
+            struct Entry { std::size_t node; std::size_t nextChild; };
+            std::vector<std::uint8_t> colors(asset.nodes.size());
+            std::vector<std::size_t> depths(asset.nodes.size(), 1);
+            std::vector<Entry> stack;
+            for (std::size_t root = 0; root < asset.nodes.size(); ++root)
+            {
+                if (colors[root] != 0) continue;
+                colors[root] = 1;
+                stack.push_back({root, 0});
+                while (!stack.empty())
+                {
+                    auto& entry = stack.back();
+                    const auto& children = asset.nodes[entry.node].children;
+                    if (entry.nextChild == children.size())
+                    {
+                        for (const auto child : children)
+                            depths[entry.node] = std::max(depths[entry.node], depths[child] + 1);
+                        if (depths[entry.node] > 1024) return false;
+                        colors[entry.node] = 2;
+                        stack.pop_back();
+                        continue;
+                    }
+                    const auto child = children[entry.nextChild++];
+                    if (child >= asset.nodes.size() || colors[child] == 1)
+                        return false;
+                    if (colors[child] == 2) continue;
+                    if (stack.size() >= 1024) return false;
+                    colors[child] = 1;
+                    stack.push_back({child, 0});
+                }
+            }
+            for (const auto& scene : asset.scenes)
+                for (const auto node : scene.nodeIndices)
+                    if (node >= asset.nodes.size()) return false;
+            return true;
+        }
     }
 
 
@@ -158,10 +259,13 @@ namespace monopoly::data
         MeshRuntimeError>
     loadModernGltfMesh(
         const std::filesystem::path& path,
-        ModernGltfLoadOptions options)
+        ModernGltfLoadOptions options) try
     {
         if (path.empty() || options.unitsPerMeter <= 0.0F ||
-            !std::isfinite(options.unitsPerMeter))
+            !std::isfinite(options.unitsPerMeter) ||
+            !std::isfinite(options.yawDegrees) ||
+            !std::ranges::all_of(options.localOffset,
+                [](float value) { return std::isfinite(value); }))
             return std::unexpected(error(
                 MeshRuntimeErrorCode::ModernAssetInvalid,
                 "invalid modern GLB path or world scale"));
@@ -177,7 +281,7 @@ namespace monopoly::data
         auto loaded = parser.loadGltfBinary(
             stream,
             path.parent_path(),
-            fastgltf::Options::GenerateMeshIndices);
+            fastgltf::Options::None);
         if (loaded.error() != fastgltf::Error::None ||
             loaded.get_if() == nullptr)
             return std::unexpected(error(
@@ -187,6 +291,10 @@ namespace monopoly::data
                         loaded.error()))));
 
         auto asset = std::move(loaded.get());
+        if (!validHierarchy(asset))
+            return std::unexpected(error(
+                MeshRuntimeErrorCode::ModernAssetInvalid,
+                "modern GLB node hierarchy is invalid or too deep"));
         if (asset.scenes.empty() || asset.nodes.empty())
             return std::unexpected(error(
                 MeshRuntimeErrorCode::NoRenderableGeometry,
@@ -213,6 +321,13 @@ namespace monopoly::data
             {
                 if (failed || !node.meshIndex)
                     return;
+                if (node.skinIndex)
+                {
+                    failed = true;
+                    failure = error(MeshRuntimeErrorCode::ModernAssetUnsupported,
+                        "modern GLB skins require the animation pipeline");
+                    return;
+                }
                 if (*node.meshIndex >= asset.meshes.size())
                 {
                     failed = true;
@@ -226,6 +341,14 @@ namespace monopoly::data
                 for (const auto& primitive : mesh.primitives)
                 {
                     if (failed) return;
+                    if (primitive.materialIndex &&
+                        *primitive.materialIndex >= asset.materials.size())
+                    {
+                        failed = true;
+                        failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                            "modern GLB material reference is out of range");
+                        return;
+                    }
                     if (primitive.type != fastgltf::PrimitiveType::Triangles)
                     {
                         failed = true;
@@ -255,12 +378,15 @@ namespace monopoly::data
                     const auto normal = primitive.findAttribute("NORMAL");
                     if (position == primitive.attributes.end() ||
                         normal == primitive.attributes.end() ||
-                        !primitive.indicesAccessor)
+                        !validAccessor(asset, position->accessorIndex,
+                            fastgltf::AccessorType::Vec3) ||
+                        !validAccessor(asset, normal->accessorIndex,
+                            fastgltf::AccessorType::Vec3))
                     {
                         failed = true;
                         failure = error(
                             MeshRuntimeErrorCode::ModernAssetInvalid,
-                            "modern GLB primitive requires POSITION, NORMAL and indices");
+                            "modern GLB primitive requires valid POSITION and NORMAL accessors");
                         return;
                     }
 
@@ -268,7 +394,9 @@ namespace monopoly::data
                         asset.accessors[position->accessorIndex];
                     const auto& normalAccessor =
                         asset.accessors[normal->accessorIndex];
-                    if (positionAccessor.count != normalAccessor.count)
+                    if (positionAccessor.count != normalAccessor.count ||
+                        positionAccessor.type != fastgltf::AccessorType::Vec3 ||
+                        normalAccessor.type != fastgltf::AccessorType::Vec3)
                     {
                         failed = true;
                         failure = error(
@@ -277,11 +405,13 @@ namespace monopoly::data
                         return;
                     }
 
-                    if (result->vertices.size() >
+                    if (positionAccessor.count > options.limits.maximumVertices ||
+                        result->vertices.size() >
                             options.limits.maximumVertices -
-                            std::min(
-                                options.limits.maximumVertices,
-                                positionAccessor.count))
+                            positionAccessor.count ||
+                        positionAccessor.count >
+                            std::numeric_limits<std::uint32_t>::max() -
+                                result->vertices.size())
                     {
                         failed = true;
                         failure = error(
@@ -295,6 +425,17 @@ namespace monopoly::data
                         baseVertex + positionAccessor.count);
 
                     const auto uv = primitive.findAttribute("TEXCOORD_0");
+                    if (uv != primitive.attributes.end() &&
+                        (!validAccessor(asset, uv->accessorIndex,
+                            fastgltf::AccessorType::Vec2) ||
+                         asset.accessors[uv->accessorIndex].count !=
+                            positionAccessor.count))
+                    {
+                        failed = true;
+                        failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                            "modern GLB UV accessor must match the vertex count");
+                        return;
+                    }
                     for (std::size_t index = 0;
                         index < positionAccessor.count;
                         ++index)
@@ -317,6 +458,17 @@ namespace monopoly::data
                             world,
                             sourceNormal,
                             options.yawDegrees);
+                        for (std::size_t axis = 0; axis < 3; ++axis)
+                        {
+                            if (!std::isfinite(worldPosition[axis]) ||
+                                !std::isfinite(worldNormal[axis]))
+                            {
+                                failed = true;
+                                failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                                    "modern GLB transform or normal is nonfinite or singular");
+                                return;
+                            }
+                        }
 
                         auto& vertex = result->vertices[baseVertex + index];
                         vertex.position = {
@@ -339,6 +491,13 @@ namespace monopoly::data
                             vertex.uv = {
                                 sourceUv[0],
                                 sourceUv[1]};
+                            if (!std::isfinite(sourceUv[0]) || !std::isfinite(sourceUv[1]))
+                            {
+                                failed = true;
+                                failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                                    "modern GLB UV coordinates are nonfinite");
+                                return;
+                            }
                         }
                         extendBounds(
                             result->bounds,
@@ -346,13 +505,41 @@ namespace monopoly::data
                             boundsInitialized);
                     }
 
-                    const auto& indexAccessor =
-                        asset.accessors[*primitive.indicesAccessor];
-                    if (result->indices.size() >
+                    const fastgltf::Accessor* indexAccessor = nullptr;
+                    if (primitive.indicesAccessor)
+                    {
+                        if (!validAccessor(asset, *primitive.indicesAccessor,
+                            fastgltf::AccessorType::Scalar))
+                        {
+                            failed = true;
+                            failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                                "modern GLB index accessor is invalid");
+                            return;
+                        }
+                        indexAccessor = &asset.accessors[*primitive.indicesAccessor];
+                        if (indexAccessor->normalized ||
+                            (indexAccessor->componentType != fastgltf::ComponentType::UnsignedByte &&
+                             indexAccessor->componentType != fastgltf::ComponentType::UnsignedShort &&
+                             indexAccessor->componentType != fastgltf::ComponentType::UnsignedInt))
+                        {
+                            failed = true;
+                            failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                                "modern GLB indices must be unsigned integers");
+                            return;
+                        }
+                    }
+                    const auto indexCount = indexAccessor ? indexAccessor->count : positionAccessor.count;
+                    if (indexCount % 3 != 0)
+                    {
+                        failed = true;
+                        failure = error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                            "modern GLB triangle indices must be scalar triplets");
+                        return;
+                    }
+                    if (indexCount > options.limits.maximumIndices ||
+                        result->indices.size() >
                             options.limits.maximumIndices -
-                            std::min(
-                                options.limits.maximumIndices,
-                                indexAccessor.count))
+                            indexCount)
                     {
                         failed = true;
                         failure = error(
@@ -372,14 +559,14 @@ namespace monopoly::data
 
                     const auto firstIndex = result->indices.size();
                     result->indices.reserve(
-                        firstIndex + indexAccessor.count);
+                        firstIndex + indexCount);
                     for (std::size_t index = 0;
-                        index < indexAccessor.count;
+                        index < indexCount;
                         ++index)
                     {
                         const auto sourceIndex =
-                            fastgltf::getAccessorElement<std::uint32_t>(
-                                asset, indexAccessor, index);
+                            indexAccessor ? fastgltf::getAccessorElement<std::uint32_t>(
+                                asset, *indexAccessor, index) : static_cast<std::uint32_t>(index);
                         if (sourceIndex >= positionAccessor.count)
                         {
                             failed = true;
@@ -395,7 +582,7 @@ namespace monopoly::data
 
                     result->batches.push_back(MeshRenderBatch{
                         firstIndex,
-                        indexAccessor.count,
+                        indexCount,
                         materialFor(asset, primitive),
                         std::nullopt
                     });
@@ -415,6 +602,12 @@ namespace monopoly::data
         std::array<float, 3> offset = options.localOffset;
         if (options.groundToZero)
             offset[1] -= result->bounds.minimum[1];
+        for (std::size_t axis = 0; axis < 3; ++axis)
+            if (!std::isfinite(offset[axis]) ||
+                !std::isfinite(result->bounds.minimum[axis] + offset[axis]) ||
+                !std::isfinite(result->bounds.maximum[axis] + offset[axis]))
+                return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+                    "modern GLB offset exceeds finite world coordinates"));
 
         if (offset != std::array<float, 3>{})
         {
@@ -429,5 +622,15 @@ namespace monopoly::data
         }
 
         return std::const_pointer_cast<const MeshRenderData>(result);
+    }
+    catch (const std::bad_alloc&)
+    {
+        return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+            "modern GLB allocation failed"));
+    }
+    catch (const std::length_error&)
+    {
+        return std::unexpected(error(MeshRuntimeErrorCode::ModernAssetInvalid,
+            "modern GLB allocation exceeds container limits"));
     }
 }

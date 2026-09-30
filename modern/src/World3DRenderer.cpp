@@ -2,6 +2,7 @@
 
 #include "SequenceTransforms.hpp"
 #include "World3DShaderUniforms.hpp"
+#include "ModernPBRShaderUniforms.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -151,6 +152,10 @@ namespace monopoly::engine
         reset();
         device_ = std::exchange(other.device_, nullptr);
         pipeline_ = std::move(other.pipeline_);
+        modernPipeline_ = std::move(other.modernPipeline_);
+        modernPipelineAttempted_ = std::exchange(other.modernPipelineAttempted_, false);
+        shaderDirectory_ = std::move(other.shaderDirectory_);
+        colorFormat_ = std::exchange(other.colorFormat_, SDL_GPU_TEXTUREFORMAT_INVALID);
         meshCache_ = std::move(other.meshCache_);
         textureSampler_ = std::exchange(other.textureSampler_, nullptr);
         linearSampler_ = std::exchange(other.linearSampler_, nullptr);
@@ -193,6 +198,10 @@ namespace monopoly::engine
         meshCache_.reset();
         releaseSamplingResources();
         pipeline_.reset();
+        modernPipeline_.reset();
+        modernPipelineAttempted_ = false;
+        shaderDirectory_.clear();
+        colorFormat_ = SDL_GPU_TEXTUREFORMAT_INVALID;
         device_ = nullptr;
         lighting_ = {};
         bilinearFiltering_ = false;
@@ -275,6 +284,8 @@ namespace monopoly::engine
         World3DRenderer result;
         result.device_ = device;
         result.pipeline_ = std::move(*pipeline);
+        result.shaderDirectory_ = shaderDirectory;
+        result.colorFormat_ = colorFormat;
         result.meshCache_ = std::make_unique<MeshGPUCache>(device);
         result.whiteTexture_ = *whiteTexture;
         result.textureSampler_ = sampler;
@@ -315,6 +326,24 @@ namespace monopoly::engine
                 World3DRendererErrorCode::SceneBuildFailed,
                 batches.error().detail, {}, batches.error()});
 
+        const bool needsModernPipeline = std::any_of(batches->begin(), batches->end(),
+            [](const World3DGPUIndexedBatch& batch)
+            {
+                return !batch.legacyShadow &&
+                    batch.material.model == data::MeshMaterialModel::MetallicRoughness;
+            });
+        if (needsModernPipeline && !modernPipelineAttempted_)
+        {
+            modernPipelineAttempted_ = true;
+            auto modern = World3DPipeline::load(device_, shaderDirectory_, colorFormat_, true);
+            if (modern)
+                modernPipeline_ = std::move(*modern);
+            else
+                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "Modern PBR pipeline unavailable; drawing modern meshes with legacy diffuse: %s",
+                    modern.error().detail.c_str());
+        }
+
         if (!ensureDepthTarget(targetWidth, targetHeight))
             return std::unexpected(World3DRendererError{
                 World3DRendererErrorCode::DepthTargetCreationFailed,
@@ -351,8 +380,13 @@ namespace monopoly::engine
 
         for (const auto& batch : *batches)
         {
-            SDL_GPUGraphicsPipeline* desiredPipeline =
-                batch.legacyShadow ? pipeline_.shadowHandle() : pipeline_.handle();
+            const bool modern = modernPipeline_ && !batch.legacyShadow &&
+                batch.material.model == data::MeshMaterialModel::MetallicRoughness;
+            SDL_GPUGraphicsPipeline* desiredPipeline = batch.legacyShadow
+                ? pipeline_.shadowHandle()
+                : modern ? (batch.material.doubleSided
+                    ? modernPipeline_->doubleSidedHandle() : modernPipeline_->handle())
+                : pipeline_.handle();
             if (desiredPipeline != boundPipeline)
             {
                 SDL_BindGPUGraphicsPipeline(pass, desiredPipeline);
@@ -392,10 +426,42 @@ namespace monopoly::engine
             vertexUniforms.spotlightPhi =
                 {lighting_.spotlight.phi, 0.0F, 0.0F, 0.0F};
 
-            SDL_PushGPUVertexUniformData(commandBuffer, 0U,
-                &vertexUniforms, static_cast<Uint32>(sizeof(vertexUniforms)));
-            SDL_PushGPUFragmentUniformData(commandBuffer, 0U,
-                &fragmentUniforms, static_cast<Uint32>(sizeof(fragmentUniforms)));
+            if (modern)
+            {
+                ModernPBRVertexUniforms modernVertex;
+                modernVertex.worldViewProjection = worldViewProjection.values;
+                modernVertex.world = batch.worldTransform.values;
+                ModernPBRFragmentUniforms modernFragment;
+                modernFragment.baseColor = batch.material.diffuse;
+                const bool targetSRGB = colorFormat_ == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB ||
+                    colorFormat_ == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB;
+                modernFragment.metallicRoughness = {batch.material.metallic,
+                    batch.material.roughness, targetSRGB ? 1.0F : 0.0F, 0.0F};
+                modernFragment.emissiveStrength = vector4(
+                    batch.material.emissive, batch.material.emissiveStrength);
+                modernFragment.cameraPosition = vector4(projection.camera.location, 1.0F);
+                modernFragment.sceneAmbient = vertexUniforms.sceneAmbient;
+                modernFragment.boardReflectionColorEnabled = vertexUniforms.boardReflectionColorEnabled;
+                modernFragment.boardReflectionDirection = vertexUniforms.boardReflectionDirection;
+                modernFragment.sunColorEnabled = vertexUniforms.sunColorEnabled;
+                modernFragment.sunDirection = vertexUniforms.sunDirection;
+                modernFragment.spotlightColorEnabled = vertexUniforms.spotlightColorEnabled;
+                modernFragment.spotlightPositionRange = vertexUniforms.spotlightPositionRange;
+                modernFragment.spotlightDirectionFalloff = vertexUniforms.spotlightDirectionFalloff;
+                modernFragment.spotlightAttenuationTheta = vertexUniforms.spotlightAttenuationTheta;
+                modernFragment.spotlightPhi = vertexUniforms.spotlightPhi;
+                SDL_PushGPUVertexUniformData(commandBuffer, 0U,
+                    &modernVertex, static_cast<Uint32>(sizeof(modernVertex)));
+                SDL_PushGPUFragmentUniformData(commandBuffer, 0U,
+                    &modernFragment, static_cast<Uint32>(sizeof(modernFragment)));
+            }
+            else
+            {
+                SDL_PushGPUVertexUniformData(commandBuffer, 0U,
+                    &vertexUniforms, static_cast<Uint32>(sizeof(vertexUniforms)));
+                SDL_PushGPUFragmentUniformData(commandBuffer, 0U,
+                    &fragmentUniforms, static_cast<Uint32>(sizeof(fragmentUniforms)));
+            }
 
             const SDL_GPUBufferBinding vertexBinding{batch.vertexBuffer, 0U};
             const SDL_GPUBufferBinding indexBinding{batch.indexBuffer, 0U};
@@ -406,7 +472,7 @@ namespace monopoly::engine
             const SDL_GPUTextureSamplerBinding textureBinding{
                 batch.gpuTexture != nullptr ? batch.gpuTexture : whiteTexture_,
                 bilinearFiltering_ ? linearSampler_ : textureSampler_};
-            SDL_BindGPUFragmentSamplers(pass, 0U, &textureBinding, 1U);
+            if (!modern) SDL_BindGPUFragmentSamplers(pass, 0U, &textureBinding, 1U);
 
             SDL_DrawGPUIndexedPrimitives(pass,
                 batch.indexCount, 1U, batch.firstIndex, 0, 0U);

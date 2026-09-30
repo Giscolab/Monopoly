@@ -37,7 +37,8 @@ namespace monopoly::engine
         [[nodiscard]] static std::expected<World3DShaderSet,
             World3DShaderError> load(
                 SDL_GPUDevice* device,
-                const std::filesystem::path& shaderDirectory);
+                const std::filesystem::path& shaderDirectory,
+                bool modernPBR = false);
 
         [[nodiscard]] SDL_GPUShader* vertex() const noexcept
         { return vertex_; }
