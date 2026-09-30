@@ -56,28 +56,50 @@ namespace monopoly::data
         }
 
 
+        [[nodiscard]] fastgltf::math::fvec3 rotateAroundY(
+            fastgltf::math::fvec3 value,
+            float yawDegrees) noexcept
+        {
+            constexpr float DegreesToRadians =
+                3.14159265358979323846F / 180.0F;
+            const float angle = yawDegrees * DegreesToRadians;
+            const float sine = std::sin(angle);
+            const float cosine = std::cos(angle);
+            return fastgltf::math::fvec3(
+                cosine * value[0] + sine * value[2],
+                value[1],
+                -sine * value[0] + cosine * value[2]);
+        }
+
+
         [[nodiscard]] fastgltf::math::fvec3 transformPosition(
             const fastgltf::math::fmat4x4& world,
             fastgltf::math::fvec3 position,
-            float unitsPerMeter) noexcept
+            float unitsPerMeter,
+            float yawDegrees) noexcept
         {
-            auto transformed = world * fastgltf::math::fvec4(
+            const auto transformed = world * fastgltf::math::fvec4(
                 position[0], position[1], position[2], 1.0F);
-            return fastgltf::math::fvec3(
-                transformed[0] * unitsPerMeter,
-                transformed[1] * unitsPerMeter,
-                transformed[2] * unitsPerMeter);
+            auto rotated = rotateAroundY(
+                fastgltf::math::fvec3(
+                    transformed[0],
+                    transformed[1],
+                    transformed[2]),
+                yawDegrees);
+            return rotated * unitsPerMeter;
         }
 
 
         [[nodiscard]] fastgltf::math::fvec3 transformNormal(
             const fastgltf::math::fmat4x4& world,
-            fastgltf::math::fvec3 normal) noexcept
+            fastgltf::math::fvec3 normal,
+            float yawDegrees) noexcept
         {
             const auto normalMatrix = fastgltf::math::transpose(
                 fastgltf::math::inverse(
                     fastgltf::math::fmat3x3(world)));
-            return fastgltf::math::normalize(normalMatrix * normal);
+            return fastgltf::math::normalize(
+                rotateAroundY(normalMatrix * normal, yawDegrees));
         }
 
 
@@ -276,9 +298,14 @@ namespace monopoly::data
                                     asset, normalAccessor, index);
 
                         const auto worldPosition = transformPosition(
-                            world, sourcePosition, options.unitsPerMeter);
-                        const auto worldNormal =
-                            transformNormal(world, sourceNormal);
+                            world,
+                            sourcePosition,
+                            options.unitsPerMeter,
+                            options.yawDegrees);
+                        const auto worldNormal = transformNormal(
+                            world,
+                            sourceNormal,
+                            options.yawDegrees);
 
                         auto& vertex = result->vertices[baseVertex + index];
                         vertex.position = {
@@ -373,6 +400,22 @@ namespace monopoly::data
             return std::unexpected(error(
                 MeshRuntimeErrorCode::NoRenderableGeometry,
                 "modern GLB contains no renderable triangle geometry"));
+
+        std::array<float, 3> offset = options.localOffset;
+        if (options.groundToZero)
+            offset[1] -= result->bounds.minimum[1];
+
+        if (offset != std::array<float, 3>{})
+        {
+            for (auto& vertex : result->vertices)
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    vertex.position[axis] += offset[axis];
+            for (std::size_t axis = 0; axis < 3; ++axis)
+            {
+                result->bounds.minimum[axis] += offset[axis];
+                result->bounds.maximum[axis] += offset[axis];
+            }
+        }
 
         return std::const_pointer_cast<const MeshRenderData>(result);
     }

@@ -14,6 +14,12 @@ namespace monopoly::data
         std::uint8_t token{};
         std::string_view slug;
         std::string_view relativeGlbPath;
+        // Authoring calibration. Existing six tokens are height-matched to a
+        // representative retail HMD; missing assets keep the board-scale seed
+        // until they are authored and measured.
+        float unitsPerMeter{20.25F};
+        float yawDegrees{-90.0F};
+        std::array<float, 3> localOffset{};
     };
 
     inline constexpr std::size_t ModernTokenCount = 11;

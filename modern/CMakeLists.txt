@@ -353,6 +353,25 @@ if(MSVC)
     )
 endif()
 
+add_executable(
+    MonopolyModernAssetProbe
+    src/ModernAssetProbe.cpp
+)
+target_link_libraries(
+    MonopolyModernAssetProbe
+    PRIVATE
+    MonopolyDataCore
+)
+if(MSVC)
+    target_compile_options(
+        MonopolyModernAssetProbe
+        PRIVATE
+        /W4
+        /permissive-
+        /utf-8
+    )
+endif()
+
 # Offline resource assembly. No SDL window, no changes under Source/ and no
 # automatic installation of incomplete archives into the runtime data root.
 add_executable(MonopolyArchiveTool

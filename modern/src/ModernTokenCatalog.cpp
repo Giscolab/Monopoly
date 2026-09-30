@@ -6,17 +6,17 @@ namespace monopoly::data
     {
         constexpr std::array<ModernTokenDefinition, ModernTokenCount>
             Definitions{{
-                {0, "cannon", "assets/modern/tokens/cannon.glb"},
-                {1, "race_car", "assets/modern/tokens/race_car.glb"},
-                {2, "dog", "assets/modern/tokens/dog.glb"},
-                {3, "top_hat", "assets/modern/tokens/top_hat.glb"},
-                {4, "iron", "assets/modern/tokens/iron.glb"},
-                {5, "horse", "assets/modern/tokens/horse.glb"},
-                {6, "boot", "assets/modern/tokens/boot.glb"},
-                {7, "ship", "assets/modern/tokens/ship.glb"},
-                {8, "thimble", "assets/modern/tokens/thimble.glb"},
-                {9, "wheelbarrow", "assets/modern/tokens/wheelbarrow.glb"},
-                {10, "moneybag", "assets/modern/tokens/moneybag.glb"},
+                {0, "cannon", "assets/modern/tokens/cannon.glb", 20.25F, -90.0F, {}},
+                {1, "race_car", "assets/modern/tokens/race_car.glb", 122.94F, -90.0F, {-2.0F, 0.0F, 13.02F}},
+                {2, "dog", "assets/modern/tokens/dog.glb", 154.80F, -90.0F, {-0.5F, 0.0F, 17.06F}},
+                {3, "top_hat", "assets/modern/tokens/top_hat.glb", 86.15F, -90.0F, {}},
+                {4, "iron", "assets/modern/tokens/iron.glb", 20.25F, -90.0F, {}},
+                {5, "horse", "assets/modern/tokens/horse.glb", 20.25F, -90.0F, {}},
+                {6, "boot", "assets/modern/tokens/boot.glb", 181.06F, -90.0F, {0.0F, 0.0F, 25.94F}},
+                {7, "ship", "assets/modern/tokens/ship.glb", 87.55F, -90.0F, {0.0F, 0.0F, 6.63F}},
+                {8, "thimble", "assets/modern/tokens/thimble.glb", 130.89F, -90.0F, {}},
+                {9, "wheelbarrow", "assets/modern/tokens/wheelbarrow.glb", 20.25F, -90.0F, {}},
+                {10, "moneybag", "assets/modern/tokens/moneybag.glb", 20.25F, -90.0F, {}},
             }};
 
         [[nodiscard]] constexpr bool inRange(

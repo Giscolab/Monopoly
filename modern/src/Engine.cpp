@@ -1017,7 +1017,14 @@ namespace monopoly::engine
                     return std::optional<
                         std::shared_ptr<const data::MeshRenderData>>{};
 
-                auto loaded = data::loadModernGltfMesh(path);
+                data::ModernGltfLoadOptions loadOptions;
+                loadOptions.unitsPerMeter = definition->unitsPerMeter;
+                loadOptions.yawDegrees = definition->yawDegrees;
+                loadOptions.localOffset = definition->localOffset;
+                loadOptions.groundToZero = true;
+                auto loaded = data::loadModernGltfMesh(
+                    path,
+                    loadOptions);
                 if (!loaded)
                 {
                     std::string diagnostic =

@@ -13,6 +13,11 @@ namespace monopoly::data
         // Initial Blender-board calibration: 486 legacy units / 24 metres.
         // Kept explicit until calibrated against retail HMD board bounds.
         float unitsPerMeter{20.25F};
+        // Rotation around glTF Y-up after node transforms. The recovered
+        // Blender tokens are authored lengthwise on X; retail pieces use Z.
+        float yawDegrees{};
+        std::array<float, 3> localOffset{};
+        bool groundToZero{};
         MeshRuntimeLimits limits{};
     };
 
