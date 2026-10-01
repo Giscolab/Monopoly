@@ -42,7 +42,9 @@ namespace monopoly::data
             std::uint32_t width, std::uint32_t height, bool transparent,
             std::uint8_t globalAlpha = 255);
         [[nodiscard]] std::expected<void, std::string> update(
-            DataId id, LegacyBitmapRGBA8 image);
+            DataId id, LegacyBitmapRGBA8 image,
+            std::optional<std::array<float, 4>> presentationRect = {},
+            bool preferLinearFiltering = false);
         [[nodiscard]] std::expected<void, std::string> fill(
             DataId id, std::int32_t x, std::int32_t y,
             std::int32_t width, std::int32_t height,
@@ -72,6 +74,9 @@ namespace monopoly::data
             bool colourKeyTransparent{};
             std::uint8_t globalAlpha{255};
             std::shared_ptr<const BitmapRuntimeAsset> published;
+            RuntimeBitmapExtent logicalExtent{};
+            std::optional<std::array<float, 4>> presentationRect;
+            bool preferLinearFiltering{};
         };
 
         void publish(DataId id, Surface& surface);

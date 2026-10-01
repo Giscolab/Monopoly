@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <cmath>
 
 namespace monopoly::data
 {
@@ -119,7 +120,8 @@ namespace monopoly::data
         }
 
         surface.published = std::make_shared<const BitmapRuntimeAsset>(
-            BitmapRuntimeAsset{id, LegacyDataType::Native, {}, std::move(image)});
+            BitmapRuntimeAsset{id, LegacyDataType::Native, {}, std::move(image),
+                surface.preferLinearFiltering, surface.presentationRect});
     }
 
     std::expected<DataId, std::string> RuntimeBitmapStore::create(
@@ -146,23 +148,40 @@ namespace monopoly::data
             image.pixels[offset + 3U] = transparent ? 0 : 255;
         }
 
-        Surface surface{std::move(image), transparent, globalAlpha, {}};
+        Surface surface{std::move(image), transparent, globalAlpha, {}, {width,height}};
         publish(id, surface);
         surfaces_.emplace(id, std::move(surface));
         return id;
     }
 
     std::expected<void, std::string> RuntimeBitmapStore::update(
-        DataId id, LegacyBitmapRGBA8 image)
+        DataId id, LegacyBitmapRGBA8 image,
+        std::optional<std::array<float, 4>> presentationRect,
+        bool preferLinearFiltering)
     {
         const auto found = surfaces_.find(id);
         if (found == surfaces_.end())
             return std::unexpected("runtime bitmap DataID is not allocated");
-        if (!validImage(image) ||
-            image.width != found->second.baseImage.width ||
-            image.height != found->second.baseImage.height)
+        const auto logical = found->second.logicalExtent;
+        if (!validImage(image) || std::uint64_t(image.width) * image.height > 16U * 1024U * 1024U)
+            return std::unexpected("runtime bitmap replacement extent mismatch");
+        if (presentationRect)
+        {
+            // Presentation may supersample the allocated surface, but never
+            // move or resize its original logical rectangle.
+            const auto& rect = *presentationRect;
+            const unsigned scale = image.width / logical.width;
+            if (!std::ranges::all_of(rect, [](float v) { return std::isfinite(v); }) ||
+                rect != std::array<float,4>{0,0,float(logical.width),float(logical.height)} ||
+                scale < 1 || scale > 4 || image.width != logical.width * scale ||
+                image.height != logical.height * scale)
+                return std::unexpected("invalid runtime bitmap presentation extent");
+        }
+        else if (image.width != logical.width || image.height != logical.height || preferLinearFiltering)
             return std::unexpected("runtime bitmap replacement extent mismatch");
 
+        found->second.presentationRect = presentationRect;
+        found->second.preferLinearFiltering = preferLinearFiltering;
         found->second.baseImage = std::move(image);
         publish(id, found->second);
         return {};
@@ -251,8 +270,7 @@ namespace monopoly::data
         const auto found = surfaces_.find(id);
         if (found == surfaces_.end())
             return std::nullopt;
-        return RuntimeBitmapExtent{
-            found->second.baseImage.width, found->second.baseImage.height};
+        return found->second.logicalExtent;
     }
 
     std::optional<std::uint8_t> RuntimeBitmapStore::globalAlpha(

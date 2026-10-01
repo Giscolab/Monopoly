@@ -586,6 +586,30 @@ namespace
         require(ink>100 && pixel(pixels,539,200)==black && pixel(pixels,600,357)==black,
             "real GPU canonical deed text is visible and never expands outside its authored rectangle");
         writePpm(std::filesystem::path(SDL_GetBasePath())/"modern-deed-qualified.ppm",pixels,800,600);
+        skin->configureDeedPlacementProvider([](data::DataId, std::uint16_t,
+            const sequence::Matrix2D& raster) -> std::optional<std::array<float,4>>
+        { return std::array<float,4>{601.37665F-raster.values[6], -raster.values[7],
+            798.62335F-raster.values[6], 225.0F-raster.values[7]}; });
+        item.worldTransform=sequence::translate2D(20,110);item.priority=1002;
+        require(slot.sync({item},cache).has_value() && slot.find(1)->asset->presentationRect &&
+            slot.find(1)->clock==37 && slot.find(1)->priority==1002,
+            "purchase presentation relocates through production slot without clock or priority changes");
+        const auto relocated=capture(device,renderer,slot);
+        require(pixel(relocated,30,130)==black && pixel(relocated,650,50)!=black &&
+            pixel(relocated,800,100)==black,
+            "real GPU pending deed occupies the right Trade panel and clears former instruction overlap");
+        item.priority=1003;
+        require(slot.sync({item},cache).has_value() && !slot.find(1)->asset->presentationRect,
+            "hover priority retains authored placement even with purchase provider installed");
+        item.priority=1002;item.metadata.originX=1;
+        require(slot.sync({item},cache).has_value() && !slot.find(1)->asset->presentationRect,
+            "unmeasured nonzero-origin deed falls back to authored placement");
+        item.metadata.originX=0;item.bounds=data::Sequence2DBoundingBoxAttribute{{},0,0,199,227};
+        require(slot.sync({item},cache).has_value() && !slot.find(1)->asset->presentationRect,
+            "explicit CNK bounds retain original mapping rather than raw purchase relocation");
+        item.bounds.reset();
+        skin->configureDeedPlacementProvider({});
+        item.worldTransform=sequence::translate2D(540,130);item.priority=1003;
         // Stress a supplied70-word body; this is qualification text, never a
         // replacement for a licensed card/catalog transcription.
         std::string body;

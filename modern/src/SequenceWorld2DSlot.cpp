@@ -130,7 +130,9 @@ namespace monopoly::engine
             const auto rasterWorld = sequence::multiply(raster,item.worldTransform);
             const bool menuOwner = modernMenuSkin_ && modernMenuSkin_->supports(owner.first);
             auto replacement = menuOwner ? modernMenuSkin_->substitute(owner.first, assets.at(node), true) :
-                modernSkin_->substitute(owner.first, assets.at(node), true, rasterWorld);
+                modernSkin_->substitute(owner.first, assets.at(node), true, rasterWorld,
+                    !item.bounds && item.metadata.originX == 0 && item.metadata.originY == 0 ?
+                        std::optional<std::uint16_t>{item.priority} : std::nullopt);
             if (replacement == assets.at(node)) continue;
             assets[node] = std::move(replacement);
             for (const auto& item : items)

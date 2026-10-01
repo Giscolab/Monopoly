@@ -1250,6 +1250,8 @@ namespace monopoly::engine
                     auto skin = std::make_shared<ibar::ModernIBarSkin>(
                         startup::resources()->context().language,
                         [rasterText](std::string_view text) { return rasterText(text, 12); });
+                    skin->configureTokenImages([tokenPreviews](std::uint8_t token)
+                        { return tokenPreviews->image(token,255); });
                     skin->configureLayoutProvider([] { return ibar::stateReadOnly().actionButtonLayout; });
                     skin->configurePresentationContext([]
                     {
@@ -1258,6 +1260,20 @@ namespace monopoly::engine
                         return snapshot && snapshot->context().board == data::BoardEdition::Usa &&
                             snapshot->context().language == data::LanguageId::EnglishUs &&
                             state.city == 0 && state.system == 13 && state.customBoardPath.empty();
+                    });
+                    skin->configureDeedPlacementProvider([](data::DataId root, std::uint16_t priority,
+                        const sequence::Matrix2D& raster) -> std::optional<std::array<float, 4>>
+                    {
+                        const auto& state = display::stateReadOnly();
+                        if (state.current2DView != display::Screen2D::Trade || priority != 1002 ||
+                            !root || root != iBarBackdropPlayback.buyAuctionPopupDeed()) return {};
+                        // Present the pending purchase inside the unused right-hand deed panel.
+                        // Preserve the retail popup node, lifetime, input routing and clock.
+                        const auto& m = raster.values;
+                        if (m[0] != 1 || m[1] != 0 || m[2] != 0 || m[3] != 0 ||
+                            m[4] != 1 || m[5] != 0 || m[8] != 1) return {};
+                        return std::array<float, 4>{601.37665F-m[6], -m[7],
+                            798.62335F-m[6], 225.0F-m[7]};
                     });
                     skin->configurePropertyDescriptors(
                         [](unsigned propertyIndex) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
@@ -2659,7 +2675,12 @@ namespace monopoly::engine
             const auto scoreTextSync = iBarScoreTextPlayback.sync(
                 *scorePlan, scoreTextStates, displayState.system,
                 resources ? resources->context().board : data::BoardEdition::Usa,
-                fontPlayback(), *session);
+                fontPlayback(), *session,
+                modernSceneOptions.proceduralBoard && resources &&
+                resources->context().board == data::BoardEdition::Usa &&
+                resources->context().language == data::LanguageId::EnglishUs &&
+                displayState.city == 0 && displayState.system == 13 &&
+                displayState.customBoardPath.empty());
             if (!scoreTextSync)
                 return SDL_SetError("IBar score text playback: %s",
                     scoreTextSync.error().c_str());
@@ -2996,7 +3017,8 @@ namespace monopoly::engine
             (presentationState.current2DView == display::Screen2D::Options ||
              presentationState.current2DView == display::Screen2D::PlayerSelect ||
              presentationState.current2DView == display::Screen2D::PlayerSelectRules ||
-             presentationState.current2DView == display::Screen2D::Auction);
+             presentationState.current2DView == display::Screen2D::Auction ||
+             presentationState.current2DView == display::Screen2D::Trade);
         const SDL_FColor backdrop = modernMenuBackdrop ?
             SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
         const auto presented=gpuframe::present(gpuDevice, gameWindow,

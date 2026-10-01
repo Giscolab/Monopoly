@@ -7,7 +7,7 @@ namespace monopoly::menu
 {
     namespace
     {
-        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame };
+        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground };
         struct Descriptor { Kind kind; std::string_view label; int colour{-1}; int token{-1}; };
         // Canonical six identities, matching BoardLightingController and ModernIBarSkin.
         constexpr std::array<std::array<unsigned, 3>, 6> PlayerColours{{
@@ -23,7 +23,17 @@ namespace monopoly::menu
                 for (unsigned token=0;token<TokenThumbnailFirstTags.size();++token)
                     if (data::dataTag(root)>=TokenThumbnailFirstTags[token] && data::dataTag(root)<=TokenThumbnailFirstTags[token]+2)
                         return Descriptor{Kind::TokenThumbnail, {}, -1, int(token)};
-            if (root == 0x00030000) return Descriptor{Kind::AuctionBackground, {}};
+            // Measured direct Main bitmaps; player text/deeds remain separate owners.
+            if (root >= 0x00020349 && root <= 0x0002034E)
+                return Descriptor{Kind::StatsPanel, {}, int(root - 0x00020349)};
+            if (root >= 0x0002034F && root <= 0x00020354)
+                return Descriptor{Kind::StatsPanel, {}, int(root - 0x0002034F)};
+            if (root == 0x0002006A) return Descriptor{Kind::CalculatorPanel, {}};
+            if (root == 0x00020091) return Descriptor{Kind::CalculatorDescription, {}};
+            if (root == 0x00050089) return Descriptor{Kind::StatsBackground, {}};
+            // Keep the authored auction stage until a complete modern stage replaces it.
+            // A flat shell removes the floor beneath the animated auctioneer.
+            if (root == 0x00030000) return {};
             if (root == 0x0003036F) return Descriptor{Kind::AuctionBottom, {}};
             if (root >= 0x00030370 && root <= 0x0003037B)
                 return Descriptor{Kind::AuctionPlayer, {}, int((root - 0x00030370) % 6)};
@@ -39,6 +49,13 @@ namespace monopoly::menu
             if (data::dataGroup(root) != data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics))
                 return {};
             const auto tag = data::dataTag(root);
+            if (tag == 0x02CD) return Descriptor{Kind::TradeBackground,{}};
+            if (tag == 0x02BB) return Descriptor{Kind::TradePanel,{}};
+            if (tag == 0x02CF || tag == 0x02D0) return Descriptor{Kind::TradeOffer,{}};
+            if (tag >= 0x02AD && tag <= 0x02BA) return Descriptor{Kind::TradeRail,{},int((tag-0x02AD)%7)};
+            if (tag == 0x02DF) return Descriptor{Kind::TradeTitle,"Trade this for this"};
+            if (tag == 0x01AF || tag == 0x01B1) return Descriptor{Kind::TradeButton,"Cancel"};
+            if (tag == 0x01B8 || tag == 0x01BA) return Descriptor{Kind::TradeButton,"Propose"};
             // EscapeConfirmationPlayback places separate Yes/No owners in the lower half.
             if (tag == 0x02F4) return Descriptor{Kind::Confirmation, "Are you sure?"};
             if (tag == 0x16BA) return Descriptor{Kind::Button, "Yes"};
@@ -145,6 +162,59 @@ namespace monopoly::menu
         if (descriptor.kind == Kind::PlayerCard &&
             (!principal || original->image.width != 97 || original->image.height != 110)) return original;
         const auto& source = original->image;
+        const bool trade = descriptor.kind == Kind::TradeBackground || descriptor.kind == Kind::TradePanel ||
+            descriptor.kind == Kind::TradeOffer || descriptor.kind == Kind::TradeRail ||
+            descriptor.kind == Kind::TradeTitle || descriptor.kind == Kind::TradeButton;
+        if (trade)
+        {
+            const auto tag=data::dataTag(root);
+            unsigned expectedTag=0,expectedWidth=0,expectedHeight=0;
+            if(descriptor.kind==Kind::TradeBackground)
+            {
+                const auto contents=data::dataTag(original->dataId);
+                if(contents!=0x11B2 && contents!=0x11B3 && contents!=0x11B4)return original;
+                expectedTag=contents;expectedWidth=contents==0x11B3?800:200;expectedHeight=225;
+            }
+            else
+            {
+                if(!principal)return original;
+                if(descriptor.kind==Kind::TradePanel){expectedTag=0x1159;expectedWidth=200;expectedHeight=225;}
+                if(descriptor.kind==Kind::TradeOffer)
+                {expectedTag=tag==0x02CF?0x115A:0x115B;expectedWidth=tag==0x02CF?194:197;expectedHeight=tag==0x02CF?218:223;}
+                if(descriptor.kind==Kind::TradeRail){expectedTag=0x114A+tag-0x02AD;expectedWidth=397;expectedHeight=222;}
+                if(descriptor.kind==Kind::TradeTitle){expectedTag=0x11EC;expectedWidth=390;expectedHeight=36;}
+                if(descriptor.kind==Kind::TradeButton){expectedTag=tag==0x01AF||tag==0x01B1?0x11DC:0x11E0;expectedWidth=101;expectedHeight=29;}
+            }
+            if(original->dataId!=data::packDataId(data::LegacyGroupId::LanguageGraphics,data::DataTag(expectedTag)) ||
+                source.width!=expectedWidth || source.height!=expectedHeight)return original;
+        }
+        const bool statsPanel = descriptor.kind == Kind::StatsPanel || descriptor.kind == Kind::CalculatorPanel ||
+            descriptor.kind == Kind::CalculatorDescription || descriptor.kind == Kind::StatsBackground;
+        if (statsPanel)
+        {
+            data::DataId expected = root;
+            unsigned width = 0, height = 0;
+            if (descriptor.kind == Kind::StatsBackground)
+            {
+                // Only measured leaves qualify, including their authored secondary instances.
+                // Other decorations and the separate board render slot stay untouched.
+                if (original->dataId == 0x00050914) { width = 800; height = 225; }
+                else if (original->dataId == 0x00050913) { width = 400; height = 225; }
+                else if (original->dataId == 0x00050916) { width = 399; height = 3; }
+                else return original;
+                expected = original->dataId;
+            }
+            else
+            {
+                if (!principal) return original;
+                if (descriptor.kind == Kind::StatsPanel)
+                { const bool large = root <= 0x0002034E; width = large ? 198 : 130; height = large ? 222 : 226; }
+                else if (descriptor.kind == Kind::CalculatorPanel)
+                { expected = 0x00020324; width = 199; height = 208; }
+                else { expected = 0x0002035A; width = 188; height = 209; }
+            }
+            if (original->dataId != expected || source.width != width || source.height != height) return original;
+        }
         const bool tokenOwner = descriptor.kind == Kind::TokenPreview || descriptor.kind == Kind::TokenThumbnail ||
             descriptor.kind == Kind::TokenFrame;
         if (tokenOwner && !principal) return original;
@@ -163,10 +233,14 @@ namespace monopoly::menu
         if (auction)
         {
             if (!principal) return original;
+            // Exact retail DAT raster extents vary by player colour; layout width is independent.
+            constexpr std::array<std::array<unsigned,2>,12> playerSizes{{
+                {200,92},{201,90},{200,91},{200,91},{200,92},{200,91},
+                {133,90},{134,90},{134,90},{134,90},{134,90},{134,90}}};
             const unsigned expectedWidth = descriptor.kind == Kind::AuctionBackground || descriptor.kind == Kind::AuctionBottom ? 800 :
-                descriptor.kind == Kind::AuctionPlayer ? (root < 0x00030376 ? 200 : 134) : 110;
-            const unsigned expectedHeight = descriptor.kind == Kind::AuctionBackground ? 600 :
-                descriptor.kind == Kind::AuctionBottom ? 150 : descriptor.kind == Kind::AuctionPlayer ? 90 : 27;
+                descriptor.kind == Kind::AuctionPlayer ? playerSizes[root-0x00030370][0] : 110;
+            const unsigned expectedHeight = descriptor.kind == Kind::AuctionBackground ? 450 :
+                descriptor.kind == Kind::AuctionBottom ? 150 : descriptor.kind == Kind::AuctionPlayer ? playerSizes[root-0x00030370][1] : 27;
             if (source.width != expectedWidth || source.height != expectedHeight) return original;
         }
         if (!source.width || !source.height || source.width > 800 || source.height > 600 ||
@@ -194,7 +268,7 @@ namespace monopoly::menu
         else
         {
             image = {source.width * 3, source.height * 3, std::vector<std::uint8_t>(source.pixels.size() * 9, 0)};
-            if (principal)
+            if (principal || descriptor.kind == Kind::TradeBackground || descriptor.kind == Kind::StatsBackground)
             {
                 const auto w = image.width, h = image.height;
                 const bool selectedThumbnail = descriptor.kind == Kind::TokenThumbnail &&
@@ -210,10 +284,11 @@ namespace monopoly::menu
                             descriptor.kind == Kind::SelectedToggle ||
                             selectedThumbnail;
                         const bool background = descriptor.kind == Kind::Background || descriptor.kind == Kind::Pattern ||
-                            descriptor.kind == Kind::AuctionBackground;
+                            descriptor.kind == Kind::AuctionBackground || descriptor.kind == Kind::TradeBackground ||
+                            descriptor.kind == Kind::StatsBackground;
                         const bool rim = background ? x < 9 || y < 9 || x + 9 >= w || y + 9 >= h :
                             x < 3 || y < 3 || x + 3 >= w || y + 3 >= h;
-                        const bool rounded = descriptor.kind == Kind::Button &&
+                        const bool rounded = (descriptor.kind == Kind::Button || descriptor.kind == Kind::TradeButton) &&
                             (x < 9 || x + 9 >= w) && (y < 9 || y + 9 >= h);
                         if (rounded) continue;
                         const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
@@ -232,7 +307,7 @@ namespace monopoly::menu
                         }
                         if (descriptor.kind == Kind::AuctionPlayer)
                         {
-                            const unsigned bandX = source.width == 200 ? 99 : 0;
+                            const unsigned bandX = root < 0x00030376 ? 99 : 0;
                             if (x >= bandX && x < bandX + 402 && ((y >= 30 && y < 120) || (y >= 165 && y < 255)))
                             {
                                 image.pixels[offset] = 245; image.pixels[offset+1] = 235;
@@ -243,6 +318,14 @@ namespace monopoly::menu
                                 for (unsigned c = 0; c < 3; ++c)
                                     image.pixels[offset+c] = std::uint8_t(PlayerColours[descriptor.colour][c]);
                         }
+                        if (descriptor.kind == Kind::StatsPanel && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
+                            for (unsigned c = 0; c < 3; ++c)
+                                image.pixels[offset+c] = std::uint8_t(PlayerColours[descriptor.colour][c]);
+                        if (descriptor.kind == Kind::TradeRail && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
+                            for (unsigned c = 0; c < 3; ++c) image.pixels[offset+c] = std::uint8_t(
+                                descriptor.colour < 6 ? PlayerColours[descriptor.colour][c] : std::array<unsigned,3>{130,145,143}[c]);
+                        if (descriptor.kind == Kind::TradeOffer || statsPanel)
+                            image.pixels[offset+3] = source.pixels[(std::size_t(y/3)*source.width+x/3)*4+3];
                         if (!rim && photo)
                         {
                             const auto px = std::min(photo->width - 1, unsigned((x + photoOffsetX) / cover));

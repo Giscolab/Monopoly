@@ -23,7 +23,7 @@ namespace monopoly::ibar
             int monetarySystem,
             data::BoardEdition edition,
             fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool presentation = false);
 
         void reset() noexcept;
 

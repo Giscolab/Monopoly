@@ -144,6 +144,37 @@ namespace
         expect(store.size() == 0, "runtime surface clear releases the registry");
     }
 
+    void testPresentationExtent()
+    {
+        using namespace monopoly;
+        data::RuntimeBitmapStore store;
+        const auto id=store.create(4,2,true);
+        expect(id.has_value(),"presentation test surface allocated");
+        if(!id)return;
+        const auto original=store.asset(*id);
+        data::LegacyBitmapRGBA8 sampled{12,6,std::vector<std::uint8_t>(288,255)};
+        const std::array<float,4> rect{0,0,4,2};
+        expect(store.update(*id,sampled,rect,true).has_value(),"explicit uniform3x presentation updates original surface");
+        const auto modern=store.asset(*id);
+        const auto logical=store.extent(*id);
+        expect(modern && modern->presentationRect==rect && modern->preferLinearFiltering &&
+            modern->image.width==12 && logical && logical->width==4 && logical->height==2 &&
+            original->image.width==4,"physical pixels change while logical extent and previous asset stay immutable");
+        expect(!store.update(*id,sampled) && store.asset(*id)==modern,
+            "unqualified supersampling retains extent mismatch and previous publication");
+        expect(!store.update(*id,sampled,std::array<float,4>{1,0,5,2},true) && store.asset(*id)==modern,
+            "presentation cannot relocate logical rectangle and rejects atomically");
+        data::LegacyBitmapRGBA8 stretched{12,4,std::vector<std::uint8_t>(192,255)};
+        expect(!store.update(*id,stretched,rect,true) && store.asset(*id)==modern,
+            "nonuniform presentation scale rejects atomically");
+        expect(store.setGlobalAlpha(*id,127).has_value() && store.asset(*id)->presentationRect==rect &&
+            store.asset(*id)->preferLinearFiltering && modern->image.pixels[3]==255,
+            "global alpha publication preserves presentation flags and retired lease");
+        expect(store.update(*id,original->image).has_value() && !store.asset(*id)->presentationRect &&
+            !store.asset(*id)->preferLinearFiltering && store.extent(*id)->width==4,
+            "native update restores original extent and clears presentation flags");
+    }
+
     void testPlaybackPublication()
     {
         using namespace monopoly;
@@ -221,6 +252,7 @@ int main()
               << "====================================\n";
     testStoreAndBlits();
     testPlaybackPublication();
+    testPresentationExtent();
     std::cout << "Runtime bitmap surface failures: " << failures << '\n';
     return failures == 0 ? 0 : 1;
 }

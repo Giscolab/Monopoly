@@ -67,9 +67,11 @@ namespace
             "options/rules backdrop has a neutral coherent frame");
         for (const auto root : {0x0002006BU, 0x0002006CU})
             require(skin.substitute(root, asset) != asset, "save slot shells support selected and idle states");
-        for (const auto root : {0x000502A7U, 0x0005008AU, 0xFFFE0001U, 0x0002006AU, 0x00050287U})
+        for (const auto root : {0x000502A7U, 0x0005008AU, 0xFFFE0001U, 0x00020069U, 0x00050287U})
             require(!skin.supports(root) && skin.substitute(root, asset) == asset,
-                "score tables, IBar buttons, runtime descriptions and unknown neighbors remain exact retail");
+                "unqualified Stats labels, IBar buttons, runtime descriptions and unknown neighbors remain exact retail");
+        require(skin.supports(0x0002006A) && skin.substitute(0x0002006A, asset) == asset,
+            "qualified calculator root still rejects an unmeasured leaf and raster footprint");
     }
     void testBackgroundAndNavigation()
     {
@@ -178,13 +180,16 @@ namespace
             [&](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{++captions;return label();});
         const std::array<std::array<unsigned,3>,6> colours{{{255,0,0},{0,0,255},{60,150,60},
             {255,255,0},{255,0,255},{255,128,0}}};
+        constexpr std::array<std::array<unsigned,2>,12> actualSizes{{
+            {200,92},{201,90},{200,91},{200,91},{200,92},{200,91},
+            {133,90},{134,90},{134,90},{134,90},{134,90},{134,90}}};
         for (unsigned size=0;size<2;++size)
             for (unsigned colour=0;colour<6;++colour)
             {
                 const auto root=0x00030370+size*6+colour;
-                const auto source=original(size?134:200,90);
+                const auto source=original(actualSizes[size*6+colour][0],actualSizes[size*6+colour][1]);
                 const auto panel=skin.substitute(root,source);
-                require(panel!=source && panel->image.width==source->image.width*3 && panel->image.height==270,
+                require(panel!=source && panel->image.width==source->image.width*3 && panel->image.height==source->image.height*3,
                     "exact six-color auction big/small shells keep intrinsic footprints");
                 const auto stripe=(std::size_t(6)*panel->image.width+6)*4;
                 for(unsigned c=0;c<3;++c) require(panel->image.pixels[stripe+c]==colours[colour][c],
@@ -197,27 +202,37 @@ namespace
                 }
                 require(skin.substitute(root,source,false)==source,
                     "auction secondary leaves preserve original immutable data");
-                const auto wrong=original(source->image.width,89);
+                const auto wrong=original(source->image.width,source->image.height-1);
                 require(skin.substitute(root,wrong)==wrong,"auction player wrong extent retains exact fallback");
             }
-        for (const auto spec : {std::array<unsigned,3>{0x00030000,800,600},
-            std::array<unsigned,3>{0x0003036F,800,150},std::array<unsigned,3>{0x00030384,110,27}})
+        for (const auto spec : {std::array<unsigned,3>{0x0003036F,800,150},std::array<unsigned,3>{0x00030384,110,27}})
         {
             const auto source=original(spec[1],spec[2]);
             const auto native=skin.substitute(spec[0],source);
             require(native!=source && native->image.width==spec[1]*3 && native->image.height==spec[2]*3 &&
                 skin.substitute(spec[0],source,false)==source,
-                "auction backdrop bottom and bidplate are exact shell-only substitutions");
+                "auction bottom and bidplate are exact shell-only substitutions");
             const auto wrong=original(spec[1],spec[2]-1);
             require(skin.substitute(spec[0],wrong)==wrong,"auction shell rejects unexpected geometry");
         }
+        const auto blue=skin.substitute(0x00030371,original(201,90));
+        const auto blueOutside=(std::size_t(45)*blue->image.width+90)*4;
+        const auto blueInside=(std::size_t(45)*blue->image.width+100)*4;
+        require(blue->image.pixels[blueOutside]!=245 && blue->image.pixels[blueInside]==245,
+            "201px blue large panel centers134px cream name band at native33 rather than selecting small-panel layout");
+        const auto authoredStage=original(800,450);
+        require(skin.substitute(0x00030000,authoredStage)==authoredStage,
+            "authored floor and auctioneer stage survive until a complete modern replacement exists");
+        const auto formerBackdrop=original(800,600);
+        require(skin.substitute(0x00030000,formerBackdrop)==formerBackdrop,
+            "unmeasured600px auction background is rejected in favor of actual800x450 BMP");
         require(captions==0,"auction values and heading remain in separate authored text surfaces");
         const auto tray=original(131,37);
         for(const auto root:{0x00030383U,0x0003037CU,0x0003036EU,0xFFFE0010U})
             require(skin.substitute(root,tray)==tray,"bill trays token-adjacent and native text remain untouched");
         menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,
             [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
-        const auto qualifiedExtent=original(200,90);
+        const auto qualifiedExtent=original(200,92);
         require(french.substitute(0x00030370,qualifiedExtent)==qualifiedExtent,
             "unqualified auction locale retains retail fallback with otherwise qualified extent");
     }
@@ -313,6 +328,161 @@ namespace
             "least recently used owner retires while current backdrop stays pinned by use");
     }
 
+    void testMeasuredTradePanels()
+    {
+        std::string caption;
+        const auto raster=[&](std::string_view value)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {caption=value;return label();};
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        auto measured=[](unsigned tag,unsigned w,unsigned h)
+        {
+            auto result=std::make_shared<data::BitmapRuntimeAsset>(*original(w,h));
+            result->dataId=0x00050000+tag;return result;
+        };
+        for(unsigned tag:{0x11B2U,0x11B3U,0x11B4U})
+        {
+            const auto source=measured(tag,tag==0x11B3?800:200,225);
+            for(bool principal:{true,false})
+            {
+                const auto panel=skin.substitute(0x000502CD,source,principal);
+                require(panel!=source && panel->image.width==source->image.width*3 && panel->image.height==675 &&
+                    panel->dataId==source->dataId && panel->image.pixels[3]==255,
+                    "all three exact Trade background leaves modernize without losing their authored placements");
+            }
+        }
+        const auto unknown=measured(0x11B5,200,225);
+        require(skin.substitute(0x000502CD,unknown,false)==unknown,
+            "unknown secondary Trade background leaves remain exact fallback");
+        struct Spec{unsigned root,contents,w,h;const char* label;};
+        for(const auto spec:{Spec{0x2BB,0x1159,200,225,""},Spec{0x2CF,0x115A,194,218,""},
+            Spec{0x2D0,0x115B,197,223,""},Spec{0x2DF,0x11EC,390,36,"Trade this for this"},
+            Spec{0x1AF,0x11DC,101,29,"Cancel"},Spec{0x1B1,0x11DC,101,29,"Cancel"},
+            Spec{0x1B8,0x11E0,101,29,"Propose"},Spec{0x1BA,0x11E0,101,29,"Propose"}})
+        {
+            const auto source=measured(spec.contents,spec.w,spec.h);
+            const auto panel=skin.substitute(0x00050000+spec.root,source);
+            require(panel!=source && panel->image.width==spec.w*3 && panel->image.height==spec.h*3 &&
+                skin.substitute(0x00050000+spec.root,source,false)==source,
+                "measured Trade panel/title/actions retain exact intrinsic footprint and secondary leaves");
+            if(*spec.label)require(caption==spec.label,"Trade baked title/button uses exact verified words");
+            const auto wrong=measured(spec.contents,spec.w,spec.h-1);
+            require(skin.substitute(0x00050000+spec.root,wrong)==wrong,
+                "Trade panel extent mismatch returns original immutable bitmap");
+        }
+        const auto alpha=measured(0x115A,194,218);
+        alpha->image.pixels[3]=0;alpha->image.pixels[7]=83;
+        const auto pane=skin.substitute(0x000502CF,alpha);
+        require(pane->image.pixels[3]==0 && pane->image.pixels[3*4+3]==83,
+            "offer pane retains source alpha so authored lower-priority wallets remain composited");
+        for(unsigned index=0;index<14;++index)
+        {
+            const auto source=measured(0x114A+index,397,222);
+            const auto panel=skin.substitute(0x000502AD+index,source);
+            require(panel!=source && panel->image.width==1191 && panel->image.height==666 &&
+                skin.substitute(0x000502AD+index,source,false)==source,
+                "six player rails plus neutral state per side keep original geometry and children");
+            const auto stripe=(std::size_t(6)*panel->image.width+6)*4;
+            constexpr std::array<std::array<unsigned,3>,7> colours{{{255,0,0},{0,0,255},{60,150,60},
+                {255,255,0},{255,0,255},{255,128,0},{130,145,143}}};
+            for(unsigned c=0;c<3;++c)require(panel->image.pixels[stripe+c]==colours[index%7][c],
+                "Trade stripe keeps each canonical player identity and neutral unselected rail");
+        }
+        const auto source=measured(0x113B,114,27);
+        require(skin.substitute(0x000502AC,source)==source && skin.substitute(0xFFFE0123,source)==source &&
+            skin.substitute(0x000502CE,source)==source,"arrow dynamic values and contract controls remain untouched");
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        const auto background=measured(0x11B3,800,225);
+        require(french.substitute(0x000502CD,background)==background,
+            "Trade skin remains strictly USA/en-US even with measured regional-shared assets");
+    }
+
+    void testMeasuredStatsAndCalculatorPanels()
+    {
+        unsigned captions = 0;
+        const auto raster = [&](std::string_view)->std::expected<data::LegacyBitmapRGBA8, std::string>
+        { ++captions; return label(); };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa, data::LanguageId::EnglishUs, raster);
+        const auto measured = [](unsigned id, unsigned width, unsigned height)
+        {
+            auto asset = std::make_shared<data::BitmapRuntimeAsset>(*original(width, height));
+            asset->dataId = id;
+            for (std::size_t i = 3; i < asset->image.pixels.size(); i += 4)
+                asset->image.pixels[i] = std::uint8_t((i / 4) % 256);
+            return asset;
+        };
+        const auto verify = [&](unsigned root, const std::shared_ptr<data::BitmapRuntimeAsset>& source, bool principal)
+        {
+            const auto before = source->image.pixels;
+            const auto result = skin.substitute(root, source, principal);
+            require(result != source && result->dataId == source->dataId && result->preferLinearFiltering &&
+                result->image.width == source->image.width * 3 && result->image.height == source->image.height * 3,
+                "measured Stats/calculator shell preserves owner and native visual footprint at3x");
+            for (unsigned y = 0; y < result->image.height; ++y)
+                for (unsigned x = 0; x < result->image.width; ++x)
+                    require(result->image.pixels[(std::size_t(y) * result->image.width + x) * 4 + 3] ==
+                        source->image.pixels[(std::size_t(y / 3) * source->image.width + x / 3) * 4 + 3],
+                        "Stats/calculator transparent, partial and opaque coverage retains exact authored mask");
+            require(source->image.pixels == before && skin.substitute(root, source, principal) == result,
+                "panel substitution leaves immutable source untouched and reuses same owner cache");
+            return result;
+        };
+        constexpr std::array<std::array<unsigned,3>,6> colours{{{255,0,0},{0,0,255},{60,150,60},
+            {255,255,0},{255,0,255},{255,128,0}}};
+        for (unsigned colour = 0; colour < 6; ++colour)
+            for (const bool large : {false, true})
+            {
+                const unsigned root = (large ? 0x00020349 : 0x0002034F) + colour;
+                const auto source = measured(root, large ? 198 : 130, large ? 222 : 226);
+                const auto result = verify(root, source, true);
+                const auto stripe = (std::size_t(6) * result->image.width + 6) * 4;
+                for (unsigned channel = 0; channel < 3; ++channel)
+                    require(result->image.pixels[stripe + channel] == colours[colour][channel],
+                        "Stats top rail preserves each of six canonical player identities");
+                const auto center = (std::size_t(90) * result->image.width + 150) * 4;
+                require(result->image.pixels[center] < 90 && result->image.pixels[center + 1] < 90 &&
+                    result->image.pixels[center + 2] < 90,
+                    "Stats native white names remain legible over dark panel interior");
+                require(skin.substitute(root, source, false) == source,
+                    "Stats raw panel only qualifies principal owner; text and secondary children untouched");
+                const auto wrongLeaf = measured(root + 1, source->image.width, source->image.height);
+                const auto wrongSize = measured(root, source->image.width, source->image.height - 1);
+                require(skin.substitute(root, wrongLeaf) == wrongLeaf && skin.substitute(root, wrongSize) == wrongSize,
+                    "Stats wrong leaf or unmeasured dimensions keep exact fallback");
+            }
+        struct Spec { unsigned root, leaf, width, height; };
+        for (const auto spec : {Spec{0x0002006A,0x00020324,199,208},
+                               Spec{0x00020091,0x0002035A,188,209}})
+        {
+            const auto source = measured(spec.leaf, spec.width, spec.height);
+            verify(spec.root, source, true);
+            require(skin.substitute(spec.root, source, false) == source,
+                "Calculator frame excludes unqualified decorative siblings");
+            const auto wrongGroup = measured(spec.leaf + 0x10000, spec.width, spec.height);
+            require(skin.substitute(spec.root, wrongGroup) == wrongGroup,
+                "Calculator same-tag wrong namespace does not qualify");
+        }
+        for (const auto spec : {Spec{0x00050089,0x00050914,800,225},
+                               Spec{0x00050089,0x00050913,400,225},
+                               Spec{0x00050089,0x00050916,399,3}})
+            for (const bool principal : {false, true})
+                verify(spec.root, measured(spec.leaf, spec.width, spec.height), principal);
+        const auto unknown = measured(0x00050915,322,4);
+        require(skin.substitute(0x00050089, unknown, false) == unknown,
+            "Unresolved Stats background strip and unknown secondary leaves retain original pixels");
+        const auto panel = measured(0x00020349,198,222);
+        require(skin.substitute(0x00020348,panel) == panel && skin.substitute(0x00020355,panel) == panel &&
+            skin.substitute(0xFFFE0349,panel) == panel,
+            "Adjacent unknown roots and dynamic runtime score surfaces stay authored");
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        menu::ModernMenuSkin uk(data::BoardEdition::Usa,data::LanguageId::EnglishUk,raster);
+        require(french.substitute(0x00020349,panel) == panel && uk.substitute(0x00020349,panel) == panel,
+            "Measured shared Stats panels cannot bypass USA/en-US qualification");
+        auto malformed = measured(0x00020349,198,222); malformed->image.pixels.pop_back();
+        require(skin.substitute(0x00020349,malformed) == malformed,
+            "Malformed measured Stats bitmap returns immutable fallback before touching coverage");
+        require(captions == 0, "Stats and calculator dynamic names, cash and instructions are never rebaked into shells");
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -347,7 +517,7 @@ namespace
 }
 int main()
 {
-    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testActiveCacheRetention();
+    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testActiveCacheRetention();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

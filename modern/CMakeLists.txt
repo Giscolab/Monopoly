@@ -3969,6 +3969,17 @@ if(BUILD_TESTING)
     add_executable(MonopolyPlayerSelectionPlaybackTests tests/PlayerSelectionPlaybackTests.cpp
         src/PlayerSelectionPlayback.cpp src/PlayerSelectionHistory.cpp
         src/PlayerSetupFlow.cpp src/PlayerSetupSound.cpp src/RuleOptions.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
+    if(WIN32)
+        add_executable(MonopolyIBarScoreTextPlaybackTests tests/IBarScoreTextPlaybackTests.cpp
+            src/IBarScoreTextPlayback.cpp src/FontRuntime.cpp src/MoneyFormat.cpp)
+        target_include_directories(MonopolyIBarScoreTextPlaybackTests PRIVATE src tests)
+        target_link_libraries(MonopolyIBarScoreTextPlaybackTests PRIVATE
+            MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+        if(MSVC)
+            target_compile_options(MonopolyIBarScoreTextPlaybackTests PRIVATE /W4 /permissive-)
+        endif()
+        add_test(NAME Monopoly.IBarScoreTextPlayback COMMAND MonopolyIBarScoreTextPlaybackTests)
+    endif()
     add_executable(MonopolyStatsTextPlaybackTests tests/StatsTextPlaybackTests.cpp
         src/StatsTextPlayback.cpp src/StatsDeedPlayback.cpp src/StatsUI.cpp
         src/StatsCalculatorUI.cpp src/StatsCalculatorLogic.cpp src/AIUtility.cpp

@@ -126,3 +126,38 @@ clips artwork at x130 while preserving the actual x132 input boundary; moving
 press frames retain retail artwork. Measured real DAT dimensions and context
 cache fallback have focused tests. The next AI turn visibly constructed houses
 on the orange group; no rule or timing change was made.
+
+## Trade, auction, score and account-panel continuation
+
+The actual 1920x1080 game now uses matching teal/brass Trade shells, canonical
+player rails and readable offer controls. A pending purchase deed is presented
+in the unused right-hand Trade panel instead of hiding instructions. This is
+limited to the current zero-origin raw purchase bitmap at priority1002; hover
+priority1003, explicit CNK bounds, sequence clocks and gameplay remain authored.
+Compare `trade-pass09-after.jpg` and `trade-pass10-deed-fit.jpg` in the existing
+continuation capture directory. Settled real-game title:60.1 FPS.
+
+Score text uses blended3x actual font rasterization within its original logical
+184x32 footprint, preserving authoritative cash interpolation. Score icons use
+the same eleven actual GPU token thumbnails as the picker. Native bitmap update
+restores original geometry and filtering; unsupported context keeps retail.
+
+Auction panel extents were corrected using actual DAT measurements, including
+201x90 and200x92 variants. The flat-stage experiment was rejected after GPU
+inspection: it removed the floor beneath the animated auctioneer. The complete
+retail stage is retained until a complete modern replacement exists, while bid
+plates/player panels remain modern. `auction-pass10-stage-restored.jpg` shows
+the real scene at60.1 FPS, before the AI's successful$5 Park Place bid.
+
+Compare `status-pass10-before.jpg` and `status-pass11-panels.jpg`: same real
+Park Place state, Dog$67/human$683. Player panels and calculator frames now
+match the HUD and retain source alpha, dynamic text and canonical player rails.
+The old bottom tabs/calculator keys and pending-deed placement in Portfolio
+remain the next visible work. Title samples near menu transitions still dip;
+these screenshots do not establish a continuous minimum60 FPS guarantee.
+
+Targeted RuntimeBitmapSurface, ScoreTextPlayback, MenuSkin, IBarSkin and real
+World2D GPU tests passed. GPU qualification covers purchase relocation, hover
+priority isolation, nonzero-origin/explicit-bounds fallback, unchanged clocks
+and exact retail restoration after rasterization failure. No global suite was
+repeated. The procedural Blender authoring file and Source tree stay unchanged.

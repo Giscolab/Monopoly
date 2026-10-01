@@ -100,6 +100,16 @@ namespace monopoly::ibar
                         destination.pixels[dst+c] = std::uint8_t((ink * alpha + destination.pixels[dst+c] * (255-alpha) + 127) / 255);
                 }
         }
+        std::optional<unsigned> scoreToken(data::DataId root)
+        {
+            if (data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
+                data::dataTag(root) >= 0x01C0 && data::dataTag(root) <= 0x01CA)
+                return unsigned(data::dataTag(root) - 0x01C0);
+            return {};
+        }
+        constexpr std::array<std::array<unsigned,2>,11> ScoreTokenSizes{{
+            {53,29},{52,22},{39,29},{39,26},{39,26},{22,29},
+            {54,32},{47,28},{22,29},{49,20},{24,31}}};
         bool backdrop(data::DataId root)
         {
             return data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
@@ -112,6 +122,7 @@ namespace monopoly::ibar
     {
         const bool language = language_ == data::LanguageId::French ||
             language_ == data::LanguageId::EnglishUs || language_ == data::LanguageId::EnglishUk;
+        if (scoreToken(root)) return language_ == data::LanguageId::EnglishUs && tokenImages_ && presentationContext_;
         if (deedText_ && deeds_.contains(root)) return true;
         if (drawText_ && drawCards_.contains(root)) return true;
         return language && text_ && (backdrop(root) || (button(root).has_value() && layout_) || scoreColour(root).has_value() ||
@@ -120,11 +131,48 @@ namespace monopoly::ibar
 
     std::shared_ptr<const data::BitmapRuntimeAsset> ModernIBarSkin::substitute(
         data::DataId root, std::shared_ptr<const data::BitmapRuntimeAsset> original, bool principal,
-        std::optional<sequence::Matrix2D> rasterToWorld)
+        std::optional<sequence::Matrix2D> rasterToWorld, std::optional<std::uint16_t> priority)
     {
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
         if (!w || !h || w > 1600 || h > 600) return original;
+        if (const auto token = scoreToken(root))
+        {
+            if (!principal || original->dataId != root || w != ScoreTokenSizes[*token][0] ||
+                h != ScoreTokenSizes[*token][1] || !presentationContext_ || !presentationContext_() ||
+                original->image.pixels.size() != std::size_t(w)*h*4) return original;
+            const Key key{root,w,h,true,std::array<float,9>{},0,{}};
+            if (const auto found=cache_.find(key);found!=cache_.end())return found->second;
+            const auto source=tokenImages_(std::uint8_t(*token));
+            if (!source || source->width!=768 || source->height!=640 || source->pixels.size()!=std::size_t(768)*640*4)
+                return original;
+            unsigned left=768,top=640,right=0,bottom=0;
+            bool transparent=false;
+            for(unsigned y=0;y<640;++y)for(unsigned x=0;x<768;++x)
+            {
+                if(source->pixels[(std::size_t(y)*768+x)*4+3])
+                {left=std::min(left,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);}
+                else transparent=true;
+            }
+            if(!transparent || right<=left || bottom<=top)return original;
+            auto result=std::make_shared<data::BitmapRuntimeAsset>();
+            result->dataId=original->dataId;result->sourceType=data::LegacyDataType::Native;
+            result->preferLinearFiltering=true;
+            result->presentationRect=std::array<float,4>{0,0,float(w),float(h)};
+            auto& image=result->image;
+            image={w*3,h*3,std::vector<std::uint8_t>(std::size_t(w)*h*36,0)};
+            const double fit=std::min(double(image.width-6)/(right-left),double(image.height-6)/(bottom-top));
+            const unsigned iw=std::max(1U,unsigned((right-left)*fit)),ih=std::max(1U,unsigned((bottom-top)*fit));
+            const unsigned ox=(image.width-iw)/2,oy=(image.height-ih)/2;
+            for(unsigned y=0;y<ih;++y)for(unsigned x=0;x<iw;++x)
+            {
+                const auto src=(std::size_t(top+y*(bottom-top)/ih)*768+left+x*(right-left)/iw)*4;
+                const auto dst=(std::size_t(y+oy)*image.width+x+ox)*4;
+                std::copy_n(source->pixels.data()+src,4,image.pixels.data()+dst);
+            }
+            if(cache_.size()>=128)cache_.clear();
+            cache_.emplace(key,result);return result;
+        }
         const auto deed = deeds_.find(root);
         const auto draw = drawCards_.find(root);
         const bool fullCard = deed != deeds_.end() || draw != drawCards_.end();
@@ -134,6 +182,19 @@ namespace monopoly::ibar
         if (draw != drawCards_.end() && principal &&
             (w != draw->second.nativeWidth || h != draw->second.nativeHeight || w < 199 || h < 150 || w > 600 || h > 400 ||
              draw->second.title.empty() || draw->second.title.size()>128 || draw->second.body.empty())) return original;
+        std::optional<std::array<float,4>> deedPlacement;
+        if (deed != deeds_.end() && principal && priority == 1002 && rasterToWorld && deedPlacement_)
+        {
+            if (!std::ranges::all_of(rasterToWorld->values, [](float value){return std::isfinite(value);})) return original;
+            deedPlacement = deedPlacement_(root,*priority,*rasterToWorld);
+            if (deedPlacement)
+            {
+                const auto& rect = *deedPlacement;
+                if (!std::ranges::all_of(rect, [](float value){return std::isfinite(value);}) ||
+                    rect[2] <= rect[0] || rect[3] <= rect[1] || rect[2]-rect[0] > 800 || rect[3]-rect[1] > 600)
+                    return original;
+            }
+        }
         const auto b = !fullCard ? button(root) : std::optional<Button>{};
         if (b && presentationContext_ && !presentationContext_()) return original;
         layout::Rect band{0,0,int(w),int(h)};
@@ -176,7 +237,7 @@ namespace monopoly::ibar
                 std::clamp(int(std::ceil(right)),0,int(w)),std::clamp(int(std::ceil(bottom)),0,int(h))};
             if (band.right-band.left < 8 || band.bottom-band.top < 8) return original;
         }
-        const Key key{root, w, h, principal, b && rasterToWorld ? rasterToWorld->values : std::array<float,9>{}, activeLayout};
+        const Key key{root, w, h, principal, b && rasterToWorld ? rasterToWorld->values : std::array<float,9>{}, activeLayout, deedPlacement};
         if (const auto it = cache_.find(key); it != cache_.end()) return it->second;
         const auto p = property(root);
         std::optional<PropertyDescriptor> descriptor;
@@ -191,6 +252,7 @@ namespace monopoly::ibar
         result->dataId = original->dataId;
         result->sourceType = data::LegacyDataType::Native;
         result->preferLinearFiltering = true;
+        result->presentationRect = deedPlacement;
         auto& image = result->image;
         image = {w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 4)};
         if (fullCard)

@@ -38,11 +38,11 @@ namespace monopoly::ibar
             fonts::Settings settings_;
         };
 
-        [[nodiscard]] data::LegacyBitmapRGBA8 blankImage()
+        [[nodiscard]] data::LegacyBitmapRGBA8 blankImage(int scale)
         {
-            data::LegacyBitmapRGBA8 result{SurfaceWidth, SurfaceHeight, {}};
+            data::LegacyBitmapRGBA8 result{SurfaceWidth * scale, SurfaceHeight * scale, {}};
             result.pixels.assign(
-                static_cast<std::size_t>(SurfaceWidth) * SurfaceHeight * 4U, 0U);
+                static_cast<std::size_t>(result.width) * result.height * 4U, 0U);
             return result;
         }
 
@@ -51,9 +51,16 @@ namespace monopoly::ibar
             fonts::Runtime& fontRuntime,
             std::string_view text,
             int x,
-            int y)
+            int y, bool antialiased)
         {
             if (text.empty()) return {};
+            if (antialiased)
+            {
+                const auto rendered = fontRuntime.render(text, Black, true);
+                if (!rendered) return std::unexpected(rendered.error().detail);
+                return data::blitStraightRGBA8(destination, *rendered, x, y,
+                    data::BitmapBlitMode::SourceOver);
+            }
             const auto blitted = fontRuntime.blitText(
                 destination, text, x, y, Black);
             if (!blitted) return std::unexpected(blitted.error().detail);
@@ -79,8 +86,10 @@ namespace monopoly::ibar
         int monetarySystem,
         data::BoardEdition edition,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool presentation)
     {
+        const bool modern = presentation && edition == data::BoardEdition::Usa;
+        const int scale = modern ? 3 : 1;
         if (fontRuntime == nullptr || !fontRuntime->ready())
         {
             const bool anyVisible = std::any_of(plan.players.begin(), plan.players.end(),
@@ -118,7 +127,7 @@ namespace monopoly::ibar
             const bool large = desired.width == layout::ScoreBoxLargeWidth;
             const bool wideCurrency = monetarySystem == 2;
             const std::string key = name + '\n' + *cash + '\n' +
-                (large ? "L" : "S") + (wideCurrency ? "W" : "N");
+                (large ? "L" : "S") + (wideCurrency ? "W" : "N") + (modern ? "A" : "R");
 
             const bool contentChanged =
                 !cache_[player] || *cache_[player] != key;
@@ -127,26 +136,28 @@ namespace monopoly::ibar
                 FontSettingsGuard guard(*fontRuntime);
                 fontRuntime->setUnderline(false);
                 fontRuntime->setItalic(false);
-                if (const auto size = fontRuntime->setSize(large ? 11 : 7); !size)
+                if (const auto size = fontRuntime->setSize((large ? 11 : 7) * scale); !size)
                     return std::unexpected(size.error().detail);
                 fontRuntime->setWeight(large ? 600 : 400);
 
-                auto image = blankImage();
-                if (const auto drawn = draw(image, *fontRuntime, name, 57, 5); !drawn)
+                auto image = blankImage(scale);
+                if (const auto drawn = draw(image, *fontRuntime, name, 57 * scale, 5 * scale, modern); !drawn)
                     return drawn;
 
                 const int cashSize = large ? (wideCurrency ? 10 : 11) : 8;
-                if (const auto size = fontRuntime->setSize(cashSize); !size)
+                if (const auto size = fontRuntime->setSize(cashSize * scale); !size)
                     return std::unexpected(size.error().detail);
                 fontRuntime->setWeight(large ? 600 : 400);
                 const auto metrics = fontRuntime->measure(*cash);
                 if (!metrics) return std::unexpected(metrics.error().detail);
-                const int cashX = desired.width - metrics->width - 7;
-                if (const auto drawn = draw(image, *fontRuntime, *cash, cashX, 18); !drawn)
+                const int cashX = desired.width * scale - metrics->width - 7 * scale;
+                if (const auto drawn = draw(image, *fontRuntime, *cash, cashX, 18 * scale, modern); !drawn)
                     return drawn;
 
-                const auto updated = playback.runtimeBitmaps().update(
-                    *surfaces_[player], std::move(image));
+                const auto updated = modern
+                    ? playback.runtimeBitmaps().update(*surfaces_[player], std::move(image),
+                        std::array<float, 4>{0, 0, float(SurfaceWidth), float(SurfaceHeight)}, true)
+                    : playback.runtimeBitmaps().update(*surfaces_[player], std::move(image));
                 if (!updated) return std::unexpected(updated.error());
                 cache_[player] = key;
             }
