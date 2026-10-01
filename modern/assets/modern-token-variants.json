@@ -69,23 +69,27 @@
     "authoring_evidence": "Diagnostic modern/build/horse-idle-qualification/qualification.json: 182 exact retail controls, shared indexed topology, finite positive deformation Jacobians, reproducible fresh/repeat exports; diagnostic build artifacts are not shipped retail payloads"
   },
   "complete_catalog_checkpoint": {
-    "root_descriptors": 401,
-    "generic100_complete_recovered_roots": 399,
+    "root_descriptors": 608,
+    "generic100_complete_roots": 606,
     "original_dog_horse_idle_roots": 2,
-    "geometry_definitions": 55,
-    "reviewed_recovered_geometry_states": 49,
+    "geometry_definitions": 63,
+    "calibration_frames": 9,
+    "reviewed_author_geometry_states": 58,
     "horse_geometry_states": 6,
-    "cpu_qualification": "399 production roots; every tick and event paired to retail, disk endings, ending action zero, zero errors",
-    "cpu_report": "build/qualified-complete-production-20261001.json",
-    "observed_distinct_hmds": 29,
-    "gpu_qualification": "29 requested observed-state captures at 1920x1080 with PBR and studio environment enabled; gallery inspected",
-    "gpu_gallery": "build/expanded-token-gpu-qualification/29_production_states_gpu.png",
+    "geometry_overlap": "Horse representative0x80094 occurs in both reviewed58 and originalhorse6;63 distinct geometry definitions",
+    "cpu_qualification": "606 production roots; every tick and event paired to retail, disk endings, ending action zero, zero errors",
+    "cpu_report": "build/qualified-nine-profile-production-20261001.json",
+    "observed_distinct_hmds": 37,
+    "gpu_qualification": "37 requested observed-state captures at 1920x1080 with PBR and studio environment enabled; gallery inspected",
+    "gpu_gallery": "build/nine-profile-gpu-qualification/production_states_gpu.png",
     "publication": "Shared lazy immutable per-HMD ownership; transactional complete-root publication; failed states retain retail for the whole root; GPU rejection invalidates published and future uses",
     "grounding": "Raw canonical ship HMD 0x80018 and 0x8001B require shared rest grounding; other exported states are already grounded",
-    "offline_qualification": "Two fresh exports of six profiles; only 49 explicitly reviewed states stage; review hash rejection and three publication failure cases qualified; adjacent backups support cross-volume publication",
+    "offline_qualification": "Two fresh exports of nine profiles; only 58 explicitly reviewed states stage; clean CLI rendering fingerprints identical; previous49 and default12 exact hashes preserved; review rejection and transactional failure proof qualified",
+    "pipeline_report": "build/next-token-profile-diagnostics/pipeline_completion_proof.json",
+    "preservation_report": "build/old-variant-root-preservation.json: old401 roots,55 geometry paths/frames/grounding,7 calibration frames preserved;207 roots and8 geometry added",
     "catalog_generator": "modern/tools/generate_token_variant_catalog.py records source hashes, uses bounded build-only output and checks source consistency",
     "export_target": "MonopolyExportCompleteTokenVariants successfully executed with full dependencies; build/expanded-hotel-export-targets-20261001.log exit zero",
-    "diagnostic_profiles": "Opt-in moneybag, iron and horse97 utility profiles are not runtime-active at this checkpoint"
+    "additional_profiles": "Reviewed moneybag, iron and horse97 profiles are in the catalog; moneybag08/09 and thimbleCD remain excluded; 606 CPU roots and37 GPU states do not qualify continuous gameplay or all-frame visual fidelity"
   },
   "verification_boundary": "Production CPU timeline comparisons and requested observed-state GPU captures; no continuous gameplay animation, all-frame visual fidelity or glTF clips claim"
 }

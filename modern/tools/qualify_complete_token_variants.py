@@ -2,9 +2,10 @@
 
 Run with ordinary Python, not Blender's --python. Inputs are the recovered blend,
 existing base GLBs, production contracts (or their tool/retail-root inputs) and
-the production probe. Generated contracts include only the 49 reviewed states.
+the production probe. Generated contracts include only the 58 reviewed states.
 Two fresh Blender processes per token generate isolated candidates. Only the
-explicit 49 reviewed states below may be staged; thimble CD remains excluded.
+explicit 58 reviewed states below may be staged; thimble CD and moneybag08/09
+remain excluded. Additional profiles receive discrete face qualification.
 No DAT parser, retail geometry export, sequence activation or source edits occur.
 Failed runs retain diagnostics and leave staging untouched. Existing base and
 default ship/dog/horse assets are protected by before/after hashes.
@@ -28,9 +29,15 @@ REVIEWED_TAGS = {
     "ship": (0x18,0x19,0x1b,0x1c,0x1d,0x1e),
     "boot": (0xbf,0xc0,0xc1,0xc6,0xc8,0xc9,0xcb),
     "thimble": (0xcc,0xce),
+    "moneybag": (0x06,0x07,0x0c,0x0d),
+    "iron": (0xad,0xae,0xaf),
+    "horse": (0x94,0x97),
 }
-EXPECTED_TARGET_COUNTS = dict(race_car=5,dog=57,top_hat=3,ship=6,boot=8,thimble=5)
-VISUAL_EXCLUSIONS = {"thimble": {0xcd:"compressed dimple surface develops pronounced spikes"}}
+EXPECTED_TARGET_COUNTS = dict(race_car=5,dog=57,top_hat=3,ship=6,boot=8,thimble=5,moneybag=6,iron=3,horse=2)
+NEW_PROFILES = {"moneybag","iron","horse"}
+REPRESENTATIVE_RAW_Y = {"moneybag":-4,"iron":0,"horse":1}
+VISUAL_EXCLUSIONS = {"thimble": {0xcd:"compressed dimple surface develops pronounced spikes"},
+                     "moneybag": {0x08:"42 sampled folded vertices in reviewed diagnostics",0x09:"97 sampled folded vertices in reviewed diagnostics"}}
 PROBE_INVARIANTS = ("vertices","triangles","batches","base_color_map_bindings",
                     "metallic_roughness_map_bindings","normal_map_bindings",
                     "emissive_map_bindings","occlusion_map_bindings","unique_images")
@@ -40,10 +47,39 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def load_reviews(paths):
+    """Normalize existing manifests and the reviewed diagnostic states format."""
+    combined = {"tokens":{}}
+    for path in paths:
+        path = path.resolve()
+        document = json.loads(path.read_text(encoding="utf-8"))
+        tokens = document.get("tokens",{})
+        if "states" in document:
+            for state in document["states"]:
+                if not state["qualified"]:
+                    continue
+                slug,key = state["token"],f"0x{int(state['tag'],16):x}"
+                reference = path.parent/"first/tokens"/f"{slug}_variants"/f"pose_{int(key,16):04x}.glb"
+                tokens.setdefault(slug,{"files":{}})["files"][key] = {
+                    "sha256":state["sha256"],"production_probe":{"gltf":str(reference)}}
+        for slug,entry in tokens.items():
+            target = combined["tokens"].setdefault(slug,{"files":{}})["files"]
+            for key,state in entry["files"].items():
+                key = f"0x{int(key,16):x}"
+                if int(key,16) in VISUAL_EXCLUSIONS.get(slug,{}):
+                    continue
+                if key in target and target[key]["sha256"]!=state["sha256"]:
+                    raise RuntimeError(f"conflicting review bindings: {slug} {key}")
+                target[key] = state
+    return combined if paths else None
+
+
 def fingerprint_worker(paths_json,output_json):
     """Called inside Blender; reuse the existing GLB reader rather than duplicate it."""
     sys.path.insert(0,str(Path(__file__).resolve().parent/"blender"))
-    from export_ship_variants import read_glb
+    from export_ship_variants import read_glb,accessor
+    from export_token_variants import bake_node_transforms
+    import numpy as np
     def significant(value):
         if isinstance(value,dict):
             return {key:significant(item) for key,item in value.items()
@@ -52,11 +88,30 @@ def fingerprint_worker(paths_json,output_json):
             return [significant(item) for item in value]
         return value
     fingerprints = {}
-    for filename in json.loads(Path(paths_json).read_text(encoding="utf-8")):
+    request = json.loads(Path(paths_json).read_text(encoding="utf-8"))
+    filenames = request if isinstance(request,list) else request["paths"]
+    for filename in filenames:
         doc,binary = read_glb(Path(filename))
         canonical = json.dumps(significant(doc),sort_keys=True,separators=(",",":"),allow_nan=False).encode("utf-8")
         fingerprints[filename] = {"render_json_sha256":hashlib.sha256(canonical).hexdigest(),
                                   "binary_payload_sha256":hashlib.sha256(binary).hexdigest()}
+    if isinstance(request,dict):
+        checks = {}
+        for check in request["representative_checks"]:
+            base,base_binary = read_glb(Path(check["base"]),require_identity=False)
+            base,base_binary,_ = bake_node_transforms(base,base_binary)
+            rest,rest_binary = read_glb(Path(check["candidate"]))
+            def vectors(doc,binary,name):
+                return np.concatenate([accessor(doc,binary,primitive["attributes"][name])
+                                       for mesh in doc["meshes"] for primitive in mesh["primitives"]])
+            position_error = float(np.abs(vectors(base,base_binary,"POSITION")-vectors(rest,rest_binary,"POSITION")).max())*check["scale"]
+            normal_error = float(np.abs(vectors(base,base_binary,"NORMAL")-vectors(rest,rest_binary,"NORMAL")).max())
+            tolerance = 0 if check["slug"] in {"moneybag","iron"} else .001
+            if position_error>tolerance or normal_error>(0 if tolerance==0 else 2e-6):
+                raise RuntimeError(f"representative geometry/normal preservation failed: {check['slug']}")
+            checks[check["slug"]] = {"max_position_error_raw":position_error,"max_normal_component_error":normal_error,
+                                      "position_tolerance_raw":tolerance,"static_and_variant_floor_raw":check["floor"]}
+        fingerprints["representative_geometry_checks"] = checks
     Path(output_json).write_text(json.dumps(fingerprints,indent=2)+"\n",encoding="utf-8")
 
 
@@ -79,7 +134,8 @@ def probe(path,calibration,executable,log):
 
 def protected_snapshot(base_assets,output):
     return {path:digest(path) for root in {base_assets,output}
-            for path in (root/"tokens").rglob("*.glb") if not path.name.startswith("pose_")}
+            for path in (root/"tokens").rglob("*.glb") if not path.name.startswith("pose_") or
+            path.parent.name in {f"{slug}_variants" for slug in REVIEWED_TAGS if slug not in NEW_PROFILES}}
 
 
 def assert_preserved(snapshot):
@@ -135,11 +191,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("blender","source","base-assets","probe","output","work-dir"):
         parser.add_argument(f"--{name}",required=True,type=Path)
-    parser.add_argument("--contracts",type=Path,help="Existing six full-observed production contracts")
+    parser.add_argument("--contracts",type=Path,help="Existing production contracts for the nine profiles")
     parser.add_argument("--contract-tool",type=Path,help="Production TokenDeformationContract executable; paired with --retail-root")
     parser.add_argument("--retail-root",type=Path,help="Read-only retail runtime-data directory")
     parser.add_argument("--render",action="store_true",help="Fresh paired diagnostic pages on the first export pass")
-    parser.add_argument("--review-index",type=Path,help="Previous qualification index or staging manifest: bind exact hashes, or identical rendering fingerprints when provenance changes")
+    parser.add_argument("--review-index",type=Path,action="append",default=[],help="Repeatable: previous qualification index, diagnostic states index or staging manifest; bind hashes or rendering fingerprints")
     args = parser.parse_args()
     args.blender,args.source,args.base_assets,args.probe,args.output,args.work_dir = (
         value.resolve() for value in (args.blender,args.source,args.base_assets,args.probe,args.output,args.work_dir))
@@ -172,13 +228,13 @@ def main():
     for slug in REVIEWED_TAGS:
         inputs.extend([args.base_assets/"tokens"/f"{slug}.glb",args.contracts/f"{slug}_contract_production.json"])
     if any(not path.is_file() for path in inputs):
-        parser.error("all six base GLBs and production contracts must exist")
+        parser.error("all nine base GLBs and production contracts must exist")
     input_hashes = {path:digest(path) for path in inputs}
     snapshot = protected_snapshot(args.base_assets,args.output)
-    review = json.loads(args.review_index.read_text(encoding="utf-8")) if args.review_index else None
-    manifest = {"schema":1,"scope":"49 explicitly reviewed states; no sequence eligibility implied",
-                "visual_exclusions":{"thimble":{"0xcd":VISUAL_EXCLUSIONS["thimble"][0xcd]}},
-                "contract_scope":"reviewed49" if generated_contracts else "observed84",
+    review = load_reviews(args.review_index)
+    manifest = {"schema":1,"scope":"58 explicitly reviewed states; no sequence eligibility implied",
+                "visual_exclusions":{slug:{f"0x{tag:x}":reason for tag,reason in states.items()} for slug,states in VISUAL_EXCLUSIONS.items()},
+                "contract_scope":"reviewed58" if generated_contracts else "observed/contracts",
                 "fingerprint_policy":"canonical rendering JSON (excluding extras/names/generator/copyright) plus exact BIN payload; existing shared GLB reader",
                 "source_blend_sha256":digest(args.source),"tokens":{}}
     files = {}
@@ -197,6 +253,8 @@ def main():
                            "--contract-states","--allow-partial-qualification"]
                 if args.render and phase=="first":
                     command.append("--render")
+                if slug in NEW_PROFILES:
+                    command.append("--verify-faces")
                 invoke(command,run/f"{slug}-{phase}.log")
             first = json.loads((run/"first/qualification"/slug/"qualification.json").read_text(encoding="utf-8"))
             repeat = json.loads((run/"repeat/qualification"/slug/"qualification.json").read_text(encoding="utf-8"))
@@ -206,6 +264,8 @@ def main():
             if first["source_blend_sha256"]!=digest(args.source) or first["base_glb_sha256"]!=digest(base) or first["correspondence_sha256"]!=digest(contract):
                 raise RuntimeError(f"{slug} candidate provenance mismatch")
             calibration = first["shared_calibration"]
+            if slug in NEW_PROFILES and (calibration["offset"][1]!=REPRESENTATIVE_RAW_Y[slug] or calibration["ground_to_zero"]):
+                raise RuntimeError(f"{slug} shared representative ground/offset contract changed")
             base_metrics = probe(base,calibration,args.probe,run/f"{slug}-base-probe.log")
             entry = {"base_glb_sha256":digest(base),"contract_sha256":digest(contract),"calibration":calibration,
                      "observed_targets":len(first["poses"]),"numerical_exclusions":first["excluded_tags"],"files":{}}
@@ -214,6 +274,8 @@ def main():
                 pose = first["poses"].get(key,{})
                 if not pose.get("qualified") or pose["jacobian_det_min"]<.1 or pose["control_max_error_engine_units"]>1e-8 or pose["nonpositive_jacobian_vertices"] or pose["singular_jacobian_vertices"]:
                     raise RuntimeError(f"reviewed state no longer qualifies: {slug} {key}")
+                if tag in VISUAL_EXCLUSIONS.get(slug,{}) or (slug in NEW_PROFILES and (pose.get("discrete_face_folds")!=0 or pose.get("new_degenerate_faces")!=0)):
+                    raise RuntimeError(f"excluded or discretely folded state: {slug} {key}")
                 relative = Path("tokens")/f"{slug}_variants"/f"pose_{tag:04x}.glb"
                 candidate = run/"first"/relative
                 candidate_hash = digest(candidate)
@@ -235,14 +297,20 @@ def main():
                                       "bytes":candidate.stat().st_size,"jacobian_det_min":pose["jacobian_det_min"]}
             manifest["tokens"][slug] = entry
             print(f"{slug}: {len(tags)} reviewed states ready",flush=True)
-        if len(files)!=49 or any(digest(path)!=value for path,value in input_hashes.items()):
+        if len(files)!=58 or any(digest(path)!=value for path,value in input_hashes.items()):
             raise RuntimeError("qualification inputs changed or reviewed staging set is incomplete")
         fingerprint_inputs = run/"fingerprint-inputs.json"
         fingerprint_output = run/"render-fingerprints.json"
-        fingerprint_inputs.write_text(json.dumps(candidate_paths+[str(path) for path in review_paths.values()]),encoding="utf-8")
+        representative_checks = [{"slug":slug,"base":str(args.base_assets/"tokens"/f"{slug}.glb"),
+                                  "candidate":str(files[Path("tokens")/f"{slug}_variants"/f"pose_{REVIEWED_TAGS[slug][0]:04x}.glb"]),
+                                  "scale":manifest["tokens"][slug]["calibration"]["units_per_metre"],"floor":REPRESENTATIVE_RAW_Y[slug]}
+                                 for slug in sorted(NEW_PROFILES)]
+        fingerprint_inputs.write_text(json.dumps({"paths":candidate_paths+[str(path) for path in review_paths.values()],
+                                                 "representative_checks":representative_checks}),encoding="utf-8")
         invoke([args.blender,"--background","--python-exit-code","1","--python",Path(__file__).resolve(),"--","--fingerprint-worker",
                 fingerprint_inputs,fingerprint_output],run/"render-fingerprint.log")
         fingerprints = json.loads(fingerprint_output.read_text(encoding="utf-8"))
+        manifest["representative_geometry_checks"] = fingerprints["representative_geometry_checks"]
         for slug,entry in manifest["tokens"].items():
             for key,state in entry["files"].items():
                 current = fingerprints[str(files[Path(state["relative_path"])])]
@@ -256,6 +324,9 @@ def main():
                         raise RuntimeError(f"rendering geometry/material differs from review-index: {slug} {key}")
                     state["review_binding"] = "exact file hash" if previous["sha256"]==state["sha256"] else "identical render fingerprint; provenance-only JSON differences"
         assert_preserved(snapshot)
+        if any(output_path in snapshot and digest(candidate)!=snapshot[output_path]
+               for relative,candidate in files.items() for output_path in [args.output/relative]):
+            raise RuntimeError("existing recovered-six reviewed pose hashes would change")
         args.output.mkdir(parents=True,exist_ok=True)
         stage_transaction(files,manifest,args.output,run)
         assert_preserved(snapshot)

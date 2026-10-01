@@ -74,6 +74,63 @@ namespace
         }
     };
 
+    void testReviewedProfileExtension()
+    {
+        using namespace monopoly;
+        constexpr DataId Bag = 0x00080006, BagRoot = 0x000804D9;
+        constexpr DataId Iron = 0x000800AD, IronBent = 0x000800AE;
+        constexpr DataId IronSingle = 0x00080282, IronTriple = 0x00080283, IronFuture = 0x00080284;
+        constexpr DataId Horse = 0x00080094, HorseNew = 0x00080097;
+        constexpr DataId HorsePair = 0x000802E5, HorseSingle = 0x000802EA, HorseIdle = 0x000802FC;
+        constexpr auto Priority = pieces::Generic3DPriority;
+        Fixture fixture;
+        fixture.write(0, 0.F, false, "tokens/moneybag_variants/pose_0006.glb");
+        fixture.write(0, 0.F, false, "tokens/iron_variants/pose_00ad.glb");
+        fixture.write(0, .02F, false, "tokens/iron_variants/pose_00ae.glb");
+        ModernTokenVariantCache incomplete(fixture.root);
+        const auto bag = incomplete.resolve(Bag, BagRoot, Priority);
+        const auto iron = incomplete.resolve(Iron, IronSingle, Priority);
+        expect(bag && std::abs(bag->bounds.minimum[1] + 4.F) < .001F &&
+            iron && std::abs(iron->bounds.minimum[1]) < .001F,
+            "reviewed shared frames retain moneybag restY minus4 and iron restY zero without runtime regrounding");
+        expect(!incomplete.resolve(Iron, IronTriple, Priority) && incomplete.loadError(IronTriple) &&
+            bag == incomplete.resolve(Bag, BagRoot, Priority) && iron == incomplete.resolve(Iron, IronSingle, Priority),
+            "missing later iron state rejects its entire triple while disjoint iron and moneybag roots remain modern");
+        fixture.write(0, .03F, false, "tokens/iron_variants/pose_00af.glb");
+        expect(!incomplete.resolve(Iron, IronTriple, Priority), "new profile failure remains memoized after asset repair");
+        ModernTokenVariantCache complete(fixture.root);
+        const auto sharedIron = complete.resolve(Iron, IronTriple, Priority);
+        const auto bent = complete.resolve(IronBent, IronTriple, Priority);
+        expect(sharedIron && bent && sharedIron == complete.resolve(Iron, IronSingle, Priority) &&
+            complete.rejectPack(bent.get()) && !complete.resolve(Iron, IronTriple, Priority) &&
+            !complete.resolve(Iron, IronFuture, Priority) && sharedIron == complete.resolve(Iron, IronSingle, Priority) &&
+            complete.resolve(Bag, BagRoot, Priority),
+            "shared iron rejection blocks published and future referring roots while healthy subsets and moneybag remain available");
+        expect(qualifiedModernTokenVariantSequence(Bag, BagRoot, Priority) &&
+            !qualifiedModernTokenVariantSequence(Bag, BagRoot, pieces::TokenPriority) &&
+            !qualifiedModernTokenVariantSequence(Bag, BagRoot, 0) &&
+            !qualifiedModernTokenVariantSequence(0x00080008, BagRoot, Priority),
+            "new complete profiles retain exact movement context and reject folded unreviewed moneybag states");
+        fixture.kind = ModernTokenVariantKind::HorseIdle;
+        fixture.write(0, 0.F);
+        ModernTokenVariantCache missingHorse(fixture.root);
+        expect(!missingHorse.resolve(Horse, HorsePair, Priority) && missingHorse.loadError(HorsePair) &&
+            missingHorse.resolve(Horse, HorseSingle, Priority),
+            "missing new horse pose cannot publish a partial pair or taint canonical single-state geometry");
+        fixture.write(0, .02F, false, "tokens/horse_variants/pose_0097.glb");
+        for (std::size_t state = 1; state < horseIdleVariantDefinitions().size(); ++state) fixture.write(state, 0.F);
+        ModernTokenVariantCache horseCache(fixture.root);
+        const auto canonical = horseCache.resolve(Horse, HorseIdle, pieces::TokenPriority);
+        const auto newPose = horseCache.resolve(HorseNew, HorsePair, Priority);
+        expect(canonical && std::abs(canonical->bounds.minimum[1] - 1.F) < .001F && newPose &&
+            std::abs(newPose->bounds.minimum[1] - (1.F + .02F * 211.87215F)) < .001F &&
+            canonical == horseCache.resolve(Horse, HorsePair, Priority),
+            "horse extension reuses unchanged canonical idle geometry and preserves shared restY plus1");
+        expect(newPose && horseCache.rejectPack(newPose.get()) && !horseCache.resolve(Horse, HorsePair, Priority) &&
+            canonical == horseCache.resolve(Horse, HorseIdle, pieces::TokenPriority),
+            "new horse pose rejection leaves the existing six-state idle pack modern");
+    }
+
     void testMixedShipGroundingFormats()
     {
         using namespace monopoly;
@@ -117,8 +174,8 @@ namespace
             for (const auto mesh : root.requiredMeshes)
                 if (mesh == 0x000800CD) excluded = false;
         }
-        expect(generic == 399 && idle == 2 && excluded,
-            "explicit complete table retains 399 finished roots and two idle roots without excluded thimble pose");
+        expect(generic == 606 && idle == 2 && excluded,
+            "explicit complete table retains 606 finished roots and two idle roots without excluded thimble pose");
         expect(qualifiedModernTokenVariantSequence(Base, Pair, Priority) &&
             qualifiedModernTokenVariantSequence(Bent, Pair, Priority) &&
             !qualifiedModernTokenVariantSequence(Later, Pair, Priority) &&
@@ -332,6 +389,7 @@ namespace
 
 int main()
 {
+    testReviewedProfileExtension();
     testMixedShipGroundingFormats();
     testCompleteRootSubsets();
     testHorseIdleCompletePack();

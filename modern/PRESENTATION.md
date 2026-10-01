@@ -118,11 +118,23 @@ contrôle de frames demandées ne constitue pas une animation continue en partie
 ni un film de gameplay. Il ne transforme pas les neuf chargements observés au
 démarrage en onze pions qualifiés dans une partie réelle.
 
-Le catalogue étendu comprend 401 racines et 55 géométries : 399 racines des six
-pions récupérés passent une comparaison CPU de chaque tick/événement au retail.
-Seuls 29 HMD distincts ont été observés ; leurs captures PBR/IBL 1920x1080 ont
+Le catalogue étendu comprend 608 racines, 63 géométries et neuf calibrations,
+avec préservation des 401 anciennes racines. Le pipeline des 58 poses revues
+reproduit les rendus et préserve les hashes précédents. La preuve CPU actuelle
+couvre 606 racines, comparées à chaque tick/événement au retail.
+Seuls 37 HMD distincts ont été observés ; leurs captures PBR/IBL 1920x1080 ont
 été examinées. Cela ne qualifie ni animation continue en partie ni toutes les
 frames visuellement. Le prototype d'hôtel rouge reconstruit passe également un
 probe GPU réel (40 triangles, trois batches). L'option `--modern-buildings=house`
 active maison et hôtel avec repli indépendant ; leur placement visuel en partie
 reste à qualifier. Voir le [contrat Blender](BLENDER_INTEGRATION_SPEC.md).
+
+Un bundle procédural optionnel couvre neuf familles réelles avec cartes
+base/normal 512px. Le choix de staging est vide par défaut ; les pions normaux
+sont conservés. La comparaison native de la gare garde une MAE foreground RGB
+de 0,027318 et une différence de contraste des fenêtres, sans parité exacte.
+Voir le [workflow de ressources](RESOURCE_SETUP.md).
+
+Sept tests ciblés de présentation/audio passent. L'audio est exercé avec le
+driver dummy ; ces tests ne prouvent ni sortie audible ni comportement GUI
+interactif, F11 ou cadence de partie complète.

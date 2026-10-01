@@ -5,6 +5,8 @@ import json
 import math
 from pathlib import Path
 import sys
+import tempfile
+import shutil
 
 import bpy
 from mathutils import Matrix
@@ -41,7 +43,12 @@ def simple_material(source, cache):
     material = bpy.data.materials.new(f"Environment factors / {source.name}")
     material.use_nodes = True
     material.use_backface_culling = source.use_backface_culling
-    target = material.node_tree.nodes.get("Principled BSDF")
+    # Build the graph explicitly: factory node names can be localized or
+    # customized by Blender preferences loaded during a CMake invocation.
+    material.node_tree.nodes.clear()
+    target = material.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+    output = material.node_tree.nodes.new("ShaderNodeOutputMaterial")
+    material.node_tree.links.new(target.outputs["BSDF"], output.inputs["Surface"])
     for name in ["Base Color","Metallic","Roughness","Emission Color","Emission Strength"]:
         target.inputs[name].default_value = material_factor(source_bsdf.inputs[name])
     # First environment slice is opaque; glass/water transmission and all
@@ -57,7 +64,8 @@ def simple_material(source, cache):
     return material
 
 
-def export_landmark(slug, source_digest, output, materials):
+def export_landmark(slug, source_digest, output, materials, procedural_baker=None):
+    bake_record_start = len(procedural_baker.records) if procedural_baker else 0
     name = LANDMARKS[slug]
     collection = bpy.data.collections.get(name)
     if collection is None:
@@ -91,15 +99,27 @@ def export_landmark(slug, source_digest, output, materials):
                     raise RuntimeError(f"unsupported landmark object: {source.name}")
                 excluded.append({"name":source.name,"type":source.type})
                 continue
+            if procedural_baker:
+                graph = bpy.context.evaluated_depsgraph_get()
             mesh = bpy.data.meshes.new_from_object(source.evaluated_get(graph),depsgraph=graph)
+            if procedural_baker:
+                for index,slot in enumerate(source.material_slots):
+                    material = slot.material.copy()
+                    material["source_original_material_name"] = slot.material.name
+                    procedural_baker.materials.append(material)
+                    mesh.materials[index] = material
             meshes.append(mesh)
-            source_materials = list(mesh.materials)
-            mesh.materials.clear()
-            for material in source_materials:
-                mesh.materials.append(simple_material(material,materials))
             obj = bpy.data.objects.new(source.name,mesh)
             temporary.objects.link(obj)
             obj.parent = root
+            obj.matrix_world = source.matrix_world
+            baked = procedural_baker.bake(obj) if procedural_baker else False
+            mesh = obj.data
+            source_materials = list(mesh.materials)
+            if not baked:
+                mesh.materials.clear()
+                for material in source_materials:
+                    mesh.materials.append(simple_material(material,materials))
             obj.matrix_world = inverse @ source.matrix_world
             sources.append(source.name)
             for vertex in mesh.vertices:
@@ -116,6 +136,7 @@ def export_landmark(slug, source_digest, output, materials):
         result = bpy.ops.export_scene.gltf(filepath=str(path),export_format="GLB",
             collection=temporary.name,use_selection=False,export_materials="EXPORT",
             export_normals=True,export_texcoords=True,export_cameras=False,
+            export_tangents=False,
             export_lights=False,export_animations=False,export_morph=False,
             export_skins=False,export_extras=True,export_yup=True,export_apply=False)
         if "FINISHED" not in result:
@@ -127,6 +148,11 @@ def export_landmark(slug, source_digest, output, materials):
                     "original_world_matrix_y_up_column_major":list(root["authoring_placement_y_up"]),
                     "materials":"Opaque Principled factors; mean ramp colours; no procedural bump/transmission bake",
                     "bytes":path.stat().st_size}
+        if procedural_baker:
+            manifest["procedural_export_validation"] = procedural_baker.validate_export(path)
+            manifest["materials"] = "Actual source procedural base-colour/normal graphs baked before calibration; other factors retained as opaque"
+            manifest["procedural_material_bake"] = procedural_baker.records[bake_record_start:]
+            manifest["procedural_bake_texture_directory"] = "environment-baked-textures"
         path.with_suffix(".json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         print("EXPORTED_ENVIRONMENT",json.dumps(manifest,ensure_ascii=True))
     finally:
@@ -143,20 +169,41 @@ def main():
     parser.add_argument("--source",required=True,help="Read-only recovered .blend")
     parser.add_argument("--output",required=True)
     parser.add_argument("--landmark",action="append",choices=sorted(LANDMARKS),help="Repeat for selected landmarks; default all three")
+    parser.add_argument("--bake-procedural",action="store_true",help="Bake actual source graphs to build-only staged candidates")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
     source,output = Path(args.source).resolve(),Path(args.output).resolve()
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     bpy.ops.wm.open_mainfile(filepath=str(source))
     materials = {}
+    baker = None
+    staging = None
+    requested_output = output
+    if args.bake_procedural:
+        if not output.is_relative_to(Path(__file__).resolve().parents[2] / "build"):
+            raise RuntimeError("procedural candidates must remain under modern/build")
+        output.mkdir(parents=True,exist_ok=True)
+        staging = tempfile.TemporaryDirectory(prefix=".procedural-stage-",dir=output)
+        output = Path(staging.name)
+        sys.path.insert(0,str(Path(__file__).resolve().parent))
+        from bake_monopoly_materials import ProceduralExportBaker
+        baker = ProceduralExportBaker(output / "environment-baked-textures")
     try:
         for slug in sorted(set(args.landmark or LANDMARKS)):
-            export_landmark(slug,digest,output,materials)
+            export_landmark(slug,digest,output,materials,baker)
     finally:
         for material in materials.values():
             if material.users == 0:
                 bpy.data.materials.remove(material)
     if hashlib.sha256(source.read_bytes()).hexdigest() != digest:
         raise RuntimeError("reference authoring file changed during export")
+    if baker:
+        baker.close()
+        for path in sorted(output.rglob("*")):
+            if path.is_file():
+                destination = requested_output / path.relative_to(output)
+                destination.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(path,destination)
+        staging.cleanup()
 
 
 if __name__ == "__main__":

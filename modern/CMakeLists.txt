@@ -716,6 +716,24 @@ if(Python3_Interpreter_FOUND)
         VERBATIM
     )
 endif()
+# Select an already qualified optional bundle; normal token exports remain intact.
+set(MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT "" CACHE PATH
+    "Optional qualified procedural board/environment bundle to stage beside the application")
+set(MONOPOLY_PROCEDURAL_STAGING_COMMANDS)
+if(MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT)
+    foreach(required IN ITEMS procedural_bundle.json board/paris_board_runtime.glb
+        environment/paris_fountain.glb environment/paris_morris_column.glb environment/paris_station.glb)
+        if(NOT EXISTS "${MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT}/${required}")
+            message(FATAL_ERROR "Incomplete procedural scene bundle: ${required}")
+        endif()
+    endforeach()
+    foreach(directory IN ITEMS board environment)
+        list(APPEND MONOPOLY_PROCEDURAL_STAGING_COMMANDS
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT}/${directory}"
+                "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern/${directory}")
+    endforeach()
+endif()
 add_custom_target(MonopolyRuntimeModernAssets
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens"
@@ -726,6 +744,7 @@ add_custom_target(MonopolyRuntimeModernAssets
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
+    ${MONOPOLY_PROCEDURAL_STAGING_COMMANDS}
     COMMENT "Staging optional modern GLB assets beside MonopolyModern"
     VERBATIM
 )
@@ -833,7 +852,7 @@ if(MONOPOLY_BLENDER_EXECUTABLE
                 --work-dir "${CMAKE_CURRENT_BINARY_DIR}/complete-token-staging"
             DEPENDS MonopolyTokenDeformationContract MonopolyModernAssetProbe
                 MonopolyExportModernTokenVariants
-            COMMENT "Qualifying and staging 49 explicitly reviewed token poses transactionally"
+            COMMENT "Qualifying and staging 58 explicitly reviewed token poses transactionally"
             VERBATIM
         )
     endif()
@@ -849,6 +868,19 @@ if(MONOPOLY_BLENDER_EXECUTABLE
             --retail-board-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-reference-obj/boardmed.obj"
         DEPENDS MonopolyModernAssetProbe
         COMMENT "Exporting a separately aligned French Euro board using decoded retail cell geometry"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportProceduralScene
+        COMMAND "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --dump-board "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b --factory-startup --disable-autoexec
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/bake_monopoly_materials.py"
+            -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --output-root "${CMAKE_CURRENT_BINARY_DIR}/procedural-assets" --export-bundle
+            --retail-board-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-reference-obj/boardmed.obj"
+        DEPENDS MonopolyModernAssetProbe
+        COMMENT "Baking and publishing one validated optional board/environment bundle"
         VERBATIM
     )
     add_custom_target(MonopolyExportModernEnvironment

@@ -147,6 +147,7 @@ cmake --build modern/build --config Debug --target MonopolyExportModernEnvironme
 cmake --build modern/build --config Debug --target MonopolyGenerateStudioEnvironment
 cmake --build modern/build --config Debug --target MonopolyExportCompleteTokenVariants
 cmake --build modern/build --config Debug --target MonopolyExportGameplayHotel
+cmake --build modern/build --config Debug --target MonopolyExportProceduralScene
 ```
 
 Le plateau runtime est `board/paris_board_runtime.glb`, distinct du plateau
@@ -166,10 +167,13 @@ borné ne qualifient pas une partie interactive.
 Les deux cibles complete-token/hôtel ont été exécutées avec succès, dépendances
 complètes comprises ; `build/expanded-hotel-export-targets-20261001.log` consigne
 la sortie zéro. La qualification offline
-des six profils répète deux exports frais et ne stage que les 49 états approuvés,
+des neuf profils répète deux exports frais et ne stage que les 58 états approuvés,
 avec contrôle du hash de revue et publication transactionnelle. Le catalogue
-runtime comprend 401 racines/55 géométries ; 399 racines ont une preuve CPU
-appariée au retail et 29 états réellement observés une capture GPU examinée.
+runtime comprend désormais 608 racines/63 géométries/neuf calibrations ; les
+401 anciennes racines et leurs géométries/calibrations sont préservées. Le pipeline
+CLI complet des 58 états reproduit les rendus et préserve les hashes des 49
+anciens états et 12 états par défaut. Les rapports actuels couvrent 606 racines
+CPU appariées au retail et 37 états GPU examinés, sans qualifier une animation continue en partie.
 
 `--modern-buildings=house` couvre désormais aussi `buildings/hotel.glb`, prototype
 rouge reconstruit avec un matériau récupéré. Maison et hôtel restent désactivés
@@ -190,3 +194,21 @@ décors ne s'ajoutent que lorsque le vrai plateau moderne est actif. Une géomé
 absente ou rejetée conserve le repli retail ou omet le décor facultatif. Le bake
 d'un sous-ensemble procédural et le probe SDL_GPU sont des validations d'assets,
 pas une preuve de partie complète. Voir le [contrat Blender](BLENDER_INTEGRATION_SPEC.md).
+
+Le bundle procédural est optionnel et distinct des exports normaux. La cible
+`MonopolyExportProceduralScene` écrit sous `modern/build/procedural-assets`.
+Pour copier un bundle existant dans le dossier de l�ex�cutable, configurer `MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT`
+avec son chemin absolu ; sa valeur par défaut reste vide. Le staging remplace
+seulement les répertoires plateau/décor et conserve les pions normaux :
+
+```powershell
+cmake -S modern -B modern/build `
+  -DMONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT=C:/Users/cadet/Documents/GitHub/Monopoly/modern/build/procedural-assets
+cmake --build modern/build --config Debug --target MonopolyModern
+```
+
+Le répertoire doit déjà contenir `procedural_bundle.json` et ses quatre GLB.
+Neuf familles procédurales réelles utilisent des cartes base/normal 512px ; les
+facteurs métal/rugosité/émission sont conservés. La comparaison native de la gare
+garde une MAE RGB foreground de 0,027318 et un contraste de fenêtres différent :
+c'est une approximation optionnelle, sans affirmation de parité exacte.

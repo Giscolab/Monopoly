@@ -60,6 +60,8 @@ def main() -> int:
     for name in ("timeline", "inventory", "variant_review", "retail_root", "modern_assets", "output"):
         parser.add_argument("--" + name.replace("_", "-"), required=True, type=Path)
     parser.add_argument("--max-ticks", type=int, default=600)
+    parser.add_argument("--catalog-report", type=Path,
+                        help="Check generic roots from a source-checked generated catalog report")
     args = parser.parse_args()
     if not 1 <= args.max_ticks <= 36000:
         parser.error("max-ticks must be from 1 to 36000")
@@ -85,6 +87,26 @@ def main() -> int:
             candidates.append(entry)
     if not candidates:
         raise ValueError("review and inventory select no complete roots")
+    if args.catalog_report:
+        if args.catalog_report.stat().st_size > 16 * 1024 * 1024:
+            raise ValueError("catalog report exceeds bounded input size")
+        catalog = json.loads(args.catalog_report.read_text(encoding="utf-8"))
+        entries = {entry["data_id"]: entry for entry in inventory["entries"]}
+        candidates = []
+        seen = set()
+        for root in catalog["roots"]:
+            if root["idle"]:
+                continue
+            entry = entries[root["root"]]
+            required = set(entry["timeline"]["referenced_hmds"])
+            if (root["root"] in seen or not required or required != set(root["required"])
+                    or required != set(entry["timeline"]["observed_hmds"])
+                    or entry["status"] != "ok" or not entry["timeline"]["sequence_finished"]):
+                raise ValueError("catalog root is duplicated or disagrees with production inventory")
+            seen.add(root["root"])
+            candidates.append(entry)
+        if not candidates or len(candidates) != catalog["complete_generic_roots"]:
+            raise ValueError("catalog generic-root count does not match its descriptors")
     results = []
     failures = []
     state_frames = {}
@@ -118,6 +140,8 @@ def main() -> int:
         "variant_review_sha256": hashlib.sha256(args.variant_review.read_bytes()).hexdigest(),
         "selected": len(candidates), "passed": len(results), "failures": failures, "roots": results,
         "first_observed_state_frames": state_frames,
+        "catalog_report_sha256": hashlib.sha256(args.catalog_report.read_bytes()).hexdigest()
+        if args.catalog_report else None,
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"{len(results)}/{len(candidates)} complete paired roots passed; {args.output}")

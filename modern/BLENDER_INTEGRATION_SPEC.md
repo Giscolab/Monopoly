@@ -482,38 +482,46 @@ Europe/French/Paris/Euro context, qualified root/priority and no custom board.
 Decorations require the actual modern board and inherit its CNK transform;
 failed assets retain retail geometry or omit optional scenery. The adapters have
 real SDL_GPU probe evidence, but French startup and in-game qualification remain
-blocked/pending. Most board/decor procedural graphs remain unbaked. Scenery hotels
+blocked/pending. Optional qualified procedural bakes are described below. Scenery hotels
 remain distinct from the reconstructed gameplay-hotel prototype below.
 
 ## Complete token catalog and gameplay hotel checkpoint
 
-The runtime now contains 401 distinct root descriptors: 399 complete roots for
-the six recovered tokens at Generic100 priority, plus the original dog/horse idle
-roots at priorities 224..229. Its 55 geometry definitions comprise 49 reviewed
-recovered-token states and six horse states. Immutable meshes load lazily per HMD;
+The runtime now contains 608 distinct root descriptors: 606 complete roots at
+Generic100 priority, plus the original dog/horse idle roots at priorities 224..229.
+There are 63 geometry definitions and nine calibration frames. The catalog adds
+the reviewed moneybag, iron and horse97 profiles while preserving all previous
+401 roots, 55 geometry paths/frame/grounding assignments and seven calibration
+frames exactly (`build/old-variant-root-preservation.json`). Immutable meshes load lazily per HMD;
 each root publishes transactionally. A failed state retains its whole root in
 retail, and GPU rejection invalidates published and future uses. Raw canonical
 ship HMDs `0x80018`/`0x8001B` require shared rest grounding; other exported states
 are already grounded and retain that distinction in the generated catalog.
 
-`build/qualified-complete-production-20261001.json` qualifies all 399 selected
+`build/qualified-nine-profile-production-20261001.json` qualifies all 606 selected
 roots with production CPU playback, disk endings and ending action zero. Every
 tick and event matches paired retail clocks, matrices, HMD choices and lifecycle,
-with zero errors. Only 29 different HMDs were actually observed in these runs.
-Those 29 states also have real 1920x1080 GPU captures with environment enabled and
-PBR loaded; `build/expanded-token-gpu-qualification/29_production_states_gpu.png`
+with zero errors. Only 37 different HMDs were actually observed in these runs.
+Those 37 states also have real 1920x1080 GPU captures with environment enabled and
+PBR loaded; `build/nine-profile-gpu-qualification/production_states_gpu.png`
 was inspected. These proofs do not establish continuous gameplay animation,
 visual fidelity of every frame, or glTF animation clips.
 
-`tools/qualify_complete_token_variants.py` repeats two fresh exports for six
-profiles and stages only the 49 explicitly reviewed states. Review hash rejection,
+`tools/qualify_complete_token_variants.py` repeats two fresh exports for nine
+profiles and stages only the 58 explicitly reviewed states. Review hash rejection,
 cross-volume publication using adjacent backups, and three injected failure cases
 are qualified. `tools/generate_token_variant_catalog.py` reproduces the table in
 bounded build output, records source hashes and checks source consistency.
 `MonopolyExportCompleteTokenVariants` executed successfully with its complete
-dependencies: six recovered tokens, five reconstructed tokens, 12 default states
-and 49 clean reviewed-state contracts. Additional diagnostic opt-in profiles
-(moneybag, iron and horse97) are not runtime-active at this checkpoint.
+dependencies at the earlier 49-state checkpoint. The completed 58-state clean
+CLI pipeline has identical reviewed outputs, preserves all previous 49 hashes
+and 12 default-state hashes, and qualifies representative geometry/normals;
+see `build/next-token-profile-diagnostics/pipeline_completion_proof.json`.
+The nine new bindings have identical rendering fingerprints with provenance-only
+JSON changes. A mismatched review is rejected without changing staged outputs.
+Moneybag08/09 and thimble CD remain excluded. The 606-root CPU comparison and
+37-state GPU captures remain distinct proof boundaries; they do not qualify
+continuous gameplay or all-frame visual fidelity.
 
 `buildings/hotel.glb` is a newly reconstructed red gameplay asset using a recovered
 material, not a recovered original sculpture. `UDPieces` starts HMD/root 4
@@ -530,3 +538,33 @@ fallback on missing assets or invalid bounds. `MonopolyExportGameplayHotel` was
 successfully executed as a CMake target, together with the complete-token target;
 `build/expanded-hotel-export-targets-20261001.log` records exit zero. Application
 placement and visual gameplay remain unqualified.
+
+## Optional procedural scene bundle
+
+`MonopolyExportProceduralScene` writes a separate `build/procedural-assets` bundle.
+The empty-by-default cache path `MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT` selects an
+existing absolute bundle path for staging only board/environment over normal
+assets; token exports remain intact. The first complete qualified bundle is
+`build/procedural-integration/bundle-qualified/procedural_bundle.json`.
+Nine actual procedural families (asphalt, cream, pavement, roof, stone,
+stone_dark, stone_light, water and wood) bake base-color and normal maps at 512px.
+Constant metallic/roughness/emission remain factors; no AO is invented.
+
+The four GLBs pass the production loader: 113 images decode to 123,731,968 RGBA
+bytes (118 MiB), and 158,222 normal-mapped triangles have nondegenerate UVs.
+Two complete bundle runs exit zero with all four GLBs and manifest identical
+(marker SHA-256 `b281dd4aa724e4b7bc32e209bee226e0b66d2a9f60ea6248c4766a7c836293bd`).
+An injected final-publication failure restores all 121 prior files.
+The recovered source hash remains unchanged. The inspected board GPU capture
+uses an additional 0.2-world-unit pavement clearance while retaining all 40
+playing floors at Y=0. Native procedural-only full-geometry foreground RGB MAEs
+are board 0.00136724, fountain 0.00411734, Morris 0.0000930136 and station
+0.0273178. The station retains different window-region contrast; these optional
+approximations do not establish exact native or full-scene parity. The final
+CMake target execution and complete bundle GPU sweep are recorded below.
+
+### Final qualification on 1 October 2026
+
+The actual `MonopolyExportProceduralScene` target succeeds with factory Blender preferences and a retail board OBJ generated by its probe dependency. All four GLBs match the qualified bundle; their optional application-side staging is checked by SHA-256. `build/final-procedural-scene-gpu-20261001.png` captures those staged files with Direct3D12, PBR and studio IBL active: four objects, 246 batches and 895,665 triangles at 1920x1080. The probe's 100 serial GPU-fenced frames are not a full-game benchmark.
+
+`MonopolyModern` rebuilds with this bundle and remains alive for 25.35 seconds using the supplied USA data and `--modern-buildings=house`. Its log opens all eight required banks and reports requested borderless fullscreen. This startup does not qualify interactions, F11 transitions or audible audio. Missing French banks still block in-game Paris qualification. Both `Source/` and the recovered Blender file retain their locked hashes.

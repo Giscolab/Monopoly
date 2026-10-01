@@ -3,6 +3,9 @@ import hashlib
 import json
 import math
 import struct
+import sys
+import tempfile
+import shutil
 from pathlib import Path
 
 import bpy
@@ -142,9 +145,10 @@ def runtime_board_bases(collection_names, retail_obj):
             height_basis = Matrix.Translation(Vector((0, 0, -0.006)))
             if collection_name == collection_names[0] and source.name == pavement_name:
                 # This specific inner pavement overlaps the retail house feet.
-                # Put its measured top below the floor without collapsing its
-                # normal transform or changing X/Y placement and dimensions.
-                height_basis = (height_basis @ Matrix.Translation(Vector((0, 0, 0.0059))) @
+                # Keep its measured top 0.0101 m below the printed floor so
+                # leave depth clearance beneath Case surfaces. Preserve the
+                # normal transform and horizontal placement and dimensions.
+                height_basis = (height_basis @ Matrix.Translation(Vector((0, 0, -0.0041))) @
                                 Matrix.Diagonal((1.0, 1.0, 0.001, 1.0)) @
                                 Matrix.Translation(Vector((0, 0, -0.0815))))
             bases[source.name] = height_basis @ base_basis
@@ -165,7 +169,8 @@ def runtime_board_bases(collection_names, retail_obj):
                        "case_height_scale": 0.1,
                        "inner_pavement_object": pavement_name,
                        "inner_pavement_source_top_blender_metres": 0.0815,
-                       "inner_pavement_target_top_before_drop_blender_metres": 0.0059,
+                       "inner_pavement_target_top_before_drop_blender_metres": -0.0041,
+                       "inner_pavement_floor_clearance_blender_metres": 0.0101,
                        "inner_pavement_height_scale": 0.001,
                        "horizontal_alignment_preserved": True,
                        "normal_transform": "positive nonsingular node scale; inverse transpose"},
@@ -181,11 +186,12 @@ def opaque_runtime_material(source):
     alpha = float(original.inputs["Alpha"].default_value) if original else color[3]
     transmission = float(original.inputs["Transmission Weight"].default_value) if original else 0.0
     alpha_linked = bool(original and original.inputs["Alpha"].is_linked)
-    masked = source.name == "MP · mascot_print"
+    source_name = source.get("source_original_material_name", source.name)
+    masked = source_name == "MP · mascot_print"
     if masked and not alpha_linked:
         raise RuntimeError("mascot print must retain its authored image alpha path")
     copied = source.copy()
-    copied.name = source.name + (" · runtime alpha mask" if masked else " · runtime opaque factors")
+    copied.name = source_name + (" · runtime alpha mask" if masked else " · runtime opaque factors")
     copied.use_nodes = True
     if copied.node_tree == source.node_tree:
         raise RuntimeError("runtime material copy unexpectedly shares authoring nodes")
@@ -257,7 +263,7 @@ def board_collections():
 
 
 def export_static_group(collection_names, kind, slug, output_dir, local_root=None,
-                        object_bases=None, alignment=None):
+                        object_bases=None, alignment=None, procedural_baker=None):
     """Export evaluated copies only; retain the recovered scene untouched."""
     sources = {}
     for name in collection_names:
@@ -306,8 +312,16 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
     try:
         depsgraph = bpy.context.evaluated_depsgraph_get()
         for name, source in sorted(sources.items()):
+            if procedural_baker:
+                depsgraph = bpy.context.evaluated_depsgraph_get()
             evaluated = source.evaluated_get(depsgraph)
             mesh = bpy.data.meshes.new_from_object(evaluated, depsgraph=depsgraph)
+            if procedural_baker:
+                for index, slot in enumerate(source.material_slots):
+                    material = slot.material.copy()
+                    material["source_original_material_name"] = slot.material.name
+                    procedural_baker.materials.append(material)
+                    mesh.materials[index] = material
             created_meshes.append(mesh)
             if alignment is not None:
                 for index, material in enumerate(mesh.materials):
@@ -321,6 +335,10 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
             obj = bpy.data.objects.new(name, mesh)
             temporary.objects.link(obj)
             obj.parent = root
+            obj.matrix_world = source.matrix_world
+            if procedural_baker:
+                procedural_baker.bake(obj)
+                mesh = obj.data
             obj.matrix_world = (object_bases.get(name, basis) if object_bases else basis) @ source.matrix_world
             for vertex in mesh.vertices:
                 p = obj.matrix_world @ vertex.co
@@ -375,6 +393,13 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
             manifest["runtime_material_adaptations"] = material_records
             manifest["authoring_materials_preserved"] = True
             manifest["tangent_policy"] = "omitted; runtime supports UV-derivative basis"
+        if procedural_baker:
+            manifest["source_blend_sha256"] = hashlib.sha256(Path(bpy.data.filepath).read_bytes()).hexdigest()
+            manifest["procedural_export_validation"] = procedural_baker.validate_export(output)
+            manifest["materials"] = "Authored mascot alpha masked at 0.5; actual linked procedural graphs baked; constant factors retained; other alpha/transmission approximated as opaque"
+            manifest["procedural_material_bake"] = procedural_baker.records
+            manifest["procedural_material_bake_policy"] = "actual linked source graphs baked before calibration; constant factors and existing images retained"
+            manifest["procedural_bake_texture_directory"] = "board-baked-textures"
         output.with_suffix(".json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
@@ -505,9 +530,26 @@ def main():
                         help="production-decoder boardmed OBJ used to verify measured alignment")
     parser.add_argument("--include-house", action="store_true", help="Export one grounded gameplay-house prototype")
     parser.add_argument("--skip-tokens", action="store_true", help="Export only explicitly requested static groups")
+    parser.add_argument("--bake-procedural", action="store_true", help="Bake source procedural graphs on copies; stage build-only candidates transactionally")
     args = parser.parse_args(blender_arguments())
 
     output_dir = Path(args.output).resolve()
+    staging = None
+    baker = None
+    requested_output = output_dir
+    source_path = Path(bpy.data.filepath)
+    before = hashlib.sha256(source_path.read_bytes()).hexdigest() if args.bake_procedural else None
+    if args.bake_procedural:
+        if not args.skip_tokens or not args.align_retail_board or args.include_board or args.include_house:
+            raise RuntimeError("procedural board bake requires --skip-tokens --align-retail-board only")
+        if not output_dir.is_relative_to(Path(__file__).resolve().parents[2] / "build"):
+            raise RuntimeError("procedural candidates must remain under modern/build")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        staging = tempfile.TemporaryDirectory(prefix=".procedural-stage-", dir=output_dir)
+        output_dir = Path(staging.name)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from bake_monopoly_materials import ProceduralExportBaker
+        baker = ProceduralExportBaker(output_dir / "board-baked-textures")
     for collection_name, (slug, legacy_index) in ({} if args.skip_tokens else TOKEN_ASSETS).items():
         export_token(
             collection_name,
@@ -522,7 +564,7 @@ def main():
         collections = board_collections()
         bases, alignment = runtime_board_bases(collections, args.retail_board_obj)
         export_static_group(collections, "board", "paris_board_runtime", output_dir,
-                            object_bases=bases, alignment=alignment)
+                            object_bases=bases, alignment=alignment, procedural_baker=baker)
     if args.include_house:
         name = "Maison jeu avant 00"
         collection = bpy.data.collections.get(name)
@@ -538,6 +580,16 @@ def main():
         ("moneybag", 10),
     ]
     print("MISSING_TOKEN_ASSETS", missing)
+    if baker:
+        baker.close()
+        if hashlib.sha256(source_path.read_bytes()).hexdigest() != before:
+            raise RuntimeError("recovered source changed during procedural export")
+        for path in sorted(output_dir.rglob("*")):
+            if path.is_file():
+                destination = requested_output / path.relative_to(output_dir)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, destination)
+        staging.cleanup()
 
 
 if __name__ == "__main__":
