@@ -288,6 +288,7 @@ add_library(
     src/SequenceRuntime.cpp
     src/SequenceCommands.cpp
     src/SequencePlayback.cpp
+    src/OpeningMoviePresentation.cpp
     src/StatsAccountRuntime.cpp
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
@@ -3893,6 +3894,14 @@ if(BUILD_TESTING)
     add_test(NAME Monopoly.VideoDecoder COMMAND MonopolyVideoDecoderTests)
     set_tests_properties(Monopoly.VideoDecoder PROPERTIES TIMEOUT 90)
 
+    add_executable(MonopolyModernScenePresentationTests tests/ModernScenePresentationTests.cpp)
+    target_include_directories(MonopolyModernScenePresentationTests PRIVATE src tests)
+    target_link_libraries(MonopolyModernScenePresentationTests PRIVATE MonopolyDataCore SDL3::SDL3)
+    add_test(NAME Monopoly.ModernScenePresentation COMMAND MonopolyModernScenePresentationTests)
+    add_executable(MonopolyOpeningMoviePresentationTests tests/OpeningMoviePresentationTests.cpp)
+    target_include_directories(MonopolyOpeningMoviePresentationTests PRIVATE src tests)
+    target_link_libraries(MonopolyOpeningMoviePresentationTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.OpeningMoviePresentation COMMAND MonopolyOpeningMoviePresentationTests)
     add_executable(MonopolyOpeningMoviesTests
         tests/OpeningMoviesTests.cpp src/OpeningMovies.cpp)
     target_include_directories(MonopolyOpeningMoviesTests PRIVATE src tests)

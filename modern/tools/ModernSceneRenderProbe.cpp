@@ -430,6 +430,7 @@ int main(int argc, char** argv)
         bool includeEnvironment = false, boardArgument = false, includeCity = false;
         bool benchmarkToken = false;
         bool houseCloseup = false;
+        bool buildingCameraProof = false;
         unsigned polishLevel = 0;
         unsigned cameraYaw = 28, cameraElevation = 55, uiSafePercent = 0;
         std::optional<std::filesystem::path> tabletopSamples;
@@ -451,6 +452,8 @@ int main(int argc, char** argv)
             { if (++i >= argc) throw std::runtime_error("--ui-safe-percent requires 0..40"); uiSafePercent = number(argv[i],40); }
             else if (std::string{argv[i]} == "--tabletop-samples")
             { if (++i >= argc) throw std::runtime_error("--tabletop-samples requires runtime-root"); tabletopSamples = argv[i]; }
+            else if (std::string{argv[i]} == "--building-camera-proof")
+            { if(buildingCameraProof)throw std::runtime_error("Duplicate --building-camera-proof");buildingCameraProof=true; }
             else if (std::string{argv[i]} == "--house-closeup")
             { if(houseCloseup)throw std::runtime_error("Duplicate --house-closeup");houseCloseup=true; }
             else if (std::string{argv[i]} == "--animation-tick")
@@ -470,6 +473,12 @@ int main(int argc, char** argv)
             }
             else if (!boardArgument) { relativeBoard = argv[i]; boardArgument = true; }
             else throw std::runtime_error("Unexpected argument");
+        }
+        if(buildingCameraProof)
+        {
+            require(!turntable && !tokenFrame && !tabletopSamples && !houseCloseup && !benchmarkToken && !animationTick,
+                "Building-camera proof cannot mix token/tabletop/animation modes");
+            includeEnvironment=true; includeCity=true; polishLevel=6;
         }
         if(turntable)
         {
@@ -684,6 +693,107 @@ int main(int argc, char** argv)
         lighting.sun.direction = {.3F, -1, .4F};
         if (polishLevel >= 3) lighting = engine::modernBoardPresentationLighting();
         renderer->setLighting(lighting);
+        if(buildingCameraProof)
+        {
+            // Match Engine's qualified building identities and transformed bounds.
+            // Furniture, vegetation, people, table and plinth never influence this helper.
+            std::vector<data::MeshBounds> buildings;
+            std::vector<sequence::SequenceNodeId> buildingNodes;
+            std::optional<data::MeshBounds> chosen;
+            for(const auto& item:items)
+            {
+                const auto node=item.node;
+                if(node != (engine::ModernEnvironmentNodeBase|2U) &&
+                    !(node >= (engine::ModernEnvironmentNodeBase|6U) && node <= (engine::ModernEnvironmentNodeBase|12U)) &&
+                    !(node >= (engine::ModernEnvironmentNodeBase|19U) && node <= (engine::ModernEnvironmentNodeBase|22U))) continue;
+                const auto geometry=item.renderData ? item.renderData : item.asset->renderData;
+                require(geometry != nullptr,"Actual building geometry");
+                const auto world=engine::presentationWorldBounds(geometry->bounds,item.worldTransform);
+                buildings.push_back(world); buildingNodes.push_back(node);
+                // The separately loaded grand hotel has a compact building footprint;
+                // the standalone station is intentionally absent from the complete city.
+                if(node == (engine::ModernEnvironmentNodeBase|20U)) chosen=world;
+            }
+            require(chosen.has_value() && buildings.size()==11,"Complete actual city building bounds");
+            const auto boardBounds=engine::presentationWorldBounds(items.front().renderData->bounds,items.front().worldTransform);
+            const float ground=items.front().worldTransform.values[13];
+            const std::array<float,3> aim{(boardBounds.minimum[0]+boardBounds.maximum[0])*.5F,
+                ground,(boardBounds.minimum[2]+boardBounds.maximum[2])*.5F};
+            auto raw=camera;
+            require(chosen->maximum[1] > ground+raw.nearPlane*2,"Loaded hotel must rise above board plane");
+            raw.location={(chosen->minimum[0]+chosen->maximum[0])*.5F,
+                ground+(chosen->maximum[1]-ground)*.55F,(chosen->minimum[2]+chosen->maximum[2])*.5F};
+            float aimLength=0;
+            for(unsigned axis=0;axis<3;++axis)
+            { raw.forward[axis]=aim[axis]-raw.location[axis]; aimLength+=raw.forward[axis]*raw.forward[axis]; }
+            aimLength=std::sqrt(aimLength);
+            require(aimLength>0,"Measured hotel-to-board aim");
+            for(auto& value:raw.forward)value/=aimLength;
+            const float clearance=std::max(raw.nearPlane*2,1.0F), influence=std::max(raw.nearPlane*8,1.0F);
+            const auto adjusted=engine::avoidModernPresentationBuildings(raw,buildings,ground,clearance,influence);
+            require(adjusted.location[1]>raw.location[1] && adjusted.location[0]==raw.location[0] &&
+                adjusted.location[2]==raw.location[2],"Actual building avoidance must lift this camera only");
+            const auto planeAim=[ground](const auto& view)
+            {
+                const float t=(ground-view.location[1])/view.forward[1];
+                std::array<float,3> result{};
+                for(unsigned axis=0;axis<3;++axis)result[axis]=view.location[axis]+t*view.forward[axis];
+                return result;
+            };
+            const auto rawAim=planeAim(raw), adjustedAim=planeAim(adjusted);
+            for(unsigned axis=0;axis<3;++axis)
+                require(std::abs(rawAim[axis]-adjustedAim[axis])<.01F,"Original board-plane aim preserved");
+            std::ofstream manifest(outputDir/"building-camera-proof.tsv");
+            manifest<<std::setprecision(9)<<"scope\tactual production city geometry; camera-only A/B; not gameplay\n"
+                <<"asset_root\t"<<assetRoot.string()<<"\nboard_asset\t"<<relativeBoard.generic_string()
+                <<"\nloaded_scene_items\t"<<items.size()<<"\nsize\t"<<Width<<'x'<<Height<<"\nselected_node\t"<<(engine::ModernEnvironmentNodeBase|20U)
+                <<"\nground_y\t"<<ground<<"\nclearance\t"<<clearance<<"\ninfluence_radius\t"<<influence<<'\n';
+            const auto vectorRow=[&](const char* label,const auto& value)
+            {manifest<<label<<'\t'<<value[0]<<','<<value[1]<<','<<value[2]<<'\n';};
+            vectorRow("original_board_plane_aim",rawAim); vectorRow("adjusted_board_plane_aim",adjustedAim);
+            for(std::size_t i=0;i<buildings.size();++i)
+                manifest<<"building_bounds\t"<<buildingNodes[i]<<'\t'<<buildings[i].minimum[0]<<','<<buildings[i].minimum[1]<<','
+                    <<buildings[i].minimum[2]<<'\t'<<buildings[i].maximum[0]<<','<<buildings[i].maximum[1]<<','<<buildings[i].maximum[2]<<'\n';
+            std::vector<unsigned char> before;
+            for(unsigned frame=0;frame<2;++frame)
+            {
+                const auto& view=frame ? adjusted : raw;
+                require(slot.configureView({0,0,static_cast<int>(Width),static_cast<int>(Height)},view).has_value(),"Proof camera configuration");
+                const auto actual=draw(gpu,*renderer,slot,true);
+                require(renderer->modernPipeline()!=nullptr && actual.objects>0 && actual.triangles>0,"Complete actual PBR city draw");
+                auto* mapped=SDL_MapGPUTransferBuffer(gpu.device,gpu.transfer,false);
+                require(mapped!=nullptr,"Proof readback");
+                std::vector<unsigned char> pixels(Width*Height*4);
+                std::memcpy(pixels.data(),mapped,pixels.size()); SDL_UnmapGPUTransferBuffer(gpu.device,gpu.transfer);
+                const std::string stem=frame ? "building-camera-after" : "building-camera-before";
+                std::ofstream image(outputDir/(stem+".ppm"),std::ios::binary);
+                image<<"P6\n"<<Width<<' '<<Height<<"\n255\n";
+                for(std::size_t i=0;i<pixels.size();i+=4)image.write(reinterpret_cast<const char*>(pixels.data()+i),3);
+                image.close();require(image.good(),"Proof PPM write");
+                auto* surface=SDL_CreateSurfaceFrom(Width,Height,SDL_PIXELFORMAT_RGBA32,pixels.data(),Width*4);
+                require(surface!=nullptr,"Proof surface");
+                const bool saved=SDL_SaveBMP(surface,(outputDir/(stem+".bmp")).string().c_str()); SDL_DestroySurface(surface);
+                require(saved,"Proof BMP write");
+                manifest<<"frame\t"<<stem<<"\nlocation\t"<<view.location[0]<<','<<view.location[1]<<','<<view.location[2]
+                    <<"\nforward\t"<<view.forward[0]<<','<<view.forward[1]<<','<<view.forward[2]
+                    <<"\nhorizontal_fov_radians\t"<<view.fieldOfView<<"\nnear_far\t"<<view.nearPlane<<','<<view.farPlane
+                    <<"\nbackend\t"<<SDL_GetGPUDeviceDriver(gpu.device)<<"\nstudio_enabled\t"<<renderer->studioEnvironmentEnabled()
+                    <<"\nshadow_enabled\t"<<renderer->presentationShadowsActive()<<"\nmsaa_samples\t"<<static_cast<unsigned>(renderer->presentationSampleCount())
+                    <<"\nobjects_batches_triangles\t"<<actual.objects<<','<<actual.batches<<','<<actual.triangles<<'\n';
+                if(!frame)before=std::move(pixels);
+                else
+                {
+                    std::size_t changed=0;
+                    for(std::size_t i=0;i<pixels.size();i+=4)
+                        changed+=!std::equal(pixels.begin()+i,pixels.begin()+i+4,before.begin()+i);
+                    require(changed>0,"Camera correction must produce different actual pixels");
+                    manifest<<"changed_pixels\t"<<changed<<'\n';
+                }
+            }
+            manifest.close();require(manifest.good(),"Proof manifest write");
+            std::cout<<"building_camera_proof\t"<<(outputDir/"building-camera-proof.tsv").string()<<'\n';
+            return 0;
+        }
         const unsigned measuredFrames = tokenFrame && !benchmarkToken ? 0 : Frames;
         if (measuredFrames)
             for (unsigned i = 0; i < 3; ++i) (void)draw(gpu, *renderer, slot, false);

@@ -44,6 +44,7 @@
 #include "SequenceLifecycleMessage.hpp"
 #include "SequenceVideoRuntime.hpp"
 #include "OpeningMovies.hpp"
+#include "OpeningMoviePresentation.hpp"
 #include "TextureCatalog.hpp"
 #include "PieceMovePlayback.hpp"
 #include "PieceRuntime.hpp"
@@ -141,6 +142,8 @@ namespace monopoly::engine
         std::unique_ptr<SequencePlayback> playback;
         video::SequenceRuntimeBridge sequenceVideoRuntime;
         openingmovies::Controller openingMovies;
+        openingmovies::Presentation openingMoviePresentation;
+        bool openingMoviePresentationErrorReported{};
         bool openingVideoCleanupPending{};
         std::unique_ptr<audio::Runtime> audioRuntime;
         std::unique_ptr<voicechat::AudioRuntime> voiceChatAudioRuntime;
@@ -1500,6 +1503,7 @@ namespace monopoly::engine
             if (playback)
             {
                 openingMovies.reset(*playback);
+                (void)openingMoviePresentation.reset(*playback);
                 (void)sequenceVideoRuntime.reset(*playback);
                 (void)playback->stopAll();
             }
@@ -2258,6 +2262,37 @@ namespace monopoly::engine
                     (void)uimsg::send(message);
                 }
             }
+            std::optional<openingmovies::MovieRect> openingMovieRect;
+            const auto movieResources = session->resources();
+            const auto& movieDisplay = display::stateReadOnly();
+            const bool modernOpeningContext = modernSceneOptions.proceduralBoard && movieResources &&
+                movieResources->context().board == data::BoardEdition::Usa &&
+                movieResources->context().language == data::LanguageId::EnglishUs &&
+                movieDisplay.city == 0 && movieDisplay.system == 13 && movieDisplay.customBoardPath.empty();
+            if (modernOpeningContext && openingMovies.phase() == openingmovies::Phase::Movies)
+                for (const auto& movie : sequenceVideoRuntime.states())
+                    if (movie.node == openingMovies.movieNode() && movie.initialized && movie.surface &&
+                        movie.boundingBox && movie.options.drawSolid && movie.options.alphaLevel == 255 &&
+                        movie.worldTransform.values == sequence::identity2D().values)
+                    {
+                        const auto& box = *movie.boundingBox;
+                        if (box.left >= 3 && box.top >= 3 && box.right <= 797 && box.bottom <= 597 &&
+                            box.left < box.right && box.top < box.bottom)
+                            openingMovieRect = openingmovies::MovieRect{box.left,box.top,box.right,box.bottom};
+                        break;
+                    }
+            const auto movieDecoration = openingMoviePresentation.sync(openingMovieRect,
+                [](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {
+                    auto* font = fontPlayback();
+                    if (!font || !font->ready()) return std::unexpected("opening skip hint font unavailable");
+                    auto image = font->renderPresentation(text,0xD3EBF5,18,400,false);
+                    if (!image) return std::unexpected(image.error().detail);
+                    return std::move(*image);
+                }, *session);
+            if (!movieDecoration && !openingMoviePresentationErrorReported)
+                std::cerr << "Opening movie decoration unavailable: " << movieDecoration.error() << '\n';
+            openingMoviePresentationErrorReported = !movieDecoration;
             const auto& displayState = display::stateReadOnly();
             const bool boardVisible =
                 display::isBoardVisible(displayState.desired2DView);
@@ -2743,7 +2778,11 @@ namespace monopoly::engine
                     displayState.desired2DView == display::Screen2D::Trade,
                 iBarActivePlayer, tick, displayState.system,
                 resources ? resources->context().board : data::BoardEdition::Usa,
-                fontPlayback(), *session);
+                fontPlayback(), *session, modernSceneOptions.proceduralBoard && resources &&
+                    resources->context().board == data::BoardEdition::Usa &&
+                    resources->context().language == data::LanguageId::EnglishUs &&
+                    displayState.city == 0 && displayState.system == 13 &&
+                    displayState.customBoardPath.empty());
             if (!runtimeTextSync)
                 return SDL_SetError("IBar runtime text playback: %s",
                     runtimeTextSync.error().c_str());
@@ -2888,6 +2927,8 @@ namespace monopoly::engine
             std::vector<sequence::SequenceMeshRenderItem> decorations;
             std::vector<std::shared_ptr<const data::MeshRuntimeAsset>> staticSceneAssets;
             std::optional<data::MeshBounds> modernBoardBounds;
+            std::optional<float> modernBoardGroundY;
+            std::vector<data::MeshBounds> modernBuildingBounds;
             if (modernSceneOptions.parisBoard || modernSceneOptions.usaBoard || modernSceneOptions.proceduralBoard)
             {
                 const auto boardInstances = session->runtime().meshInstances();
@@ -2906,6 +2947,8 @@ namespace monopoly::engine
                         });
                     if (!boardRootPriority) continue;
                     const auto geometry = board->renderData ? board->renderData : board->asset->renderData;
+                    if (!geometry) continue;
+                    modernBoardGroundY = board->worldTransform.values[13];
                     modernBoardBounds = presentationWorldBounds(geometry->bounds, board->worldTransform);
                     if (modernSceneOptions.proceduralBoard) staticSceneAssets.push_back(board->asset);
                     if (!modernSceneOptions.environment && !modernSceneOptions.usaBoard &&
@@ -2928,8 +2971,15 @@ namespace monopoly::engine
                         {
                             if(decoration.node == (ModernEnvironmentNodeBase|4U) ||
                                 decoration.node == (ModernEnvironmentNodeBase|5U)) continue;
-                            const auto bounds=presentationWorldBounds(decoration.renderData->bounds,
-                                decoration.worldTransform);
+                            if (!decoration.asset) continue;
+                            const auto decorationGeometry = decoration.renderData ? decoration.renderData : decoration.asset->renderData;
+                            if (!decorationGeometry) continue;
+                            const auto bounds=presentationWorldBounds(decorationGeometry->bounds, decoration.worldTransform);
+                            const auto cityNode = decoration.node;
+                            if (cityNode == (ModernEnvironmentNodeBase | 2U) ||
+                                (cityNode >= (ModernEnvironmentNodeBase | 6U) && cityNode <= (ModernEnvironmentNodeBase | 12U)) ||
+                                (cityNode >= (ModernEnvironmentNodeBase | 19U) && cityNode <= (ModernEnvironmentNodeBase | 22U)))
+                                modernBuildingBounds.push_back(bounds);
                             for(std::size_t axis=0;axis<3;++axis)
                             {
                                 modernBoardBounds->minimum[axis]=std::min(modernBoardBounds->minimum[axis],bounds.minimum[axis]);
@@ -3016,6 +3066,15 @@ namespace monopoly::engine
                         modernSceneOptions.proceduralEnvironment ? 28.0F : 8.0F, 0.23F);
                     activeWorldCamera = camera;
                 }
+                const bool avoidModernBuildings = modernSceneOptions.proceduralEnvironment && resources &&
+                    resources->context().board == data::BoardEdition::Usa &&
+                    resources->context().language == data::LanguageId::EnglishUs &&
+                    displayState.city == 0 && displayState.system == 13 && displayState.customBoardPath.empty() &&
+                    displayState.desired2DView == display::Screen2D::Main &&
+                    displayState.viewportInUse == display::Viewport3D::Main && modernBoardBounds && modernBoardGroundY;
+                if (avoidModernBuildings)
+                    camera = avoidModernPresentationBuildings(camera, modernBuildingBounds, *modernBoardGroundY,
+                        std::max(camera.nearPlane * 2, 1.0F), std::max(camera.nearPlane * 8, 1.0F));
                 const auto configured = session->world().configureView(viewport, camera);
                 if (!configured) return SDL_SetError("Invalid DISPLAY World3D camera/viewport");
                 if (!worldRenderer)
@@ -3116,7 +3175,7 @@ namespace monopoly::engine
              presentationState.current2DView == display::Screen2D::PlayerSelectRules ||
              presentationState.current2DView == display::Screen2D::Auction ||
              presentationState.current2DView == display::Screen2D::Trade);
-        const SDL_FColor backdrop = modernMenuBackdrop ?
+        const SDL_FColor backdrop = (modernMenuBackdrop || openingMoviePresentation.active()) ?
             SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
         const bool profilePresent = startupCPUProfile.published && !startupCPUProfile.presented;
         const auto presentStarted = profilePresent ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
@@ -3145,6 +3204,7 @@ namespace monopoly::engine
         if (playback)
         {
             openingMovies.reset(*playback);
+            (void)openingMoviePresentation.reset(*playback);
             (void)sequenceVideoRuntime.reset(*playback);
             (void)playback->stopAll();
         }

@@ -21,7 +21,8 @@ namespace monopoly::ibar
             const RuleProjection& projection, bool visible, bool propertyBar,
             rules::PlayerNumber activePlayer, std::uint64_t tick,
             int monetarySystem, data::BoardEdition edition,
-            fonts::Runtime* font, engine::SequencePlayback& playback);
+            fonts::Runtime* font, engine::SequencePlayback& playback,
+            bool modernPresentation = false);
         void reset() noexcept;
         [[nodiscard]] data::DataId surface(std::size_t index) const noexcept
         { return index < surfaces_.size() ? surfaces_[index] : data::EmptyDataId; }

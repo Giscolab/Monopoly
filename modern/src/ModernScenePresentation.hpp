@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <span>
 
 namespace monopoly::engine
 {
@@ -23,6 +24,62 @@ namespace monopoly::engine
                 result.minimum[axis]=std::min(result.minimum[axis],value);result.maximum[axis]=std::max(result.maximum[axis],value);
             }
         }
+        return result;
+    }
+    // Caller supplies only loaded building bounds, in the camera's world frame.
+    // This value-only adjustment never feeds back into the retail camera controller.
+    inline World3DCamera avoidModernPresentationBuildings(const World3DCamera& original,
+        std::span<const data::MeshBounds> buildings, float groundY,
+        float clearance, float influenceRadius) noexcept
+    {
+        if (!std::isfinite(groundY) || !std::isfinite(clearance) || clearance <= 0 ||
+            !std::isfinite(influenceRadius) || influenceRadius <= 0 ||
+            !std::isfinite(original.nearPlane) || original.nearPlane <= 0 ||
+            !std::isfinite(original.farPlane) || original.farPlane <= original.nearPlane ||
+            !std::isfinite(original.fieldOfView) || original.fieldOfView <= 0) return original;
+        for (unsigned axis=0; axis<3; ++axis)
+            if (!std::isfinite(original.location[axis]) || !std::isfinite(original.forward[axis]) ||
+                !std::isfinite(original.up[axis])) return original;
+        // Preserve the exact original board-plane aim. Horizontal/upward views
+        // have no forward board intersection and intentionally retain their camera.
+        if (original.forward[1] >= -0.00001F) return original;
+        const float distance=(groundY-original.location[1])/original.forward[1];
+        if (!std::isfinite(distance) || distance <= 0) return original;
+        float lift=0;
+        for (const auto& bounds : buildings)
+        {
+            bool valid=true;
+            for (unsigned axis=0; axis<3; ++axis)
+                valid=valid && std::isfinite(bounds.minimum[axis]) &&
+                    std::isfinite(bounds.maximum[axis]) && bounds.minimum[axis] <= bounds.maximum[axis];
+            if (!valid || bounds.maximum[1] <= groundY) continue;
+            const float dx=std::max({bounds.minimum[0]-original.location[0],0.0F,
+                original.location[0]-bounds.maximum[0]});
+            const float dz=std::max({bounds.minimum[2]-original.location[2],0.0F,
+                original.location[2]-bounds.maximum[2]});
+            const float outside=std::hypot(dx,dz);
+            if (!std::isfinite(outside) || outside >= influenceRadius) continue;
+            const float t=1-outside/influenceRadius;
+            const float weight=t*t*(3-2*t);
+            const float needed=bounds.maximum[1]+std::max(clearance,original.nearPlane)-original.location[1];
+            if (!std::isfinite(needed)) return original;
+            lift=std::max(lift,std::max(0.0F,needed)*weight);
+        }
+        if (lift == 0) return original;
+        auto result=original;
+        result.location[1]+=lift;
+        std::array<float,3> aim{};
+        float lengthSquared=0;
+        for (unsigned axis=0; axis<3; ++axis)
+        {
+            aim[axis]=original.forward[axis]*distance;
+            if (axis==1) aim[axis]-=lift;
+            lengthSquared+=aim[axis]*aim[axis];
+        }
+        if (!std::isfinite(result.location[1]) || !std::isfinite(lengthSquared) ||
+            lengthSquared <= 0) return original;
+        const float length=std::sqrt(lengthSquared);
+        for (unsigned axis=0; axis<3; ++axis) result.forward[axis]=aim[axis]/length;
         return result;
     }
     // Presentation only: measured immutable geometry; no sequencer/game state.

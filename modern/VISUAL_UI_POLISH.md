@@ -510,5 +510,58 @@ fullscreen switched to4096x2160 and returned to1920x1080; fresh captures are
 `build/polish-continuation-20261001/`. The in-game Full Help button also opened
 the inspected themed browser page, as recorded above.
 
-The new ten-minute FPS sample after the six-player session is still running.
-No result or performance gain is claimed for that unfinished sample.
+The completed600-second six-player window-title sample contains1182 FPS values:
+median60.0, p5 59.0, minimum57.9,82.0643% at least60 and93.0626% at least59.5.
+Normal live turns included cards, property acquisitions, rents and dice, with
+brief waits for human input; no builds or other GPU work overlapped the sample.
+The previously observed cold42..46 FPS dips were not reproduced in this window.
+Different events make this an unmatched session observation, not a measured
+performance gain or a continuous60 FPS floor. Window-title telemetry does not
+measure individual frame times. Evidence is
+`build/polish-continuation-20261001/pass33-six-player-private-font-fps.csv` and
+`pass33-six-player-private-font-fps.summary.log`.
+
+The actual Community Chest School Tax illustration also appeared during live
+play, captured in `build/polish-continuation-20261001/pass33-community-school-tax-real.png`.
+This qualifies that live card occurrence, while the complete32-card coverage
+remains the separate production-fixture proof recorded above.
+
+## Intro presentation and current-player name (passes34-35)
+
+The actual Release process14192 launched at22:01:28 local time. The intro's
+original400x300 film remains intact; teal/brass presentation surrounds only its
+outside area, with an honest18-pixel “Press any key or click to skip” caption.
+The real before capture is `pass34-intro-movie-real-before.png`; the inspected
+after is `pass34-intro-real-after.png`, both in
+`build/polish-continuation-20261001/`. An actual Space input removed the shell
+and reached PickGame. OpeningMoviePresentationTests and OpeningMoviesTests pass;
+focused build evidence includes `intro-presentation-fix-build.log`.
+
+In the same loaded `game4`, player s retained464 funds while the current-player
+name changed from black to readable cream. Compare `pass33-six-player-reloaded.png`
+with `pass35-current-player-name-after.png` in that qualification directory.
+The RaceCar player's name was also observed white during actual dice flow.
+Focused CPU checks pass for unchanged native footprint, alpha, clocks and cache
+behavior; this presentation change does not change balances or turn logic.
+
+## Building camera clearance (pass36)
+
+Focused CPU checks and read-only review pass for the camera avoidance helper.
+The matched production GPU proof uses the canonical
+`board/usa_procedural_runtime.glb`, the same20 loaded scene items and11 measured
+building bounds. Both1920x1080 captures use Direct3D12, studio lighting, shadows
+and4x MSAA. Raw camera position changes from(384,63.58,102) to(384,130.684,102);
+both retain the ground-plane aim(243,0,243).
+
+The inspected before view is filled by the hotel wall from inside the building.
+The after view clears its roof and shows the actual ivory city. Captures are
+`build/building-camera-proof-20261001/building-camera-before.png` and
+`building-camera-after.png`; `building-camera-proof.tsv` records assets, bounds,
+cameras and rendering settings. This is a camera-only matched fixture, separate
+from live gameplay.
+
+Ordinary close token framing remains present in the real game. Following actual
+camera transitions, the inspected live samples no longer showed the original
+wall-filled view. These observations do not establish exhaustive coverage of
+every camera path. A later local variable rename removes a shadowing warning
+without changing behavior.

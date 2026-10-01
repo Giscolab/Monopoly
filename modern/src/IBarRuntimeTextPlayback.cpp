@@ -38,7 +38,7 @@ namespace monopoly::ibar
         const RuleProjection& projection, bool visible, bool propertyBar,
         rules::PlayerNumber activePlayer, std::uint64_t tick,
         int monetarySystem, data::BoardEdition edition,
-        fonts::Runtime* font, engine::SequencePlayback& playback)
+        fonts::Runtime* font, engine::SequencePlayback& playback, bool modernPresentation)
     {
         auto nextMessage = message_;
         auto nextColor = messageColor_;
@@ -98,11 +98,16 @@ namespace monopoly::ibar
             text[2] = *encodedName;
         }
         text[3] = nextMessage;
+        // The caller qualifies the procedural USA/en-US presentation context.
+        // Keep the existing font, native footprint and coverage; only its ink
+        // changes to readable cream against the modern teal property bar.
+        const std::uint32_t nameInk = modernPresentation && edition == data::BoardEdition::Usa ?
+            0x00D7E8EDU : 0U;
 
         for (std::size_t i = 0; i < desired.size(); ++i)
         {
             if (!desired[i]) continue;
-            keys[i] = text[i] + ':' + std::to_string(i == 3 ? nextColor : 0);
+            keys[i] = text[i] + ':' + std::to_string(i == 3 ? nextColor : i == 2 ? nameInk : 0);
             if (surfaces_[i] != data::EmptyDataId && keys[i] == keys_[i]) continue;
             if (!font || !font->ready()) return std::unexpected("IBar runtime text requires a ready font");
             FontGuard guard(*font);
@@ -135,7 +140,7 @@ namespace monopoly::ibar
                 i == 2 ? std::max(0, (140 - measured->width) / 2) : 120 - measured->width;
             const auto blitted = font->blitText(
                 image, text[i], x, i < 2 ? 4 : 0,
-                i < 2 ? 0x00FFFFFF : i == 2 ? 0 : nextColor);
+                i < 2 ? 0x00FFFFFF : i == 2 ? nameInk : nextColor);
             if (!blitted) return std::unexpected(blitted.error().detail);
             images[i] = std::move(image);
         }

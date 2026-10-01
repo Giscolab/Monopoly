@@ -113,6 +113,59 @@ namespace
             "hiding IBar removes all three text roots");
     }
 
+    void testModernNameContrast(fonts::Runtime& font)
+    {
+        SyntheticTextResources resources({},stocks());
+        engine::SequencePlayback sequence(resources.service.snapshot());
+        ibar::RuntimeTextPlayback text;
+        auto state=game();ibar::State ui;ibar::RuleProjection projection;
+        bool presentation=false;auto edition=data::BoardEdition::Usa;
+        const auto sync=[&](std::uint64_t tick) {
+            return text.sync(state,ui,projection,true,true,rules::BankPlayer,tick,13,
+                edition,&font,sequence,presentation);
+        };
+        require(sync(0).has_value() && sequence.update(0).has_value(),"contrast fixture starts original three runtime roots");
+        const auto id=text.surface(2);
+        const auto original=sequence.runtimeBitmaps().asset(id);
+        const auto originalPixels=original->image.pixels;
+        const auto nodes=sequence.runtime().matching(id,258);
+        const auto houses=sequence.runtimeBitmaps().asset(text.surface(0));
+        const auto hotels=sequence.runtimeBitmaps().asset(text.surface(1));
+        const auto settings=font.settings();
+        presentation=true;
+        require(sync(10).has_value() && sequence.update(10).has_value(),"qualified presentation recolors current name in place");
+        const auto cream=sequence.runtimeBitmaps().asset(id);
+        require(cream!=original && cream->image.width==140 && cream->image.height==20 &&
+            cream->image.pixels!=originalPixels && original->image.pixels==originalPixels,
+            "cream name preserves native extent and previous immutable black artwork");
+        expectImage(sequence,id,expectedText(font,"Alice",140,20,0x00D7E8ED,700,false,1),
+            "qualified name matches actual Arial glyphs in the selected cream ink");
+        for(std::size_t p=3;p<originalPixels.size();p+=4)
+            require(cream->image.pixels[p]==originalPixels[p],"name recolor preserves every native glyph alpha byte");
+        require(font.settings()==settings && sequence.runtime().matching(id,258)==nodes &&
+            sequence.runtime().info(id,258)->sequenceClock==10 && visibleAt(sequence,id,258,336,530),
+            "contrast change preserves font settings, sequence owner, advancing clock, priority and placement");
+        require(sequence.runtimeBitmaps().asset(text.surface(0))==houses &&
+            sequence.runtimeBitmaps().asset(text.surface(1))==hotels,
+            "name presentation does not recolor or regenerate bank number surfaces");
+        require(sync(11).has_value() && sequence.commands().pendingCount()==0 &&
+            sequence.runtimeBitmaps().asset(id)==cream,"unchanged cream name reuses immutable surface and queues no redraw");
+        presentation=false;
+        require(sync(12).has_value() && sequence.update(12).has_value() &&
+            sequence.runtimeBitmaps().asset(id)->image.pixels==originalPixels &&
+            sequence.runtime().matching(id,258)==nodes,"leaving qualified context restores exact black native glyphs without restarting the root");
+        require(sync(13).has_value() && sequence.commands().pendingCount()==0,
+            "unchanged native fallback remains cached");
+        presentation=true;edition=data::BoardEdition::Europe;
+        const auto fallback=sequence.runtimeBitmaps().asset(id);
+        require(sync(14).has_value() && sequence.runtimeBitmaps().asset(id)==fallback,
+            "non-USA edition retains original name artwork even with a presentation request");
+        edition=data::BoardEdition::Usa;state.currentPlayer=1;
+        require(sync(15).has_value() && sequence.update(15).has_value(),"new active player retains qualified contrast");
+        expectImage(sequence,id,expectedText(font,"Benoit",140,20,0x00D7E8ED,700,false,1),
+            "changed player name invalidates cache without changing native glyph extent");
+    }
+
     void testMessageLifetime(fonts::Runtime& font)
     {
         SyntheticTextResources resources({}, stocks());
@@ -215,6 +268,7 @@ int main()
         fonts::Runtime font;
         loadRealTestArial(font);
         testStockNumbersAndName(font);
+        testModernNameContrast(font);
         std::cout << "[PASS] IBar stock cards, current name, real glyph pixels and visibility\n";
         testMessageLifetime(font);
         std::cout << "[PASS] IBar cash TTL, pinned debt and USA decomposition text\n";
