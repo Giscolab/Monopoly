@@ -3,6 +3,7 @@
 #include "DiceDisplay.hpp"
 #include "ModernIBarSkin.hpp"
 #include "IBarCameraButtonPlayback.hpp"
+#include "MousePointerPlayback.hpp"
 #include "FontRuntime.hpp"
 #include <fstream>
 #include <set>
@@ -26,7 +27,7 @@ namespace
         if (!ok) throw std::runtime_error(message);
     }
     std::vector<std::uint8_t> capture(SDL_GPUDevice* device, engine::World2DRenderer& renderer,
-        const engine::SequenceWorld2DSlot& slot, unsigned width=800, unsigned height=600)
+        const engine::SequenceWorld2DSlot& slot, unsigned width=800, unsigned height=600, std::optional<std::size_t> expectedDraws={})
     {
         SDL_GPUTextureCreateInfo ti{};
         ti.type=SDL_GPU_TEXTURETYPE_2D; ti.format=SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -45,7 +46,7 @@ namespace
         require(pass!=nullptr,"target clear begins");SDL_EndGPURenderPass(pass);
         const auto drawn=renderer.render(command,target,width,height,slot);
         if (!drawn) std::cout << drawn.error() << '\n';
-        require(drawn && *drawn==slot.size(),"real quad renderer records every bitmap node");
+        require(drawn && *drawn==expectedDraws.value_or(slot.size()),"real quad renderer records every bitmap node");
         auto* copy=SDL_BeginGPUCopyPass(command);require(copy!=nullptr,"readback copy begins");
         SDL_GPUTextureRegion source{};source.texture=target;source.w=width;source.h=height;source.d=1;
         SDL_GPUTextureTransferInfo destination{transfer,0,width,height};
@@ -61,6 +62,42 @@ namespace
     std::array<std::uint8_t,4> pixel(const std::vector<std::uint8_t>& p,unsigned x,unsigned y,unsigned width=800)
     { const auto i=(y*width+x)*4;return {p.at(i),p.at(i+1),p.at(i+2),p.at(i+3)}; }
 
+    void testStandardPointerPresentation(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
+    {
+        auto asset=std::make_shared<data::BitmapRuntimeAsset>();
+        asset->dataId=mouse::PointerDataId;
+        asset->image={4,4,std::vector<std::uint8_t>(64,255)};
+        sequence::SequenceBitmapRenderItem pointer;
+        pointer.node=801; pointer.rootSequenceDataId=mouse::PointerDataId;
+        pointer.contentsDataId=mouse::PointerDataId; pointer.runtimeAsset=asset;
+        pointer.metadata={data::LegacyDataType::Native,4,4,0,0,64};
+        pointer.priority=mouse::PointerPriority; pointer.clock=37;
+        pointer.worldTransform=sequence::translate2D(20,20);
+        auto otherPriority=pointer; otherPriority.node=802;
+        otherPriority.priority=mouse::PointerPriority-1;
+        otherPriority.worldTransform=sequence::translate2D(40,20);
+        auto hover=pointer; hover.node=803;
+        auto hoverAsset=std::make_shared<data::BitmapRuntimeAsset>(*asset);
+        hoverAsset->dataId=mouse::PointerDataId+1;
+        hover.contentsDataId=hoverAsset->dataId; hover.rootSequenceDataId=hoverAsset->dataId;
+        hover.runtimeAsset=hoverAsset; hover.worldTransform=sequence::translate2D(60,20);
+        data::BitmapRuntimeCache cache; engine::SequenceWorld2DSlot slot;
+        require(slot.sync({pointer,otherPriority,hover},cache).has_value(),
+            "pointer and independent hover artwork enter the unchanged sequence slot");
+        const auto baseline=capture(device,renderer,slot);
+        const std::array<std::uint8_t,4> white{255,255,255,255},black{0,0,0,255};
+        require(pixel(baseline,21,21)==white,"default presentation preserves retail pointer pixels");
+        renderer.configureStandardPointerPresentation(true);
+        const auto modern=capture(device,renderer,slot,800,600,2);
+        require(pixel(modern,21,21)==black && pixel(modern,41,21)==white && pixel(modern,61,21)==white,
+            "standard pointer presentation suppresses only exact pointer identity and priority");
+        require(slot.size()==3 && slot.find(801)->clock==37 && slot.find(801)->asset==asset &&
+            slot.find(801)->worldTransform.values==pointer.worldTransform.values,
+            "pointer draw suppression preserves sequence owner, clock, asset and transform");
+        renderer.configureStandardPointerPresentation(false);
+        require(capture(device,renderer,slot)==baseline,
+            "leaving qualified presentation restores exact retail pointer framebuffer");
+    }
     void testPresentationRect(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
     {
         auto retail=std::make_shared<data::BitmapRuntimeAsset>();
@@ -311,7 +348,7 @@ namespace
         {
             requested.push_back(index);
             // Actual name used to qualify wrapping; production supplies LANG values.
-            return ibar::ModernIBarSkin::PropertyDescriptor{"Boulevard de Belleville", 0, "�60"};
+            return ibar::ModernIBarSkin::PropertyDescriptor{"Boulevard de Belleville", 0, "ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬60"};
         }, raster);
         auto original = std::make_shared<data::BitmapRuntimeAsset>();
         original->image = {34,42,std::vector<std::uint8_t>(34*42*4,255)};
@@ -466,6 +503,100 @@ namespace
         for (std::size_t i=0;i<rgba.size();i+=4) out.write(reinterpret_cast<const char*>(rgba.data()+i),3);
         require(bool(out),"actual GPU capture RGB bytes finish writing");
     }
+    void writeBmp(const std::filesystem::path& path,const std::vector<std::uint8_t>& rgba,unsigned w,unsigned h)
+    {
+        const unsigned stride=(w*3+3)&~3U;
+        std::array<std::uint8_t,54> header{};header[0]='B';header[1]='M';
+        const auto field=[&](unsigned offset,unsigned value)
+        { for(unsigned byte=0;byte<4;++byte) header[offset+byte]=std::uint8_t(value>>(byte*8)); };
+        field(2,54+stride*h);field(10,54);field(14,40);field(18,w);field(22,h);
+        header[26]=1;header[28]=24;field(34,stride*h);
+        std::ofstream out(path,std::ios::binary);out.write(reinterpret_cast<const char*>(header.data()),header.size());
+        std::vector<std::uint8_t> row(stride);
+        for(unsigned y=h;y>0;--y)
+        {
+            for(unsigned x=0;x<w;++x)
+            { const auto source=((y-1)*w+x)*4;row[x*3]=rgba[source+2];row[x*3+1]=rgba[source+1];row[x*3+2]=rgba[source]; }
+            out.write(reinterpret_cast<const char*>(row.data()),row.size());
+        }
+        require(bool(out),"actual FaceIn GPU RGB readback writes lossless BMP");
+    }
+    void captureRetailFaceIn(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual retail DAT opens for FaceIn GPU before/after");
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"face-in-polish-20261001").lexically_normal();
+        std::filesystem::create_directories(output);
+        for(const int tick:{12,24})
+        {
+            auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {return std::unexpected("native FaceIn text retained");});
+            skin->configureDrawCardDescriptors({{0x00050029U,{"Chance","Qualification",400,239}}},
+                [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {return std::unexpected("native FaceIn text retained");});
+            bool qualified=false;skin->configurePresentationContext([&]{return qualified;});
+            engine::SequencePlayback playback(resources.snapshot());
+            playback.world2D().configureModernIBarSkin(skin);
+            require(playback.start(0x00050019U,1005) && playback.update(0),
+                "actual StCharles FaceIn anchors its authored sequence at tick zero");
+            for(int frame=1;frame<=tick;++frame)
+                require(playback.update(frame).has_value(),"actual FaceIn advances each authored frame to requested tick");
+            auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(leaves && !leaves->empty(),"actual FaceIn exposes decoded production bitmap leaves");
+            std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> nativeObjects;
+            const auto nativeOrder=playback.world2D().order();
+            for(auto& leaf:*leaves)
+            {
+                const auto* object=playback.world2D().find(leaf.node);require(object && object->asset,"actual FaceIn native source resolves");
+                nativeObjects.emplace(leaf.node,*object);leaf.runtimeAsset=object->asset;
+                std::cout<<"FaceIn tick="<<tick<<" root="<<leaf.rootSequenceDataId<<" leaf="<<leaf.contentsDataId
+                    <<" dimensions="<<object->asset->image.width<<'x'<<object->asset->image.height
+                    <<" clock="<<leaf.clock<<" priority="<<leaf.priority<<'\n';
+            }
+            const auto prefix="st-charles-t"+std::to_string(tick);
+            const auto before=capture(device,renderer,playback.world2D());
+            writeBmp(output/(prefix+"-before.bmp"),before,800,600);
+            qualified=true;data::BitmapRuntimeCache cache;
+            require(playback.world2D().sync(*leaves,cache).has_value(),"same actual evaluated leaves publish qualified FaceIn palette");
+            unsigned changed=0,retained=0,warmSprites=0;bool backgroundChanged=false;
+            for(const auto& leaf:*leaves)
+            {
+                const auto* object=playback.world2D().find(leaf.node);const auto& native=nativeObjects.at(leaf.node);
+                require(object && object->clock==native.clock && object->priority==native.priority &&
+                    object->worldTransform.values==native.worldTransform.values,
+                    "actual FaceIn preserves node clock priority and raster transform");
+                if(object->asset!=native.asset)
+                {
+                    ++changed;
+                    if(leaf.contentsDataId==0x00050815U) backgroundChanged=true; else ++warmSprites;
+                    const auto& original=native.asset->image;const auto& recolored=object->asset->image;
+                    require(original.width==recolored.width && original.height==recolored.height &&
+                        original.pixels.size()==recolored.pixels.size() &&
+                        object->asset->dataId==native.asset->dataId && object->asset->source==native.asset->source &&
+                        object->asset->presentationRect==native.asset->presentationRect,
+                        "actual FaceIn recolor retains source identity dimensions and presentation extent");
+                    bool pixelsPreserved=true;
+                    for(std::size_t i=0;i<original.pixels.size();i+=4)
+                    {
+                        const auto high=std::max({original.pixels[i],original.pixels[i+1],original.pixels[i+2]});
+                        const auto low=std::min({original.pixels[i],original.pixels[i+1],original.pixels[i+2]});
+                        pixelsPreserved &= original.pixels[i+3]==recolored.pixels[i+3];
+                        if(original.pixels[i+3]==0 || high<=40 || high-low<=8)
+                            for(unsigned c=0;c<3;++c) pixelsPreserved &= original.pixels[i+c]==recolored.pixels[i+c];
+                    }
+                    require(pixelsPreserved,"actual recolored background/mascot preserves every alpha and dark/grayscale/transparent ink pixel");
+                }
+                else ++retained;
+            }
+            require(backgroundChanged && warmSprites>0 && playback.world2D().order()==nativeOrder,
+                "actual FaceIn recolors measured paper and warm mascot while preserving native leaf ordering");
+            const auto after=capture(device,renderer,playback.world2D());
+            require(before!=after,"actual FaceIn GPU before/after differ at fixed tick");
+            writeBmp(output/(prefix+"-after.bmp"),after,800,600);
+            std::cout<<"FaceIn actual GPU tick="<<tick<<" changed="<<changed<<" retained="<<retained<<" files="<<output.string()<<'\n';
+        }
+    }
     void extractRetailCardSheet(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});
@@ -521,6 +652,66 @@ namespace
         writePpm(output/"retail-cards-contact-sheet.ppm",sheet,sw,sh);
         std::cout<<"Licensed32-card sheet (Chance first16, Community last16): "<<(output/"retail-cards-contact-sheet.ppm").string()<<'\n';
     }
+    void testModernCardFaceInLeaves(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
+    {
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return std::unexpected("FaceIn must preserve native text"); });
+        skin->configureDrawCardDescriptors({{0x00050029U,{"Chance","Qualification",400,239}}},
+            [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return std::unexpected("FaceIn must preserve native text"); });
+        bool context=true;
+        skin->configurePresentationContext([&]{return context;});
+        auto background=std::make_shared<data::BitmapRuntimeAsset>();
+        background->dataId=0x00050815U;background->sourceType=data::LegacyDataType::Uap;
+        background->image={400,240,std::vector<std::uint8_t>(400*240*4)};
+        for(std::size_t i=0;i<background->image.pixels.size();i+=4)
+        {
+            background->image.pixels[i]=240;background->image.pixels[i+1]=110;
+            background->image.pixels[i+2]=15;background->image.pixels[i+3]=255;
+        }
+        background->image.pixels[4]=background->image.pixels[5]=background->image.pixels[6]=0;
+        background->image.pixels[(10*400+10)*4+3]=0;
+        auto mascot=std::make_shared<data::BitmapRuntimeAsset>();
+        mascot->dataId=0x00050636U;mascot->sourceType=data::LegacyDataType::Uap;
+        mascot->image={440,389,std::vector<std::uint8_t>(440*389*4)};
+        for(std::size_t i=0;i<mascot->image.pixels.size();i+=4)
+        { mascot->image.pixels[i+2]=255;mascot->image.pixels[i+3]=255; }
+        sequence::SequenceBitmapRenderItem bg;
+        bg.node=451;bg.rootSequenceNode=450;bg.rootSequenceDataId=0x00050019U;
+        bg.contentsDataId=background->dataId;bg.runtimeAsset=background;
+        bg.metadata={data::LegacyDataType::Uap,400,240,0,0,32};
+        bg.worldTransform=sequence::translate2D(200,100);bg.clock=12;bg.priority=257;
+        auto art=bg;art.node=452;art.contentsDataId=mascot->dataId;art.runtimeAsset=mascot;
+        art.metadata={data::LegacyDataType::Uap,440,389,0,0,32};
+        art.worldTransform=sequence::translate2D(650,100);
+        engine::SequenceWorld2DSlot slot;data::BitmapRuntimeCache cache;
+        require(slot.sync({bg,art},cache).has_value(),"FaceIn native multi-leaf owner reaches production slot");
+        const auto nativeOrder=slot.order();const auto native=capture(device,renderer,slot);
+        slot.configureModernIBarSkin(skin);
+        require(slot.sync({bg,art},cache).has_value() && slot.find(451)->asset!=background &&
+            slot.find(452)->asset==mascot,"FaceIn replaces exact smaller background and retains larger mascot pointer");
+        require(slot.order()==nativeOrder && slot.find(451)->clock==12 && slot.find(452)->clock==12 &&
+            slot.find(451)->priority==257 && slot.find(452)->priority==257 &&
+            slot.find(451)->worldTransform.values==bg.worldTransform.values &&
+            slot.find(452)->worldTransform.values==art.worldTransform.values &&
+            engine::SequenceWorld2DSlot::transformPoint(slot.find(451)->worldTransform,400,240)==
+                std::array<std::int32_t,2>{600,340},
+            "FaceIn preserves every leaf clock priority order matrix and authored footprint");
+        const auto modern=capture(device,renderer,slot);
+        require(pixel(modern,220,120)!=pixel(native,220,120) &&
+            pixel(modern,670,120)==pixel(native,670,120) &&
+            pixel(modern,210,110)==pixel(native,210,110),
+            "actual GPU recolors only FaceIn background while preserving mascot and transparent source hole");
+        const auto cached=slot.find(451)->asset;
+        context=false;
+        require(slot.sync({bg,art},cache).has_value() && slot.find(451)->asset==background &&
+            slot.find(452)->asset==mascot,"FaceIn incompatible context restores complete exact original owner");
+        context=true;
+        require(slot.sync({bg,art},cache).has_value() && slot.find(451)->asset==cached &&
+            slot.find(452)->asset==mascot,"FaceIn compatible context reuses background without suppressing sibling");
+    }
+
     void testModernDeeds(SDL_GPUDevice* device,engine::World2DRenderer& renderer)
     {
         fonts::Runtime font;
@@ -800,10 +991,13 @@ int main(int argc, char** argv)
         testLabeledCamera(device, *renderer);
         testModernIBarSkin(device, *renderer);
         testOptInLinearSampling(device, *renderer);
+        testStandardPointerPresentation(device, *renderer);
         testPresentationRect(device, *renderer);
         testModernPropertyThumbnails(device, *renderer);
+        testModernCardFaceInLeaves(device,*renderer);
         testModernDeeds(device,*renderer);
-        if (argc == 2) testRetailIBarBands(device, *renderer, std::filesystem::path(argv[1]));
+        if (argc == 2) { testRetailIBarBands(device, *renderer, std::filesystem::path(argv[1]));
+            captureRetailFaceIn(device,*renderer,std::filesystem::path(argv[1])); }
         else require(argc == 1, "optional argument is an explicit actual retail resource root");
         renderer.reset();
         SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;

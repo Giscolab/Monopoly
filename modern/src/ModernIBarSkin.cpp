@@ -128,6 +128,46 @@ namespace monopoly::ibar
             if(kind==ModernIBarSkin::DeedArtwork::Water && tag==0x0CE4) return std::array<unsigned,4>{73,18,127,63};
             return {};
         }
+        constexpr std::array<unsigned,16> ChanceFaceBackgrounds{
+            0x814,0x815,0x816,0x849,0x819,0x81B,0x81C,0x81D,
+            0x81E,0x81F,0x820,0x821,0x812,0x823,0x824,0x813};
+        constexpr std::array<unsigned,16> ChestFaceBackgrounds{
+            0x8CB,0x8CC,0x8CD,0x8CE,0x8C8,0x8C9,0x8D1,0x8D2,
+            0x8D3,0x8D4,0x8D5,0x8D6,0x8CA,0x8D8,0x86C,0x8DA};
+        std::optional<data::DataId> faceIdleRoot(data::DataId root)
+        {
+            if(root>=0x50018 && root<=0x50027) return root+0x10;
+            if(root>=0x50008 && root<=0x50017) return root+0x51;
+            return {};
+        }
+        bool faceBackground(data::DataId root,data::DataId leaf)
+        {
+            if(data::dataGroup(leaf)!=data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics)) return false;
+            const auto tag=data::dataTag(leaf);
+            if(root>=0x50018 && root<=0x50027)
+                return tag==ChanceFaceBackgrounds[root-0x50018] || (root==0x5001C && tag==0x81A);
+            return root>=0x50008 && root<=0x50017 && tag==ChestFaceBackgrounds[root-0x50008];
+        }
+        struct FaceSprite
+        {
+            std::uint16_t rootTag,leafTag,width,height;
+            std::int16_t x,y;
+        };
+        constexpr std::array<FaceSprite,1151> FaceSprites{{
+#include "ModernCardFaceInSprites.inc"
+        }};
+        bool faceSprite(data::DataId root,const data::BitmapRuntimeAsset& asset)
+        {
+            if(data::dataGroup(asset.dataId)!=data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics) || !asset.source) return false;
+            const auto key=std::pair{data::dataTag(root),data::dataTag(asset.dataId)};
+            const auto found=std::lower_bound(FaceSprites.begin(),FaceSprites.end(),key,
+                [](const FaceSprite& item,const auto& wanted){return std::pair{item.rootTag,item.leafTag}<wanted;});
+            if(found==FaceSprites.end() || std::pair{found->rootTag,found->leafTag}!=key ||
+                asset.image.width!=found->width || asset.image.height!=found->height) return false;
+            const auto metadata=data::inspectLegacyUap(*asset.source);
+            return metadata && metadata->width==found->width && metadata->height==found->height &&
+                metadata->originX==found->x && metadata->originY==found->y;
+        }
         bool backdrop(data::DataId root)
         {
             return data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
@@ -136,8 +176,15 @@ namespace monopoly::ibar
         }
     }
 
+    bool ModernIBarSkin::supportsCardFaceIn(data::DataId root) const noexcept
+    {
+        const auto idle=faceIdleRoot(root);
+        return language_==data::LanguageId::EnglishUs && presentationContext_ && idle && drawCards_.contains(*idle);
+    }
+
     bool ModernIBarSkin::supports(data::DataId root) const noexcept
     {
+        if(supportsCardFaceIn(root)) return true;
         if(const auto p=property(root);p && p->miniature)
             return language_==data::LanguageId::EnglishUs && properties_ && propertyText_ && presentationContext_;
         const bool language = language_ == data::LanguageId::French ||
@@ -156,6 +203,40 @@ namespace monopoly::ibar
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
         if (!w || !h || w > 1600 || h > 600) return original;
+        if(faceIdleRoot(root))
+        {
+            if(!supportsCardFaceIn(root) || !presentationContext_() || original->sourceType!=data::LegacyDataType::Uap || !valid(original->image)) return original;
+            const bool background=faceBackground(root,original->dataId) && w==400 && h==240;
+            if(!background && !faceSprite(root,*original)) return original;
+            const Key key{root,w,h,false,std::array<float,9>{},0,{},original.get()};
+            if(const auto found=cache_.find(key);found!=cache_.end()) return found->second.replacement;
+            bool warm=false,ink=false;
+            const auto& pixels=original->image.pixels;
+            // Actual USA backgrounds/sprites contain warm fill plus dark/grayscale ink.
+            // Unexpected coloured artwork fails closed rather than losing its colour.
+            for(std::size_t i=0;i<pixels.size();i+=4)
+            {
+                const unsigned r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+                const auto low=std::min({r,g,b}),high=std::max({r,g,b});
+                if(pixels[i+3]==0) continue; // Preserve even the transparent magenta colour key.
+                if(high<=40 || high-low<=8) { ink|=high<64; continue; }
+                if(r+8<g || g+8<b) return original;
+                warm=true;
+            }
+            if(!warm || (background && !ink)) return original;
+            auto result=std::make_shared<data::BitmapRuntimeAsset>(*original);
+            result->sourceType=data::LegacyDataType::Native;
+            constexpr std::array<unsigned,3> cream{237,232,215};
+            for(std::size_t i=0;i<pixels.size();i+=4)
+            {
+                const unsigned r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+                if(pixels[i+3]==0 || std::max({r,g,b})<=40 || std::max({r,g,b})-std::min({r,g,b})<=8) continue;
+                for(unsigned c=0;c<3;++c) result->image.pixels[i+c]=std::uint8_t((r*cream[c]+127)/255);
+            }
+            if(cache_.size()>=128) cache_.clear();
+            cache_.emplace(key,CachedArtwork{result,original});
+            return result;
+        }
         const auto miniature=property(root);
         if(miniature && miniature->miniature &&
             (!principal || original->dataId!=root || original->sourceType!=data::LegacyDataType::Uap ||

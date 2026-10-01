@@ -3,6 +3,7 @@
 #include "LogicalViewport.hpp"
 #include "World3DShaderUniforms.hpp"
 #include "SequenceTransforms.hpp"
+#include "MousePointerPlayback.hpp"
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstring>
@@ -168,15 +169,26 @@ namespace monopoly::engine
                 m[6]/400.0F-1.0F,1.0F-m[7]/300.0F,0,1};
         };
         std::set<const data::BitmapRuntimeAsset*> used;
+        const auto suppressed = [this](const SequenceWorld2DObject& object) {
+            // TAB_pointer is a raw bitmap root (root equals contents), not a
+            // shared hover-feedback leaf. Both identity and priority must match.
+            return standardPointerPresentation_ &&
+                object.contentsDataId == mouse::PointerDataId &&
+                object.priority == mouse::PointerPriority && object.asset &&
+                object.asset->dataId == mouse::PointerDataId;
+        };
+        std::size_t drawn{};
         for (const auto node:slot.order())
         {
             const auto* object=slot.find(node);
             if (!object) return std::unexpected("missing 2D slot node");
+            if (suppressed(*object)) continue;
             auto texture=resolveTexture(object->asset);
             if (!texture) return std::unexpected(texture.error());
             for (const auto value : matrixFor(*object))
                 if (!std::isfinite(value)) return std::unexpected("2D projected matrix exceeds finite GPU range");
             used.insert(object->asset.get());
+            ++drawn;
         }
         for (auto it=textures_.begin();it!=textures_.end();)
         {
@@ -184,7 +196,7 @@ namespace monopoly::engine
             { SDL_ReleaseGPUTexture(device_,it->second.gpu); it=textures_.erase(it); }
             else ++it;
         }
-        if (slot.size()==0) return 0;
+        if (drawn==0) return 0;
         const auto fit=logicalviewport::makeTransform(static_cast<int>(width),static_cast<int>(height));
         const SDL_GPUViewport viewport{static_cast<float>(fit.offsetX),static_cast<float>(fit.offsetY),
             static_cast<float>(800.0*fit.scale),static_cast<float>(600.0*fit.scale),0,1};
@@ -209,6 +221,7 @@ namespace monopoly::engine
         for (const auto node:slot.order())
         {
             const auto& object=*slot.find(node);
+            if (suppressed(object)) continue;
             // Row-vector Matrix2D into the original 800x600 logical canvas.
             // DataBMP origin is (0,0); no dice-specific anchor is inserted.
             vertexUniforms.worldViewProjection = matrixFor(object);
@@ -219,6 +232,6 @@ namespace monopoly::engine
             SDL_DrawGPUPrimitives(pass,6,1,0,0);
         }
         SDL_EndGPURenderPass(pass);
-        return slot.size();
+        return drawn;
     }
 }

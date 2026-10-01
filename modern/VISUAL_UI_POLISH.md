@@ -349,3 +349,33 @@ FaceIn roots keep native assets. The optional native-cursor experiment passes fo
 real game still showed the glowing pointer. That unqualified patch is withheld
 from this milestone. Navigation captures are `navigation-pass24-after.jpg` and
 `navigation-board-pass24-after.jpg`; F11 returned to1920x1080 after fullscreen.
+## Animated card paper and artwork (passes25-26)
+
+Matched production GPU captures are `build/face-in-polish-20261001/st-charles-
+{t12,t24}-{before,after}.png`. The probe starts at0 before advancing to12/24;
+earlier paper-only capture filenames incorrectly implied advancement while
+both were clock0. Those older pictures remain a valid matched paper comparison,
+but not a progressed-animation proof. The corrected comparisons retain the
+same actual clock, layers, transforms, priority and silhouettes.
+
+A first paper-only pass exposed orange mascot fills on cream. The refinement
+recolors visible warm paper/art pixels together. The exact33 paper payloads and
+1151 measured root/leaf/extent/origin sprite records qualify;60 neutral sprites
+retain their exact original assets. Alpha, transparent RGB and dark/grayscale
+ink remain byte-identical. Unknown IDs, shapes, palettes or context keep retail.
+`--card-face-inspect <absolute-runtime-data-root>` regenerates the sprite table;
+`--card-face-qualify` checks all32 actual roots and all1211 sprite payloads.
+The FaceIn slot path processes each leaf independently instead of choosing a
+largest shell that would erase separate animated characters. No clock changes.
+Focused IBar/World2D CPU and actual GPU checks pass.
+
+The actual cursor diagnostic run reports standard=1, exact bitmap131875,
+priority65535 and suppressed=1. The optional native pointer path also configures
+a freshly-created renderer immediately. Temporary diagnostics are removed;
+focused GPU tests preserve independent hover pixels, native fallback and clocks.
+The red pointer marker still seen in desktop click captures is not proof that
+the suppressed game bitmap remains. No claim is made about that desktop marker.
+
+Further shadow trials remain rejected: explicit caster world-depth reconstruction
+is pixel-identical to baseline; half-texel caster slope bias leaves wall bands.
+Canonical shader artifacts and source were restored after these diagnostics.

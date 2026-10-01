@@ -8,6 +8,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 namespace
 {
@@ -19,6 +20,168 @@ namespace
         asset->dataId=id;asset->sourceType=data::LegacyDataType::Uap;
         asset->image={w,h,std::vector<std::uint8_t>(std::size_t(w)*h*4,255)};
         return asset;
+    }
+    constexpr std::array<unsigned,32> FaceLeaves{
+        0x8CB,0x8CC,0x8CD,0x8CE,0x8C8,0x8C9,0x8D1,0x8D2,
+        0x8D3,0x8D4,0x8D5,0x8D6,0x8CA,0x8D8,0x86C,0x8DA,
+        0x814,0x815,0x816,0x849,0x819,0x81B,0x81C,0x81D,
+        0x81E,0x81F,0x820,0x821,0x812,0x823,0x824,0x813};
+    void configureFaces(ibar::ModernIBarSkin& skin)
+    {
+        std::map<data::DataId,ibar::ModernIBarSkin::DrawCardDescriptor> descriptors;
+        for(unsigned i=0;i<32;++i)
+        {
+            const auto idle=i<16?0x50059+i:0x50028+i-16;
+            descriptors.emplace(idle,ibar::ModernIBarSkin::DrawCardDescriptor{"Actual title","Actual body",400,idle==0x50029?239U:240U});
+        }
+        skin.configureDrawCardDescriptors(std::move(descriptors),{});
+    }
+    void verifyFacePixels(const data::BitmapRuntimeAsset& original,const data::BitmapRuntimeAsset& result)
+    {
+        require(result.image.width==original.image.width && result.image.height==original.image.height && result.dataId==original.dataId &&
+            result.sourceType==data::LegacyDataType::Native && result.presentationRect==original.presentationRect &&
+            result.preferLinearFiltering==original.preferLinearFiltering,"FaceIn retains native raster and presentation metadata");
+        constexpr std::array<unsigned,3> cream{237,232,215};
+        for(std::size_t p=0;p<original.image.pixels.size();p+=4)
+        {
+            const unsigned r=original.image.pixels[p],g=original.image.pixels[p+1],b=original.image.pixels[p+2];
+            const bool neutral=original.image.pixels[p+3]==0 || std::max({r,g,b})<=40 || std::max({r,g,b})-std::min({r,g,b})<=8;
+            for(unsigned c=0;c<3;++c)
+                require(result.image.pixels[p+c]==(neutral?original.image.pixels[p+c]:(r*cream[c]+127)/255),
+                    "FaceIn neutral ink unchanged and warm paper brightness retained");
+            require(result.image.pixels[p+3]==original.image.pixels[p+3],"every FaceIn alpha byte unchanged");
+        }
+    }
+    void testCardFaceIn()
+    {
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});
+        bool context=true;skin.configurePresentationContext([&]{return context;});configureFaces(skin);
+        for(unsigned i=0;i<33;++i)
+        {
+            const auto root=i==32?0x5001C:0x50008+i;
+            const auto leaf=0x50000+(i==32?0x81A:FaceLeaves[i]);
+            auto original=bitmap(leaf,400,240);
+            for(std::size_t p=0;p<original->image.pixels.size();p+=4)
+            {
+                original->image.pixels[p]=240;original->image.pixels[p+1]=110;original->image.pixels[p+2]=15;
+                original->image.pixels[p+3]=std::uint8_t(p/4%256);
+            }
+            original->image.pixels[0]=original->image.pixels[1]=original->image.pixels[2]=0;original->image.pixels[3]=255;
+            original->image.pixels[4]=original->image.pixels[5]=original->image.pixels[6]=128;
+            require(skin.supportsCardFaceIn(root),"all32 measured FaceIn roots enabled");
+            const auto result=skin.substitute(root,original,false);
+            require(result!=original,"exact background qualifies even when not principal");verifyFacePixels(*original,*result);
+            require(skin.substitute(root,original)==result,"FaceIn source identity cache reused regardless principal");
+            context=false;require(skin.substitute(root,original)==original,"context checked before cached FaceIn result");context=true;
+            auto bad=std::make_shared<data::BitmapRuntimeAsset>(*original);bad->image.pixels[5]=0;bad->image.pixels[6]=255;
+            require(skin.substitute(root,bad)==bad,"unknown coloured artwork rejected");
+            bad=std::make_shared<data::BitmapRuntimeAsset>(*original);bad->dataId=0x50636;
+            require(skin.substitute(root,bad)==bad,"nonbackground sibling pointer retained");
+            bad=bitmap(leaf,400,239);require(skin.substitute(root,bad)==bad,"background extent failclosed");
+            bad=std::make_shared<data::BitmapRuntimeAsset>(*original);bad->sourceType=data::LegacyDataType::Bitmap;
+            require(skin.substitute(root,bad)==bad,"wrong source type rejected");
+            bad=std::make_shared<data::BitmapRuntimeAsset>(*original);bad->image.pixels.pop_back();
+            require(skin.substitute(root,bad)==bad,"malformed raster rejected");
+        }
+        auto blank=bitmap(0x50815,400,240);require(skin.substitute(0x50019,blank)==blank,"neutral-only raster preserved");
+        require(!skin.supportsCardFaceIn(0x50028) && !skin.supportsCardFaceIn(0x50007),"adjacent roots not admitted");
+        ibar::ModernIBarSkin french(data::LanguageId::French,{});configureFaces(french);french.configurePresentationContext([]{return true;});
+        require(!french.supportsCardFaceIn(0x50019),"USA-only art retains foreign fallback");
+        skin.configureDrawCardDescriptors({},{});require(!skin.supportsCardFaceIn(0x50019),"unconfigured owner restores fallback");
+    }
+    void testActualCardFaces(const std::filesystem::path& root,bool inspect=false)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"actual card DAT opens");
+        const auto snapshot=resources.snapshot();auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
+        bool context=true;skin->configurePresentationContext([&]{return context;});configureFaces(*skin);
+        data::BitmapRuntimeCache cache;unsigned replaced=0,siblings=0,warmSprites=0,neutralSprites=0;
+        for(unsigned i=0;i<33;++i)
+        {
+            const auto owner=i==32?0x5001C:0x50008+i,leaf=0x50000+(i==32?0x81A:FaceLeaves[i]);
+            const auto metadata=snapshot->data().metadata(leaf);const auto bytes=snapshot->data().load(leaf);
+            require(metadata && bytes,"actual background metadata and bytes load");
+            const auto original=cache.resolve(leaf,metadata->type,*bytes);require(original.has_value(),"actual background decodes");
+            const auto modern=skin->substitute(owner,*original);
+            require(modern!=*original,"all33 actual background palettes qualify");verifyFacePixels(**original,*modern);
+        }
+        for(unsigned i=0;i<32;++i)
+        {
+            const auto owner=0x50008+i;
+            const auto program=sequence::SequenceProgram::load(snapshot,owner,0);require(program.has_value(),"actual FaceIn CNK loads");
+            std::set<data::DataId> leaves;
+            for(const auto& description:(*program)->descriptions())
+                if(std::holds_alternative<data::SequenceBitmapData>(description.record.data) && description.contentsDataId)
+                    leaves.insert(*description.contentsDataId);
+            for(const auto leaf:leaves)
+            {
+                if(leaf==0x50000+FaceLeaves[i] || (owner==0x5001C && leaf==0x5081A)) continue;
+                const auto metadata=snapshot->data().metadata(leaf);const auto bytes=snapshot->data().load(leaf);
+                require(metadata && bytes,"every actual sprite description loads");
+                const auto original=cache.resolve(leaf,metadata->type,*bytes);require(original.has_value(),"every actual sprite decodes");
+                const auto uap=data::inspectLegacyUap(**bytes);require(uap.has_value(),"every sprite has actual native UAP metadata");
+                bool warm=false;
+                for(std::size_t p=0;p<(*original)->image.pixels.size();p+=4)
+                {
+                    const auto& pixels=(*original)->image.pixels;
+                    const unsigned r=pixels[p],g=pixels[p+1],b=pixels[p+2];
+                    if(!pixels[p+3] || std::max({r,g,b})<=40 || std::max({r,g,b})-std::min({r,g,b})<=8) continue;
+                    require(r+8>=g && g+8>=b,"production sprite has no unknown visible palette colour");warm=true;
+                }
+                const auto result=skin->substitute(owner,*original,false);
+                if(warm)
+                {
+                    require(result!=*original,"every measured warm sprite qualifies");verifyFacePixels(**original,*result);++warmSprites;
+                    require(skin->substitute(owner,*original)==result,"actual sprite cache preserves immutable identity");
+                    context=false;require(skin->substitute(owner,*original)==*original,"actual sprite cache respects current context");context=true;
+                    auto bad=std::make_shared<data::BitmapRuntimeAsset>(**original);
+                    auto raw=std::make_shared<data::DataBytes>(**bytes);
+                    (*raw)[4]=std::byte{0xFF};(*raw)[5]=std::byte{0x7F};bad->source=raw;
+                    require(skin->substitute(owner,bad)==bad,"actual sprite wrong intrinsic origin fails closed");
+                    bad=std::make_shared<data::BitmapRuntimeAsset>(**original);++bad->image.width;
+                    bad->image.pixels.resize(std::size_t(bad->image.width)*bad->image.height*4,255);
+                    require(skin->substitute(owner,bad)==bad,"actual sprite wrong native extent fails closed");
+                    bad=std::make_shared<data::BitmapRuntimeAsset>(**original);bad->dataId=0x50999;
+                    require(skin->substitute(owner,bad)==bad,"actual sprite unknown ID fails closed");
+                    bad=std::make_shared<data::BitmapRuntimeAsset>(**original);bad->image.pixels[0]=0;bad->image.pixels[1]=0;bad->image.pixels[2]=255;bad->image.pixels[3]=255;
+                    require(skin->substitute(owner,bad)==bad,"actual sprite unexpected visible palette fails closed");
+                    if(inspect)std::cout<<"    {0x"<<std::hex<<data::dataTag(owner)<<",0x"<<data::dataTag(leaf)<<std::dec<<','<<uap->width<<','<<uap->height<<','<<uap->originX<<','<<uap->originY<<"},\n";
+                }
+                else {require(result==*original,"all neutral-only production sprites retain exact pointer");++neutralSprites;}
+            }
+            sequence::SequenceRuntime runtime;require(runtime.start(*program,1005).has_value(),"actual FaceIn starts");
+            engine::SequenceWorld2DSlot native,modern;modern.configureModernIBarSkin(skin);
+            bool ownerReplaced=false;
+            for(int tick=0;tick<=24;++tick)
+            {
+                require(runtime.update(tick).has_value(),"actual FaceIn advances");
+                if(tick!=0 && tick!=4 && tick!=12 && tick!=24)continue;
+                const auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);
+                require(items && native.sync(*items,cache) && modern.sync(*items,cache),"actual FaceIn publishes both slots");
+                require(native.order()==modern.order(),"FaceIn leaf ordering retained");
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    require(a && m && a->clock==m->clock && a->priority==m->priority && a->contentsDataId==m->contentsDataId &&
+                        a->worldTransform.values==m->worldTransform.values,"FaceIn clock priority identity and transform retained");
+                    const bool background=a->contentsDataId==0x50000+FaceLeaves[i] || (owner==0x5001C && a->contentsDataId==0x5081A);
+                    if(background){require(a->asset!=m->asset,"actual background changes");verifyFacePixels(*a->asset,*m->asset);ownerReplaced=true;++replaced;}
+                    else
+                    {
+                        const auto expected=skin->substitute(owner,a->asset,false);
+                        require(m->asset==expected,"actual sprite follows exact per-leaf qualification");
+                        if(expected!=a->asset)verifyFacePixels(*a->asset,*m->asset);
+                        else ++siblings;
+                    }
+                }
+                context=false;require(modern.sync(*items,cache).has_value(),"actual context fallback publishes");
+                for(const auto node:native.order())require(native.find(node)->asset==modern.find(node)->asset,"actual cached context fallback exact");
+                context=true;
+            }
+            require(ownerReplaced,"each actual FaceIn owner exposes a qualified background");
+        }
+        require(replaced>=32 && warmSprites==1151 && neutralSprites==60,"actual33 backgrounds and all1211 production sprites qualified");
+        if(!inspect)std::cout<<"[PASS] actual32 FaceIn roots,33 backgrounds,1151 warm sprites,60 neutral sprites; replaced background samples="<<replaced<<" retained sprite samples="<<siblings<<'\n';
     }
     void testMeasuredStCharlesIdleCard()
     {
@@ -44,7 +207,7 @@ namespace
             "Presentation context is checked before returning cached239px card");
         context=true;
         require(skin.substitute(0x00050019,bitmap(0x00050815,400,240))->sourceType==data::LegacyDataType::Uap,
-            "Native FaceIn remains unqualified; idle dimension correction does not modernize animation");
+            "Neutral-only FaceIn retains its original pixels");
     }
 
     void testPortfolioMiniatures()
@@ -521,6 +684,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

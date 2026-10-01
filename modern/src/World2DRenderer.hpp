@@ -18,6 +18,9 @@ namespace monopoly::engine
             SDL_GPUCommandBuffer* command, SDL_GPUTexture* target,
             std::uint32_t width, std::uint32_t height, const SequenceWorld2DSlot& slot);
         [[nodiscard]] std::size_t textureCount() const noexcept { return textures_.size(); }
+        // Presentation only: the retail pointer sequence remains live in its slot.
+        void configureStandardPointerPresentation(bool enabled) noexcept
+        { standardPointerPresentation_ = enabled; }
     private:
         World2DRenderer() = default;
         [[nodiscard]] std::expected<SDL_GPUTexture*, std::string> resolveTexture(
@@ -33,6 +36,7 @@ namespace monopoly::engine
         SDL_GPUBuffer* quad_{};
         SDL_GPUSampler* sampler_{};
         SDL_GPUSampler* linearSampler_{};
+        bool standardPointerPresentation_{};
         std::map<const data::BitmapRuntimeAsset*, Texture> textures_;
     };
 }

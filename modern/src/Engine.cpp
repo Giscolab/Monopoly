@@ -2862,11 +2862,18 @@ namespace monopoly::engine
             {
                 mousePointerErrorReported = false;
             }
+            const bool standardPointerPresentation = modernSceneOptions.proceduralBoard && resources &&
+                resources->context().board == data::BoardEdition::Usa &&
+                resources->context().language == data::LanguageId::EnglishUs &&
+                displayState.city == 0 && displayState.system == 13 &&
+                displayState.customBoardPath.empty();
+            if (overlayRenderer)
+                overlayRenderer->configureStandardPointerPresentation(standardPointerPresentation);
             const auto nativeKind = (openingMovies.active() ||
-                (!pointerSync && mousePointerPlayback.visible()))
+                (!standardPointerPresentation && !pointerSync && mousePointerPlayback.visible()))
                 ? mouse::NativeCursorKind::Hidden
                 : mouse::nativeCursorKind(
-                    mouse::stateReadOnly(), mousePointerPlayback.visible());
+                    mouse::stateReadOnly(), !standardPointerPresentation && mousePointerPlayback.visible());
             if (!nativeMouseCursor.sync(nativeKind))
                 return SDL_SetError("Mouse cursor synchronization failed: %s",
                     SDL_GetError());
@@ -3059,6 +3066,16 @@ namespace monopoly::engine
                 SDL_GetGPUSwapchainTextureFormat(gpuDevice, gameWindow));
             if (!loaded) return SDL_SetError("World2D pipeline: %s", loaded.error().c_str());
             overlayRenderer = std::move(*loaded);
+            // This lazy creation follows the native cursor update above. Apply
+            // the same guard now so even its first frame omits the retail cursor.
+            const auto pointerResources = startup::resources();
+            const auto& pointerDisplayState = display::stateReadOnly();
+            overlayRenderer->configureStandardPointerPresentation(
+                modernSceneOptions.proceduralBoard && pointerResources &&
+                pointerResources->context().board == data::BoardEdition::Usa &&
+                pointerResources->context().language == data::LanguageId::EnglishUs &&
+                pointerDisplayState.city == 0 && pointerDisplayState.system == 13 &&
+                pointerDisplayState.customBoardPath.empty());
         }
         if (session && worldRenderer)
             if (auto* cache = worldRenderer->meshCache())

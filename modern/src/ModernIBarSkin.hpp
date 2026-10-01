@@ -81,6 +81,8 @@ namespace monopoly::ibar
         void configureLayoutProvider(LayoutProvider provider)
         { layout_ = std::move(provider); cache_.clear(); }
         [[nodiscard]] bool supports(data::DataId root) const noexcept;
+        // Only the measured background leaves change; animated siblings remain retail.
+        [[nodiscard]] bool supportsCardFaceIn(data::DataId root) const noexcept;
         [[nodiscard]] std::shared_ptr<const data::BitmapRuntimeAsset> substitute(
             data::DataId root, std::shared_ptr<const data::BitmapRuntimeAsset> original,
             bool principal = true,

@@ -104,6 +104,13 @@ namespace monopoly::engine
                 asset = *decoded;
             }
             assets.emplace(item.node, asset);
+            if (modernSkin_ && modernSkin_->supportsCardFaceIn(item.rootSequenceDataId))
+            {
+                // FaceIn backgrounds animate alongside independent text/art.
+                // Qualify each leaf: never select a largest shell or suppress siblings.
+                assets[item.node] = modernSkin_->substitute(item.rootSequenceDataId, asset, true);
+                continue;
+            }
             if ((modernSkin_ && modernSkin_->supports(item.rootSequenceDataId)) ||
                 (modernMenuSkin_ && modernMenuSkin_->supports(item.rootSequenceDataId)))
             {
