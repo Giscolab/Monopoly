@@ -1,4 +1,7 @@
 #include "ModernEnvironment.hpp"
+#include "ModernScenePresentation.hpp"
+#include "PiecePlacement.hpp"
+#include "ModernSceneCatalog.hpp"
 #include "ModernGltfMesh.hpp"
 #include "ModernTokenCatalog.hpp"
 #include "ModernTokenVariants.hpp"
@@ -302,10 +305,26 @@ int main(int argc, char** argv)
         std::filesystem::path relativeBoard{"board/paris_board_runtime.glb"};
         bool includeEnvironment = false, boardArgument = false;
         bool benchmarkToken = false;
+        unsigned polishLevel = 0;
+        unsigned cameraYaw = 28, cameraElevation = 55, uiSafePercent = 0;
+        std::optional<std::filesystem::path> tabletopSamples;
+        unsigned animationTick = 0;
         std::optional<TokenFrame> tokenFrame;
         for (int i = 4; i < argc; ++i)
         {
             if (std::string{argv[i]} == "--environment") includeEnvironment = true;
+            else if (std::string{argv[i]} == "--polish")
+            { if (++i >= argc) throw std::runtime_error("--polish requires 0..6"); polishLevel = number(argv[i], 6); }
+            else if (std::string{argv[i]} == "--camera-yaw")
+            { if (++i >= argc) throw std::runtime_error("--camera-yaw requires 0..359"); cameraYaw = number(argv[i],359); }
+            else if (std::string{argv[i]} == "--camera-elevation")
+            { if (++i >= argc) throw std::runtime_error("--camera-elevation requires 35..75"); cameraElevation = number(argv[i],75); if(cameraElevation < 35) throw std::runtime_error("elevation below 35"); }
+            else if (std::string{argv[i]} == "--ui-safe-percent")
+            { if (++i >= argc) throw std::runtime_error("--ui-safe-percent requires 0..40"); uiSafePercent = number(argv[i],40); }
+            else if (std::string{argv[i]} == "--tabletop-samples")
+            { if (++i >= argc) throw std::runtime_error("--tabletop-samples requires runtime-root"); tabletopSamples = argv[i]; }
+            else if (std::string{argv[i]} == "--animation-tick")
+            { if (++i >= argc) throw std::runtime_error("--animation-tick requires 0..600"); animationTick = number(argv[i],600); }
             else if (std::string{argv[i]} == "--benchmark") benchmarkToken = true;
             else if (std::string{argv[i]} == "--token-frame")
             {
@@ -333,6 +352,8 @@ int main(int argc, char** argv)
         options.unitsPerMeter = 200;
         options.localOffset = {2430, 0, 2430};
         options.groundToZero = false;
+        if(relativeBoard.generic_string() == "board/usa_board_runtime.glb")
+        { options.unitsPerMeter = 1; options.localOffset = {0,0,0}; }
         auto loaded = data::loadModernGltfMesh(assetRoot / relativeBoard, options);
         if (!loaded) throw std::runtime_error("Production GLB loader: " + loaded.error().detail);
         auto asset = std::make_shared<data::MeshRuntimeAsset>();
@@ -345,13 +366,55 @@ int main(int argc, char** argv)
         board.worldTransform = boardMatrix; board.asset = asset; board.renderData = *loaded;
         items.push_back(board);
         engine::ModernEnvironment environment(assetRoot, includeEnvironment);
-        auto decorations = environment.items(boardMatrix, 0);
+        auto decorations = environment.items(boardMatrix, 0, polishLevel >= 2);
         items.insert(items.end(), decorations.begin(), decorations.end());
         std::cout << "scope\tpresentation-only offscreen production renderer; no retail DAT or gameplay\n"
             << "environment_requested\t" << includeEnvironment
             << "\tenvironment_loaded\t" << decorations.size() << '\n';
-        if (includeEnvironment && decorations.size() != engine::ModernEnvironmentCount)
+        if (includeEnvironment && decorations.size() != engine::ModernEnvironmentCount + (polishLevel >= 2 ? 2U : 0U))
             throw std::runtime_error("Requested environment is incomplete; see loader diagnostics");
+        }
+        if (tokenFrame && tabletopSamples) throw std::runtime_error("tabletop samples require board mode");
+        if (tabletopSamples)
+        {
+            // A labelled asset/animation qualification layout, not a saved game.
+            // Use real decoded clocks and historical cell placement without
+            // advancing rules or fabricating a Paris resource bank.
+            constexpr std::array<unsigned,4> tokens{1,2,3,6};
+            constexpr std::array<unsigned,4> squares{3,8,14,27};
+            for(unsigned sample=0;sample<tokens.size();++sample)
+            {
+                const auto pose = pieces::tokenOrientation(static_cast<std::uint8_t>(squares[sample]));
+                require(pose.has_value(),"Historical token placement");
+                auto frames=loadTokenFrame(assetRoot,{*tabletopSamples,0x8010DU+tokens[sample]*0x63U,animationTick,224});
+                const float originX=frames.front().worldTransform.values[12],originZ=frames.front().worldTransform.values[14];
+                for(auto& item:frames)
+                {
+                    require(item.asset && item.asset->origin==data::MeshAssetOrigin::ModernGltf,"Tabletop sample modern token");
+                    item.node = 0x8000FFF900000000ULL | (static_cast<std::uint64_t>(sample)<<16U) | item.node;
+                    item.worldTransform=sequence::multiply(item.worldTransform,sequence::translate3D(pose->x-originX,0,pose->z-originZ));
+                    items.push_back(std::move(item));
+                }
+            }
+            for(unsigned sample=0;sample<6;++sample)
+            {
+                const bool hotel=sample==5;
+                const unsigned square=sample<3?1:sample<5?6:24;
+                const auto pose=hotel?pieces::hotelPosition(static_cast<std::uint8_t>(square)):
+                    pieces::housePosition(static_cast<std::uint8_t>(square),static_cast<std::uint8_t>(sample<3?sample:sample-3));
+                require(pose.has_value(),"Historical building placement");
+                const auto kind=hotel?data::ModernSceneKind::Hotel:data::ModernSceneKind::House;
+                auto loaded=data::loadModernGltfMesh(assetRoot/data::modernSceneDefinition(kind).relativeGlbPath,
+                    *data::modernSceneLoadOptions(kind));
+                if(!loaded)throw std::runtime_error(loaded.error().detail);
+                auto asset=std::make_shared<data::MeshRuntimeAsset>();asset->dataId=data::modernSceneDefinition(kind).legacyMeshId;
+                asset->origin=data::MeshAssetOrigin::ModernGltf;asset->renderData=*loaded;
+                sequence::SequenceMeshRenderItem item;item.node=0x8000FFF800000000ULL|sample;
+                item.contentsDataId=asset->dataId;item.asset=asset;item.renderData=*loaded;
+                item.worldTransform=sequence::moveRySTxzTransform(pose->yaw,.1F,pose->x,pose->z);
+                items.push_back(std::move(item));
+            }
+            std::cout << "tabletop_samples_scope\tqualification layout with four decoded retail CNKs and six historically placed modern buildings; not gameplay\n";
         }
         for (const auto& item : items)
             reportMaterials(*(item.renderData ? item.renderData : item.asset->renderData),
@@ -359,7 +422,8 @@ int main(int argc, char** argv)
 
         engine::SequenceWorld3DSlot slot;
         require(slot.sync(items).has_value(), "Production scene slot sync");
-        const auto bounds = sceneBounds(items);
+        const auto bounds = sceneBounds((!tokenFrame && polishLevel >= 2)
+            ? std::vector<sequence::SequenceMeshRenderItem>{items.begin(), items.begin() + (includeEnvironment ? 4 : 1)} : items);
         const std::array<float, 3> center{
             (bounds.minimum[0] + bounds.maximum[0]) * .5F,
             (bounds.minimum[1] + bounds.maximum[1]) * .5F,
@@ -410,6 +474,8 @@ int main(int argc, char** argv)
                 std::abs(dot(relative, up)) * static_cast<float>(Width) / Height) / depth);
         }
         camera.fieldOfView = 2 * std::atan(requiredTan * 1.08F);
+        if (polishLevel && !tokenFrame) camera = engine::modernBoardPresentationCamera(bounds, static_cast<float>(Width)/Height, static_cast<float>(cameraElevation), static_cast<float>(cameraYaw), uiSafePercent/100.0F);
+        std::cout << "polish_level\t" << polishLevel << '\n';
         require(slot.configureView({0, 0, static_cast<int>(Width), static_cast<int>(Height)},
             camera).has_value(), "Production camera configuration");
         std::cout << "camera_target\t" << center[0] << ',' << center[1] << ',' << center[2]
@@ -447,12 +513,16 @@ int main(int argc, char** argv)
         if (!renderer) throw std::runtime_error("Renderer shaders: " + renderer.error().detail);
         std::cout << "studio_environment_enabled\t"
             << renderer->studioEnvironmentEnabled() << '\n';
+        renderer->setModernPresentation(polishLevel >= 3);
+        renderer->setPresentationShadows(polishLevel >= 4);
+        renderer->setPresentationAntialiasing(polishLevel >= 5);
         renderer->setBilinearFiltering(true);
         engine::World3DLighting lighting;
         lighting.ambient = {.53F, .53F, .53F};
         lighting.sun.enabled = true;
         lighting.sun.color = {.7F, .7F, .7F};
         lighting.sun.direction = {.3F, -1, .4F};
+        if (polishLevel >= 3) lighting = engine::modernBoardPresentationLighting();
         renderer->setLighting(lighting);
         const unsigned measuredFrames = tokenFrame && !benchmarkToken ? 0 : Frames;
         if (measuredFrames)
@@ -463,6 +533,8 @@ int main(int argc, char** argv)
         const double seconds = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - start).count();
         stats = draw(gpu, *renderer, slot, true);
+        std::cout << "presentation_shadows_enabled\t" << renderer->presentationShadowsActive()
+            << "\npresentation_msaa_samples\t" << static_cast<unsigned>(renderer->presentationSampleCount()) << '\n';
         std::cout << "modern_pbr_pipeline_loaded\t" << (renderer->modernPipeline() != nullptr) << '\n';
         const bool hasModern = std::any_of(items.begin(), items.end(), [](const auto& item)
             { return item.asset->origin == data::MeshAssetOrigin::ModernGltf; });

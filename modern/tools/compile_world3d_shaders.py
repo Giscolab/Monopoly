@@ -118,11 +118,15 @@ def bootstrap(cache: Path, lock: dict, cmake: str = "cmake") -> None:
 def verify_reflection(reflection: dict, stage: str, name: str = "World3D",
                       samplers: int | None = None) -> None:
     if samplers is None:
-        samplers = 1 if name == "World3D" else 6
+        samplers = 1 if name == "World3D" else 7
     expected_set = 1 if stage == "vert" else 3
     ubos = reflection.get("ubos", [])
     if len(ubos) != 1 or (ubos[0].get("set"), ubos[0].get("binding")) != (expected_set, 0):
         raise ValueError(f"{stage}: SDL uniform contract requires one buffer at set {expected_set}, binding 0")
+    if name == "ModernPBR" and samplers == 7:
+        expected_bytes = 128 if stage == "vert" else 336
+        if ubos[0].get("block_size") != expected_bytes:
+            raise ValueError(f"{stage}: presentation PBR uniform ABI requires {expected_bytes} bytes")
     expected_textures = [(2, binding) for binding in range(samplers)] if stage == "frag" else []
     textures = reflection.get("textures", [])
     bindings = [(texture.get("set"), texture.get("binding")) for texture in textures]
@@ -130,7 +134,7 @@ def verify_reflection(reflection: dict, stage: str, name: str = "World3D",
         raise ValueError(f"{stage}: {name} requires combined image sampler bindings "
                          f"{expected_textures}; annotate each texture and sampler with "
                          "[[vk::combinedImageSampler]]")
-    if name == "ModernPBR" and stage == "frag" and samplers == 6:
+    if name == "ModernPBR" and stage == "frag" and samplers in {6, 7}:
         for texture in textures:
             expected_type = "samplerCube" if texture["binding"] == 5 else "sampler2D"
             if texture.get("type") != expected_type:
@@ -143,7 +147,7 @@ def compile_shaders(dxc: Path, cross: Path, source: Path, output: Path, lock: di
                     name: str = "World3D", external: bool = False,
                     samplers: int | None = None) -> None:
     if samplers is None:
-        samplers = 1 if name == "World3D" else 6
+        samplers = 1 if name == "World3D" else 7
     output.mkdir(parents=True, exist_ok=True)
     manifest: dict = {"toolchain": lock, "sources": {}, "sources_normalized_lf": {}, "outputs": {},
                       "fragment_samplers": samplers,
@@ -189,8 +193,8 @@ def main() -> int:
     parser.add_argument("--cache", type=Path, default=MODERN / "build-shader-tools")
     parser.add_argument("--source", type=Path, default=MODERN / "shaders")
     parser.add_argument("--name", choices=["World3D", "ModernPBR"], default="World3D")
-    parser.add_argument("--samplers", type=int, choices=[0, 1, 5, 6],
-                        help="fragment combined sampler count (World3D: 1; ModernPBR: 6; older PBR checkpoints: 0 or 5)")
+    parser.add_argument("--samplers", type=int, choices=[0, 1, 5, 6, 7],
+                        help="fragment combined sampler count (World3D: 1; ModernPBR: 7; older PBR checkpoints: 0, 5 or 6)")
     parser.add_argument("--output", type=Path, required=False)
     parser.add_argument("--bootstrap", action="store_true", help="download locked dependencies and build SPIRV-Cross locally")
     parser.add_argument("--bootstrap-only", action="store_true")
@@ -200,8 +204,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.name == "World3D" and args.samplers not in {None, 1}:
         parser.error("World3D requires exactly one fragment sampler")
-    if args.name == "ModernPBR" and args.samplers not in {None, 0, 5, 6}:
-        parser.error("ModernPBR supports zero, five or six fragment samplers")
+    if args.name == "ModernPBR" and args.samplers not in {None, 0, 5, 6, 7}:
+        parser.error("ModernPBR supports zero, five, six or seven fragment samplers")
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     cache = args.cache.resolve()
     if args.bootstrap or args.bootstrap_only:

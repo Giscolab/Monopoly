@@ -63,6 +63,10 @@ namespace
         if (displayState.viewportInUse != monopoly::display::Viewport3D::Off &&
             monopoly::display::isBoardVisible(displayState.desired2DView))
         {
+            const auto uiTransform=monopoly::logicalviewport::makeTransform(width,height);
+            if(const auto overlay=monopoly::logicalviewport::windowToUIOverlay(
+                    uiTransform,windowX,windowY))
+                return MouseLogicalMapping{*overlay,uiTransform.scale};
             const auto worldTransform =
                 monopoly::logicalviewport::makeWorld3DTransform(width, height);
             const auto viewport =
@@ -238,7 +242,7 @@ namespace monopoly
                     "[--windowed | --fullscreen | --exclusive-fullscreen] "
                     "[--resolution WIDTHxHEIGHT] "
                     "[--present-mode vsync|mailbox|immediate] "
-                    "[--modern-board=retail|paris] [--modern-buildings=retail|house] "
+                    "[--modern-board=retail|paris|usa] [--modern-buildings=retail|house] "
                     "[--modern-environment=retail|paris] "
                     "[--edition=usa|europe] [--language=en-us|en-uk|fr] "
                     "[--data-root <absolute folder>] "

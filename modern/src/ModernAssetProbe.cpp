@@ -5,6 +5,8 @@
 #include "ResourceRuntime.hpp"
 #include "SequenceRuntime.hpp"
 
+#include <SDL3/SDL.h>
+
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -203,6 +205,96 @@ namespace
         if (!file) { std::cerr << "cannot write diagnostic OBJ: " << output << '\n'; return false; }
         return true;
     }
+    bool exportTexturedBoard(const std::filesystem::path& directory,
+        DataId id, const MeshRenderData& mesh)
+    {
+        // Refuse existing links before any write, including per-batch image outputs.
+        for (const auto& entry : std::filesystem::directory_iterator(directory))
+            if (entry.is_symlink())
+            { std::cerr << "refusing symlink textured-board output\n"; return false; }
+        std::ofstream obj(directory / "boardmed.obj", std::ios::trunc);
+        std::ofstream mtl(directory / "boardmed.mtl", std::ios::trunc);
+        obj.imbue(std::locale::classic());
+        mtl.imbue(std::locale::classic());
+        obj << std::setprecision(std::numeric_limits<float>::max_digits10)
+            << "# Production MeshRuntime ClassicMedium, default pose; raw engine Y-up units.\n"
+            << "# DataId " << id << "; UVs converted top-left to OBJ bottom-left.\n"
+            << "mtllib boardmed.mtl\no boardmed\n";
+        mtl << std::setprecision(std::numeric_limits<float>::max_digits10);
+        for (const auto& vertex : mesh.vertices)
+            obj << "v " << vertex.position[0] << ' ' << vertex.position[1] << ' '
+                << vertex.position[2] << '\n';
+        for (const auto& vertex : mesh.vertices)
+            obj << "vt " << vertex.uv[0] << ' ' << 1.0F - vertex.uv[1] << '\n';
+        for (const auto& vertex : mesh.vertices)
+            obj << "vn " << vertex.normal[0] << ' ' << vertex.normal[1] << ' '
+                << vertex.normal[2] << '\n';
+        std::size_t covered{};
+        for (std::size_t batchIndex = 0; batchIndex < mesh.batches.size(); ++batchIndex)
+        {
+            const auto& batch = mesh.batches[batchIndex];
+            if (batch.firstIndex != covered || batch.indexCount % 3 != 0 ||
+                batch.firstIndex > mesh.indices.size() ||
+                batch.indexCount > mesh.indices.size() - batch.firstIndex)
+            { std::cerr << "invalid textured board batch coverage\n"; return false; }
+            covered += batch.indexCount;
+            const auto name = "board_batch_" + std::to_string(batchIndex);
+            mtl << "newmtl " << name << "\nKd " << batch.material.diffuse[0] << ' '
+                << batch.material.diffuse[1] << ' ' << batch.material.diffuse[2]
+                << "\nd 1\nillum 2\nPr 0.72\nPm 0\n";
+            if (batch.texture)
+            {
+                const auto& image = batch.texture->sourceImage;
+                if (!image || !image->width || !image->height ||
+                    image->width > 16384 || image->height > 16384 ||
+                    image->rgba.size() != static_cast<std::size_t>(image->width) * image->height * 4)
+                { std::cerr << "textured board has invalid/missing decoded source image\n"; return false; }
+                const auto fileName = name + ".bmp";
+                auto* surface = SDL_CreateSurfaceFrom(static_cast<int>(image->width),
+                    static_cast<int>(image->height), SDL_PIXELFORMAT_RGBA32,
+                    const_cast<std::uint8_t*>(image->rgba.data()), static_cast<int>(image->width * 4));
+                if (!surface) { std::cerr << SDL_GetError() << '\n'; return false; }
+                const bool saved = SDL_SaveBMP(surface, (directory / fileName).string().c_str());
+                SDL_DestroySurface(surface);
+                if (!saved) { std::cerr << SDL_GetError() << '\n'; return false; }
+                mtl << "map_Kd " << fileName << '\n';
+            }
+            mtl << '\n';
+            obj << "usemtl " << name << '\n';
+            for (std::size_t index = batch.firstIndex; index < covered; index += 3)
+            {
+                obj << 'f';
+                for (std::size_t corner = 0; corner < 3; ++corner)
+                {
+                    const auto vertex = mesh.indices[index + corner];
+                    if (vertex >= mesh.vertices.size()) return false;
+                    const auto number = static_cast<std::uint64_t>(vertex) + 1;
+                    obj << ' ' << number << '/' << number << '/' << number;
+                }
+                obj << '\n';
+            }
+        }
+        if (covered != mesh.indices.size()) return false;
+        obj.close(); mtl.close();
+        if (!obj || !mtl) return false;
+        std::ofstream proof(directory / "boardmed_contract.json", std::ios::trunc);
+        proof.imbue(std::locale::classic());
+        proof << std::setprecision(std::numeric_limits<float>::max_digits10)
+            << "{\"production_geometry_decoder\":true,\"data_id\":" << id
+            << ",\"units_per_meter\":1,\"yaw_degrees\":0,\"offset\":[0,0,0],"
+               "\"ground_to_zero\":false,\"raw_engine_units\":true,\"vertices\":"
+            << mesh.vertices.size() << ",\"triangles\":" << mesh.indices.size()/3
+            << ",\"batches\":" << mesh.batches.size() << ",\"minimum\":[";
+        for (std::size_t axis=0; axis<3; ++axis)
+            proof << (axis ? "," : "") << mesh.bounds.minimum[axis];
+        proof << "],\"maximum\":[";
+        for (std::size_t axis=0; axis<3; ++axis)
+            proof << (axis ? "," : "") << mesh.bounds.maximum[axis];
+        proof << "]}\n";
+        proof.close();
+        return static_cast<bool>(proof);
+    }
+
 }
 
 int main(int argc, char** argv)
@@ -212,13 +304,14 @@ int main(int argc, char** argv)
     if (argc >= 2 && std::string_view(argv[1]) == "--gltf")
         return probeGltf(argc, argv);
 
-    const bool boardOnly = argc == 5 && std::string_view(argv[3]) == "--dump-board";
+    const bool texturedBoard = argc == 5 && std::string_view(argv[3]) == "--dump-textured-board";
+    const bool boardOnly = texturedBoard || (argc == 5 && std::string_view(argv[3]) == "--dump-board");
     if (argc != 3 && !(argc == 5 &&
             (std::string_view(argv[3]) == "--dump-retail" || boardOnly)))
     {
         std::cerr
             << "usage: MonopolyModernAssetProbe <retail-root> <modern-assets-root> "
-               "[--dump-retail|--dump-board <existing-cmake-build-dir>]\n";
+               "[--dump-retail|--dump-board|--dump-textured-board <existing-cmake-build-dir>]\n";
         return 2;
     }
 
@@ -240,7 +333,7 @@ int main(int argc, char** argv)
         }
         if (error || underSource || !std::filesystem::is_regular_file(build / "CMakeCache.txt", error))
         { std::cerr << "OBJ output requires an existing CMake build outside Source\n"; return 2; }
-        const auto destination = build / "retail-reference-obj";
+        const auto destination = build / (texturedBoard ? "retail-textured-board" : "retail-reference-obj");
         std::filesystem::create_directories(destination, error);
         if (error) { std::cerr << "OBJ directory: " << error.message() << '\n'; return 1; }
         dumpRoot = std::filesystem::canonical(destination, error);
@@ -306,6 +399,7 @@ int main(int argc, char** argv)
         {DataTag{0x0004}, "hotel"}, {DataTag{0x0005}, "house"}}};
     for (const auto& [tag, name] : BoardAssets)
     {
+        if (texturedBoard && tag != DataTag{0x0003}) continue;
         const auto id = packDataId(LegacyGroupId::ThreeD, tag);
         const auto asset = legacy.resolve(id);
         if (!asset || !(*asset)->renderData)
@@ -322,7 +416,11 @@ int main(int argc, char** argv)
         printVector(bounds.maximum); std::cout << '\t';
         printVector(measured.size); std::cout << '\t';
         printVector(measured.center); std::cout << '\n';
-        if (dumpRoot && !exportObj(*dumpRoot / (std::string(name) + ".obj"),
+        if (texturedBoard)
+        {
+            if (!exportTexturedBoard(*dumpRoot, id, *(*asset)->renderData)) failed = true;
+        }
+        else if (dumpRoot && !exportObj(*dumpRoot / (std::string(name) + ".obj"),
             name, id, *(*asset)->renderData)) failed = true;
     }
 

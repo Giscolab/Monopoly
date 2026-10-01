@@ -7,12 +7,18 @@
 #include <cstdint>
 #include <optional>
 
+namespace monopoly::display { struct State; }
+
 namespace monopoly::boardcamera
 {
     inline constexpr std::uint64_t BaseMoveTicks = 75;
 
     [[nodiscard]] const engine::World3DCamera& preset(
         pieces::BoardCameraView view) noexcept;
+
+    // Presentation framing may replace only the settled default overview.
+    // Authored sequence views, interpolation and player camera input keep ownership.
+    [[nodiscard]] bool isPresentationDefault(const display::State& state) noexcept;
 
     struct Update
     {

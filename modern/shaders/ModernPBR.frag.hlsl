@@ -16,6 +16,8 @@ cbuffer MaterialUniforms : register(b0, space3)
     float4 spotlightPhi;
     float4 mapFlags;
     float4 mapParameters;
+    row_major float4x4 shadowViewProjection;
+    float4 shadowParameters;
 };
 #ifdef __spirv__
 [[vk::combinedImageSampler]]
@@ -65,6 +67,14 @@ TextureCube specularEnvironment : register(t5, space2);
 [[vk::combinedImageSampler]]
 #endif
 SamplerState specularEnvironmentSampler : register(s5, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+Texture2D directionalShadowMap : register(t6, space2);
+#ifdef __spirv__
+[[vk::combinedImageSampler]]
+#endif
+SamplerState directionalShadowSampler : register(s6, space2);
 
 struct PixelInput
 {
@@ -186,11 +196,50 @@ float3 environmentBRDF(float3 f0, float roughness, float noV)
     const float2 ab = float2(-1.04f, 1.04f) * a004 + r.zw;
     return max(f0 * ab.x + ab.y, 0.0f);
 }
+float directionalVisibility(float3 position, float3 n)
+{
+    if (shadowParameters.x <= 0.5f) return 1.0f;
+    const float4 light = mul(float4(position, 1.0f), shadowViewProjection);
+    const float3 projected = light.xyz / light.w;
+    const float2 uv = projected.xy * float2(0.5f, -0.5f) + 0.5f;
+    // Receiver-plane depth correction: the orthographic map records depth at
+    // texel centers. A sloping receiver must be compared at those same points,
+    // not at the current pixel's center depth for all nine PCF neighbors.
+    const float2 dx = ddx(uv);
+    const float2 dy = ddy(uv);
+    const float dzdx = ddx(projected.z);
+    const float dzdy = ddy(projected.z);
+    const float determinant = dx.x * dy.y - dx.y * dy.x;
+    float2 depthGradient = 0.0f;
+    if (abs(determinant) > 0.000000000001f)
+        depthGradient = clamp(float2(dzdx * dy.y - dzdy * dx.y,
+            dx.x * dzdy - dy.x * dzdx) / determinant, -8.0f, 8.0f);
+    if (any(uv < 0.0f) || any(uv > 1.0f) || projected.z < 0.0f || projected.z > 1.0f) return 1.0f;
+    const float slope = 1.0f - saturate(dot(n, safeNormalize(-sunDirection.xyz)));
+    const float bias = shadowParameters.z * (1.0f + 2.0f * slope);
+    float visible = 0.0f;
+    [unroll] for (int y = -1; y <= 1; ++y)
+    {
+        [unroll] for (int x = -1; x <= 1; ++x)
+        {
+            const float2 sampleUV = uv + float2(x, y) * shadowParameters.y;
+            const float2 texelCenter = clamp((floor(sampleUV / shadowParameters.y) + 0.5f)
+                * shadowParameters.y, shadowParameters.y * 0.5f, 1.0f - shadowParameters.y * 0.5f);
+            const float depth = directionalShadowMap.SampleLevel(directionalShadowSampler, texelCenter, 0).r;
+            const float receiverDepth = projected.z + dot(depthGradient, texelCenter - uv);
+            visible += receiverDepth - bias <= depth ? 1.0f : 0.0f;
+        }
+    }
+    return visible / 9.0f;
+}
 float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
 {
     float4 sampledBaseColor = baseColor;
     if (mapFlags.x > 0.5f) sampledBaseColor *= baseColorMap.Sample(baseColorSampler, input.uv);
     if (metallicRoughness.w > 0.5f && sampledBaseColor.a < mapParameters.w) discard;
+    // The same real mesh/alpha-mask shader writes light-space depth into an
+    // R32_FLOAT target, with a hardware depth attachment choosing the nearest.
+    if (shadowParameters.x < -0.5f) return float4(input.position.z, 0.0f, 0.0f, 1.0f);
     const float3 albedo = sampledBaseColor.rgb;
     float metallic = metallicRoughness.x;
     float roughness = metallicRoughness.y;
@@ -230,10 +279,14 @@ float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
     }
     color += directionalLight(n, v, boardReflectionColorEnabled, boardReflectionDirection.xyz,
         albedo, metallic, roughness);
-    color += directionalLight(n, v, sunColorEnabled, sunDirection.xyz, albedo, metallic, roughness);
+    color += directionalLight(n, v, sunColorEnabled, sunDirection.xyz, albedo, metallic, roughness)
+        * directionalVisibility(input.worldPosition, n);
     color += spotlight(n, v, input.worldPosition, albedo, metallic, roughness);
     float3 emissive = emissiveStrength.rgb * max(emissiveStrength.w, 0.0f);
     if (mapFlags.w > 0.5f) emissive *= emissiveMap.Sample(emissiveSampler, input.uv).rgb;
     color += emissive;
+    if (shadowParameters.w > 0.5f)
+        color = saturate((color * (2.51f * color + 0.03f)) /
+            (color * (2.43f * color + 0.59f) + 0.14f));
     return float4(metallicRoughness.z > 0.5f ? color : linearToSRGB(color), 1.0f);
 }

@@ -1,3 +1,4 @@
+#include "Display.hpp"
 #include "BoardCameraController.hpp"
 
 #include <cmath>
@@ -282,6 +283,30 @@ int main()
 {
     std::cout << "Monopoly board camera controller tests\n"
               << "======================================\n";
+    monopoly::display::State overview;
+    overview.desired2DView=monopoly::display::Screen2D::Main;
+    overview.viewportInUse=monopoly::display::Viewport3D::Main;
+    overview.currentBoardCamera=overview.desiredBoardCamera;
+    overview.worldCamera=monopoly::boardcamera::preset(overview.desiredBoardCamera);
+    expect(monopoly::boardcamera::isPresentationDefault(overview),
+        "settled default overview permits modern framing");
+    for(bool monopoly::display::State::* flag : {
+            &monopoly::display::State::manualMouseCamLock,
+            &monopoly::display::State::manualCameraRequested,
+            &monopoly::display::State::diceCameraControlActive,
+            &monopoly::display::State::floatingCameraActive,
+            &monopoly::display::State::demoModeDesired})
+    {
+        auto requested=overview; requested.*flag=true;
+        expect(!monopoly::boardcamera::isPresentationDefault(requested),
+            "requested camera motion retains control of the real camera");
+    }
+    auto moving=overview; moving.worldCamera.location[0]+=1;
+    expect(!monopoly::boardcamera::isPresentationDefault(moving),
+        "intermediate or manually rotated pose is never replaced by fixed framing");
+    moving=overview; moving.desiredBoardCamera=monopoly::pieces::BoardCameraView::CornerGo;
+    expect(!monopoly::boardcamera::isPresentationDefault(moving),
+        "targeted board views retain their original framing");
     testPresetAnchors();
     testPresetInterpolationAndForce();
     testWaitingReplacement();

@@ -46,11 +46,12 @@ namespace monopoly::engine
         // Pointer identity prevents unrelated/native-retail instances being rejected.
         void rejectGeometry(const data::MeshRenderData* geometry);
 
-        // Caller must qualify the active board as the actual modern Paris mesh.
+        // Caller must qualify the active board as an actual modern board mesh.
         // The matrix is its real sequencer transform, including the retail .10
         // scale. Geometry remains immutable; only these scene instances move.
         [[nodiscard]] std::vector<sequence::SequenceMeshRenderItem> items(
-            const sequence::Matrix3D& boardMatrix, std::uint32_t tick);
+            const sequence::Matrix3D& boardMatrix, std::uint32_t tick,
+            bool includePresentation = false, bool includeLandmarks = true);
 
     private:
         void loadOnce(std::size_t index);
@@ -60,7 +61,7 @@ namespace monopoly::engine
         bool invalidMatrixReported_{};
         Diagnostic diagnostic_;
         Loader loader_;
-        std::array<bool, ModernEnvironmentCount> attempted_{};
-        std::array<std::shared_ptr<const data::MeshRuntimeAsset>, ModernEnvironmentCount> assets_{};
+        std::array<bool, ModernEnvironmentCount + 2> attempted_{};
+        std::array<std::shared_ptr<const data::MeshRuntimeAsset>, ModernEnvironmentCount + 2> assets_{};
     };
 }

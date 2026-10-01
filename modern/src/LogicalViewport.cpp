@@ -108,6 +108,13 @@ namespace monopoly::logicalviewport
         };
     }
 
+    std::optional<LogicalPoint> windowToUIOverlay(
+        const Transform& uiTransform, double windowX, double windowY) noexcept
+    {
+        const auto point=windowToLogical(uiTransform,windowX,windowY);
+        return point && point->y >= World3DHeight ? point : std::nullopt;
+    }
+
     PixelRect logicalToPixelRect(
         const Transform& transform,
         const LogicalRect& logicalRect) noexcept

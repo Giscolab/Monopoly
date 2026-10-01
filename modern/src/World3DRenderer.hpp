@@ -46,6 +46,9 @@ namespace monopoly::engine
         std::size_t objects{};
         std::size_t batches{};
         std::size_t triangles{};
+        std::size_t shadowBatches{};
+        std::size_t shadowTriangles{};
+        std::uint32_t sampleCount{1U};
     };
 
     struct World3DDirectionalLight
@@ -104,6 +107,12 @@ namespace monopoly::engine
 
         void reset() noexcept;
         void setBilinearFiltering(bool enabled) noexcept { bilinearFiltering_ = enabled; }
+        void setModernPresentation(bool enabled) noexcept { modernPresentation_ = enabled; }
+        void setPresentationShadows(bool enabled) noexcept { presentationShadows_ = enabled; }
+        void setPresentationAntialiasing(bool enabled) noexcept { presentationAntialiasing_ = enabled; }
+        [[nodiscard]] bool presentationShadowsActive() const noexcept { return shadowsActive_; }
+        [[nodiscard]] bool presentationAntialiasingActive() const noexcept { return antialiasingActive_; }
+        [[nodiscard]] std::uint32_t presentationSampleCount() const noexcept { return antialiasingActive_ ? 4U : 1U; }
         [[nodiscard]] bool bilinearFiltering() const noexcept { return bilinearFiltering_; }
         void setLighting(const World3DLighting& lighting) noexcept
         { lighting_ = lighting; }
@@ -120,7 +129,11 @@ namespace monopoly::engine
 
     private:
         [[nodiscard]] bool ensureDepthTarget(
-            std::uint32_t width, std::uint32_t height) noexcept;
+            std::uint32_t width, std::uint32_t height,
+            SDL_GPUSampleCount samples = SDL_GPU_SAMPLECOUNT_1) noexcept;
+        [[nodiscard]] bool ensurePresentationTargets(std::uint32_t width, std::uint32_t height);
+        [[nodiscard]] bool ensureShadowResources();
+        void releasePresentationResources() noexcept;
         void releaseDepthTarget() noexcept;
         void releaseSamplingResources() noexcept;
 
@@ -141,5 +154,20 @@ namespace monopoly::engine
         std::uint32_t depthWidth_{};
         std::uint32_t depthHeight_{};
         World3DLighting lighting_{};
+        bool modernPresentation_{};
+        bool presentationShadows_{};
+        bool presentationAntialiasing_{};
+        bool shadowsActive_{};
+        bool antialiasingActive_{};
+        SDL_GPUSampleCount depthSamples_{SDL_GPU_SAMPLECOUNT_1};
+        SDL_GPUTexture* multisampleColor_{};
+        std::uint32_t multisampleWidth_{};
+        std::uint32_t multisampleHeight_{};
+        std::optional<World3DPipeline> multisampleLegacyPipeline_;
+        std::optional<World3DPipeline> multisampleModernPipeline_;
+        SDL_GPUTexture* shadowMap_{};
+        SDL_GPUTexture* shadowDepth_{};
+        SDL_GPUSampler* shadowSampler_{};
+        std::optional<World3DPipeline> shadowMapPipeline_;
     };
 }

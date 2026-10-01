@@ -4,21 +4,21 @@
     "spirv_cross": "3276b40b4af222f8e446b3ad7e8045ff86bf854054bcca717d74aec5d8e30e41"
   },
   "external_compilers": false,
-  "fragment_samplers": 6,
+  "fragment_samplers": 7,
   "outputs": {
-    "ModernPBR.frag.dxil": "6230bfc39330ed478a88b1cb383eb06c72a8bf67d104e83dfa61f57cc86c0242",
-    "ModernPBR.frag.msl": "de2aa455514bd21b5e2f536a5edea54cad8c3b0b5ae7cf813d2d96c7fa1995cc",
-    "ModernPBR.frag.spv": "06634b4d043f3b5a52836d86f592ea398ab2fc212c32634e7630d7a63b4c37c3",
+    "ModernPBR.frag.dxil": "9aa507b9c1efccd965d0d0fa5eef501f932c5c6da3987a246bfad319ffb6a7f8",
+    "ModernPBR.frag.msl": "e0dce3aea6742156df439870abddac991d99917ae56ef25077e0689180d95a7e",
+    "ModernPBR.frag.spv": "c344073579e54f17769426f40c38cff819c68a4034d0c7da330e1d70116a19dd",
     "ModernPBR.vert.dxil": "3db77744cc3ee5566145726e336685349b8f32b5d1fc1d51721c9496004fe5f6",
     "ModernPBR.vert.msl": "9b8834396d62b8d940de1d00de092068070c3fe84f34ca9bd3039b6da7006f7d",
     "ModernPBR.vert.spv": "3b14ce2a2b0ee97bb039095739464b83f1b4ddc4b7c6898bc3739951b22dc139"
   },
   "sources": {
-    "ModernPBR.frag.hlsl": "47f958aab0c918675acbf5103636c6723d35af883049f1548a552754510c0cfb",
+    "ModernPBR.frag.hlsl": "f7ae0b9e2c976d857e2f3d5b2b7c4b384ce890a5c4e7b2d5a0a2a19ae4b11053",
     "ModernPBR.vert.hlsl": "f8a65167de6fbe85e5fad4f704b854b80c6eab90e0a68275091afa9314eba628"
   },
   "sources_normalized_lf": {
-    "ModernPBR.frag.hlsl": "ad5a3680e528a68248cf70fa4ee038bcd3c81426731d5ccd59aafc7cd0e3a71e",
+    "ModernPBR.frag.hlsl": "50a2ea20afba19835d94732291aafe0740f1904f837de73618600e152b4c05b9",
     "ModernPBR.vert.hlsl": "0a67c4dbd6071e1af35d0d9b657c88eacd220282cae1876ee445fa3b8ae8612e"
   },
   "toolchain": {

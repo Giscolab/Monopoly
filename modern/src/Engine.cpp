@@ -1,3 +1,4 @@
+#include "BoardCameraController.hpp"
 #include "Engine.hpp"
 #include "AudioRuntime.hpp"
 #include "Presentation.hpp"
@@ -20,6 +21,7 @@
 #include "ModernSceneCatalog.hpp"
 #include "ModernTokenVariants.hpp"
 #include "ModernEnvironment.hpp"
+#include "ModernScenePresentation.hpp"
 #include "Timers.hpp"
 #include "UIMessages.hpp"
 #include "ExtendedInitialization.hpp"
@@ -465,24 +467,29 @@ namespace monopoly::engine
                 ? tick - lastBoardLightingTick
                 : tick;
             lastBoardLightingTick = tick;
+            const auto player = ruleState.currentPlayer;
+            const bool hasCurrentPlayer=player < ruleState.numberOfPlayers && player < rules::MaxPlayers;
             if (elapsed == 0)
             {
                 if (worldRenderer)
-                    worldRenderer->setLighting(boardLightingController.current());
+                {
+                    auto current=boardLightingController.current();
+                    if(!hasCurrentPlayer) current.spotlight.enabled=false;
+                    worldRenderer->setLighting(current);
+                }
                 return {};
             }
 
             boarddisplay::BoardLightingInputs inputs{};
             inputs.game3DOn = displayState.game3DOn;
-            inputs.board3DOn = displayState.board3DOn;
+            inputs.board3DOn = displayState.board3DOn && hasCurrentPlayer;
             inputs.lightingOn = displayState.optionLightingOn;
             inputs.tokenAnimationActive = pieceMovePlayback.active();
             inputs.tick = tick;
             inputs.numberOfTicks = elapsed;
             inputs.lastBoardActivityTick = displayState.lastBoardActivityTick;
 
-            const auto player = ruleState.currentPlayer;
-            if (player < ruleState.numberOfPlayers && player < rules::MaxPlayers)
+            if (hasCurrentPlayer)
             {
                 const auto& source = ruleState.players[player];
                 if (source.colour >= rules::MaxPlayerColours)
@@ -512,9 +519,9 @@ namespace monopoly::engine
                 }
                 inputs.tokenPosition = {pose->x, pose->y, pose->z};
             }
-            else if (displayState.board3DOn)
-                return std::unexpected(
-                    "board spotlight current player is outside active player range");
+            // Saved-game restoration can briefly expose NobodyPlayer and zero
+            // players while the real board is already visible. Keep global
+            // lighting alive and defer only the player-dependent spotlight.
 
             const auto lighting = boardLightingController.tick(inputs);
             if (!lighting) return std::unexpected(lighting.error());
@@ -996,7 +1003,7 @@ namespace monopoly::engine
                 state.city, resources->context().language, state.system,
                 state.customBoardPath};
             for (const auto kind : {data::ModernSceneKind::ParisBoard, data::ModernSceneKind::House,
-                    data::ModernSceneKind::Hotel})
+                    data::ModernSceneKind::Hotel, data::ModernSceneKind::UsaBoard})
             {
                 if (!data::qualifiedModernSceneSequence(kind, id, root, priority,
                         modernSceneOptions, context)) continue;
@@ -1990,6 +1997,7 @@ namespace monopoly::engine
         // La presentation SDL_GPU etait auparavant definie mais jamais
         // appelee. Un cycle moteur correspond maintenant a une soumission
         // de frame, comme le cycle d'affichage ArtLib original.
+        std::optional<std::pair<World3DRect, World3DCamera>> retailWorldView;
         auto* session = sequencePlayback();
         if (session)
         {
@@ -2633,7 +2641,8 @@ namespace monopoly::engine
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             std::vector<sequence::SequenceMeshRenderItem> decorations;
-            if (modernSceneOptions.environment)
+            std::optional<data::MeshBounds> modernBoardBounds;
+            if (modernSceneOptions.parisBoard || modernSceneOptions.usaBoard)
             {
                 const auto boardInstances = session->runtime().meshInstances();
                 for (const auto node : session->world().order())
@@ -2650,11 +2659,15 @@ namespace monopoly::engine
                                 instance.rootSequencePriority == display::Board3DPriority;
                         });
                     if (!boardRootPriority) continue;
+                    const auto geometry = board->renderData ? board->renderData : board->asset->renderData;
+                    modernBoardBounds = presentationWorldBounds(geometry->bounds, board->worldTransform);
+                    if (!modernSceneOptions.environment && !modernSceneOptions.usaBoard) break;
                     if (!modernEnvironment)
                         modernEnvironment = std::make_unique<ModernEnvironment>(
                             std::filesystem::path(SDL_GetBasePath()) / "assets/modern", true);
                     decorations = modernEnvironment->items(board->worldTransform,
-                        static_cast<std::uint32_t>(tick));
+                        static_cast<std::uint32_t>(tick), true,
+                        modernSceneOptions.environment && !modernSceneOptions.usaBoard);
                     break;
                 }
             }
@@ -2691,7 +2704,15 @@ namespace monopoly::engine
                         activeWorldCamera = *resolved;
                     camera = *activeWorldCamera;
                 }
-                else activeWorldCamera = camera;
+                else
+                {
+                    retailWorldView = std::pair{viewport, camera};
+                    if (modernBoardBounds && boardcamera::isPresentationDefault(displayState))
+                        camera = modernBoardPresentationCamera(*modernBoardBounds,
+                        static_cast<float>(viewport.right-viewport.left)/(viewport.bottom-viewport.top),
+                        48.0F, 8.0F, 0.23F);
+                    activeWorldCamera = camera;
+                }
                 const auto configured = session->world().configureView(viewport, camera);
                 if (!configured) return SDL_SetError("Invalid DISPLAY World3D camera/viewport");
                 if (!worldRenderer)
@@ -2711,6 +2732,13 @@ namespace monopoly::engine
             if (!lightingSync)
                 return SDL_SetError("Board lighting: %s",
                     lightingSync.error().c_str());
+            if (worldRenderer)
+            {
+                worldRenderer->setModernPresentation(modernBoardBounds.has_value());
+                worldRenderer->setPresentationShadows(modernBoardBounds.has_value());
+                worldRenderer->setPresentationAntialiasing(modernBoardBounds.has_value());
+                if (modernBoardBounds) worldRenderer->setLighting(modernBoardPresentationLighting());
+            }
         }
         if (session && session->world2D().size() && !overlayRenderer)
         {
@@ -2723,29 +2751,48 @@ namespace monopoly::engine
         if (session && worldRenderer)
             if (auto* cache = worldRenderer->meshCache())
             {
-                bool parisBoardRejected{};
+                bool modernBoardRejected{};
                 const auto prepared = session->prepareModernMeshes(*cache,
-                    [&parisBoardRejected](const data::MeshRenderData* failed)
+                    [&modernBoardRejected](const data::MeshRenderData* failed)
                     {
                         const auto paris = static_cast<std::size_t>(data::ModernSceneKind::ParisBoard);
-                        if (modernSceneMeshes[paris].get() == failed)
-                            parisBoardRejected = true;
+                        const auto usa = static_cast<std::size_t>(data::ModernSceneKind::UsaBoard);
+                        if (modernSceneMeshes[paris].get() == failed || modernSceneMeshes[usa].get() == failed)
+                            modernBoardRejected = true;
                         if (modernTokenVariants) (void)modernTokenVariants->rejectPack(failed);
                         if (modernEnvironment) (void)modernEnvironment->rejectGeometry(failed);
                     });
                 if (!prepared)
                     return SDL_SetError("Modern asset fallback: %s", prepared.error().c_str());
-                if (parisBoardRejected)
+                if (modernBoardRejected)
                 {
+                    worldRenderer->setModernPresentation(false);
+                    worldRenderer->setPresentationShadows(false);
+                    worldRenderer->setPresentationAntialiasing(false);
+                    worldRenderer->setLighting(boardLightingController.current());
+                    if (retailWorldView)
+                    {
+                        activeWorldCamera = retailWorldView->second;
+                        const auto restored = session->world().configureView(retailWorldView->first, retailWorldView->second);
+                        if (!restored) return SDL_SetError("Retail fallback camera restoration failed");
+                    }
                     const auto removed = session->setNativeSceneItems({});
                     if (!removed)
                         return SDL_SetError("Native scene fallback: %s", removed.error().c_str());
                 }
             }
-        return gpuframe::present(gpuDevice, gameWindow,
+        const auto presented=gpuframe::present(gpuDevice, gameWindow,
             worldRenderer ? &*worldRenderer : nullptr,
             session ? &session->world() : nullptr,
             overlayRenderer.get(), session ? &session->world2D() : nullptr);
+        static bool presentationReported=false;
+        if(presented && worldRenderer && worldRenderer->presentationShadowsActive() && !presentationReported)
+        {
+            std::cerr << "Modern presentation GPU: shadows=enabled, MSAA="
+                << worldRenderer->presentationSampleCount() << '\n';
+            presentationReported=true;
+        }
+        return presented;
     }
 
     void shutdown()

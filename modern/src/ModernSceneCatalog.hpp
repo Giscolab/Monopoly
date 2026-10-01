@@ -14,8 +14,8 @@
 
 namespace monopoly::data
 {
-    enum class ModernSceneKind : std::uint8_t { ParisBoard, House, Hotel };
-    inline constexpr std::size_t ModernSceneKindCount = 3;
+    enum class ModernSceneKind : std::uint8_t { ParisBoard, House, Hotel, UsaBoard };
+    inline constexpr std::size_t ModernSceneKindCount = 4;
 
     // Optional replacements remain off for ordinary retail play.
     struct ModernSceneOptions
@@ -25,6 +25,7 @@ namespace monopoly::data
         // still retain retail geometry until their separate asset qualifies.
         bool house{};
         bool environment{};
+        bool usaBoard{};
     };
 
     struct ParsedModernSceneOptions

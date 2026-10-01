@@ -10,12 +10,76 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 namespace monopoly::engine
 {
     namespace
     {
+        constexpr std::uint32_t ShadowSize = 2048U;
+        std::optional<sequence::Matrix3D> shadowProjection(const SequenceWorld3DSlot& slot,
+            const std::array<float, 3>& direction)
+        {
+            using Vector = std::array<float, 3>;
+            const auto dot = [](const Vector& a, const Vector& b)
+            { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; };
+            const auto cross = [](const Vector& a, const Vector& b) -> Vector
+            { return {a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]}; };
+            const auto normalized = [&](Vector a) -> Vector
+            { const float length = std::sqrt(dot(a,a)); for (auto& v : a) v /= length; return a; };
+            if (!std::isfinite(dot(direction,direction)) || dot(direction,direction) < 0.000001F)
+                return std::nullopt;
+            const auto forward = normalized(direction);
+            const auto right = normalized(cross(std::abs(forward[1]) > 0.95F
+                ? Vector{0,0,1} : Vector{0,1,0}, forward));
+            const auto up = cross(forward,right);
+            Vector low{INFINITY, INFINITY, INFINITY}, high{-INFINITY,-INFINITY,-INFINITY};
+            bool found = false;
+            // Fit the actual evaluated asset bounds after the driven world
+            // matrices, never a presentation-specific game-coordinate guess.
+            for (const auto id : slot.visibleOrder())
+            {
+                const auto* object = slot.find(id);
+                if (!object || !object->asset || object->asset->origin != data::MeshAssetOrigin::ModernGltf)
+                    continue;
+                const auto mesh = object->renderData ? object->renderData : object->asset->renderData;
+                if (!mesh) continue;
+                const auto& m = object->worldTransform.values;
+                for (int corner = 0; corner < 8; ++corner)
+                {
+                    Vector local{};
+                    for (int axis=0; axis<3; ++axis)
+                        local[axis] = (corner & (1 << axis)) ? mesh->bounds.maximum[axis] : mesh->bounds.minimum[axis];
+                    const Vector world{local[0]*m[0]+local[1]*m[4]+local[2]*m[8]+m[12],
+                        local[0]*m[1]+local[1]*m[5]+local[2]*m[9]+m[13],
+                        local[0]*m[2]+local[1]*m[6]+local[2]*m[10]+m[14]};
+                    const Vector light{dot(world,right),dot(world,up),dot(world,forward)};
+                    for (int axis=0; axis<3; ++axis)
+                    { low[axis]=std::min(low[axis],light[axis]); high[axis]=std::max(high[axis],light[axis]); }
+                    found = true;
+                }
+            }
+            if (!found) return std::nullopt;
+            Vector span{};
+            for (int axis=0; axis<3; ++axis)
+            {
+                if (!std::isfinite(low[axis]) || !std::isfinite(high[axis])) return std::nullopt;
+                const float margin = std::max((high[axis]-low[axis])*0.04F, 1.0F);
+                low[axis]-=margin; high[axis]+=margin; span[axis]=high[axis]-low[axis];
+            }
+            auto result = sequence::identity3D();
+            for (int axis=0; axis<3; ++axis)
+            {
+                result.values[axis*4] = right[axis]*2/span[0];
+                result.values[axis*4+1] = up[axis]*2/span[1];
+                result.values[axis*4+2] = forward[axis]/span[2];
+            }
+            result.values[12]=-(high[0]+low[0])/span[0];
+            result.values[13]=-(high[1]+low[1])/span[1];
+            result.values[14]=-low[2]/span[2];
+            return result;
+        }
         [[nodiscard]] std::array<float, 4> vector4(
             const std::array<float, 3>& value, float w = 0.0F) noexcept
         {
@@ -168,6 +232,21 @@ namespace monopoly::engine
         depthHeight_ = std::exchange(other.depthHeight_, 0U);
         lighting_ = other.lighting_;
         other.lighting_ = {};
+        modernPresentation_ = std::exchange(other.modernPresentation_, false);
+        presentationShadows_ = std::exchange(other.presentationShadows_, false);
+        presentationAntialiasing_ = std::exchange(other.presentationAntialiasing_, false);
+        shadowsActive_ = std::exchange(other.shadowsActive_, false);
+        antialiasingActive_ = std::exchange(other.antialiasingActive_, false);
+        depthSamples_ = std::exchange(other.depthSamples_, SDL_GPU_SAMPLECOUNT_1);
+        multisampleColor_ = std::exchange(other.multisampleColor_, nullptr);
+        multisampleWidth_ = std::exchange(other.multisampleWidth_, 0U);
+        multisampleHeight_ = std::exchange(other.multisampleHeight_, 0U);
+        multisampleLegacyPipeline_ = std::move(other.multisampleLegacyPipeline_);
+        multisampleModernPipeline_ = std::move(other.multisampleModernPipeline_);
+        shadowMap_ = std::exchange(other.shadowMap_, nullptr);
+        shadowDepth_ = std::exchange(other.shadowDepth_, nullptr);
+        shadowSampler_ = std::exchange(other.shadowSampler_, nullptr);
+        shadowMapPipeline_ = std::move(other.shadowMapPipeline_);
         return *this;
     }
 
@@ -178,6 +257,94 @@ namespace monopoly::engine
         depthTarget_ = nullptr;
         depthWidth_ = 0U;
         depthHeight_ = 0U;
+        depthSamples_ = SDL_GPU_SAMPLECOUNT_1;
+    }
+
+    void World3DRenderer::releasePresentationResources() noexcept
+    {
+        if (device_ && multisampleColor_) SDL_ReleaseGPUTexture(device_, multisampleColor_);
+        if (device_ && shadowMap_) SDL_ReleaseGPUTexture(device_, shadowMap_);
+        if (device_ && shadowDepth_) SDL_ReleaseGPUTexture(device_, shadowDepth_);
+        if (device_ && shadowSampler_) SDL_ReleaseGPUSampler(device_, shadowSampler_);
+        multisampleColor_ = shadowMap_ = shadowDepth_ = nullptr;
+        shadowSampler_ = nullptr;
+        multisampleWidth_ = multisampleHeight_ = 0U;
+        multisampleLegacyPipeline_.reset();
+        multisampleModernPipeline_.reset();
+        shadowMapPipeline_.reset();
+    }
+
+    bool World3DRenderer::ensureShadowResources()
+    {
+        if (shadowMap_ && shadowDepth_ && shadowMapPipeline_ && shadowSampler_) return true;
+        if (!SDL_GPUTextureSupportsFormat(device_, SDL_GPU_TEXTUREFORMAT_R32_FLOAT,
+            SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER))
+            return false;
+        if (!shadowMapPipeline_)
+        {
+            auto pipeline = World3DPipeline::load(device_, shaderDirectory_, SDL_GPU_TEXTUREFORMAT_R32_FLOAT, true);
+            if (!pipeline) return false;
+            shadowMapPipeline_ = std::move(*pipeline);
+        }
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.width = info.height = ShadowSize;
+        info.layer_count_or_depth = info.num_levels = 1U;
+        info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        if (!shadowMap_)
+        {
+            info.format = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
+            info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            shadowMap_ = SDL_CreateGPUTexture(device_, &info);
+        }
+        if (!shadowDepth_)
+        {
+            info.format = shadowMapPipeline_->depthFormat();
+            info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+            shadowDepth_ = SDL_CreateGPUTexture(device_, &info);
+        }
+        if (!shadowSampler_)
+        {
+            SDL_GPUSamplerCreateInfo sampler{};
+            sampler.min_filter = sampler.mag_filter = SDL_GPU_FILTER_NEAREST;
+            sampler.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+            sampler.address_mode_u = sampler.address_mode_v = sampler.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+            shadowSampler_ = SDL_CreateGPUSampler(device_, &sampler);
+        }
+        return shadowMap_ && shadowDepth_ && shadowSampler_;
+    }
+
+    bool World3DRenderer::ensurePresentationTargets(std::uint32_t width, std::uint32_t height)
+    {
+        if (!SDL_GPUTextureSupportsSampleCount(device_, colorFormat_, SDL_GPU_SAMPLECOUNT_4) ||
+            !SDL_GPUTextureSupportsSampleCount(device_, pipeline_.depthFormat(), SDL_GPU_SAMPLECOUNT_4))
+            return false;
+        if (!multisampleLegacyPipeline_)
+        {
+            auto pipeline = World3DPipeline::load(device_, shaderDirectory_, colorFormat_, false, SDL_GPU_SAMPLECOUNT_4);
+            if (!pipeline) return false;
+            multisampleLegacyPipeline_ = std::move(*pipeline);
+        }
+        if (!multisampleModernPipeline_)
+        {
+            auto pipeline = World3DPipeline::load(device_, shaderDirectory_, colorFormat_, true, SDL_GPU_SAMPLECOUNT_4);
+            if (!pipeline) return false;
+            multisampleModernPipeline_ = std::move(*pipeline);
+        }
+        if (multisampleColor_ && multisampleWidth_ == width && multisampleHeight_ == height) return true;
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.format = colorFormat_;
+        info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+        info.width = width; info.height = height;
+        info.layer_count_or_depth = info.num_levels = 1U;
+        info.sample_count = SDL_GPU_SAMPLECOUNT_4;
+        auto* replacement = SDL_CreateGPUTexture(device_, &info);
+        if (!replacement) return false;
+        if (multisampleColor_) SDL_ReleaseGPUTexture(device_, multisampleColor_);
+        multisampleColor_ = replacement;
+        multisampleWidth_ = width; multisampleHeight_ = height;
+        return true;
     }
 
     void World3DRenderer::releaseSamplingResources() noexcept
@@ -196,6 +363,7 @@ namespace monopoly::engine
     void World3DRenderer::reset() noexcept
     {
         releaseDepthTarget();
+        releasePresentationResources();
         if (meshCache_) meshCache_->clear();
         meshCache_.reset();
         studioEnvironment_.reset();
@@ -209,12 +377,14 @@ namespace monopoly::engine
         device_ = nullptr;
         lighting_ = {};
         bilinearFiltering_ = false;
+        modernPresentation_ = presentationShadows_ = presentationAntialiasing_ = false;
+        shadowsActive_ = antialiasingActive_ = false;
     }
 
     bool World3DRenderer::ensureDepthTarget(
-        std::uint32_t width, std::uint32_t height) noexcept
+        std::uint32_t width, std::uint32_t height, SDL_GPUSampleCount samples) noexcept
     {
-        if (depthTarget_ && depthWidth_ == width && depthHeight_ == height)
+        if (depthTarget_ && depthWidth_ == width && depthHeight_ == height && depthSamples_ == samples)
             return true;
 
         SDL_GPUTextureCreateInfo info{};
@@ -225,7 +395,7 @@ namespace monopoly::engine
         info.height = height;
         info.layer_count_or_depth = 1U;
         info.num_levels = 1U;
-        info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        info.sample_count = samples;
         SDL_GPUTexture* replacement = SDL_CreateGPUTexture(device_, &info);
         if (!replacement) return false;
 
@@ -233,6 +403,7 @@ namespace monopoly::engine
         depthTarget_ = replacement;
         depthWidth_ = width;
         depthHeight_ = height;
+        depthSamples_ = samples;
         return true;
     }
 
@@ -374,7 +545,69 @@ namespace monopoly::engine
                     modern.error().detail.c_str());
         }
 
-        if (!ensureDepthTarget(targetWidth, targetHeight))
+        shadowsActive_ = antialiasingActive_ = false;
+        World3DRenderStats stats;
+        const auto lightProjection = presentationShadows_ && lighting_.sun.enabled && modernPipeline_
+            ? shadowProjection(slot, lighting_.sun.direction) : std::nullopt;
+        if (lightProjection && ensureShadowResources())
+        {
+            SDL_GPUColorTargetInfo shadowColor{};
+            shadowColor.texture = shadowMap_;
+            shadowColor.clear_color = {1,0,0,1};
+            shadowColor.load_op = SDL_GPU_LOADOP_CLEAR;
+            shadowColor.store_op = SDL_GPU_STOREOP_STORE;
+            shadowColor.cycle = true;
+            SDL_GPUDepthStencilTargetInfo shadowDepth{};
+            shadowDepth.texture = shadowDepth_;
+            shadowDepth.clear_depth = 1;
+            shadowDepth.load_op = SDL_GPU_LOADOP_CLEAR;
+            shadowDepth.store_op = SDL_GPU_STOREOP_DONT_CARE;
+            shadowDepth.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+            shadowDepth.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+            shadowDepth.cycle = true;
+            auto* shadowPass = SDL_BeginGPURenderPass(commandBuffer, &shadowColor, 1U, &shadowDepth);
+            if (!shadowPass)
+                return std::unexpected(rendererError(World3DRendererErrorCode::RenderPassCreationFailed,
+                    "could not begin presentation shadow pass"));
+            const SDL_GPUViewport shadowViewport{0,0,static_cast<float>(ShadowSize),static_cast<float>(ShadowSize),0,1};
+            SDL_SetGPUViewport(shadowPass, &shadowViewport);
+            SDL_BindGPUGraphicsPipeline(shadowPass, shadowMapPipeline_->doubleSidedHandle());
+            for (const auto& batch : *batches)
+            {
+                if (batch.legacyShadow || batch.material.model != data::MeshMaterialModel::MetallicRoughness)
+                    continue;
+                ModernPBRVertexUniforms vertex;
+                vertex.world = batch.worldTransform.values;
+                vertex.worldViewProjection = sequence::multiply(batch.worldTransform,*lightProjection).values;
+                ModernPBRFragmentUniforms fragment;
+                fragment.baseColor = batch.material.diffuse;
+                fragment.metallicRoughness[3] = batch.material.alphaMode == data::ModernAlphaMode::Mask ? 1.0F : 0.0F;
+                fragment.mapFlags[0] = batch.material.baseColorTexture ? 1.0F : 0.0F;
+                fragment.mapParameters[3] = batch.material.alphaCutoff;
+                fragment.shadowParameters[0] = -1.0F;
+                SDL_PushGPUVertexUniformData(commandBuffer,0U,&vertex,static_cast<Uint32>(sizeof(vertex)));
+                SDL_PushGPUFragmentUniformData(commandBuffer,0U,&fragment,static_cast<Uint32>(sizeof(fragment)));
+                const SDL_GPUBufferBinding vertices{batch.vertexBuffer,0U}, indices{batch.indexBuffer,0U};
+                SDL_BindGPUVertexBuffers(shadowPass,0U,&vertices,1U);
+                SDL_BindGPUIndexBuffer(shadowPass,&indices,SDL_GPU_INDEXELEMENTSIZE_32BIT);
+                std::array<SDL_GPUTextureSamplerBinding,7> textures{};
+                for (auto& texture : textures) texture = {whiteTexture_,linearSampler_};
+                if (batch.modernTextures[0].texture) textures[0]=batch.modernTextures[0];
+                textures[5]={studioEnvironment_.texture(),studioEnvironment_.sampler()};
+                SDL_BindGPUFragmentSamplers(shadowPass,0U,textures.data(),static_cast<Uint32>(textures.size()));
+                SDL_DrawGPUIndexedPrimitives(shadowPass,batch.indexCount,1U,batch.firstIndex,0,0U);
+                ++stats.shadowBatches;
+                stats.shadowTriangles += batch.indexCount/3U;
+            }
+            SDL_EndGPURenderPass(shadowPass);
+            shadowsActive_ = stats.shadowBatches > 0;
+        }
+        const bool fullTarget = viewport.x == 0 && viewport.y == 0 &&
+            viewport.w == static_cast<float>(targetWidth) && viewport.h == static_cast<float>(targetHeight);
+        antialiasingActive_ = presentationAntialiasing_ && needsModernPipeline && modernPipeline_ && fullTarget &&
+            ensurePresentationTargets(targetWidth,targetHeight);
+        stats.sampleCount = presentationSampleCount();
+        if (!ensureDepthTarget(targetWidth, targetHeight, antialiasingActive_ ? SDL_GPU_SAMPLECOUNT_4 : SDL_GPU_SAMPLECOUNT_1))
             return std::unexpected(World3DRendererError{
                 World3DRendererErrorCode::DepthTargetCreationFailed,
                 SDL_GetError(), {}, {}});
@@ -384,6 +617,15 @@ namespace monopoly::engine
         color.load_op = SDL_GPU_LOADOP_LOAD;
         color.store_op = SDL_GPU_STOREOP_STORE;
         color.cycle = false;
+        if (antialiasingActive_)
+        {
+            color.texture = multisampleColor_;
+            color.clear_color = {0.035F,0.04F,0.05F,1.0F};
+            color.load_op = SDL_GPU_LOADOP_CLEAR;
+            color.store_op = SDL_GPU_STOREOP_RESOLVE;
+            color.resolve_texture = colorTarget;
+            color.cycle = true;
+        }
 
         SDL_GPUDepthStencilTargetInfo depth{};
         depth.texture = depthTarget_;
@@ -403,7 +645,6 @@ namespace monopoly::engine
         SDL_SetGPUViewport(pass, &viewport);
 
         SDL_GPUGraphicsPipeline* boundPipeline = nullptr;
-        World3DRenderStats stats;
         stats.objects = slot.visibleOrder().size();
         stats.batches = batches->size();
         const auto& projection = *slot.view();
@@ -412,11 +653,14 @@ namespace monopoly::engine
         {
             const bool modern = modernPipeline_ && !batch.legacyShadow &&
                 batch.material.model == data::MeshMaterialModel::MetallicRoughness;
+            const auto& legacyPipeline = antialiasingActive_ ? *multisampleLegacyPipeline_ : pipeline_;
+            const auto* modernPipeline = antialiasingActive_ ? &*multisampleModernPipeline_ :
+                (modernPipeline_ ? &*modernPipeline_ : nullptr);
             SDL_GPUGraphicsPipeline* desiredPipeline = batch.legacyShadow
-                ? pipeline_.shadowHandle()
+                ? legacyPipeline.shadowHandle()
                 : modern ? (batch.material.doubleSided
-                    ? modernPipeline_->doubleSidedHandle() : modernPipeline_->handle())
-                : pipeline_.handle();
+                    ? modernPipeline->doubleSidedHandle() : modernPipeline->handle())
+                : legacyPipeline.handle();
             if (desiredPipeline != boundPipeline)
             {
                 SDL_BindGPUGraphicsPipeline(pass, desiredPipeline);
@@ -492,6 +736,9 @@ namespace monopoly::engine
                     batch.material.normalTexture ? batch.material.normalTexture->scale : 1.0F,
                     batch.material.occlusionTexture ? batch.material.occlusionTexture->scale : 1.0F,
                     batch.material.alphaCutoff};
+                if (lightProjection) modernFragment.shadowViewProjection = lightProjection->values;
+                modernFragment.shadowParameters = {shadowsActive_ ? 1.0F : 0.0F,
+                    1.0F/static_cast<float>(ShadowSize),0.00025F,modernPresentation_ ? 1.0F : 0.0F};
                 SDL_PushGPUVertexUniformData(commandBuffer, 0U,
                     &modernVertex, static_cast<Uint32>(sizeof(modernVertex)));
                 SDL_PushGPUFragmentUniformData(commandBuffer, 0U,
@@ -516,7 +763,7 @@ namespace monopoly::engine
                 bilinearFiltering_ ? linearSampler_ : textureSampler_};
             if (modern)
             {
-                std::array<SDL_GPUTextureSamplerBinding, 6> maps{};
+                std::array<SDL_GPUTextureSamplerBinding, 7> maps{};
                 std::copy(batch.modernTextures.begin(), batch.modernTextures.end(), maps.begin());
                 for (std::size_t map = 0; map < 5U; ++map)
                 {
@@ -524,6 +771,8 @@ namespace monopoly::engine
                     if (!binding.texture) binding = {whiteTexture_, linearSampler_};
                 }
                 maps[5] = {studioEnvironment_.texture(), studioEnvironment_.sampler()};
+                maps[6] = shadowsActive_ ? SDL_GPUTextureSamplerBinding{shadowMap_,shadowSampler_}
+                    : SDL_GPUTextureSamplerBinding{whiteTexture_,linearSampler_};
                 SDL_BindGPUFragmentSamplers(pass, 0U, maps.data(),
                     static_cast<Uint32>(maps.size()));
             }

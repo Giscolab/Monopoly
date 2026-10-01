@@ -231,3 +231,14 @@ fenêtres différent ; aucune parité exacte n'est affirmée. Le target
 
 Sept tests ciblés de présentation/audio passent avec audio dummy. Le GUI
 interactif, F11, le son audible et le FPS d'une partie complète restent à qualifier.
+
+
+### Visual polish qualification - 1 October 2026
+
+Nine visually inspected GPU passes, an opt-in faithful USA board path, real
+mesh shadows/4xMSAA, readable Paris prints and UI-safe framing are recorded in
+[VISUAL_POLISH.md](VISUAL_POLISH.md). Real USA play opens at 1920x1080 with
+about 60FPS title telemetry; F11 and the repaired toolbar projection were tested.
+Audio playback reports an unsupported WAVE format; sustained complete-game FPS
+and turn-animation traversal remain unqualified. Missing French DAT banks still
+block Paris in-game. Retail fallbacks and immutable Source/ remain preserved.

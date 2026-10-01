@@ -26,6 +26,14 @@ namespace monopoly::engine
                 data::packDataId(ModernEnvironmentLogicalGroup, 2), ModernEnvironmentNodeBase | 3U,
                 {3.9F, 0.0F, -4.1F}, -90.0F}
         }};
+        constexpr std::array<ModernEnvironmentDefinition, 2> PresentationDefinitions{{
+            {"table", "presentation/table.glb", data::packDataId(ModernEnvironmentLogicalGroup, 3),
+                ModernEnvironmentNodeBase | 4U, {0,0,0}, 0.0F},
+            {"plinth", "presentation/plinth.glb", data::packDataId(ModernEnvironmentLogicalGroup, 4),
+                ModernEnvironmentNodeBase | 5U, {0,0,0}, 0.0F}
+        }};
+        const ModernEnvironmentDefinition& definitionAt(std::size_t index)
+        { return index < Definitions.size() ? Definitions[index] : PresentationDefinitions[index-Definitions.size()]; }
         constexpr float SourceUnitsPerMetre = 200.0F;
         constexpr float BoardOrigin = 2430.0F;
 
@@ -71,7 +79,7 @@ namespace monopoly::engine
     {
         if (attempted_[index]) return;
         attempted_[index] = true;
-        const auto& definition = Definitions[index];
+        const auto& definition = definitionAt(index);
         data::ModernGltfLoadOptions options;
         options.unitsPerMeter = SourceUnitsPerMetre;
         // Center placement follows the aligned board mapping; the decoration
@@ -116,7 +124,7 @@ namespace monopoly::engine
     }
 
     std::vector<sequence::SequenceMeshRenderItem> ModernEnvironment::items(
-        const sequence::Matrix3D& boardMatrix, std::uint32_t tick)
+        const sequence::Matrix3D& boardMatrix, std::uint32_t tick, bool includePresentation, bool includeLandmarks)
     {
         std::vector<sequence::SequenceMeshRenderItem> result;
         if (!enabled_) return result;
@@ -130,12 +138,13 @@ namespace monopoly::engine
             }
             return result;
         }
-        result.reserve(ModernEnvironmentCount);
-        for (std::size_t index = 0; index < Definitions.size(); ++index)
+        const auto count = Definitions.size() + (includePresentation ? PresentationDefinitions.size() : 0);
+        result.reserve(count);
+        for (std::size_t index = includeLandmarks ? 0 : Definitions.size(); index < count; ++index)
         {
             loadOnce(index);
             if (!assets_[index]) continue;
-            const auto& definition = Definitions[index];
+            const auto& definition = definitionAt(index);
             const auto& position = definition.originalYup;
             const auto local = sequence::translate3D(
                 BoardOrigin - position[2] * SourceUnitsPerMetre,

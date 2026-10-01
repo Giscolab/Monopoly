@@ -587,6 +587,125 @@ namespace
             "generated mip levels minify a real checker texture to stable intermediate GPU pixels");
         renderer.setLighting({});
     }
+    void testPresentationShadowsAndMSAA(engine::World3DRenderer& renderer,
+        SDL_GPUDevice* device, SDL_GPUTexture* target)
+    {
+        using Pixels = std::array<std::uint8_t, 64U * 64U * 4U>;
+        const auto savedLighting = renderer.lighting();
+        engine::World3DLighting lighting{};
+        lighting.ambient = {0.08F, 0.08F, 0.08F};
+        lighting.sun.enabled = true;
+        lighting.sun.color = {1, 1, 1};
+        lighting.sun.direction = {0.6F, 0.2F, 1.0F};
+        renderer.setLighting(lighting);
+        renderer.setModernPresentation(false);
+        renderer.setPresentationShadows(false);
+        renderer.setPresentationAntialiasing(false);
+
+        // A large receiver and a smaller caster at different depths. The sun
+        // shifts the cast shadow beyond the caster's camera silhouette, so a
+        // pixel difference proves actual mesh occlusion rather than a flag.
+        const auto quad = [](std::uint16_t id, float half, float x, float z) {
+            sequence::SequenceMeshRenderItem item;
+            item.node = id;
+            item.contentsDataId = data::packDataId(8, id);
+            item.worldTransform = sequence::identity3D();
+            auto mesh = std::make_shared<data::MeshRenderData>();
+            mesh->vertices = {
+                {{{x-half,-half,z}},{{0,0,-1}},{{0,0}}},
+                {{{x+half,-half,z}},{{0,0,-1}},{{1,0}}},
+                {{{x+half, half,z}},{{0,0,-1}},{{1,1}}},
+                {{{x-half, half,z}},{{0,0,-1}},{{0,1}}}};
+            mesh->indices = {0,2,1,0,3,2};
+            mesh->bounds = {{x-half,-half,z},{x+half,half,z}};
+            data::MeshRenderBatch batch;
+            batch.indexCount = 6U;
+            batch.material.model = data::MeshMaterialModel::MetallicRoughness;
+            batch.material.diffuse = {0.75F,0.75F,0.75F,1};
+            batch.material.roughness = 1;
+            mesh->batches.push_back(batch);
+            auto asset = std::make_shared<data::MeshRuntimeAsset>();
+            asset->dataId = item.contentsDataId;
+            asset->origin = data::MeshAssetOrigin::ModernGltf;
+            asset->renderData = mesh;
+            item.asset = asset;
+            return item;
+        };
+        auto slot = makeSlot();
+        expect(slot.sync({quad(0x700,3,0,10),quad(0x701,0.55F,-0.6F,8)}).has_value(),
+            "presentation qualification installs actual receiver and caster meshes");
+        const SDL_GPUViewport full{0,0,64,64,0,1};
+        const auto draw = [&](const SDL_GPUViewport& viewport, Pixels& pixels)
+            -> std::optional<engine::World3DRenderStats> {
+            auto* command = SDL_AcquireGPUCommandBuffer(device);
+            if (!command) return std::nullopt;
+            if (!clearTarget(command,target,{0.035F,0.04F,0.05F,1}))
+            { (void)SDL_CancelGPUCommandBuffer(command); return std::nullopt; }
+            auto stats = renderer.render(command,target,64,64,viewport,slot);
+            if (!stats)
+            {
+                std::cout << "[GPU] presentation render error: " << stats.error().detail << '\n';
+                (void)SDL_CancelGPUCommandBuffer(command);
+                return std::nullopt;
+            }
+            if (!downloadTarget(device,command,target,pixels)) return std::nullopt;
+            return *stats;
+        };
+        Pixels baseline{}, shadow{}, multisample{}, partial{}, restored{};
+        const auto initial = draw(full,baseline);
+        expect(initial && initial->sampleCount == 1 && initial->shadowBatches == 0 &&
+            !renderer.presentationShadowsActive() && !renderer.presentationAntialiasingActive(),
+            "presentation defaults render without shadow passes or multisampling");
+
+        renderer.setPresentationShadows(true);
+        const auto withShadow = draw(full,shadow);
+        const bool shadowSupported = SDL_GPUTextureSupportsFormat(device,SDL_GPU_TEXTUREFORMAT_R32_FLOAT,
+            SDL_GPU_TEXTURETYPE_2D,SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        expect(withShadow && renderer.presentationShadowsActive() == shadowSupported &&
+            (!shadowSupported || (withShadow->shadowBatches == 2 && withShadow->shadowTriangles == 4)),
+            "supported presentation shadows execute the two real mesh depth draws");
+        if (initial && withShadow && shadowSupported)
+        {
+            std::size_t darkened{};
+            for (std::size_t pixel=0; pixel<baseline.size(); pixel+=4)
+                if (baseline[pixel] > 80 && shadow[pixel]+8 < baseline[pixel] &&
+                    shadow[pixel+1]+8 < baseline[pixel+1]) ++darkened;
+            std::cout << "[GPU] actual receiver shadow pixels: " << darkened << '\n';
+            expect(darkened >= 4 && darkened < 128,
+                "mesh-cast shadow darkens receiver pixels without broad planar self-shadow acne");
+        }
+
+        renderer.setPresentationAntialiasing(true);
+        const auto withMSAA = draw(full,multisample);
+        const bool samplesSupported = SDL_GPUTextureSupportsSampleCount(device,SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+            SDL_GPU_SAMPLECOUNT_4) && SDL_GPUTextureSupportsSampleCount(device,renderer.pipeline().depthFormat(),
+                SDL_GPU_SAMPLECOUNT_4);
+        expect(withMSAA && renderer.presentationAntialiasingActive() == samplesSupported &&
+            renderer.presentationSampleCount() == (samplesSupported ? 4U : 1U) &&
+            withMSAA->sampleCount == (samplesSupported ? 4U : 1U),
+            "supported 4xMSAA activates actual matching color/depth pipelines and resolves readable GPU pixels");
+        if (withShadow && withMSAA && samplesSupported)
+            expect(multisample != shadow,
+                "4xMSAA resolve changes the fractional mesh edges in the actual framebuffer");
+
+        const SDL_GPUViewport inset{8,8,48,48,0,1};
+        const auto partialStats = draw(inset,partial);
+        expect(partialStats && partialStats->sampleCount == 1 &&
+            !renderer.presentationAntialiasingActive() && renderer.presentationSampleCount() == 1,
+            "partial viewport safely falls back to single sampling despite the requested MSAA option");
+        expect(initial && partialStats && partial[0] == baseline[0] && partial[1] == baseline[1] &&
+            partial[2] == baseline[2] && partial[3] == baseline[3],
+            "partial viewport fallback preserves the caller's background outside the 3D view");
+
+        renderer.setPresentationShadows(false);
+        renderer.setPresentationAntialiasing(false);
+        const auto disabled = draw(full,restored);
+        expect(initial && disabled && disabled->shadowBatches == 0 && disabled->sampleCount == 1 &&
+            !renderer.presentationShadowsActive() && !renderer.presentationAntialiasingActive() && restored == baseline,
+            "disabling shadows and MSAA restores the original single-sample GPU framebuffer exactly");
+        renderer.setLighting(savedLighting);
+    }
+
     void testRealRendererWhenAvailable()
     {
         if (!SDL_Init(SDL_INIT_VIDEO))
@@ -1151,6 +1270,7 @@ namespace
         expect(restoredRead && pointPixels == restoredPixels,
             "switching filtering off restores point-sampled GPU pixels exactly");
         testModernPBR(*renderer, device, target);
+        testPresentationShadowsAndMSAA(*renderer, device, target);
         std::cout << "[GPU] releasing renderer and target\n";
         renderer->reset();
         SDL_ReleaseGPUTexture(device, target);

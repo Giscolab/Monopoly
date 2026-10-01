@@ -33,8 +33,12 @@ namespace monopoly::engine
         std::array<float, 4> mapFlags{};
         // x: occlusion enabled, y: normal scale, z: occlusion strength, w: alpha cutoff.
         std::array<float, 4> mapParameters{};
+        std::array<float, 16> shadowViewProjection{};
+        // x: shadow receiver enabled (negative for depth pass), y: texel size,
+        // z: depth comparison bias, w: optional presentation tone mapping.
+        std::array<float, 4> shadowParameters{};
     };
     static_assert(sizeof(ModernPBRVertexUniforms) == 128U);
-    static_assert(sizeof(ModernPBRFragmentUniforms) == 256U);
+    static_assert(sizeof(ModernPBRFragmentUniforms) == 336U);
     static_assert(offsetof(ModernPBRFragmentUniforms, spotlightPhi) == 208U);
 }

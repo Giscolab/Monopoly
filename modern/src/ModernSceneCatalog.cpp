@@ -15,6 +15,9 @@ namespace monopoly::data
             ModernSceneKind::ParisBoard,
             boardMeshDataId(BoardMeshKind::ClassicMedium),
             "board/paris_board_runtime.glb"};
+        constexpr ModernSceneDefinition UsaBoard{
+            ModernSceneKind::UsaBoard, boardMeshDataId(BoardMeshKind::ClassicMedium),
+            "board/usa_board_runtime.glb"};
         constexpr ModernSceneDefinition House{
             ModernSceneKind::House,
             packDataId(LegacyGroupId::ThreeD, pieces::HouseMeshTag),
@@ -45,8 +48,9 @@ namespace monopoly::data
                 if (boardSeen) return std::unexpected("duplicate --modern-board option");
                 boardSeen = true;
                 if (argument == "--modern-board=paris") parsed.options.parisBoard = true;
+                else if (argument == "--modern-board=usa") parsed.options.usaBoard = true;
                 else if (argument == "--modern-board=retail") parsed.options.parisBoard = false;
-                else return std::unexpected("--modern-board requires paris or retail");
+                else return std::unexpected("--modern-board requires paris, usa or retail");
             }
             else if (argument == "--modern-buildings" || argument.starts_with("--modern-buildings="))
             {
@@ -74,6 +78,7 @@ namespace monopoly::data
         switch (kind)
         {
         case ModernSceneKind::ParisBoard: return ParisBoard;
+        case ModernSceneKind::UsaBoard: return UsaBoard;
         case ModernSceneKind::House: return House;
         case ModernSceneKind::Hotel: return Hotel;
         }
@@ -85,7 +90,7 @@ namespace monopoly::data
         const ModernSceneOptions& options, const ModernSceneContext& context) noexcept
     {
         if (kind != ModernSceneKind::ParisBoard && kind != ModernSceneKind::House &&
-            kind != ModernSceneKind::Hotel)
+            kind != ModernSceneKind::Hotel && kind != ModernSceneKind::UsaBoard)
             return false;
         const auto& definition = modernSceneDefinition(kind);
         if (meshId != definition.legacyMeshId || !rootSequenceDataId ||
@@ -95,6 +100,11 @@ namespace monopoly::data
             return options.parisBoard && priority == display::Board3DPriority &&
                 context.edition == BoardEdition::Europe && context.city == ParisCity &&
                 context.language == LanguageId::French && context.currency == EuroCurrency &&
+                context.customBoardPath.empty();
+        if (kind == ModernSceneKind::UsaBoard)
+            return options.usaBoard && priority == display::Board3DPriority &&
+                context.edition == BoardEdition::Usa && context.city == 0 &&
+                context.language == LanguageId::EnglishUs && context.currency == 13 &&
                 context.customBoardPath.empty();
         const auto endPriority = static_cast<std::uint32_t>(pieces::BoardHousingPriority) +
             static_cast<std::uint32_t>(rules::SquareCount) * pieces::HouseSlotCount;
@@ -113,6 +123,12 @@ namespace monopoly::data
             options.localOffset = {2430.0F, 0.0F, 2430.0F};
             options.groundToZero = false;
             return options;
+        }
+        if (kind == ModernSceneKind::UsaBoard)
+        {
+            // Exact production board vertices exported in raw retail units.
+            ModernGltfLoadOptions options; options.unitsPerMeter = 1.0F;
+            options.groundToZero = false; return options;
         }
         if (kind == ModernSceneKind::Hotel)
         {
@@ -137,10 +153,13 @@ namespace monopoly::data
     bool qualifiedModernSceneGeometry(ModernSceneKind kind, const MeshRenderData& mesh) noexcept
     {
         if (kind == ModernSceneKind::ParisBoard || kind == ModernSceneKind::House) return true;
-        if (kind != ModernSceneKind::Hotel || mesh.vertices.empty() || mesh.indices.empty()) return false;
-        // Production retail HMD 0x80004: [-65,0,-90]..[65,155,90].
-        constexpr std::array<float,3> minimum{-65.0F,0.0F,-90.0F};
-        constexpr std::array<float,3> maximum{65.0F,155.0F,90.0F};
+        if ((kind != ModernSceneKind::Hotel && kind != ModernSceneKind::UsaBoard) ||
+            mesh.vertices.empty() || mesh.indices.empty()) return false;
+        // Immutable production HMD bounds, in raw retail units.
+        const std::array<float,3> minimum = kind == ModernSceneKind::UsaBoard
+            ? std::array<float,3>{-84,-64,-84} : std::array<float,3>{-65,0,-90};
+        const std::array<float,3> maximum = kind == ModernSceneKind::UsaBoard
+            ? std::array<float,3>{4944,50,4944} : std::array<float,3>{65,155,90};
         constexpr float tolerance = 0.001F;
         for (std::size_t axis = 0; axis < 3; ++axis)
             if (!std::isfinite(mesh.bounds.minimum[axis]) || !std::isfinite(mesh.bounds.maximum[axis]) ||

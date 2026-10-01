@@ -182,6 +182,28 @@ namespace
         );
     }
 
+    void testBoardOverlayInput()
+    {
+        using namespace monopoly::logicalviewport;
+        const auto ui=makeTransform(1920,1080);
+        const auto roll=windowToUIOverlay(ui,960,855);
+        expect(roll && nearlyEqual(roll->x,400) && nearlyEqual(roll->y,475),
+            "1080p roll-dice pixel maps to actual UI button y475 before full-screen board input");
+        const auto world=windowToLogical(makeWorld3DTransform(1920,1080),960,855);
+        expect(world && world->y<400,
+            "same physical toolbar pixel would miss the button under the old 3D remapping");
+        expect(!windowToUIOverlay(ui,960,600),
+            "board area keeps the independent 3D mapping");
+        expect(!windowToUIOverlay(ui,100,855),
+            "UI pillarbox does not consume expanded board input");
+        expect(!windowToUIOverlay(ui,960,809.9) && windowToUIOverlay(ui,960,810),
+            "overlay boundary begins at retail logical y450");
+        const auto tall=makeTransform(1000,1000);
+        const auto point=windowToUIOverlay(tall,500,718.75);
+        expect(point && nearlyEqual(point->y,475),
+            "letterboxed presentation keeps the toolbar button's logical position");
+    }
+
     void testInvalidInputs()
     {
         using namespace monopoly::logicalviewport;
@@ -238,6 +260,7 @@ int main()
     testPillarboxExtent();
     testLetterboxExtent();
     testInvalidInputs();
+    testBoardOverlayInput();
 
     if (failures != 0)
     {

@@ -262,6 +262,36 @@ def board_collections():
     return names
 
 
+def reflect_runtime_print(mesh, source):
+    """Bake retail LH print parity into evaluated copies, preserving placement.
+
+    FONT outlines and the genuine mascot image lie in source-local XY.
+    Only their local Y is reflected about the unchanged local bounds midpoint.
+    Faces are reversed so geometric normals retain their original outward side.
+    UVs remain attached to vertices, reflecting the mascot drawing in its frame.
+    """
+    if source.type != "FONT" and source.name != "02 · Identité centrale / mascot_print":
+        return None
+    if not mesh.vertices:
+        raise RuntimeError(f"runtime print {source.name}: missing evaluated vertices")
+    before = [[min(vertex.co[axis] for vertex in mesh.vertices),
+               max(vertex.co[axis] for vertex in mesh.vertices)] for axis in range(3)]
+    center = (before[1][0] + before[1][1]) * 0.5
+    transform = Matrix.Identity(4)
+    transform[1][1], transform[1][3] = -1.0, 2.0 * center
+    mesh.transform(transform)
+    mesh.flip_normals()
+    mesh.update()
+    after = [[min(vertex.co[axis] for vertex in mesh.vertices),
+              max(vertex.co[axis] for vertex in mesh.vertices)] for axis in range(3)]
+    if max(abs(a-b) for old,new in zip(before,after) for a,b in zip(old,new)) > 0.00001:
+        raise RuntimeError(f"runtime print {source.name}: reflection moved its bounds")
+    return {"source_object": source.name, "source_type": source.type,
+            "reflection_axis": "local Y", "local_bounds_midpoint_y": center,
+            "placement_matrix_unchanged": True, "local_bounds_preserved": True,
+            "winding_reversed": True, "source_uvs_preserved": True}
+
+
 def export_static_group(collection_names, kind, slug, output_dir, local_root=None,
                         object_bases=None, alignment=None, procedural_baker=None):
     """Export evaluated copies only; retain the recovered scene untouched."""
@@ -307,6 +337,7 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
     created_meshes = []
     created_materials = {}
     material_records = []
+    reflected_prints = []
     low = [float("inf")] * 3
     high = [float("-inf")] * 3
     try:
@@ -339,6 +370,10 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
             if procedural_baker:
                 procedural_baker.bake(obj)
                 mesh = obj.data
+            if alignment is not None:
+                reflection = reflect_runtime_print(mesh, source)
+                if reflection:
+                    reflected_prints.append(reflection)
             obj.matrix_world = (object_bases.get(name, basis) if object_bases else basis) @ source.matrix_world
             for vertex in mesh.vertices:
                 p = obj.matrix_world @ vertex.co
@@ -393,6 +428,11 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
             manifest["runtime_material_adaptations"] = material_records
             manifest["authoring_materials_preserved"] = True
             manifest["tangent_policy"] = "omitted; runtime supports UV-derivative basis"
+        if alignment is not None:
+            manifest["runtime_print_parity"] = {
+                "policy": "source-local Y reflected on copied FONT/mascot meshes for retail LH projection",
+                "source_scene_unchanged": True, "whole_board_reflected": False,
+                "reflected_print_count": len(reflected_prints), "objects": reflected_prints}
         if procedural_baker:
             manifest["source_blend_sha256"] = hashlib.sha256(Path(bpy.data.filepath).read_bytes()).hexdigest()
             manifest["procedural_export_validation"] = procedural_baker.validate_export(output)

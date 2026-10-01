@@ -44,7 +44,8 @@ namespace monopoly::engine
                 SDL_GPUDevice* device,
                 const std::filesystem::path& shaderDirectory,
                 SDL_GPUTextureFormat colorFormat,
-                bool modernPBR = false);
+                bool modernPBR = false,
+                SDL_GPUSampleCount samples = SDL_GPU_SAMPLECOUNT_1);
 
         [[nodiscard]] SDL_GPUGraphicsPipeline* handle() const noexcept
         { return pipeline_; }

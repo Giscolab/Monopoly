@@ -400,6 +400,7 @@ target_link_libraries(
     MonopolyModernAssetProbe
     PRIVATE
     MonopolyDataCore
+    SDL3::SDL3
 )
 if(MSVC)
     target_compile_options(
@@ -423,7 +424,8 @@ if(MSVC)
     target_compile_options(MonopolyTokenDeformationContract PRIVATE /W4 /permissive- /utf-8)
 endif()
 
-add_executable(MonopolyModernSceneRenderProbe tools/ModernSceneRenderProbe.cpp)
+add_executable(MonopolyModernSceneRenderProbe tools/ModernSceneRenderProbe.cpp
+    src/PiecePlacement.cpp src/BoardGeometry.cpp)
 target_link_libraries(MonopolyModernSceneRenderProbe PRIVATE MonopolyGPU3DCore)
 if(MSVC)
     target_compile_options(MonopolyModernSceneRenderProbe PRIVATE /W4 /permissive- /utf-8)
@@ -868,6 +870,31 @@ if(MONOPOLY_BLENDER_EXECUTABLE
             --retail-board-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-reference-obj/boardmed.obj"
         DEPENDS MonopolyModernAssetProbe
         COMMENT "Exporting a separately aligned French Euro board using decoded retail cell geometry"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportRetailBoard
+        COMMAND "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --dump-textured-board "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b --factory-startup --disable-autoexec
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_retail_board.py"
+            -- --source "${CMAKE_CURRENT_BINARY_DIR}/retail-textured-board/boardmed.obj"
+            --probe "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+        DEPENDS MonopolyModernAssetProbe
+        COMMENT "Exporting the actual decoded textured USA board as a separate validated GLB"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportPresentationAssets
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b --factory-startup --disable-autoexec
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_presentation_assets.py"
+            -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --board "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/board/paris_board_runtime.glb"
+            --probe "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --authoring "${CMAKE_CURRENT_BINARY_DIR}/presentation-authoring"
+        DEPENDS MonopolyModernAssetProbe
+        COMMENT "Exporting separate measured presentation table and board support"
         VERBATIM
     )
     add_custom_target(MonopolyExportProceduralScene

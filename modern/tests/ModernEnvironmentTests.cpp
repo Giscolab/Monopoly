@@ -176,5 +176,30 @@ int main()
     badMatrix.values[0] = std::numeric_limits<float>::quiet_NaN();
     expect(environment.items(badMatrix, 0).empty() && environment.items(badMatrix, 1).empty() && reports.size() == 1U,
         "invalid board transform drops decoration instances with a single diagnostic");
+    std::size_t presentationAttempts{};
+    engine::ModernEnvironment dressing(fixture.root, true, diagnostic,
+        [&](const std::filesystem::path& path, data::ModernGltfLoadOptions options) -> LoadResult
+        {
+            ++presentationAttempts;
+            if(path.parent_path().filename()=="presentation")
+                return std::make_shared<const data::MeshRenderData>(*original[0].renderData);
+            return data::loadModernGltfMesh(path,options);
+        });
+    expect(dressing.items(board,0).size()==3 && presentationAttempts==3,
+        "default environment does not attempt presentation assets");
+    const auto dressed=dressing.items(board,1,true);
+    expect(dressed.size()==5 && presentationAttempts==5 &&
+        dressed[3].node!=dressed[4].node && dressed[3].node!=dressed[0].node,
+        "opt-in dressing uses distinct native identities and loads each geometry once");
+    const auto supportOrigin=point({0,0,0},dressed[4].worldTransform);
+    expect(close(supportOrigin[0],243)&&close(supportOrigin[1],0)&&close(supportOrigin[2],243),
+        "presentation support inherits the actual board origin and scale");
+    const auto tabletopOnly=dressing.items(board,2,true,false);
+    expect(tabletopOnly.size()==2 && tabletopOnly[0].node==dressed[3].node &&
+        tabletopOnly[1].node==dressed[4].node && presentationAttempts==5,
+        "USA tabletop does not introduce Paris landmarks or reload geometry");
+    dressing.rejectGeometry(dressed[4].renderData.get());
+    expect(dressing.items(board,2,true).size()==4 && dressing.items(board,3).size()==3 && presentationAttempts==5,
+        "failed support drops independently without retiring existing landmarks or retrying");
     return failures ? 1 : 0;
 }

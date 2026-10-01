@@ -71,7 +71,7 @@ namespace monopoly::engine
     std::expected<World3DPipeline, World3DPipelineError> World3DPipeline::load(
         SDL_GPUDevice* device,
         const std::filesystem::path& shaderDirectory,
-        SDL_GPUTextureFormat colorFormat, bool modernPBR)
+        SDL_GPUTextureFormat colorFormat, bool modernPBR, SDL_GPUSampleCount samples)
     {
         if (!device)
             return std::unexpected(World3DPipelineError{
@@ -139,7 +139,7 @@ namespace monopoly::engine
         info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
         info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
         info.rasterizer_state.enable_depth_clip = true;
-        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        info.multisample_state.sample_count = samples;
 
         info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
         info.depth_stencil_state.enable_depth_test = true;

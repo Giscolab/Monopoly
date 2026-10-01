@@ -143,6 +143,21 @@ namespace
 
 int main()
 {
+    monopoly::boarddisplay::BoardLightingController restoring;
+    monopoly::boarddisplay::BoardLightingInputs target;
+    target.game3DOn=true; target.board3DOn=true; target.lightingOn=true;
+    target.numberOfTicks=1; target.tick=1; target.playerColour=1;
+    const auto before=restoring.tick(target);
+    expect(before && before->spotlight.enabled,"valid player enables its spotlight");
+    target.board3DOn=false; target.playerColour=255; target.tick=2;
+    const auto unavailable=restoring.tick(target);
+    expect(unavailable && !unavailable->spotlight.enabled && unavailable->sun.enabled &&
+        unavailable->boardReflection.enabled && near(unavailable->ambient[0],before->ambient[0]),
+        "restoration without a current player retains global light and defers only spotlight");
+    target.board3DOn=true; target.playerColour=2; target.tick=3;
+    const auto resumed=restoring.tick(target);
+    expect(resumed && resumed->spotlight.enabled,
+        "restored real player reactivates spotlight without aborting rendering");
     testGlobalLights();
     testSpotlightFocusAndAnimatedFollow();
     testIdleAndColourContracts();

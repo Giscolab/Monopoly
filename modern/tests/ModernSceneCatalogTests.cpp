@@ -166,7 +166,7 @@ int main()
         calibration->yawDegrees == 0.0F && calibration->groundToZero &&
         calibration->localOffset == std::array<float, 3>{},
         "house calibration reproduces retail height and grounded centered pivot");
-    expect(ModernSceneKindCount==3 && hotel==0x00080004U &&
+    expect(ModernSceneKindCount==4 && hotel==0x00080004U &&
         modernSceneDefinition(ModernSceneKind::Hotel).relativeGlbPath=="buildings/hotel.glb",
         "hotel has its own retail identity and optional asset path");
     expect(parsed && qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,
@@ -219,5 +219,30 @@ int main()
         "missing optional hotel asset yields loader failure for retail fallback");
     expect(!qualifiedModernSceneGeometry(ModernSceneKind::Hotel,MeshRenderData{}),
         "empty hotel geometry does not qualify");
+    const std::array<std::string_view,1> usaArguments{"--modern-board=usa"};
+    const auto usaParsed=parseModernSceneArguments(usaArguments);
+    ModernSceneContext usaContext;
+    const auto usaId=modernSceneDefinition(ModernSceneKind::UsaBoard).legacyMeshId;
+    expect(usaParsed && usaParsed->options.usaBoard && !usaParsed->options.parisBoard &&
+        qualifiedModernSceneSequence(ModernSceneKind::UsaBoard,usaId,usaId,display::Board3DPriority,usaParsed->options,usaContext),
+        "USA board opt-in qualifies the supplied USA production board context");
+    usaContext.customBoardPath="custom.board";
+    expect(!qualifiedModernSceneSequence(ModernSceneKind::UsaBoard,usaId,usaId,display::Board3DPriority,usaParsed->options,usaContext),
+        "USA replacement preserves custom board fallback");
+    usaContext.customBoardPath.clear();usaContext.edition=BoardEdition::Europe;
+    expect(!qualifiedModernSceneSequence(ModernSceneKind::UsaBoard,usaId,usaId,display::Board3DPriority,usaParsed->options,usaContext),
+        "USA replacement never substitutes a European board");
+    const auto usaCalibration=modernSceneLoadOptions(ModernSceneKind::UsaBoard);
+    expect(usaCalibration && usaCalibration->unitsPerMeter==1 && !usaCalibration->groundToZero &&
+        usaCalibration->localOffset==std::array<float,3>{} && usaCalibration->yawDegrees==0,
+        "USA export retains decoded retail coordinates without calibration drift");
+    MeshRenderData usaGeometry;
+    usaGeometry.vertices.resize(3); usaGeometry.indices={0,1,2};
+    usaGeometry.bounds.minimum={-84,-64,-84}; usaGeometry.bounds.maximum={4944,50,4944};
+    expect(qualifiedModernSceneGeometry(ModernSceneKind::UsaBoard,usaGeometry),
+        "USA geometry accepts the measured immutable retail envelope");
+    usaGeometry.bounds.minimum[1]=-60;
+    expect(!qualifiedModernSceneGeometry(ModernSceneKind::UsaBoard,usaGeometry),
+        "USA geometry rejects a misplaced underside before runtime replacement");
     return failures ? 1 : 0;
 }

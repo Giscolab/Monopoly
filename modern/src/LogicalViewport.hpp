@@ -68,6 +68,11 @@ namespace monopoly::logicalviewport
         double windowY
     ) noexcept;
 
+    // The bottom retail UI strip overlays the expanded 16:9 board surface.
+    // Its input stays in the 800x600 canvas, ahead of 3D input remapping.
+    [[nodiscard]] std::optional<LogicalPoint> windowToUIOverlay(
+        const Transform& uiTransform, double windowX, double windowY) noexcept;
+
     // Converts a logical rectangle without clipping or integer rounding. The
     // caller can apply the rounding policy required by its rendering backend.
     [[nodiscard]] PixelRect logicalToPixelRect(
