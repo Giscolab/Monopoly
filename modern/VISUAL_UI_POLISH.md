@@ -379,3 +379,21 @@ the suppressed game bitmap remains. No claim is made about that desktop marker.
 Further shadow trials remain rejected: explicit caster world-depth reconstruction
 is pixel-identical to baseline; half-texel caster slope bias leaves wall bands.
 Canonical shader artifacts and source were restored after these diagnostics.
+## Full Help browser presentation (pass27)
+
+The actual licensed Mono01.hlp export contains55 topics and no bitmap resources.
+Compiled production styling preserves all94577 original HTML bytes and adds2147
+bytes of local CSS and viewport metadata. Unknown/malformed/oversized exports
+keep their original presentation. Atomic publication precedes browser dispatch.
+
+Actual1920x1080 browser before/after views were inspected; desktop and390x844
+navigation remain usable without horizontal overflow. Proof is in
+`build/help-theme-pass27/proof.json`; desktop captures are `browser-before.jpg`
+and `browser-after.jpg`. Those desktop images include browser chrome and are
+scaled by the capture tool; the browser viewport qualification is separate.
+Edge automatic translation visible in these captures is not game localization.
+
+Focused Windows tests pass for exact HTML preservation and single bounded
+asynchronous browser dispatch, including cancellation, timeout and errors.
+Actual launch through the in-game Full Help button remains to be qualified after
+rebuilding Release. No new global gameplay pause is introduced.

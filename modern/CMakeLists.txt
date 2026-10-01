@@ -3980,6 +3980,18 @@ if(BUILD_TESTING)
         src/ChatTextPlayback.cpp src/ChatRuntime.cpp src/FontRuntime.cpp)
     add_executable(MonopolyOptionsVisualPlaybackTests tests/OptionsVisualPlaybackTests.cpp
         src/OptionsVisualPlayback.cpp src/OptionsHelpRuntime.cpp src/OptionsUI.cpp src/FontRuntime.cpp)
+    if(WIN32)
+        add_executable(MonopolyOptionsHelpRuntimeTests tests/OptionsHelpRuntimeTests.cpp
+            src/OptionsHelpRuntime.cpp)
+        target_include_directories(MonopolyOptionsHelpRuntimeTests PRIVATE src tests)
+        target_link_libraries(MonopolyOptionsHelpRuntimeTests PRIVATE
+            MonopolyDataCore SDL3::SDL3 shell32 ole32)
+        if(MSVC)
+            target_compile_options(MonopolyOptionsHelpRuntimeTests PRIVATE /W4 /permissive-)
+        endif()
+        add_test(NAME Monopoly.OptionsHelpRuntime COMMAND MonopolyOptionsHelpRuntimeTests)
+        set_tests_properties(Monopoly.OptionsHelpRuntime PROPERTIES TIMEOUT 30)
+    endif()
     add_executable(MonopolyOptionsCustomBoardPlaybackTests tests/OptionsCustomBoardPlaybackTests.cpp
         src/OptionsCustomBoardPlayback.cpp src/OptionsCustomBoardRuntime.cpp src/FontRuntime.cpp)
     add_executable(MonopolyPlayerSelectionPlaybackTests tests/PlayerSelectionPlaybackTests.cpp

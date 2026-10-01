@@ -29,6 +29,11 @@ if "%MONOPOLY_PLAY_CONFIG%"=="Release" if not exist "%MONOPOLY_PLAY_DIR%\savegam
         exit /b 1
     )
 )
+rem Full Help uses an isolated optional exporter; preserve user configuration.
+if not defined MONOPOLY_WINHLP if exist "%MONOPOLY_PLAY_ROOT%build\help-export-tools\Scripts\winhlp.exe" set "MONOPOLY_WINHLP=%MONOPOLY_PLAY_ROOT%build\help-export-tools\Scripts\winhlp.exe"
+if not defined MONOPOLY_WINHLP (
+    echo Full Help needs winhlp on PATH or the build-local exporter. See FULL_HELP.md.
+)
 cd /d "%MONOPOLY_PLAY_DIR%"
 start "" "%MONOPOLY_PLAY_EXE%" --windowed --resolution 1920x1080 --present-mode vsync --edition=usa --language=en-us --modern-board=procedural --modern-environment=procedural --modern-buildings=house --data-root "%MONOPOLY_PLAY_ROOT%..\runtime-data"
 endlocal
