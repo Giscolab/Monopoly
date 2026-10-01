@@ -1323,18 +1323,31 @@ namespace monopoly::engine
                         if (!snapshot || snapshot->context().board != data::BoardEdition::Usa ||
                             snapshot->context().language != data::LanguageId::EnglishUs ||
                             state.city != 0 || state.system != 13 || !state.customBoardPath.empty() ||
-                            state.current2DView != display::Screen2D::Trade ||
-                            state.desired2DView != display::Screen2D::Trade || priority != 1005) return {};
+                            state.current2DView != state.desired2DView ||
+                            (state.current2DView != display::Screen2D::Trade &&
+                             state.current2DView != display::Screen2D::Portfolio) || priority != 1005) return {};
                         const auto& m = sequenceToWorld.values;
                         if (m[0] != 1 || m[1] != 0 || m[2] != 0 || m[3] != 0 ||
                             m[4] != 1 || m[5] != 0 || m[8] != 1) return {};
-                        // Keep the pending card visible without covering the partner chooser.
+                        // Keep pending cards clear of the Trade chooser and Portfolio columns.
                         // St. Charles has an authored 400x239 image; other idle cards are 400x240.
                         const float halfHeight = root == data::packDataId(
                             data::LegacyGroupId::LanguageGraphics, 0x29) ? 59.75F : 60.0F;
-                        const bool occluded = tradePropertyPlayback.hoverDeedOccupiesRightPanel() ||
-                            iBarBackdropPlayback.propertyHoverDeed() != data::EmptyDataId ||
-                            iBarBackdropPlayback.buyAuctionPopupDeed() != data::EmptyDataId;
+                        bool occluded = iBarBackdropPlayback.propertyHoverDeed() != data::EmptyDataId;
+                        if (state.current2DView == display::Screen2D::Trade)
+                        {
+                            occluded = occluded || tradePropertyPlayback.hoverDeedOccupiesRightPanel() ||
+                                iBarBackdropPlayback.buyAuctionPopupDeed() != data::EmptyDataId;
+                        }
+                        else
+                        {
+                            const auto& calculator = userinterface::statsCalculatorStateReadOnly();
+                            occluded = occluded || (calculator.visible && calculator.hoveredFunction.has_value()) ||
+                                (calculator.picker == statsui::CalculatorPicker::Deed && calculator.hoveredDeed.has_value()) ||
+                                userinterface::statsFutureImmunityStateReadOnly().open;
+                            // The Portfolio purchase deed is upper-left; normal
+                            // Stats grid/floater deeds are below this card rectangle.
+                        }
                         return ibar::ModernIBarSkin::IdleCardPresentation{
                             {600.0F-m[6], 112.5F-halfHeight-m[7],
                              800.0F-m[6], 112.5F+halfHeight-m[7]}, occluded};

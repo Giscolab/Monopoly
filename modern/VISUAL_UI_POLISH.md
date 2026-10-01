@@ -870,3 +870,63 @@ priority502 above coins501 and below deeds510. Coordinates, content and other
 Stats modes remain unchanged. Eight focused CPU tests pass, with
 `pass51-stats-text-build.log` and `pass51-stats-text-cpu.log` in that directory.
 This is an explicit presentation-layer correction, not a balance or rule change.
+
+## Live Park Place auction (pass41 follow-up)
+
+Actual process 34060 at 1920x1080 encountered the Park Place auction. The inspected
+`build/polish-continuation-20261001/pass52-park-place-auction-offer-real.png`
+shows human funds 445, Ship funds 1682 and Park Place unowned.
+`pass41-auction-park-place-live.png` shows the real auction at bid 0 with the
+teal backdrop, lamps and Pennybags. The AI auction then resolved automatically:
+`pass41-auction-return-live.png` shows Ship funds 1202, and
+`pass41-auction-battleship-owner1202-live.png` confirms Ship owns Park Place in
+Portfolio. The observed deduction is 480 (1682→1202), with ownership confirmed.
+
+A human click targeted the wrong column, so this session does not qualify human
+bidding. It establishes the live backdrop and that AI auction result, not every
+auction interaction or endgame behavior.
+
+## Five readable card layouts and exact Out states (pass52 fixtures)
+
+Accepted CPU/GPU qualification covers the five canonical idle cards Loan 3 and
+Community 20/22/23/25, plus their exact Out states, using measured source headers
+and payloads. The four new Community before/after pairs and two Out comparisons
+were inspected: authentic one- or two-line text is now readable, with the complete
+300x180 illustration inside the same 400x240 logical footprint. Exact companions,
+native fallback and clocks remain preserved.
+
+Original captures are under `build/readable-card-polish-20261002/`: loan150,
+community-bank-error, community-go-jail, community-jail-free and
+community-tax-refund each retain before/after, native-fallback and Out captures.
+The `build/pass52-*` logs pass for the focused build, readable-card CPU/GPU,
+pass48 CPU/GPU, pass49's 328 CPU frames and regular IBar/World2D checks.
+
+Release passes 52–53 now build successfully in
+`build/passes52-53-release-build.log`. The four new Community cards have not
+yet been encountered in the full application, so these accepted fixtures do not
+establish live card-caption proof. Pass53 has separate live qualification below.
+
+## Pending card in Portfolio and calculator (pass53 live)
+
+Actual process 24436 runs at 1920x1080. Inspected captures in
+`build/polish-continuation-20261001/` are
+`pass53-portfolio-pending-card-real-before.png`,
+`pass53-portfolio-pending-card-real-after.png` and
+`pass53-portfolio-cash-matched-real-after.png`; the matched balances and sort
+confirm that columns and buttons are freed without changing displayed funds.
+`pass53-calculator-description-clear-real.png` shows NetWorth hover hiding the
+card, while `pass53-card-restored-after-help-real.png` shows empty hover restoring
+the card with 510 cash. No CardSeen acknowledgement or fund change occurred in
+these five captures.
+
+Deed-picker and Future-popup guards have not yet been exercised live. A later
+Deeds click returned to Main unexpectedly; NotifyTradeFinished is only a candidate,
+with cause unproven. These captures do not establish a routing fix. The separate
+60-second warm FPS sample is still running; no result is published yet.
+
+Completed pass53 warm telemetry: 120 samples over 60 seconds, median 60 FPS,
+p5 58.9 and minimum 58; 73.3333% at least 60 and 83.3333% at least 59.5.
+Evidence: `build/polish-continuation-20261001/pass53-warm-fps.csv` and
+`pass53-warm-fps-summary.txt`. No concurrent build or other GPU test ran.
+This title telemetry covers Portfolio interactions and return to Main;
+it does not establish per-frame timings or a continuous 60 FPS minimum.

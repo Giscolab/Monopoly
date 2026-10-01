@@ -413,17 +413,27 @@ namespace
 
 
 
-    void testActualLoanFooter(const std::filesystem::path& root,const std::filesystem::path& fontPath)
+    void testActualLoanFooter(const std::filesystem::path& root,const std::filesystem::path& fontPath,bool allQualified=false)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
-        require(paths && resources.initialize(*paths),"actual Loan150 DAT opens");
+        require(paths && resources.initialize(*paths),"actual qualified card DAT opens");
 #include "ModernDrawCardText.inc"
-        fonts::Runtime font;require(font.setFont(fontPath,"Arial").has_value(),"actual production Arial loads for Loan150");
-        const auto settings=font.settings();unsigned calls=0;bool fail=false,oversized=false;
+        fonts::Runtime font;require(font.setFont(fontPath,"Arial").has_value(),"actual production Arial loads for qualified card");
+        const auto settings=font.settings();
+        struct Card {unsigned index;data::DataId owner,leaf,outRoot,outLeaf;};
+        constexpr std::array<Card,5> cases{{{3,0x5002B,0x50985,0x5004B,0x5083C},
+            {20,0x5005D,0x50976,0x5007D,0x508EF},{22,0x5005F,0x50978,0x5007F,0x508F1},
+            {23,0x50060,0x50979,0x50080,0x508F2},{25,0x50062,0x5097B,0x50082,0x508F4}}};
+        for(unsigned cardIndex=0;cardIndex<(allQualified?cases.size():1U);++cardIndex)
+        {
+        const auto selected=cases[cardIndex];const auto owner=selected.owner,leaf=selected.leaf;
+        const auto body=ModernUsaDrawCardBodies[selected.index];
+        const auto title=selected.index<16?"Chance":"Community Chest";
+        unsigned calls=0;bool fail=false,oversized=false;
         std::vector<std::string> texts;std::vector<std::pair<std::string,unsigned>> measurements;
         const auto raster=[&](std::string_view text,int size,bool bold,bool italic)->std::expected<data::LegacyBitmapRGBA8,std::string>
         {
-            ++calls;texts.emplace_back(text);require(size==48 && !bold && !italic,"Loan150 uses readable16px production body style");
+            ++calls;texts.emplace_back(text);require(size==48 && !bold && !italic,"qualified card uses readable16px production body style");
             if(fail)return std::unexpected("qualified font failure");
             if(oversized)return data::LegacyBitmapRGBA8{1105,157,std::vector<std::uint8_t>(1105*157*4,255)};
             auto value=font.renderPresentation(text,0xFFFFFF,size,400,italic);
@@ -431,21 +441,21 @@ namespace
         };
         auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
         bool context=true;skin->configurePresentationContext([&]{return context;});
-        const auto configure=[&]{skin->configureDrawCardDescriptors({{0x5002B,{"Chance",std::string(ModernUsaDrawCardBodies[3]),400,240}}},raster);};configure();
-        const auto bytes=resources.snapshot()->data().load(0x50985);require(bool(bytes),"actual Loan150 raw payload loads");data::BitmapRuntimeCache cache;
-        const auto source=cache.resolve(0x50985,data::LegacyDataType::Uap,*bytes);require(bool(source),"exact opaque source leaf50985 decodes");
+        const auto configure=[&]{skin->configureDrawCardDescriptors({{owner,{title,std::string(body),400,240}}},raster);};configure();
+        const auto bytes=resources.snapshot()->data().load(leaf);require(bool(bytes),"actual qualified card raw payload loads");data::BitmapRuntimeCache cache;
+        const auto source=cache.resolve(leaf,data::LegacyDataType::Uap,*bytes);require(bool(source),"exact measured opaque illustrated source decodes");
         const auto originalPixels=(*source)->image.pixels;
-        const auto result=skin->substitute(0x5002B,*source);
+        const auto result=skin->substitute(owner,*source);
         require(result!=*source && result->image.width==1200 && result->image.height==720 && result->preferLinearFiltering &&
-            result->source==(*source)->source && result->dataId==(*source)->dataId,"single actual loan card retains provenance in3x400x240 derivative");
+            result->source==(*source)->source && result->dataId==(*source)->dataId,"qualified actual card retains provenance in3x400x240 derivative");
         std::string acceptedBody;unsigned wraps=0;
         for(std::size_t i=0;i<measurements.size();++i)if(measurements[i].second>368*3)
         {require(i>0,"actual line overflow has a previously measured fitting line");acceptedBody=measurements[i-1].first+" ";++wraps;}
-        require(!texts.empty() && wraps<=1 && acceptedBody+texts.back()==ModernUsaDrawCardBodies[3],
+        require(!texts.empty() && wraps<=1 && acceptedBody+texts.back()==body,
             "complete canonical body is rendered as one or two actual production-font lines");
         ibar::ModernIBarSkin nativeSkin(data::LanguageId::EnglishUs,{});nativeSkin.configurePresentationContext([]{return true;});
-        nativeSkin.configureDrawCardDescriptors({{0x5002B,{"Chance","Native ink reference",400,240}}},raster);
-        const auto tinted=nativeSkin.substitute(0x5002B,*source);
+        nativeSkin.configureDrawCardDescriptors({{owner,{title,"Native ink reference",400,240}}},raster);
+        const auto tinted=nativeSkin.substitute(owner,*source);
         bool fullArt=true,alpha=true,footerInk=false;
         for(unsigned y=0;y<720;++y)for(unsigned x=0;x<1200;++x)
         {
@@ -459,21 +469,21 @@ namespace
         }
         require(fullArt && alpha && footerInk && (*source)->image.pixels==originalPixels,
             "complete actual artwork maps without crop, readable footer adds ink, source/opaque alpha immutable");
-        const auto previous=calls;require(skin->substitute(0x5002B,*source)==result && calls==previous,"warm complete loan artwork calls no font");
-        context=false;require(skin->substitute(0x5002B,*source)==*source,"live context fallback checked before cached composition");context=true;
+        const auto previous=calls;require(skin->substitute(owner,*source)==result && calls==previous,"warm complete loan artwork calls no font");
+        context=false;require(skin->substitute(owner,*source)==*source,"live context fallback checked before cached composition");context=true;
         auto invalid=std::make_shared<data::BitmapRuntimeAsset>(**source);invalid->source.reset();
-        require(skin->substitute(0x5002B,invalid)==invalid,"missing immutable raw header returns whole native source");
+        require(skin->substitute(owner,invalid)==invalid,"missing immutable raw header returns whole native source");
         invalid=std::make_shared<data::BitmapRuntimeAsset>(**source);invalid->source=std::make_shared<const data::DataBytes>(1,std::byte{});
-        require(skin->substitute(0x5002B,invalid)==invalid,"malformed raw UAP header returns whole native source");
+        require(skin->substitute(owner,invalid)==invalid,"malformed raw UAP header returns whole native source");
         invalid=std::make_shared<data::BitmapRuntimeAsset>(**source);invalid->image.pixels[3]=128;
-        require(skin->substitute(0x5002B,invalid)==invalid,"partial native alpha rejects composition entirely");
-        invalid=std::make_shared<data::BitmapRuntimeAsset>(**source);invalid->dataId=0x50986;
-        require(skin->substitute(0x5002B,invalid)==invalid,"different illustrated source cannot receive Loan150 footer");
-        fail=true;configure();require(skin->substitute(0x5002B,*source)==*source,"font failure returns complete native bitmap");fail=false;
-        oversized=true;configure();require(skin->substitute(0x5002B,*source)==*source,"unreadable footer fit returns complete native bitmap");oversized=false;configure();
+        require(skin->substitute(owner,invalid)==invalid,"partial native alpha rejects composition entirely");
+        invalid=std::make_shared<data::BitmapRuntimeAsset>(**source);invalid->dataId=leaf+1;
+        require(skin->substitute(owner,invalid)==invalid,"different illustrated source cannot receive qualified card footer");
+        fail=true;configure();require(skin->substitute(owner,*source)==*source,"font failure returns complete native bitmap");fail=false;
+        oversized=true;configure();require(skin->substitute(owner,*source)==*source,"unreadable footer fit returns complete native bitmap");oversized=false;configure();
         for(const int y:{0,136})
         {
-            sequence::SequenceRuntime runtime;const auto program=sequence::SequenceProgram::load(resources.snapshot(),0x5002B);
+            sequence::SequenceRuntime runtime;const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
             require(program && runtime.start(*program,1005,{},sequence::SequenceTransform(sequence::translate2D(0,float(y)))) && runtime.update(0),"actual loan CNK starts with authored root placement");
             const auto leaves=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());require(bool(leaves),"actual loan leaves collect");
             engine::SequenceWorld2DSlot native,modern;modern.configureModernIBarSkin(skin);
@@ -487,13 +497,59 @@ namespace
             skin->configureIdleCardPresentation([](data::DataId,std::uint16_t,const sequence::Matrix2D& world)
                 ->std::optional<ibar::ModernIBarSkin::IdleCardPresentation>
                 {return ibar::ModernIBarSkin::IdleCardPresentation{{600,52.5F-world.values[7],800,172.5F-world.values[7]},false};});
-            require(modern.sync(*leaves,cache).has_value(),"Loan150 footer also fits existing pass48 reflow");
+            require(modern.sync(*leaves,cache).has_value(),"qualified card footer also fits existing pass48 reflow");
             b=modern.find(node);require(engine::SequenceWorld2DSlot::transformPoint(b->worldTransform,0,0)==std::array<std::int32_t,2>{600,52} &&
                 engine::SequenceWorld2DSlot::transformPoint(b->worldTransform,1200,720)==std::array<std::int32_t,2>{800,172},"pass48 target remains exact at both native origins");
             skin->configureIdleCardPresentation({});
         }
+        const auto outBytes=resources.snapshot()->data().load(selected.outLeaf);
+        require(outBytes && **outBytes==**bytes,"exact outgoing source is raw-byte-identical to measured idle face");
+        const auto outSource=cache.resolve(selected.outLeaf,data::LegacyDataType::Uap,*outBytes);
+        require(bool(outSource),"exact outgoing illustrated face decodes");
+        require(skin->substitute(selected.outRoot,*source)==*source,"idle leaf cannot masquerade as exact outgoing owner");
+        const auto outgoing=skin->substitute(selected.outRoot,*outSource);
+        require(outgoing!=*outSource && outgoing->image.pixels==result->image.pixels &&
+            outgoing->source==(*outSource)->source && outgoing->dataId==selected.outLeaf,
+            "idle and exact Out use identical complete composition with their own immutable source identity");
+        const auto outProgram=sequence::SequenceProgram::load(resources.snapshot(),selected.outRoot);
+        sequence::SequenceRuntime outRuntime;
+        require(outProgram && outRuntime.start(*outProgram,1005,{},sequence::SequenceTransform(sequence::translate2D(0,136))),
+            "actual outgoing program starts at native CardPriority/Y136");
+        engine::SequenceWorld2DSlot outNative,outModern;outModern.configureModernIBarSkin(skin);
+        for(const int tick:{0,4,8})
+        {
+            require(outRuntime.update(tick).has_value(),"actual Out clock advances");
+            const auto items=sequence::collectSequenceBitmapRenderData(outRuntime,resources.snapshot());
+            require(items && outNative.sync(*items,cache) && outModern.sync(*items,cache) && outNative.order()==outModern.order(),
+                "actual Out leaves preserve authored node order");
+            unsigned changed=0;
+            for(const auto& item:*items)
+            {
+                const auto* a=outNative.find(item.node);const auto* b=outModern.find(item.node);
+                require(a->clock==b->clock && a->priority==b->priority && a->contentsDataId==b->contentsDataId,
+                    "every actual Out leaf retains its clock priority and source ID");
+                if(item.contentsDataId==selected.outLeaf)
+                {
+                    ++changed;require(b->asset->image.pixels==result->image.pixels && !b->asset->presentationRect,
+                        "exact Out face reuses coherent artwork without idle Trade reflow");
+                    for(const auto corner:std::array<std::array<int,2>,2>{{{0,0},{1,1}}})
+                        require(engine::SequenceWorld2DSlot::transformPoint(a->worldTransform,corner[0]*400,corner[1]*240)==
+                            engine::SequenceWorld2DSlot::transformPoint(b->worldTransform,corner[0]*1200,corner[1]*720),
+                            "every moving Out pose keeps exact original logical corners");
+                }
+                else require(a->asset==b->asset && a->worldTransform.values==b->worldTransform.values,
+                    "authored Out companion remains exact native pointer and matrix");
+            }
+            require(changed==1,"only the proven outgoing face receives readable composition");
+            context=false;require(outModern.sync(*items,cache).has_value(),"outgoing context fallback publishes");
+            for(const auto node:outNative.order())require(outModern.find(node)->asset==outNative.find(node)->asset,
+                "outgoing fallback restores all native assets");context=true;
+        }
+        std::cout<<"[PASS] readable card global="<<selected.index<<" idle="<<owner<<" out="<<selected.outRoot
+            <<" measured identical source, complete caption and authored moving poses\n";
+        }
         require(font.settings()==settings,"production presentation raster preserves shared font state");
-        std::cout<<"[PASS] actual Loan150 fullart/canonical readable footer/cache/guards/font/native corners/pass48 reflow\n";
+        std::cout<<"[PASS] qualified fullart/canonical footer/cache/guards/font/native corners/pass48 and exact Out\n";
     }
 
     void testActualIdleCardTrade(const std::filesystem::path& root)
@@ -1415,6 +1471,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

@@ -957,6 +957,20 @@ namespace monopoly::ibar
                 (root>=0x50079 && root<=0x50088)) return root-0x20;
             return root;
         }
+        std::string_view readableIllustratedCardBody(data::DataId idleRoot) noexcept
+        {
+            // Exact baked-occlusion owners. Their measured Out faces are raw
+            // byte-identical; the existing owner/leaf guards qualify each phase.
+            switch(idleRoot)
+            {
+            case 0x5002B:return "Your building and loan matures. Collect $150.";
+            case 0x5005D:return "Get out of jail, free. This card may be kept until needed or sold.";
+            case 0x5005F:return "Bank error in your favour. Collect $200.";
+            case 0x50060:return "Income tax refund. Collect $20.";
+            case 0x50062:return "Go to jail. Go directly to jail. Do not pass GO. Do not collect $200.";
+            default:return {};
+            }
+        }
         std::optional<NativeIdleCardSource> nativeIdleCardSource(data::DataId root)
         {
             // All32 licensed USA idle faces have a single measured UAP leaf.
@@ -1215,10 +1229,10 @@ namespace monopoly::ibar
                     std::max({r,g,b})-std::min({r,g,b})<=8) continue;
                 for(unsigned c=0;c<3;++c) result->image.pixels[i+c]=std::uint8_t((r*cream[c]+127)/255);
             }
-            // Single measured Loan150 trial: keep the entire licensed image,
+            // Five measured baked-occlusion cards: keep the entire licensed image,
             // including baked title/caption/art, and repeat its authentic body
             // legibly below. No guessed illustration crop or restored glyphs.
-            if(root==0x5002B && draw->second.body=="Your building and loan matures. Collect $150.")
+            if(const auto body=readableIllustratedCardBody(idleOwner); !body.empty() && draw->second.body==body)
             {
                 if(!original->source || !drawText_)return original;
                 const auto header=data::inspectLegacyUap(*original->source);

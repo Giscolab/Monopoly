@@ -701,17 +701,29 @@ namespace
     }
 
 
-    void captureRetailLoanFooter(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    void captureRetailLoanFooter(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root,bool allQualified=false)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
-        require(paths && resources.initialize(*paths),"actual Loan150 resource bank opens");
+        require(paths && resources.initialize(*paths),"actual qualified card resource bank opens");
 #include "ModernDrawCardText.inc"
         fonts::Runtime font;std::vector<std::filesystem::path> fontRoots{root,std::filesystem::path(SDL_GetBasePath())};
 #ifdef _WIN32
         if(const auto* windows=std::getenv("WINDIR"))fontRoots.emplace_back(std::filesystem::path(windows)/"Fonts");
 #endif
-        const auto arial=fonts::resolveRetailArial(fontRoots);require(arial && font.setFont(*arial),"actual Loan150 production Arial loads");
-        const auto settings=font.settings();unsigned calls=0;bool failed=false;
+        const auto arial=fonts::resolveRetailArial(fontRoots);require(arial && font.setFont(*arial),"actual qualified card production Arial loads");
+        const auto settings=font.settings();
+        struct Card {unsigned index;data::DataId owner,leaf,outRoot,outLeaf;const char* name;};
+        constexpr std::array<Card,5> cases{{{3,0x5002B,0x50985,0x5004B,0x5083C,"loan150"},
+            {20,0x5005D,0x50976,0x5007D,0x508EF,"community-jail-free"},
+            {22,0x5005F,0x50978,0x5007F,0x508F1,"community-bank-error"},
+            {23,0x50060,0x50979,0x50080,0x508F2,"community-tax-refund"},
+            {25,0x50062,0x5097B,0x50082,0x508F4,"community-go-jail"}}};
+        for(unsigned cardIndex=0;cardIndex<(allQualified?cases.size():1U);++cardIndex)
+        {
+        const auto selected=cases[cardIndex];const auto owner=selected.owner,leaf=selected.leaf;
+        const auto body=ModernUsaDrawCardBodies[selected.index];
+        const auto title=selected.index<16?"Chance":"Community Chest";
+        unsigned calls=0;bool failed=false;
         const auto raster=[&](std::string_view text,int size,bool bold,bool italic)->std::expected<data::LegacyBitmapRGBA8,std::string>
         {
             ++calls;require(size==48 && !bold && !italic,"caption keeps readable16px exact production style");
@@ -722,26 +734,26 @@ namespace
         engine::SequencePlayback playback(resources.snapshot());ibar::CardPlayback card;
         auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
         bool qualified=true;skin->configurePresentationContext([&]{return qualified;});
-        skin->configureDrawCardDescriptors({{0x5002B,{"Chance","Native ink reference",400,240}}},raster);
+        skin->configureDrawCardDescriptors({{owner,{title,"Native ink reference",400,240}}},raster);
         playback.world2D().configureModernIBarSkin(skin);std::uint64_t tick=0;
         for(unsigned step=0;step<5 && card.visualState()!=ibar::CardVisualState::Idle;++step)
         {
-            require(card.sync(3,true,display::Screen2D::Main,pieces::BoardCameraView::TopDownSoccer,playback) && playback.update(int(tick)),"actual Loan150 consumer advances native deck/card/face/idle");
+            require(card.sync(std::uint8_t(selected.index),true,display::Screen2D::Main,pieces::BoardCameraView::TopDownSoccer,playback) && playback.update(int(tick)),"actual qualified card consumer advances native deck/card/face/idle");
             if(card.visualState()==ibar::CardVisualState::Idle)break;
-            const auto info=playback.runtime().info(card.currentSequence(),1005,false);require(bool(info),"actual Loan150 authored ending available");
-            tick+=std::uint64_t(std::max(1,info->endTime-info->sequenceClock+1));require(playback.update(int(tick)).has_value(),"actual Loan150 ending advances without manual placements");
+            const auto info=playback.runtime().info(card.currentSequence(),1005,false);require(bool(info),"actual qualified card authored ending available");
+            tick+=std::uint64_t(std::max(1,info->endTime-info->sequenceClock+1));require(playback.update(int(tick)).has_value(),"actual qualified card ending advances without manual placements");
         }
-        require(card.currentSequence()==0x5002B && card.visualState()==ibar::CardVisualState::Idle,"actual index3 selects idle5002B");
-        const auto rootNodes=playback.runtime().matching(0x5002B,1005);require(rootNodes.size()==1,"one actual pending loan root");
+        require(card.currentSequence()==owner && card.visualState()==ibar::CardVisualState::Idle,"actual selected index reaches its exact idle owner");
+        const auto rootNodes=playback.runtime().matching(owner,1005);require(rootNodes.size()==1,"one actual pending loan root");
         const auto rootBefore=playback.runtime().inspect(rootNodes.front());
         const auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());
-        require(leaves && leaves->size()==1 && leaves->front().contentsDataId==0x50985 && leaves->front().priority==1 && leaves->front().rootSequencePriority==1005,"actual loan is exact root1005/leaf50985 priority1");
-        data::BitmapRuntimeCache cache;require(playback.world2D().sync(*leaves,cache).has_value(),"actual Loan150 baseline uses retained decode cache");
+        require(leaves && leaves->size()==1 && leaves->front().contentsDataId==leaf && leaves->front().priority==1 && leaves->front().rootSequencePriority==1005,"actual selected owner has root1005 and exact leaf priority1");
+        data::BitmapRuntimeCache cache;require(playback.world2D().sync(*leaves,cache).has_value(),"actual qualified card baseline uses retained decode cache");
         const auto node=leaves->front().node;const auto beforeObject=*playback.world2D().find(node);
         const auto before=capture(device,renderer,playback.world2D());require(calls==0,"old native full-image tint calls no font");
-        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"loan-card-polish-20261002").lexically_normal();std::filesystem::create_directories(output);
-        writeBmp(output/"loan150-before.bmp",before,800,600);
-        skin->configureDrawCardDescriptors({{0x5002B,{"Chance",std::string(ModernUsaDrawCardBodies[3]),400,240}}},raster);
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/(allQualified?"readable-card-polish-20261002":"loan-card-polish-20261002")).lexically_normal();std::filesystem::create_directories(output);
+        writeBmp(output/(std::string(selected.name)+"-before.bmp"),before,800,600);
+        skin->configureDrawCardDescriptors({{owner,{title,std::string(body),400,240}}},raster);
         require(playback.world2D().sync(*leaves,cache).has_value(),"same authored pose receives readable authentic footer");
         const auto afterObject=*playback.world2D().find(node);
         require(afterObject.asset->image.width==1200 && afterObject.asset->image.height==720 && afterObject.clock==beforeObject.clock &&
@@ -751,7 +763,7 @@ namespace
             require(engine::SequenceWorld2DSlot::transformPoint(beforeObject.worldTransform,corner[0]*400,corner[1]*240)==
                 engine::SequenceWorld2DSlot::transformPoint(afterObject.worldTransform,corner[0]*1200,corner[1]*720),"actual logical card400x240 corners unchanged");
         const auto after=capture(device,renderer,playback.world2D());require(after!=before && calls>0,"actual GPU receives fullart plus rendered canonical footer");
-        writeBmp(output/"loan150-after.bmp",after,800,600);
+        writeBmp(output/(std::string(selected.name)+"-after.bmp"),after,800,600);
         const auto a=engine::SequenceWorld2DSlot::transformPoint(beforeObject.worldTransform,0,0);
         const auto b=engine::SequenceWorld2DSlot::transformPoint(beforeObject.worldTransform,400,240);
         bool outside=true;unsigned darkFooter=0;
@@ -768,13 +780,61 @@ namespace
         const auto rootAfter=playback.runtime().inspect(rootNodes.front());
         require(rootBefore && rootAfter && rootBefore->clock==rootAfter->clock && rootBefore->priority==rootAfter->priority &&
             std::get<sequence::Matrix2D>(rootBefore->worldTransform).values==std::get<sequence::Matrix2D>(rootAfter->worldTransform).values &&
-            card.currentSequence()==0x5002B && card.lastCard()==3,"native root matrix clock/card lifecycle never changed by presentation");
-        qualified=false;require(playback.world2D().sync(*leaves,cache).has_value(),"live context fallback publishes original retail");
-        const auto native=capture(device,renderer,playback.world2D());writeBmp(output/"loan150-native-fallback.bmp",native,800,600);
-        qualified=true;failed=true;skin->configureDrawCardDescriptors({{0x5002B,{"Chance",std::string(ModernUsaDrawCardBodies[3]),400,240}}},raster);
-        require(playback.world2D().sync(*leaves,cache).has_value() && capture(device,renderer,playback.world2D())==native,"font failure restores entire native GPU card exactly");
+            card.currentSequence()==owner && card.lastCard()==selected.index,"native root matrix clock/card lifecycle never changed by presentation");
+        // Use the actual Main-to-Options CardPlayback transition, not a manual
+        // Out placement. Every measured moving face is byte-identical to idle.
+        require(card.sync(std::uint8_t(selected.index),false,display::Screen2D::Options,pieces::BoardCameraView::TopDownSoccer,playback) &&
+            playback.update(int(tick)) && playback.update(int(++tick)),"actual card consumer starts native Options Out clock1");
+        require(card.currentSequence()==selected.outRoot && card.visualState()==ibar::CardVisualState::Out,
+            "actual consumer selects exact qualified outgoing root");
+        auto outLeaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());
+        require(outLeaves && !outLeaves->empty(),"actual outgoing face and companion collect");
+        unsigned outChanged=0;
+        for(const auto& item:*outLeaves)if(item.contentsDataId==selected.outLeaf)
+        {
+            const auto* composed=playback.world2D().find(item.node);
+            require(composed && composed->asset->image.pixels==afterObject.asset->image.pixels && !composed->asset->presentationRect,
+                "actual Options Out retains the complete idle caption/art RGBA without idle Trade relocation");++outChanged;
+            const auto raw=resources.snapshot()->data().load(selected.outLeaf);
+            require(raw && beforeObject.asset->source && **raw==*beforeObject.asset->source,
+                "actual outgoing payload independently equals its qualified idle source");
+        }
+        require(outChanged==1,"one exact actual outgoing face is composed");
+        const auto outAfter=capture(device,renderer,playback.world2D());
+        writeBmp(output/(std::string(selected.name)+"-out-after.bmp"),outAfter,800,600);
+        // Re-publish the same retained actual Out pose with native ink only for
+        // the paired baseline; authored clocks and companion nodes do not move.
+        skin->configureDrawCardDescriptors({{owner,{title,"Native ink reference",400,240}}},raster);
+        require(playback.world2D().sync(*outLeaves,cache).has_value(),"same authored Out pose publishes native ink reference");
+        const auto outBefore=capture(device,renderer,playback.world2D());
+        writeBmp(output/(std::string(selected.name)+"-out-before.bmp"),outBefore,800,600);
+        require(outBefore!=outAfter,"actual GPU Out keeps readable caption composition through transition");
+        const auto oldOutOrder=playback.world2D().order();
+        std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> outObjects;
+        for(const auto node:oldOutOrder)outObjects.emplace(node,*playback.world2D().find(node));
+        skin->configureDrawCardDescriptors({{owner,{title,std::string(body),400,240}}},raster);
+        require(playback.world2D().sync(*outLeaves,cache).has_value() && capture(device,renderer,playback.world2D())==outAfter,
+            "same actual Out pose restores cached complete caption framebuffer");
+        require(playback.world2D().order()==oldOutOrder,"Out composition preserves original node order");
+        for(const auto& item:*outLeaves)
+        {
+            const auto& old=outObjects.at(item.node);const auto* current=playback.world2D().find(item.node);
+            require(old.clock==current->clock && old.priority==current->priority && old.contentsDataId==current->contentsDataId,
+                "actual Out composition leaves clocks priorities IDs untouched");
+            if(item.contentsDataId!=selected.outLeaf)require(old.asset==current->asset && old.worldTransform.values==current->worldTransform.values,
+                "actual Out companion retains exact source pointer and complete transform");
+            else for(const auto corner:std::array<std::array<int,2>,2>{{{0,0},{1,1}}})
+                require(engine::SequenceWorld2DSlot::transformPoint(old.worldTransform,corner[0]*400,corner[1]*240)==
+                    engine::SequenceWorld2DSlot::transformPoint(current->worldTransform,corner[0]*1200,corner[1]*720),
+                    "actual moving Out retains native logical corners");
+        }
+        qualified=false;require(playback.world2D().sync(*outLeaves,cache).has_value(),"live context fallback publishes original retail");
+        const auto native=capture(device,renderer,playback.world2D());writeBmp(output/(std::string(selected.name)+"-native-fallback.bmp"),native,800,600);
+        qualified=true;failed=true;skin->configureDrawCardDescriptors({{owner,{title,std::string(body),400,240}}},raster);
+        require(playback.world2D().sync(*outLeaves,cache).has_value() && capture(device,renderer,playback.world2D())==native,"font failure restores entire native GPU card exactly");
         require(font.settings()==settings,"production caption renderer preserves shared font settings");
-        std::cout<<"Loan150 GPU qualification output="<<output.string()<<" (isolated actual CardPlayback fixture, not live gameplay)\n";
+        std::cout<<"Readable card global="<<selected.index<<" GPU qualification output="<<output.string()<<" (isolated actual CardPlayback fixture, not live gameplay)\n";
+        }
     }
 
     void captureRetailCardTrade(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
@@ -1802,6 +1862,11 @@ int main(int argc, char** argv)
         if(argc==3 && std::string_view(argv[1])=="--native-action-qualify")
         {
             captureRetailNativeActions(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
+        if(argc==3 && std::string_view(argv[1])=="--readable-card-qualify")
+        {
+            captureRetailLoanFooter(device,*renderer,std::filesystem::path(argv[2]),true);
             renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
         }
         if(argc==3 && std::string_view(argv[1])=="--loan-card-qualify")
