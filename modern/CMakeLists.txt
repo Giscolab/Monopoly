@@ -1306,6 +1306,7 @@ target_sources(
     src/TradeOfferIconPlayback.cpp
     src/TradeCashTextPlayback.cpp
     src/TradeNamePlayback.cpp
+    src/TradePartnerSelectionPlayback.cpp
     src/TradePanelTextPlayback.cpp
     src/TradeCashDialogPlayback.cpp
     src/TradeContractDialogPlayback.cpp
@@ -1826,6 +1827,14 @@ if(BUILD_TESTING)
         NAME Monopoly.TradeUI
         COMMAND MonopolyTradeUITests
     )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyTradePartnerSelectionPlaybackTests tests/TradePartnerSelectionPlaybackTests.cpp
+        src/TradePartnerSelectionPlayback.cpp src/TradeUI.cpp src/FontRuntime.cpp)
+    target_include_directories(MonopolyTradePartnerSelectionPlaybackTests PRIVATE src tests)
+    target_link_libraries(MonopolyTradePartnerSelectionPlaybackTests PRIVATE MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+    add_test(NAME Monopoly.TradePartnerSelectionPlayback COMMAND MonopolyTradePartnerSelectionPlaybackTests)
 endif()
 
 # UDTrade.cpp static PAT deed playback
@@ -3877,7 +3886,7 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
-    add_executable(MonopolyWorld2DRendererTests tests/World2DRendererTests.cpp src/DiceDisplay.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyWorld2DRendererTests tests/World2DRendererTests.cpp src/DiceDisplay.cpp src/FontRuntime.cpp src/TradeCashDialogPlayback.cpp)
     target_include_directories(MonopolyWorld2DRendererTests PRIVATE src tests)
     target_link_libraries(MonopolyWorld2DRendererTests PRIVATE MonopolyGPU3DCore SDL3_ttf::SDL3_ttf)
     target_compile_definitions(MonopolyWorld2DRendererTests PRIVATE

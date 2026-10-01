@@ -13,6 +13,7 @@
 #include "TcpMessageTransport.hpp"
 #include "StartupResources.hpp"
 #include "UIMessages.hpp"
+#include "UserInterface.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -63,14 +64,20 @@ namespace
         if (displayState.viewportInUse != monopoly::display::Viewport3D::Off &&
             monopoly::display::isBoardVisible(displayState.desired2DView))
         {
-            const auto uiTransform=monopoly::logicalviewport::makeTransform(width,height);
-            if(const auto overlay=monopoly::logicalviewport::windowToUIOverlay(
-                    uiTransform,windowX,windowY))
-                return MouseLogicalMapping{*overlay,uiTransform.scale};
+            const auto uiTransform = monopoly::logicalviewport::makeTransform(width, height);
+            const auto viewport = monopoly::display::worldViewport(displayState.viewportInUse);
+            const auto& trade = monopoly::userinterface::tradeStateReadOnly();
+            const bool tradeModal = displayState.desired2DView == monopoly::display::Screen2D::Trade &&
+                (trade.playerSelectVisible || trade.cashDialogVisible || trade.contractDialogVisible);
+            if (const auto overlay = monopoly::logicalviewport::windowToUIOverlay(
+                    uiTransform, windowX, windowY,
+                    {static_cast<double>(viewport.left), static_cast<double>(viewport.top),
+                     static_cast<double>(viewport.right - viewport.left),
+                     static_cast<double>(viewport.bottom - viewport.top)}, tradeModal))
+                return MouseLogicalMapping{*overlay, uiTransform.scale};
+            if (tradeModal) return std::nullopt;
             const auto worldTransform =
                 monopoly::logicalviewport::makeWorld3DTransform(width, height);
-            const auto viewport =
-                monopoly::display::worldViewport(displayState.viewportInUse);
             const auto pixels = monopoly::logicalviewport::logicalToPixelRect(
                 worldTransform,
                 {static_cast<double>(viewport.left),

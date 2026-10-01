@@ -8,7 +8,7 @@ namespace monopoly::menu
 {
     namespace
     {
-        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction, PortfolioFrame, PortfolioAmount, CitySelector };
+        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction, PortfolioFrame, PortfolioAmount, CitySelector, TradeCashPanel, TradeCashButton, TradeCashPressed };
         struct Descriptor { Kind kind; std::string_view label; int colour{-1}; int token{-1}; };
         // StatsCalculatorLogic function order; exact Main DAT idle leaves, pressed leaf+1.
         constexpr std::array<data::DataTag,8> CalculatorFunctionLeaves{
@@ -130,6 +130,13 @@ namespace monopoly::menu
             if (data::dataGroup(root) != data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics))
                 return {};
             const auto tag = data::dataTag(root);
+            if (tag == 0x118A) return Descriptor{Kind::TradeCashPanel,{}};
+            if (tag >= 0x02D9 && tag <= 0x02DE)
+            {
+                constexpr std::array<std::string_view,3> labels{"Clear","Okay","Cancel"};
+                return Descriptor{(tag-0x02D9)%2 ? Kind::TradeCashPressed : Kind::TradeCashButton,
+                    labels[(tag-0x02D9)/2]};
+            }
             if (tag == 0x01FE) return Descriptor{Kind::CalculatorKey,"CLEAR"};
             if (tag == 0x029B || tag == 0x0286 || tag == 0x022C || tag == 0x0006) return Descriptor{Kind::StatsBar,{}};
             if (tag == 0x029C) return Descriptor{Kind::StatsBarHeading,"Display status by:"};
@@ -303,6 +310,12 @@ namespace monopoly::menu
         cache_.clear(); cachedBytes_ = 0;
     }
 
+    void ModernMenuSkin::configureTradeCashPresentation(std::function<bool()> qualified)
+    {
+        tradeCashPresentation_ = std::move(qualified);
+        cache_.clear(); cachedBytes_ = 0;
+    }
+
     bool ModernMenuSkin::supports(data::DataId root) const noexcept
     {
         const auto descriptor = describe(root);
@@ -317,6 +330,34 @@ namespace monopoly::menu
     {
         if (!original || !supports(root)) return original;
         const auto descriptor = *describe(root);
+        const bool tradeCash = descriptor.kind == Kind::TradeCashPanel ||
+            descriptor.kind == Kind::TradeCashButton || descriptor.kind == Kind::TradeCashPressed;
+        if (tradeCash)
+        {
+            if (!principal || !tradeCashPresentation_ || !tradeCashPresentation_() ||
+                original->sourceType != data::LegacyDataType::Uap || !original->source) return original;
+            const auto metadata = data::inspectLegacyUap(*original->source);
+            if (!metadata || metadata->flags != 6) return original;
+            unsigned leaf=0x118A,width=191,height=70,x=307,y=352;
+            if (descriptor.kind != Kind::TradeCashPanel)
+            {
+                const unsigned control=(data::dataTag(root)-0x02D9)/2;
+                constexpr std::array<unsigned,3> first{0x1160,0x1175,0x118B};
+                constexpr std::array<unsigned,3> widths{58,59,58}, origins{374,312,435};
+                const auto actual=data::dataTag(original->dataId);
+                if (actual < first[control] || actual > first[control]+15 ||
+                    (descriptor.kind == Kind::TradeCashButton && actual != first[control])) return original;
+                const unsigned pose=actual-first[control];
+                leaf=actual; width=widths[control]; height=17; x=origins[control]; y=395;
+                // Exact16 DAT principal poses. Five local-origin glow siblings stay retail.
+                if (control<2 && pose>=6 && pose<=11) { --width; if(control==1) ++x; }
+                if (pose>=7 && pose<=10) { height=16; y=396; }
+            }
+            if (original->dataId != data::packDataId(data::LegacyGroupId::LanguageGraphics,data::DataTag(leaf)) ||
+                original->image.width != width || original->image.height != height ||
+                metadata->width != width || metadata->height != height ||
+                metadata->originX != int(x) || metadata->originY != int(y)) return original;
+        }
         // Retail card hit width is97, but incoming/outgoing UAP poses426..42A
         // are96x110. Qualify only those measured leaves; idle425 stays unchanged.
         bool playerCardTransition = false;
@@ -554,6 +595,7 @@ namespace monopoly::menu
                             descriptor.kind == Kind::SelectedToggle || descriptor.kind == Kind::StatsSelectedTab ||
                             descriptor.kind == Kind::CalculatorSelectedKey ||
                             descriptor.kind == Kind::CalculatorSelectedFunction ||
+                            descriptor.kind == Kind::TradeCashPressed ||
                             selectedThumbnail;
                 const bool background = descriptor.kind == Kind::Background || descriptor.kind == Kind::Pattern ||
                             descriptor.kind == Kind::AuctionBackground || descriptor.kind == Kind::TradeBackground ||
@@ -564,7 +606,7 @@ namespace monopoly::menu
                 const bool playerPanel = descriptor.kind == Kind::StatsPanel;
                 const bool tradeRail = descriptor.kind == Kind::TradeRail;
                 const bool sourceAlpha = descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey ||
-                    playerCardTransition || citySelector;
+                    playerCardTransition || citySelector || tradeCash;
                 const unsigned auctionBandX = root < 0x00030376 ? 99 : 0;
                 const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
                     selected ? std::array<unsigned, 3>{42, 85, 82} : std::array<unsigned, 3>{22, 60, 61};
@@ -640,6 +682,14 @@ namespace monopoly::menu
                                 descriptor.colour < 6 ? PlayerColours[descriptor.colour][c] : std::array<unsigned,3>{130,145,143}[c]);
                         if (sourceAlpha)
                             image.pixels[offset+3] = source.pixels[(sourceRow+x/3)*4+3];
+                        // These banknotes are the real denomination controls. Preserve
+                        // their authored ink/colours and locations; amounts remain native text.
+                        if (descriptor.kind == Kind::TradeCashPanel &&
+                            x>=24 && x<552 && y>=48 && y<135)
+                        {
+                            const auto native=(sourceRow+x/3)*4;
+                            for(unsigned c=0;c<3;++c)image.pixels[offset+c]=source.pixels[native+c];
+                        }
                         if (!rim && photo)
                         {
                             const auto px = std::min(photo->width - 1, unsigned((x + photoOffsetX) / cover));
@@ -688,7 +738,7 @@ namespace monopoly::menu
                     if (!text) return original;
                     const bool statsLabel = descriptor.kind == Kind::StatsTab || descriptor.kind == Kind::StatsSelectedTab ||
                         descriptor.kind == Kind::StatsBarHeading;
-                    const bool painted = statsLabel || calculatorKey ? compactCaption(image, *text,
+                    const bool painted = statsLabel || calculatorKey || tradeCash ? compactCaption(image, *text,
                         descriptor.kind == Kind::StatsBarHeading, calculatorKey) :
                         caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation,
                             optionsHeader ? 135U : citySelector ? 60U : 0U, citySelector ? 264U : 0U,

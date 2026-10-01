@@ -88,6 +88,7 @@
 #include "TradeCashDialogPlayback.hpp"
 #include "TradeCashTextPlayback.hpp"
 #include "TradeNamePlayback.hpp"
+#include "TradePartnerSelectionPlayback.hpp"
 #include "TradePanelTextPlayback.hpp"
 #include "TradeContractDialogPlayback.hpp"
 #include "TradeContractTextPlayback.hpp"
@@ -240,6 +241,7 @@ namespace monopoly::engine
         tradeui::OfferIconPlayback tradeOfferIconPlayback;
         tradeui::CashTextPlayback tradeCashTextPlayback;
         tradeui::NamePlayback tradeNamePlayback;
+        tradeui::PartnerSelectionPlayback tradePartnerSelectionPlayback;
         tradeui::PanelTextPlayback tradePanelTextPlayback;
         tradeui::CashDialogPlayback tradeCashDialogPlayback;
         tradeui::ContractDialogPlayback tradeContractDialogPlayback;
@@ -1246,6 +1248,14 @@ namespace monopoly::engine
                     auto menuSkin = std::make_shared<menu::ModernMenuSkin>(
                         startup::resources()->context().board, startup::resources()->context().language,
                         [rasterText](std::string_view text) { return rasterText(text, 54); });
+                    menuSkin->configureTradeCashPresentation([]
+                    {
+                        const auto snapshot = startup::resources();
+                        const auto& state = display::stateReadOnly();
+                        return snapshot && snapshot->context().board == data::BoardEdition::Usa &&
+                            snapshot->context().language == data::LanguageId::EnglishUs &&
+                            state.city == 0 && state.system == 13 && state.customBoardPath.empty();
+                    });
                     // Optional static preview captured from the qualified GPU scene.
                     // A missing or malformed preview keeps the branded menu fallback.
                     std::ifstream preview(std::filesystem::path(SDL_GetBasePath()) /
@@ -1458,6 +1468,7 @@ namespace monopoly::engine
             tradeOfferIconPlayback.reset();
             tradeCashTextPlayback.reset();
             tradeNamePlayback.reset();
+            if (playback) (void)tradePartnerSelectionPlayback.reset(*playback);
             tradePanelTextPlayback.reset();
             tradeCashDialogPlayback.reset();
             tradeContractDialogPlayback.reset();
@@ -2505,6 +2516,11 @@ namespace monopoly::engine
             if (!tradeCashTextSync)
                 return SDL_SetError("Trade cash-text playback: %s",
                     tradeCashTextSync.error().c_str());
+            const auto tradePartnerSync = tradePartnerSelectionPlayback.sync(
+                userinterface::tradeStateReadOnly(), ruleState, displayState.desired2DView,
+                fontPlayback(), *session, modernTradeText);
+            if (!tradePartnerSync)
+                return SDL_SetError("Trade partner selector: %s", tradePartnerSync.error().c_str());
             const auto tradeNameSync = tradeNamePlayback.sync(
                 userinterface::tradeStateReadOnly(), ruleState,
                 displayState.desired2DView, fontPlayback(), *session, modernTradeText);

@@ -104,6 +104,15 @@ namespace monopoly::engine
                 asset = *decoded;
             }
             assets.emplace(item.node, asset);
+            if (modernMenuSkin_ && (item.rootSequenceDataId == 0x000502DA ||
+                item.rootSequenceDataId == 0x000502DC || item.rootSequenceDataId == 0x000502DE))
+            {
+                // These pressed cash buttons have larger independent glow siblings.
+                // Qualify each exact measured button leaf instead of picking by area;
+                // the skin rejects every glow and preserves its original pointer.
+                assets[item.node] = modernMenuSkin_->substitute(item.rootSequenceDataId, asset, true);
+                continue;
+            }
             if (modernSkin_ && modernSkin_->supportsCardFaceIn(item.rootSequenceDataId))
             {
                 // FaceIn backgrounds animate alongside independent text/art.

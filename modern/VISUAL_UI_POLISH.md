@@ -565,3 +565,31 @@ camera transitions, the inspected live samples no longer showed the original
 wall-filled view. These observations do not establish exhaustive coverage of
 every camera path. A later local variable rename removes a shadowing warning
 without changing behavior.
+
+## Trade cash controls and partner title (passes37-38)
+
+Pass37 qualifies52 actual cash-control CPU cases and the production Slot3
+pressed state, preserving native alpha, glows and clocks. Eight matched GPU
+fixtures cover left/right idle and each side's three pressed controls. They use
+real DAT assets through CashDialogPlayback at fixed clocks, not simulated
+transactions. Before/after captures and `actual-cash-gpu.tsv` are retained in
+`build/trade-cash-polish-20261001/`. The modern presentation is guarded to the
+full USA/enUS, city0, system13 context with no custom board.
+
+Pass38 restores the missing visible Trade partner chooser title. Actual captures
+`pass37-trade-empty-panels-real.png` and `pass38-trade-partner-real-after.png` in
+`build/polish-continuation-20261001/` show the before/after presentation. The explicit UI/board viewport-mapping correction passes LogicalViewport CPU
+checks and actual chooser DAT qualification. The earlier raw point(1065,497)
+incorrectly mapped to(443,207) at scale2.4. In actual Release process17168 it
+maps to(458,276) at scale1.8, selecting partner0(Horse) for playerA1; the real
+names and property panels appeared. The chooser title9 is readable.
+
+Live cash controls also qualify: clicking50 showed an offered$50 and projected
+balances414/876; Clear restored464/826. Entering10 then Okay retained an offered
+$10 and closed the cash dialog. Main Cancel returned to the board with actual
+funds464/826 unchanged. These checks qualify partner selection, cash editing and
+cancellation, not an accepted trade or full AI negotiation. Evidence in that
+qualification directory is `trade-input-fixed-real.log`,
+`pass38-trade-chooser-fixed-real.png`, `pass38-trade-partner-selected-real.png`,
+`pass38-trade-cash-live-open.png`, `pass38-trade-cash-live-50.png` and
+`pass38-trade-cash-live-okay10.png`.

@@ -6,6 +6,7 @@
 #include "IBarCameraButtonPlayback.hpp"
 #include "MousePointerPlayback.hpp"
 #include "FontRuntime.hpp"
+#include "TradeCashDialogPlayback.hpp"
 #include <fstream>
 #include <set>
 #include <cstdlib>
@@ -688,6 +689,85 @@ namespace
             std::cout<<"Menu GPU capture="<<prefix<<" changed="<<changed<<" output="<<output.string()<<'\n';
         }
     }
+    void captureRetailTradeCash(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual cash DAT opens for production dialog GPU proof");
+        fonts::Runtime font;std::vector<std::filesystem::path> fontRoots{root,std::filesystem::path(SDL_GetBasePath())};
+#ifdef _WIN32
+        if(const auto* windows=std::getenv("WINDIR"))fontRoots.emplace_back(std::filesystem::path(windows)/"Fonts");
+#endif
+        const auto arial=fonts::resolveRetailArial(fontRoots);
+        require(arial && font.setFont(*arial) && font.setSize(54),"actual cash captions use production3x Arial raster");
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {auto image=font.render(text,0xFFFFFF,true);if(!image)return std::unexpected(image.error().detail);return std::move(*image);};
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"trade-cash-polish-20261001").lexically_normal();
+        std::filesystem::create_directories(output);std::ofstream manifest(output/"actual-cash-gpu.tsv");
+        manifest<<"scope\tproduction CashDialogPlayback+real DAT; fixed-clock native/modern; no gameplay simulation\n";
+        for(unsigned side=0;side<2;++side)for(unsigned feedback=0;feedback<4;++feedback)
+        {
+            auto skin=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+            bool qualified=false;skin->configureTradeCashPresentation([&]{return qualified;});
+            engine::SequencePlayback playback(resources.snapshot());playback.world2D().configureModernMenuSkin(skin);
+            tradeui::CashDialogPlayback dialog;tradeui::State state{};
+            state.cashDialogVisible=true;state.cashDialogSide=static_cast<std::uint8_t>(side);
+            state.cashDialogFeedback=static_cast<tradeui::CashDialogFeedback>(feedback);
+            require(dialog.sync(state,display::Screen2D::Trade,0,playback).has_value() && playback.update(0).has_value(),
+                "real cash consumer queues authored left/right shell and idle/pressed programs");
+            const int tick=feedback ? 4 : 0;
+            for(int t=1;t<=tick;++t)require(playback.update(t).has_value(),"pressed cash advances actual CNK clock without skipping frames");
+            auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(leaves && !leaves->empty(),"actual cash bitmap leaves resolve at requested clock");
+            const auto order=playback.world2D().order();std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> native;
+            for(auto& leaf:*leaves)
+            {const auto* object=playback.world2D().find(leaf.node);require(object && object->asset,"actual cash native asset resolves");native.emplace(leaf.node,*object);leaf.runtimeAsset=object->asset;}
+            const std::string name=std::string(side ? "right-" : "left-")+(feedback ? "pressed"+std::to_string(feedback) : "idle")+"-t"+std::to_string(tick);
+            const auto before=capture(device,renderer,playback.world2D());writeBmp(output/(name+"-before.bmp"),before,800,600);
+            qualified=true;data::BitmapRuntimeCache cache;
+            require(playback.world2D().sync(*leaves,cache).has_value(),"same actual cash evaluated pose publishes qualified modern skin");
+            unsigned changed=0;bool shell=false,pressed=false;
+            for(const auto& leaf:*leaves)
+            {
+                const auto* object=playback.world2D().find(leaf.node);const auto& old=native.at(leaf.node);
+                require(object && object->clock==old.clock && object->priority==old.priority &&
+                    engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,0,0)==engine::SequenceWorld2DSlot::transformPoint(old.worldTransform,0,0) &&
+                    engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,object->asset->image.width,object->asset->image.height)==
+                    engine::SequenceWorld2DSlot::transformPoint(old.worldTransform,old.asset->image.width,old.asset->image.height),
+                    "cash modern raster preserves real slot corners clock priority and origin-derived placement");
+                manifest<<"fixture\t"<<name<<"\troot\t"<<leaf.rootSequenceDataId<<"\tleaf\t"<<leaf.contentsDataId
+                    <<"\tclock\t"<<leaf.clock<<"\tpriority\t"<<leaf.priority<<"\torigin\t"<<leaf.metadata.originX<<','<<leaf.metadata.originY<<"\tnative_matrix";
+                for(const auto value:old.worldTransform.values)manifest<<'\t'<<value;
+                if(old.asset->source)
+                {
+                    const auto authored=data::inspectLegacyUap(*old.asset->source);
+                    require(authored.has_value(),"actual cash immutable source metadata inspects");
+                    manifest<<"\traw_uap_origin\t"<<authored->originX<<','<<authored->originY;
+                    if(leaf.rootSequenceDataId==tradeui::tradeCashDialogSequence())
+                        require(authored->originX==307 && authored->originY==352 && old.worldTransform.values[6]==tradeui::TradeCashDialogX[side] &&
+                            old.worldTransform.values[7]==tradeui::TradeCashDialogY[side],"raw cash shell307352 uses productionbitmap rootXY without addedorigin");
+                }
+                manifest<<'\n';
+                if(object->asset==old.asset)continue;
+                ++changed;shell|=leaf.rootSequenceDataId==tradeui::tradeCashDialogSequence();pressed|=leaf.rootSequenceDataId==tradeui::tradeCashPressedSequence(static_cast<tradeui::CashDialogFeedback>(feedback));
+                const auto& image=object->asset->image;const auto& original=old.asset->image;
+                require(image.width==original.width*3 && image.height==original.height*3,"qualified actual cash art uses3x native logical extent");
+                bool sameAlpha=true;
+                for(unsigned y=0;y<image.height;++y)for(unsigned x=0;x<image.width;++x)
+                    sameAlpha &= image.pixels[(std::size_t(y)*image.width+x)*4+3]==original.pixels[(std::size_t(y/3)*original.width+x/3)*4+3];
+                require(sameAlpha,"each actual cash source alpha preserved including pressed animation masks");
+            }
+            require(shell && changed>=4 && (!feedback || pressed) && playback.world2D().order()==order,
+                "actual cash shell and buttons modernize with complete original sequence ordering");
+            const auto after=capture(device,renderer,playback.world2D());require(before!=after,"actual fixed-clock cash GPU artwork changes");
+            writeBmp(output/(name+"-after.bmp"),after,800,600);
+            qualified=false;require(playback.world2D().sync(*leaves,cache).has_value(),"cash presentation guard disables cached skin");
+            for(const auto& [node,old]:native)require(playback.world2D().find(node)->asset==old.asset,"cash context fallback is exact native pointer");
+            require(capture(device,renderer,playback.world2D())==before,"cash guard fallback fullRGBA GPU frame is byte-exact native");
+            std::cout<<"TradeCash actualGPU "<<name<<" shellXY="<<tradeui::TradeCashDialogX[side]<<','<<tradeui::TradeCashDialogY[side]
+                <<" buttonXY="<<tradeui::TradeCashButtonX[side]<<','<<tradeui::TradeCashButtonY[side]<<" changed="<<changed<<" output="<<output.string()<<'\n';
+        }
+        require(bool(manifest),"cash actual pose manifest writes");
+    }
     void captureRetailIdleCards(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1116,6 +1196,11 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==3 && std::string_view(argv[1])=="--trade-cash-qualify")
+        {
+            captureRetailTradeCash(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==3 && std::string_view(argv[1])=="--menu-panels")
         {
             captureRetailMenuPanels(device,*renderer,std::filesystem::path(argv[2]));

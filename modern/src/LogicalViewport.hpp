@@ -73,6 +73,12 @@ namespace monopoly::logicalviewport
     [[nodiscard]] std::optional<LogicalPoint> windowToUIOverlay(
         const Transform& uiTransform, double windowX, double windowY) noexcept;
 
+    // UI outside the authored 3D viewport overlays its expanded pixel area.
+    // A modal owns the entire UI canvas, including any area over the board.
+    [[nodiscard]] std::optional<LogicalPoint> windowToUIOverlay(
+        const Transform& uiTransform, double windowX, double windowY,
+        const LogicalRect& worldViewport, bool modal = false) noexcept;
+
     // Converts a logical rectangle without clipping or integer rounding. The
     // caller can apply the rounding policy required by its rendering backend.
     [[nodiscard]] PixelRect logicalToPixelRect(

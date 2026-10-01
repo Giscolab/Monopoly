@@ -2,6 +2,7 @@
 #include "ModernMenuRaster.hpp"
 #include "ResourceRuntime.hpp"
 #include "SequenceRuntime.hpp"
+#include "SequenceWorld2DSlot.hpp"
 #include <set>
 #include <algorithm>
 #include <array>
@@ -1268,6 +1269,165 @@ namespace
         require(uk.substitute(0x00050249,helpTitle)==helpTitle,"Help chrome is USA/en-US only");
     }
 
+    data::SharedDataBytes cashUapPayload(unsigned w,unsigned h,unsigned x,unsigned y)
+    {
+        auto bytes=std::make_shared<data::DataBytes>(32+((w+3)&~3U)*h,std::byte{0});
+        const auto put=[&](unsigned at,unsigned value,unsigned count)
+        { for(unsigned i=0;i<count;++i)(*bytes)[at+i]=std::byte((value>>(8*i))&255); };
+        put(0,w,2);put(2,h,2);put(4,x,2);put(6,y,2);
+        put(8,6,4);put(12,2,2);put(14,2,2);put(28,255,4);
+        return bytes;
+    }
+
+    void verifyCashAlpha(const data::BitmapRuntimeAsset& source,const data::BitmapRuntimeAsset& painted)
+    {
+        require(painted.image.width==source.image.width*3 && painted.image.height==source.image.height*3 &&
+            painted.dataId==source.dataId && !painted.presentationRect,"Cash presentation keeps identity and native footprint");
+        for(unsigned y=0;y<painted.image.height;++y)for(unsigned x=0;x<painted.image.width;++x)
+            require(painted.image.pixels[(std::size_t(y)*painted.image.width+x)*4+3]==
+                source.image.pixels[(std::size_t(y/3)*source.image.width+x/3)*4+3],
+                "Cash shell/control preserves every native alpha sample including caption coverage");
+    }
+
+    void testTradeCashPopup()
+    {
+        bool qualified=true; std::string captionText;
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { captionText=text;return label(); };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        const auto make=[](data::DataId id,unsigned w,unsigned h,unsigned originX,unsigned originY)
+        {
+            auto asset=std::make_shared<data::BitmapRuntimeAsset>(*original(w,h));
+            asset->dataId=id;asset->sourceType=data::LegacyDataType::Uap;asset->source=cashUapPayload(w,h,originX,originY);
+            for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x)
+            {
+                const auto at=(std::size_t(y)*w+x)*4;
+                asset->image.pixels[at]=std::uint8_t(x*7+y*13);
+                asset->image.pixels[at+3]=std::uint8_t(x*17+y*29);
+            }
+            return asset;
+        };
+        const auto shell=make(0x5118A,191,70,307,352);
+        require(skin.substitute(0x5118A,shell)==shell,"Cash popup defaults to retail without live board qualification");
+        skin.configureTradeCashPresentation([&]{return qualified;});
+        const auto painted=skin.substitute(0x5118A,shell);require(painted!=shell,"Exact cash shell qualifies");
+        verifyCashAlpha(*shell,*painted);
+        for(unsigned y=16;y<45;++y)for(unsigned x=8;x<184;++x)
+            for(unsigned c=0;c<3;++c)require(painted->image.pixels[(std::size_t(y*3)*573+x*3)*4+c]==
+                shell->image.pixels[(std::size_t(y)*191+x)*4+c],"Authentic denomination banknotes retain native colour and ink");
+        const auto before=painted->image.pixels;
+        require(skin.substitute(0x5118A,shell)==painted,"Cash shell reuses immutable source cache");
+        qualified=false;require(skin.substitute(0x5118A,shell)==shell,"Live board context invalidation beats cache");
+        qualified=true;
+        constexpr std::array<unsigned,3> leaves{0x1160,0x1175,0x118B},widths{58,59,58},origins{374,312,435};
+        constexpr std::array<std::string_view,3> captions{"Clear","Okay","Cancel"};
+        for(unsigned control=0;control<3;++control)for(unsigned pose=0;pose<16;++pose)
+        {
+            const bool narrow=control<2 && pose>=6 && pose<=11;
+            const bool shortPose=pose>=7 && pose<=10;
+            const auto source=make(0x50000+leaves[control]+pose,widths[control]-unsigned(narrow),
+                shortPose?16:17,origins[control]+unsigned(control==1 && narrow),shortPose?396:395);
+            const auto root=0x502DA+2*control;
+            const auto result=skin.substitute(root,source);require(result!=source && captionText==captions[control],
+                "All exact sixteen pressed poses retain authentic control captions");
+            verifyCashAlpha(*source,*result);
+            require(skin.substitute(root,source,false)==source,"Cash glow/decorative siblings remain authored");
+            if(pose==0)require(skin.substitute(root-1,source)!=source,"Idle cash control accepts its exact first pose");
+            else require(skin.substitute(root-1,source)==source,"Idle cash control rejects other pressed poses");
+        }
+        auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*shell);
+        wrong->source=cashUapPayload(191,70,308,352);require(skin.substitute(0x5118A,wrong)==wrong,"Wrong UAP origin is retail fallback");
+        wrong->source=shell->source;wrong->dataId=0x2118A;require(skin.substitute(0x5118A,wrong)==wrong,"Wrong contents group is retail fallback");
+        wrong->dataId=shell->dataId;wrong->image.height=69;require(skin.substitute(0x5118A,wrong)==wrong,"Wrong native extent is retail fallback");
+        const auto glow=make(0x51170,59,25,2,2);require(skin.substitute(0x502DA,glow)==glow,"Actual glow leaf cannot become a button");
+        const auto replacementOwner=make(0x5118A,191,70,307,352);
+        require(skin.substitute(0x5118A,replacementOwner)!=painted && painted->image.pixels==before,
+            "New same-ID source cannot reuse stale derivative or mutate old images");
+        menu::ModernMenuSkin fail(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("font unavailable");});
+        fail.configureTradeCashPresentation([]{return true;});
+        const auto button=make(0x51160,58,17,374,395);
+        require(fail.substitute(0x502D9,button)==button,"Cash caption failure returns complete retail control");
+        menu::ModernMenuSkin uk(data::BoardEdition::Usa,data::LanguageId::EnglishUk,raster);
+        uk.configureTradeCashPresentation([]{return true;});
+        require(uk.substitute(0x5118A,shell)==shell,"Cash popup remains USA/en-US only");
+    }
+
+    void qualifyActualTradeCash(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"Actual cash DAT opens");
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        skin.configureTradeCashPresentation([]{return true;});data::BitmapRuntimeCache cache;
+        unsigned accepted=0,glows=0;
+        const auto check=[&](data::DataId owner,data::DataId leaf)
+        {
+            const auto meta=resources.snapshot()->data().metadata(leaf);const auto bytes=resources.snapshot()->data().load(leaf);
+            require(meta && bytes && meta->type==data::LegacyDataType::Uap,"Actual cash leaf UAP exists");
+            const auto asset=cache.resolve(leaf,meta->type,*bytes);require(asset.has_value(),"Actual cash leaf decodes");
+            const auto native=data::inspectLegacyUap(**bytes);require(native.has_value(),"Actual cash source metadata inspects");
+            const auto result=skin.substitute(owner,*asset);
+            if(result==*asset) { ++glows; require(native->originX<=2 && native->originY<=2,"Only measured local glow art stays retail"); }
+            else { ++accepted;verifyCashAlpha(**asset,*result);require(skin.substitute(owner,*asset)==result,"Actual cash cache reuses image"); }
+            std::cout<<"cash owner="<<std::hex<<owner<<" leaf="<<leaf<<std::dec<<" size="<<native->width<<"x"<<native->height
+                <<" origin="<<native->originX<<","<<native->originY<<" modern="<<(result!=*asset)<<'\n';
+        };
+        check(0x5118A,0x5118A);
+        for(data::DataId owner=0x502D9;owner<=0x502DE;++owner)
+        {
+            const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+            require(program.has_value(),"Actual cash CNK decodes");std::set<data::DataId> seen;
+            for(const auto& description:(*program)->descriptions())
+                if(description.contentsDataId && seen.insert(*description.contentsDataId).second)
+                    check(owner,*description.contentsDataId);
+        }
+        require(accepted==52 && glows==15,"Actual cash shell+three idle+48 pressed poses qualified;15 glow leaves retained");
+        // Real pressed frame1 includes a58x17 button and a61x27 glow. The
+        // production slot must not select the larger glow as the principal shell.
+        auto slotSkin=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        bool context=true;slotSkin->configureTradeCashPresentation([&]{return context;});
+        for(const auto owner:{0x502DAU,0x502DCU,0x502DEU})
+        {
+            const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+            sequence::SequenceRuntime runtime;require(program && runtime.start(*program,1977),"Actual pressed cash root starts");
+            require(runtime.update(2).has_value(),"Actual pressed cash clock advances");
+            const auto items=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());
+            engine::SequenceWorld2DSlot native,modern;modern.configureModernMenuSkin(slotSkin);
+            require(items && native.sync(*items,cache) && modern.sync(*items,cache),"Actual pressed leaves publish in both production slots");
+            require(native.order()==modern.order(),"Cash pressed draw ordering remains authored");
+            unsigned buttons=0,glowCount=0;
+            for(const auto node:native.order())
+            {
+                const auto* a=native.find(node);const auto* m=modern.find(node);
+                require(a && m && a->clock==m->clock && a->priority==m->priority && a->contentsDataId==m->contentsDataId,
+                    "Cash slot preserves authored clock priority and contents identity");
+                if(a->asset->image.height<=17)
+                {
+                    require(m->asset!=a->asset,"Real smaller cash button receives modern presentation");
+                    verifyCashAlpha(*a->asset,*m->asset);++buttons;
+                    // Raster density changes; its two diagonal corners must not move.
+                    for(const auto corner:std::array{std::array{0U,0U},std::array{a->asset->image.width,a->asset->image.height}})
+                        require(engine::SequenceWorld2DSlot::transformPoint(a->worldTransform,int(corner[0]),int(corner[1]))==
+                            engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,int(corner[0]*3),int(corner[1]*3)),
+                            "Cash button keeps authored native rectangle under production transforms");
+                }
+                else
+                {
+                    require(m->asset==a->asset && m->worldTransform.values==a->worldTransform.values,
+                        "Real larger glow retains exact retail pointer and transform");++glowCount;
+                }
+            }
+            require(buttons==1 && glowCount==1,"Real pressed frame contains one button plus independent larger glow");
+            context=false;require(modern.sync(*items,cache).has_value(),"Actual cash unqualified context syncs");
+            for(const auto node:native.order())require(modern.find(node)->asset==native.find(node)->asset,
+                "Cash context fallback restores all exact retail pointers including the button");
+            context=true;
+        }
+        std::cout<<"[PASS] actual Trade cash52 qualified/15 retail glow CPU images (not GPU proof)\n";
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -1302,9 +1462,11 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify ABSOLUTE_DATA_ROOT]");
+    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify" || std::string_view(argv[1])=="--trade-cash-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify|--trade-cash-qualify ABSOLUTE_DATA_ROOT]");
         if(argc==3) { if(std::string_view(argv[1])=="--city-qualify") qualifyActualCitySelector(std::filesystem::path(argv[2]));
+            else if(std::string_view(argv[1])=="--trade-cash-qualify")qualifyActualTradeCash(std::filesystem::path(argv[2]));
             else qualifyActualPlayerCards(std::filesystem::path(argv[2])); }
+        testTradeCashPopup();
         testMeasuredPlayerCardTransitions(); testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention(); testOptionsHeaderAndHelpChrome(); testMeasuredCitySelector();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }

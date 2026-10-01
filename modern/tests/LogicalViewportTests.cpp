@@ -204,6 +204,40 @@ namespace
             "letterboxed presentation keeps the toolbar button's logical position");
     }
 
+    void testTradeAndPortfolioOverlayInput()
+    {
+        using namespace monopoly::logicalviewport;
+        const auto ui = makeTransform(1920,1080);
+        const LogicalRect trade{200,0,400,225};
+        const auto row = windowToUIOverlay(ui,1065,497,trade);
+        expect(row && nearlyEqual(row->x,458.3333333333333) &&
+            nearlyEqual(row->y,276.1111111111111),
+            "actual Trade chooser click uses 4:3 UI coordinates instead of expanded 3D");
+        const auto wrong = windowToLogical(makeWorld3DTransform(1920,1080),1065,497);
+        expect(wrong && nearlyEqual(wrong->x,443.75) && nearlyEqual(wrong->y,207.0833333333333),
+            "reproduced old Trade mapping lands above the first chooser row");
+        expect(!windowToUIOverlay(ui,960,300,trade),
+            "Trade board interior keeps independent 3D picking when no modal is open");
+        expect(windowToUIOverlay(ui,960,300,trade,true).has_value(),
+            "Trade modal owns UI coordinates even over the board viewport");
+        expect(!windowToUIOverlay(ui,100,300,trade,true),
+            "Trade modal rejects UI pillarbox instead of routing a hidden board click");
+        expect(!windowToUIOverlay(ui,960,404.9,trade) && windowToUIOverlay(ui,960,405,trade),
+            "Trade UI begins at authored viewport bottom y225, with half-open edges");
+        expect(windowToUIOverlay(ui,400,100,trade).has_value(),
+            "Trade side panels use authored UI mapping");
+        const LogicalRect portfolio{0,0,400,225};
+        expect(windowToUIOverlay(ui,1320,180,portfolio).has_value() &&
+            !windowToUIOverlay(ui,600,180,portfolio),
+            "Portfolio side UI and board retain separate mappings");
+        expect(windowToUIOverlay(ui,600,497,portfolio).has_value(),
+            "Portfolio lower UI owns pixels overlapping the expanded status board");
+        const auto tall = makeTransform(1000,1000);
+        const auto letterbox = windowToUIOverlay(tall,573.75,471.25,trade);
+        expect(letterbox && nearlyEqual(letterbox->x,459) && nearlyEqual(letterbox->y,277),
+            "Trade chooser retains logical row under a letterboxed window");
+    }
+
     void testInvalidInputs()
     {
         using namespace monopoly::logicalviewport;
@@ -261,6 +295,7 @@ int main()
     testLetterboxExtent();
     testInvalidInputs();
     testBoardOverlayInput();
+    testTradeAndPortfolioOverlayInput();
 
     if (failures != 0)
     {
