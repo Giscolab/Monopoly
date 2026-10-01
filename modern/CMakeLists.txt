@@ -4031,7 +4031,7 @@ if(BUILD_TESTING)
         add_test(NAME Monopoly.IBarScoreTextPlayback COMMAND MonopolyIBarScoreTextPlaybackTests)
     endif()
     add_executable(MonopolyStatsTextPlaybackTests tests/StatsTextPlaybackTests.cpp
-        src/StatsTextPlayback.cpp src/StatsDeedPlayback.cpp src/StatsUI.cpp
+        src/StatsTextPlayback.cpp src/StatsPlayerCashPlayback.cpp src/StatsDeedPlayback.cpp src/StatsUI.cpp
         src/StatsCalculatorUI.cpp src/StatsCalculatorLogic.cpp src/AIUtility.cpp
         src/BoardRules.cpp src/IBarLayout.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
     add_executable(MonopolyTradeDynamicTextPlaybackTests tests/TradeDynamicTextPlaybackTests.cpp

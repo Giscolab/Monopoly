@@ -1,4 +1,5 @@
 #include "StatsTextPlayback.hpp"
+#include "StatsPlayerCashPlayback.hpp"
 #include "SyntheticTextResources.hpp"
 #include <algorithm>
 #include <iostream>
@@ -28,7 +29,7 @@ const statsui::TextSurface& surface(const std::vector<statsui::TextSurface>& sur
 }
 void testPlayerBankAndFuture() {
     Fixture f; auto p=f.plan(); require(p && p->size()==2,"two player text surfaces");
-    const auto& bob=surface(*p,101); require(bob.x==3 && bob.y==224 && bob.width==198 && bob.priority==501 && bob.text[0].text=="Bob" && bob.text[1].text=="4321","sorted player name and cash share source coordinates");
+    const auto& bob=surface(*p,101); require(bob.x==3 && bob.y==224 && bob.width==198 && bob.priority==statsui::PlayerCashPriority+1 && bob.text[0].text=="Bob" && bob.text[1].text=="4321","sorted player name and cash share source coordinates");
     f.inputs.mode=ibar::RuleMode::Build; f.inputs.iBarPlayerLocalHuman=true; f.inputs.iBarPlayer=0;
     p=f.plan(); require(p && p->size()==1 && p->front().key==100,"local build selection hides other player text"); f.inputs={};
     f.state.screen=statsui::Screen::Bank; f.state.activeSort=0; f.state.bankHousesRemaining=27; f.state.bankHotelsRemaining=11; f.state.bankPlayerHouses[0]=5; f.state.bankPlayerHotels[1]=1;
@@ -41,6 +42,60 @@ void testPlayerBankAndFuture() {
     p=f.plan(); require(p.has_value(),"future plan"); const auto& popup=surface(*p,600);
     require(popup.x==601 && popup.priority==612 && popup.text[0].text=="FUTURE Bob / 1" && popup.text[3].text=="Property three" && popup.text[4].text=="7","future title placeholders and scrolled property row use real LANG lookup");
     f.future.kind=statsui::FutureImmunityKind::Immunity; p=f.plan(); require(p && surface(*p,600).text[0].text=="IMMUNITY Bob / 1","immunity has distinct title");
+}
+void testPlayerCashPainterOrder() {
+    // Deliberately opaque coin/bar fixture: any wrong equal-priority ordering
+    // covers the genuine glyphs. Uses the production cash and text consumers,
+    // the runtime insertion policy, and the published overlay painter order.
+    auto bar=SyntheticTextResources::stockUap(80,52);
+    bar[24]=bar[25]=bar[26]=std::byte{0};
+    SyntheticTextResources resources{labels(),{{statsui::PlayerCashIconTag,{data::LegacyDataType::Uap,std::move(bar)}}}};
+    rules::GameState game;game.numberOfPlayers=6;
+    constexpr std::array<int,6> funds{1252,755,1052,1580,784,1020};
+    statsui::State state;state.playerCount=6;
+    for(unsigned player=0;player<6;++player){game.players[player].name=L"Player "+std::to_wstring(player+1);game.players[player].cash=funds[player];state.playerOrder[player]=static_cast<rules::PlayerNumber>(player);}
+    statsui::PlayerPlaybackInputs inputs;statsui::CalculatorUIState calc;statsui::FutureImmunityState future;statsui::AccountState accounts;
+    fonts::Runtime font;loadRealTestArial(font);engine::SequencePlayback sequence(resources.service.snapshot());
+    statsui::PlayerCashPlayback coins;statsui::TextPlayback text;
+    const auto sync=[&](display::Screen2D view,int tick) {
+        require(coins.sync(state,game,inputs,view,sequence).has_value(),"Cash icon consumer publishes first as Engine does");
+        require(text.sync(state,game,inputs,calc,future,accounts,0,13,view,&font,sequence).has_value(),"Player names/cash consumer publishes after coins");
+        require(sequence.update(tick).has_value(),"Production overlay drains both consumer roots");
+    };
+    const auto check=[&] {
+        const auto planned=statsui::planStatsTextSurfaces(state,game,inputs,calc,future,accounts,0,13,display::Screen2D::Portfolio,*resources.service.snapshot());
+        require(planned && planned->size()==6,"Actual sorted player cash text plans remain complete");
+        data::LegacyBitmapRGBA8 composed{800,600,std::vector<std::uint8_t>(800*600*4,0)};
+        unsigned coinCount=0,textCount=0;
+        for(const auto id:sequence.world2D().order()) {
+            const auto* object=sequence.world2D().find(id);
+            const bool coin=object->contentsDataId==data::packDataId(data::LegacyGroupId::Main,statsui::PlayerCashIconTag);
+            if(coin){require(textCount==0 && object->priority==statsui::PlayerCashPriority,"All coin backgrounds paint before any name/cash glyph surface");++coinCount;}
+            else{require(object->priority==statsui::PlayerCashPriority+1,"Only player foreground is one layer above cash icon");++textCount;}
+            require(data::blitStraightRGBA8(composed,object->asset->image,int(object->worldTransform.values[6]),
+                int(object->worldTransform.values[7]),data::BitmapBlitMode::SourceOver).has_value(),"Compose actual native overlay painter order");
+        }
+        require(coinCount==6 && textCount==6,"Both authentic consumers remain independently owned");
+        for(const auto& panel:*planned) {
+            require(panel.text[1].text==std::to_string(game.players[panel.key-100].cash),"Money text follows the current player's real funds after sorting/refresh");
+            const auto raster=statsui::renderStatsTextSurface(panel,font);require(raster.has_value(),"Expected current amount glyph raster");
+            unsigned ink=0;
+            for(unsigned y=62;y<82;++y)for(unsigned x=15;x<80;++x) {
+                const auto from=(std::size_t(y)*raster->width+x)*4;
+                if(!raster->pixels[from+3])continue;
+                const auto to=(std::size_t(panel.y+y)*800+panel.x+x)*4;
+                require(composed.pixels[to]==raster->pixels[from] && composed.pixels[to+1]==raster->pixels[from+1] &&
+                    composed.pixels[to+2]==raster->pixels[from+2] && composed.pixels[to+3]==255,
+                    "Every actual money glyph remains visible above the opaque cash bar");++ink;
+            }
+            require(ink>0,"Each sorted player publishes nonempty cash glyphs");
+        }
+    };
+    sync(display::Screen2D::Portfolio,0);check();
+    game.players[0].cash=1580;sync(display::Screen2D::Portfolio,60);check();
+    std::swap(state.playerOrder[0],state.playerOrder[1]);sync(display::Screen2D::Portfolio,120);check();
+    sync(display::Screen2D::Main,180);require(sequence.world2D().size()==0,"Leaving Portfolio retires coins and foreground");
+    sync(display::Screen2D::Portfolio,240);check();
 }
 void testCalculatorInteractionAndDeedFloater() {
     Fixture f; f.state.playerCount=0;
@@ -181,4 +236,4 @@ void testModernModeRefreshPreservesSequence() {
     require(native.clock==clock && native.worldTransform.values==before.worldTransform.values && !native.asset->presentationRect && !native.asset->preferLinearFiltering && native.asset->image.pixels==before.asset->image.pixels,"native mode restores exact pixels placement and flags");
 }
 }
-int main(){try{testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{testPlayerCashPainterOrder();std::cout<<"[PASS] player cash painter order survives refresh/sort/reentry\n";testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

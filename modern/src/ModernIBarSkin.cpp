@@ -1215,6 +1215,66 @@ namespace monopoly::ibar
                     std::max({r,g,b})-std::min({r,g,b})<=8) continue;
                 for(unsigned c=0;c<3;++c) result->image.pixels[i+c]=std::uint8_t((r*cream[c]+127)/255);
             }
+            // Single measured Loan150 trial: keep the entire licensed image,
+            // including baked title/caption/art, and repeat its authentic body
+            // legibly below. No guessed illustration crop or restored glyphs.
+            if(root==0x5002B && draw->second.body=="Your building and loan matures. Collect $150.")
+            {
+                if(!original->source || !drawText_)return original;
+                const auto header=data::inspectLegacyUap(*original->source);
+                if(!header || header->width!=400 || header->height!=240 || header->originX!=0 ||
+                    header->originY!=0 || header->flags!=5)return original;
+                for(std::size_t at=3;at<pixels.size();at+=4)if(pixels[at]!=255)return original;
+                std::vector<data::LegacyBitmapRGBA8> lines;
+                std::istringstream words(draw->second.body);std::string word,line;
+                std::optional<data::LegacyBitmapRGBA8> accepted;
+                while(words>>word)
+                {
+                    const auto candidate=line.empty()?word:line+" "+word;
+                    auto measured=drawText_(candidate,48,false,false);
+                    if(!measured || !valid(*measured))return original;
+                    if(measured->width>368*3)
+                    {
+                        if(line.empty() || lines.size()>=1)return original;
+                        lines.push_back(std::move(*accepted));line=word;
+                        auto single=drawText_(word,48,false,false);
+                        if(!single || !valid(*single) || single->width>368*3)return original;
+                        accepted=std::move(*single);
+                    }
+                    else {line=candidate;accepted=std::move(*measured);}
+                }
+                if(!accepted)return original;
+                lines.push_back(std::move(*accepted));
+                unsigned textHeight=0;for(const auto& glyphs:lines)textHeight+=glyphs.height;
+                if(lines.size()>2 || textHeight>52*3)return original;
+                auto artwork=std::move(result->image);
+                auto& composed=result->image;
+                composed={1200,720,std::vector<std::uint8_t>(1200*720*4,255)};
+                for(std::size_t at=0;at<composed.pixels.size();at+=4)
+                    for(unsigned c=0;c<3;++c)composed.pixels[at+c]=std::uint8_t(cream[c]);
+                // Full400x240 input maps to logical300x180 at(50,0), aspect5:3.
+                for(unsigned y=0;y<540;++y)for(unsigned x=0;x<900;++x)
+                {
+                    const auto src=(std::size_t(y*240/540)*400+x*400/900)*4;
+                    const auto dst=(std::size_t(y)*1200+x+150)*4;
+                    std::copy_n(artwork.pixels.data()+src,4,composed.pixels.data()+dst);
+                }
+                unsigned y=184*3+(52*3-textHeight)/2;
+                for(const auto& glyphs:lines)
+                {
+                    const unsigned x=(1200-glyphs.width)/2;
+                    for(unsigned py=0;py<glyphs.height;++py)for(unsigned px=0;px<glyphs.width;++px)
+                    {
+                        const auto src=(std::size_t(py)*glyphs.width+px)*4;
+                        const auto dst=(std::size_t(y+py)*1200+x+px)*4;
+                        const unsigned alpha=glyphs.pixels[src+3];
+                        for(unsigned c=0;c<3;++c)composed.pixels[dst+c]=std::uint8_t(
+                            (25*alpha+composed.pixels[dst+c]*(255-alpha)+127)/255);
+                    }
+                    y+=glyphs.height;
+                }
+                result->preferLinearFiltering=true;
+            }
             if(presentation)
             {
                 result->presentationRect=presentation->localRect;

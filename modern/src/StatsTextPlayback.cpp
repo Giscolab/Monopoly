@@ -5,6 +5,7 @@
 #include "MoneyFormat.hpp"
 #include "RuntimeBitmapSurface.hpp"
 #include "StatsDeedPlayback.hpp"
+#include "StatsPlayerCashPlayback.hpp"
 #include "SequenceTransforms.hpp"
 
 #include <algorithm>
@@ -115,8 +116,11 @@ namespace monopoly::statsui
                 if (player >= game.numberOfPlayers || player >= rules::MaxPlayers)
                     return std::unexpected("UDStats text player is invalid");
                 if (bssm(inputs) && inputs.iBarPlayer != player) continue;
+                // Retail prints money after compositing the coin into OthersID.
+                // Our separate foreground must paint above the cash bitmap;
+                // equal priorities insert newly started text before older coins.
                 TextSurface surface{100 + player, static_cast<int>(column) * width + gap,
-                    224, width, count > 4 ? 226 : 222, 501};
+                    224, width, count > 4 ? 226 : 222, PlayerCashPriority + 1};
                 gap += 3;
                 add(surface, playerName(game, player), 0, 5, width, 30, 14, 500,
                     0xFFFFFF, TextAlignment::Center, false, true);

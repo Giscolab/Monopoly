@@ -828,3 +828,45 @@ p5/minimum59,71.1864% at least60 and88.1356% at least59.5. Evidence is
 It includes actual AI turns without concurrent build or other GPU tests; it
 does not prove individual frame times or a continuous60 FPS minimum.
 The completed pass48 ten-minute sample predates this rectangle change.
+
+Actual pass49 F11 fullscreen is captured in
+`build/polish-continuation-20261001/pass49-f11-fullscreen-real.png`, followed by
+a return to the1080p window. This check occurred outside the warm FPS sample.
+
+## Authentic loan-card layout trial (pass50 fixture)
+
+The accepted isolated800x600 actual CardPlayback GPU comparison is
+`build/loan-card-polish-20261002/loan150-before.png` and `loan150-after.png`,
+with `native-fallback.png` for the fallback. The before already has cream paper
+but occludes the native caption. The after centers the full authentic300x180
+image above a16-pixel footer containing the actual two-line building-loan/Collect
+$150 text. Its logical footprint remains400x240.
+
+This single trial strictly qualifies root5002B/leaf50985, opaque actual UAP flags5,
+origin0 and canonical ModernDrawCardText[3]. Invalid font, fit, source, alpha or
+context returns the original native presentation. Clocks, provenance and logical
+corners remain preserved; no other cards or Out/FaceIn states are modified.
+Pass48 reflow/actual hover and pass49 all328-frame regressions also pass.
+
+Logs are `build/pass50-focused-build.log`, `pass50-cpu-rebuild.log`,
+`pass50-loan-cpu.log`, `pass50-loan-gpu.log`, `pass50-ibar-regular.log`,
+`pass50-pass48-cpu.log`, `pass50-pass49-cpu.log`, `pass50-pass48-gpu.log` and
+`pass50-world2d-regular.log`. Release passes50–51 now build successfully in
+`build/passes50-51-release-build.log`; actual process34060 runs1920x1080. The
+loan150 caption has not yet been encountered in the full application. Its accepted
+GPU/real-font fixture proof remains separate from pending live-caption proof.
+A replay of private game4/s uses genuine rolls, with native B&O rent100 observed;
+no forced state is used to encounter the loan card.
+
+## Portfolio amount layering (pass51)
+
+The actual before/after comparison uses the same private game5/t and balances
+1252/755/1052/1580/784/1020. Inspected captures in
+`build/polish-continuation-20261001/` are
+`pass51-portfolio-amounts-real-before.png` and `pass51-portfolio-amounts-real-after.png`;
+`pass51-portfolio-cash-sorted-real.png` and `pass51-portfolio-reentry-real.png`
+confirm values remain intact through sorting and reentry. Players text now uses
+priority502 above coins501 and below deeds510. Coordinates, content and other
+Stats modes remain unchanged. Eight focused CPU tests pass, with
+`pass51-stats-text-build.log` and `pass51-stats-text-cpu.log` in that directory.
+This is an explicit presentation-layer correction, not a balance or rule change.
