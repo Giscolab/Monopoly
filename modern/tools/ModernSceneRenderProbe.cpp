@@ -432,6 +432,7 @@ int main(int argc, char** argv)
         bool houseCloseup = false;
         bool buildingCameraProof = false;
         unsigned polishLevel = 0;
+        std::optional<unsigned> textureAnisotropy;
         unsigned cameraYaw = 28, cameraElevation = 55, uiSafePercent = 0;
         std::optional<std::filesystem::path> tabletopSamples;
         unsigned animationTick = 0;
@@ -444,10 +445,16 @@ int main(int argc, char** argv)
             { includeEnvironment = true; includeCity = true; }
             else if (std::string{argv[i]} == "--polish")
             { if (++i >= argc) throw std::runtime_error("--polish requires 0..6"); polishLevel = number(argv[i], 6); }
+            else if (std::string{argv[i]} == "--texture-anisotropy")
+            {
+                if(++i>=argc || textureAnisotropy)throw std::runtime_error("--texture-anisotropy requires one0 or8");
+                textureAnisotropy=number(argv[i],8);
+                require(*textureAnisotropy==0 || *textureAnisotropy==8,"Only anisotropy0 or8 qualification presets");
+            }
             else if (std::string{argv[i]} == "--camera-yaw")
             { if (++i >= argc) throw std::runtime_error("--camera-yaw requires 0..359"); cameraYaw = number(argv[i],359); }
             else if (std::string{argv[i]} == "--camera-elevation")
-            { if (++i >= argc) throw std::runtime_error("--camera-elevation requires 35..75"); cameraElevation = number(argv[i],75); if(cameraElevation < 35) throw std::runtime_error("elevation below 35"); }
+            { if (++i >= argc) throw std::runtime_error("--camera-elevation requires 25..75"); cameraElevation = number(argv[i],75); if(cameraElevation < 25) throw std::runtime_error("elevation below 25"); }
             else if (std::string{argv[i]} == "--ui-safe-percent")
             { if (++i >= argc) throw std::runtime_error("--ui-safe-percent requires 0..40"); uiSafePercent = number(argv[i],40); }
             else if (std::string{argv[i]} == "--tabletop-samples")
@@ -473,6 +480,13 @@ int main(int argc, char** argv)
             }
             else if (!boardArgument) { relativeBoard = argv[i]; boardArgument = true; }
             else throw std::runtime_error("Unexpected argument");
+        }
+        if(textureAnisotropy)
+        {
+            SDL_SetLogPriority(SDL_LOG_CATEGORY_RENDER,SDL_LOG_PRIORITY_INFO);
+            require(SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"MONOPOLY_MODERN_TEXTURE_ANISOTROPY",
+                *textureAnisotropy ? "8" : "0",true),"Process-local texture anisotropy qualification override");
+            std::cout<<"texture_anisotropy_requested\t"<<*textureAnisotropy<<'\n';
         }
         if(buildingCameraProof)
         {
@@ -651,6 +665,9 @@ int main(int argc, char** argv)
             << "\tcamera_location\t" << camera.location[0] << ',' << camera.location[1]
             << ',' << camera.location[2] << "\thorizontal_fov_radians\t"
             << camera.fieldOfView << '\n';
+        std::cout<<"camera_forward\t"<<camera.forward[0]<<','<<camera.forward[1]<<','<<camera.forward[2]
+            <<"\tcamera_up\t"<<camera.up[0]<<','<<camera.up[1]<<','<<camera.up[2]
+            <<"\tnear_far\t"<<camera.nearPlane<<','<<camera.farPlane<<'\n';
         const auto projected = engine::world3DMeshScreenRect(bounds, sequence::identity3D(), *slot.view());
         if (projected)
             std::cout << "projected_scene_rect\t" << projected->left << ',' << projected->top

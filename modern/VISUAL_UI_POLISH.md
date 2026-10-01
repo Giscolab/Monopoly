@@ -593,3 +593,36 @@ qualification directory is `trade-input-fixed-real.log`,
 `pass38-trade-chooser-fixed-real.png`, `pass38-trade-partner-selected-real.png`,
 `pass38-trade-cash-live-open.png`, `pass38-trade-cash-live-50.png` and
 `pass38-trade-cash-live-okay10.png`.
+
+## Live game sample after Trade input correction (pass38)
+
+An isolated ten-minute six-player session in Release process17168 produced1183
+window-title FPS samples: median60, p5 59, minimum57.9,79.7971% at least60 and
+90.6171% at least59.5. Real inspected events included GO paying200, percentage
+Income Tax paying148(664→516), rent6(516→510), AI purchases, rolls and movement.
+The owned game4 save for s was updated at23:00:32; original blank p/r saves and
+game5 for t were preserved. Evidence is
+`build/polish-continuation-20261001/pass38-trade-camera-game-fps.csv` and
+`pass38-trade-camera-game-fps-summary.txt`.
+
+This window covers the pass38 chooser, camera and name presentation. Later HUD,
+auction, cash readout, thumbnail and anisotropy changes were not in this sample.
+It does not establish individual frame times, a continuous60 FPS floor or a
+matched performance improvement for those later changes.
+
+## Modern raster texture anisotropy (pass40)
+
+The accepted matched GPU comparison retains the same1920x1080 camera at yaw8,
+elevation25,20 objects,520 batches,2251932 triangles and4x MSAA. All15 created
+samplers use8x anisotropy in the enabled view, with no1x fallback;57846 pixels
+differ from the disabled view. Both actual captures were inspected: raster GO
+salary, Chest instructions and mascot are visibly sharper, while vector names
+remain unchanged. Proof is in
+`build/anisotropy-proof-20261001/0x/modern-scene-probe.png`,
+`8x/modern-scene-probe.png` and `comparison-manifest.json`.
+
+MeshGPUResources defaults to8x for linear-filtered, mipmapped modern textures.
+`MONOPOLY_MODERN_TEXTURE_ANISOTROPY=0` opts out and retains the authored fallback
+sampler behavior. Actual Release process3264 was built and launched at1080p
+after this default changed. No new five-minute live FPS sample has been captured;
+the visual comparison does not establish a game performance gain.

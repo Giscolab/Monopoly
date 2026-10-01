@@ -230,7 +230,25 @@ namespace monopoly::engine
             samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
             samplerInfo.min_lod = 0.0F;
             samplerInfo.max_lod = static_cast<float>(result.mipLevels - 1U);
+            // Modern linear mipmapped maps use8x anisotropy; explicit0 opts out.
+            // Authored nearest/no-mip and retail filtering remain unchanged.
+            const auto* anisotropy = SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "MONOPOLY_MODERN_TEXTURE_ANISOTROPY");
+            const bool linearMipmapped = result.mipLevels > 1U &&
+                samplerInfo.min_filter == SDL_GPU_FILTER_LINEAR && samplerInfo.mag_filter == SDL_GPU_FILTER_LINEAR;
+            samplerInfo.enable_anisotropy = linearMipmapped && (!anisotropy || std::strcmp(anisotropy, "8") == 0);
+            samplerInfo.max_anisotropy = samplerInfo.enable_anisotropy ? 8.0F : 1.0F;
             result.sampler = SDL_CreateGPUSampler(device, &samplerInfo);
+            if (!result.sampler && samplerInfo.enable_anisotropy)
+            {
+                // An optional presentation filter must not reject valid geometry.
+                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,"Optional modern8x anisotropy unavailable; retrying authored sampler: %s",SDL_GetError());
+                samplerInfo.enable_anisotropy = false; samplerInfo.max_anisotropy = 1.0F;
+                result.sampler = SDL_CreateGPUSampler(device, &samplerInfo);
+                if(result.sampler) SDL_ClearError();
+            }
+            if(result.sampler && anisotropy)
+                SDL_LogInfo(SDL_LOG_CATEGORY_RENDER,"Modern sampler qualification: %ux%u mips=%u anisotropy=%u",
+                    image.width,image.height,result.mipLevels,samplerInfo.enable_anisotropy ? 8U : 1U);
             if (!result.sampler)
             {
                 cleanup();
