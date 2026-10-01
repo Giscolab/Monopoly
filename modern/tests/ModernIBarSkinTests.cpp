@@ -967,6 +967,13 @@ namespace
             "Ventnor CE3 never accepts Water Works CE4 artwork");
     }
 
+    // Independently measured union of actual dat_main phases, root Y-4 applied,
+    // clipped inside the original envelope below Roll endingY483 and above nameY530.
+    constexpr std::array<std::array<int,4>,11> CurrentPlayerWorldBoxes{{
+        {350,492,395,529},{350,501,390,527},{348,491,393,529},
+        {350,504,384,528},{347,496,389,526},{345,484,386,528},
+        {347,495,396,529},{351,492,393,529},{355,496,387,527},
+        {343,496,396,528},{354,484,397,529}}};
     auto currentPlayerPhoto()
     {
         auto photo=std::make_shared<data::LegacyBitmapRGBA8>();
@@ -991,7 +998,8 @@ namespace
         skin.configureTokenImages([&](std::uint8_t token){++calls;last=token;return photo;});
         for(unsigned token=0;token<11;++token)
         {
-            const auto& f=first[token];const auto root=0x2005f+token;
+            const auto& f=first[token];const auto& box=CurrentPlayerWorldBoxes[token];
+            const auto root=0x2005f+token;
             auto source=bitmap(0x20000+f[0],f[1],f[2]);
             for(std::size_t i=0;i<source->image.pixels.size();++i)source->image.pixels[i]=std::uint8_t(i%251);
             const auto before=source->image.pixels;
@@ -999,9 +1007,26 @@ namespace
             const auto result=skin.substitute(root,source,true,matrix,258);
             require(result!=source && last==token && result->dataId==source->dataId &&
                 result->source==source->source && result->preferLinearFiltering &&
-                result->image.width==f[1]*3 && result->image.height==f[2]*3 &&
-                result->presentationRect==std::optional{std::array<float,4>{float(f[3]),float(f[4]+4),float(f[3]+f[1]),float(f[4]+4+f[2])}},
-                "eleven authentic central token owners reuse static thumbnail without changing logical geometry or identity");
+                result->image.width==unsigned(box[2]-box[0])*3 && result->image.height==unsigned(box[3]-box[1])*3 &&
+                result->presentationRect==std::optional{std::array<float,4>{float(box[0]),float(box[1]+4),float(box[2]),float(box[3]+4)}},
+                "eleven authentic central owners retain fixed thumbnail inside authored union with original identity");
+            require(box[1]>=484 && box[3]<530,
+                "fixed owner envelope stays below whole Roll/main action band endingY483 and above player nameY530");
+            // Actual settled Roll HIT: [361,455]..[463,483]. Check the
+            // whole vertical band too, not only horizontal property clearance.
+            const bool rollOverlap=box[0]<463 && box[2]>361 && box[1]<483 && box[3]>455;
+            require(!rollOverlap,"every fixed central thumbnail clears complete settled Roll HIT rectangle");
+            for(int square=0;square<42;++square)
+            {
+                const auto property=ibar::layout::propertyRect(square);
+                if(property.right<=property.left)continue;
+                require(box[2]<=property.left || box[0]>=property.right,
+                    "fixed central union stays horizontally clear of every property HIT rectangle");
+            }
+            for(unsigned y=0;y<result->image.height;++y)for(unsigned x=0;x<result->image.width;++x)
+                if(x<3 || y<3 || x+3>=result->image.width || y+3>=result->image.height)
+                    require(result->image.pixels[(std::size_t(y)*result->image.width+x)*4+3]==0,
+                        "fixed central union retains a full logical pixel of transparent edge padding");
             unsigned visible=0,transparent=0;
             for(std::size_t i=0;i<result->image.pixels.size();i+=4)
                 if(result->image.pixels[i+3])
@@ -1081,6 +1106,9 @@ namespace
             engine::SequenceWorld2DSlot native,modern;data::BitmapRuntimeCache cache;
             modern.configureModernIBarSkin(skin);
             std::optional<std::int32_t> previousRootClock;
+            std::vector<std::uint8_t> ownerPixels;
+            const auto& box=CurrentPlayerWorldBoxes[token];
+            const std::array<float,4> ownerRect{float(box[0]),float(box[1]+4),float(box[2]),float(box[3]+4)};
             for(int tick=0;tick<=240;tick+=4)
             {
                 require(runtime.update(tick).has_value(),"actual central authored loop advances");
@@ -1096,12 +1124,19 @@ namespace
                     const auto* a=native.find(node);const auto* m=modern.find(node);
                     require(m && m->asset!=a->asset && m->contentsDataId==a->contentsDataId &&
                         m->clock==a->clock && m->priority==a->priority,"every actual central leaf replaced without changing clock priority identity");
-                    for(const auto corner:std::array<std::array<int,2>,2>{{{0,0},{1,1}}})
-                        require(engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,
-                            corner[0]*int(m->asset->image.width),corner[1]*int(m->asset->image.height))==
-                            engine::SequenceWorld2DSlot::transformPoint(a->worldTransform,
-                            corner[0]*int(a->asset->image.width),corner[1]*int(a->asset->image.height)),
-                            "actual central supersampling preserves both authored logical rectangle corners");
+                    require(m->asset->presentationRect==std::optional{ownerRect} &&
+                        m->asset->image.width==unsigned(box[2]-box[0])*3 &&
+                        m->asset->image.height==unsigned(box[3]-box[1])*3,
+                        "all actual phases retain same fixed owner rectangle and raster dimensions");
+                    if(ownerPixels.empty())ownerPixels=m->asset->image.pixels;
+                    require(m->asset->image.pixels==ownerPixels,
+                        "all actual rotating phases produce byteidentical static owner RGBA without size pulsing");
+                    require(engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,0,0)==
+                            std::array<std::int32_t,2>{box[0],box[1]} &&
+                        engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,
+                            m->asset->image.width,m->asset->image.height)==
+                            std::array<std::int32_t,2>{box[2],box[3]},
+                        "all actual phases retain constant world union corners with Roll and name clearance");
                     observed.insert(a->contentsDataId);
                 }
                 context=false;require(modern.sync(*items,cache).has_value(),"live central context fallback publishes");
@@ -1120,7 +1155,7 @@ namespace
             }
         }
         require(observed.size()==328 && loops>=11,"all328 actual central bitmap phases and eleven authentic loops qualified");
-        std::cout<<"[PASS] all11 central owners /328 actual UAP phases; static thumbnail pixels only; authored loops and logical geometry retained\n";
+        std::cout<<"[PASS] all11 central owners /328 actual UAP phases; fixed static owner pixels/rectangles; authored loops/native fallback retained\n";
     }
 
     void testScoreTokenImages()

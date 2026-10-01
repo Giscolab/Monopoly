@@ -898,6 +898,29 @@ namespace monopoly::ibar
             {0x69,0x0300,39,45,356,484},
             {0x69,0x0301,39,45,356,484},
         }};
+        // Fixed static-thumbnail envelope, derived from every authentic phase.
+        // World Y already includes root StartXY(0,-4). Roll ends at483 and
+        // name starts at530: keep the rectangle within484..529 and retain
+        // one logical pixel of transparent edge padding.
+        constexpr auto CurrentPlayerWorldRects=[]
+        {
+            std::array<std::array<int,4>,11> boxes{};
+            for(auto& box:boxes) box={1600,600,0,0};
+            for(const auto& shape:CurrentPlayerShapes)
+            {
+                auto& box=boxes[shape.root-0x005F];
+                box[0]=std::min(box[0],int(shape.x));
+                box[1]=std::min(box[1],int(shape.y));
+                box[2]=std::max(box[2],int(shape.x)+shape.width);
+                box[3]=std::max(box[3],int(shape.y)+shape.height);
+            }
+            for(auto& box:boxes)
+            {
+                box[1]=std::max(box[1],484);
+                box[3]=std::min(box[3],529);
+            }
+            return boxes;
+        }();
         std::optional<unsigned> scoreToken(data::DataId root)
         {
             if (data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
@@ -1078,10 +1101,13 @@ namespace monopoly::ibar
                     [&](const auto& value) { return value.root==data::dataTag(root) &&
                         value.leaf==data::dataTag(original->dataId) && value.width==w && value.height==h; });
                 if (shape==CurrentPlayerShapes.end()) return original;
-                // The renderer applies this local authored box before the unchanged
-                // sequence transform; world translation must not be applied twice.
-                currentRect=std::array<float,4>{float(shape->x),float(shape->y+4),
-                    float(shape->x+w),float(shape->y+4+h)};
+                // Exact phase guards stay authored, but static thumbnail255 must
+                // retain one size and anchor across the old rotating UAP phases.
+                // Convert the measured world union back to local coordinates;
+                // the renderer applies unchanged root StartXY(0,-4) once.
+                const auto& box=CurrentPlayerWorldRects[*currentToken];
+                currentRect=std::array<float,4>{float(box[0]),float(box[1]+4),
+                    float(box[2]),float(box[3]+4)};
                 const std::array<float,9> expected{1,0,0,0,1,0,float(shape->x),float(shape->y),1};
                 for(unsigned i=0;i<9;++i)
                     if(!std::isfinite(rasterToWorld->values[i]) ||
@@ -1109,7 +1135,10 @@ namespace monopoly::ibar
             result->preferLinearFiltering=true;
             result->presentationRect=currentRect ? currentRect : std::optional{std::array<float,4>{0,0,float(w),float(h)}};
             auto& image=result->image;
-            image={w*3,h*3,std::vector<std::uint8_t>(std::size_t(w)*h*36,0)};
+            const unsigned canvasWidth=currentRect ? unsigned((*currentRect)[2]-(*currentRect)[0]) : w;
+            const unsigned canvasHeight=currentRect ? unsigned((*currentRect)[3]-(*currentRect)[1]) : h;
+            image={canvasWidth*3,canvasHeight*3,
+                std::vector<std::uint8_t>(std::size_t(canvasWidth)*canvasHeight*36,0)};
             const double fit=std::min(double(image.width-6)/(right-left),double(image.height-6)/(bottom-top));
             const unsigned iw=std::max(1U,unsigned((right-left)*fit)),ih=std::max(1U,unsigned((bottom-top)*fit));
             const unsigned ox=(image.width-iw)/2,oy=(image.height-ih)/2;

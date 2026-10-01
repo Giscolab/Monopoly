@@ -775,3 +775,56 @@ presentation32.3654ms. These are CPU elapsed measurements without GPU-completion
 proof. The approximately44.7 seconds since session start includes intro, menus
 and user-input delay; it is not loading time. This evidence does not demonstrate
 a clear avoidable startup bottleneck.
+
+The completed600-second pass48 sample contains1182 window-title FPS values:
+median60, p5 59.8, minimum56,80.9645% at least60 and96.2775% at least59.5.
+No concurrent build or other GPU work overlapped it. It includes card waiting
+and menus as well as three human rolls and AI rounds, not600 seconds of
+continuous movement. Evidence is `pass48-real-game-fps.csv` and persisted
+`pass48-real-game-fps-summary.json` in `build/polish-continuation-20261001/`.
+Title telemetry does not measure every frame or establish a continuous60 FPS
+minimum.
+
+Inspected actual events were Services25 paying510→535, AI-round rent income
+535→545, Chance22 loan150 paying545→695, Water Works28 rent24 paid to Hat
+695→671, then AI rent income10→681 and a roll11 to the human-owned Boardwalk39
+with681 cash. `pass48-chance-loan150-real.png` exposes unreadable baked native
+card artwork, a separate presentation issue rather than a failed rule award;
+`pass48-loan150-awarded695-real.png` and `pass48-water-rent24-real.png` retain
+transaction proof.
+
+Original slots1/p,2/blank and3/r retained their timestamps, and game4's pending
+Services card save remained unchanged. Private game5/t was updated on October2
+at00:57:06 with Boardwalk/681; its prior files were backed up as
+`game5-before-pass48.msv` and `.sgd` in the proof directory. The owned process2712
+was stopped after path verification for the next GPU qualification. No pass49
+result is included in that pass48 evidence.
+
+## Stable active-token rectangle (pass49)
+
+Debug regular tests and actual11-root/328-frame qualification pass with identical
+RGBA and fixed rectangle. Eight matched1920x1080 CurrentPlayerPlayback GPU poses
+cover RaceCar, TopHat, Horse and Moneybag against a faithful68bc35b baseline,
+using the same PNG fitting and actual clocks. All16 original before/after frames
+were inspected and accepted for stable anchor/size and Horse/Roll clearance.
+`comparison-crops2x.png` is an inspection sheet made only from original GPU-frame
+crops enlarged2x by nearest sampling; the full PNGs remain original captures.
+The manifest is `build/polish-continuation-20261001/pass49-qualification.json`.
+
+The fixed modern rectangle intentionally differs from per-phase authored corners.
+Root node, leaf, source, authored matrix, clock and native fallback remain
+preserved. The earlier static-thumbnail255 replacement of icon spin remains the
+pass47 choice. Release builds pass in `build/pass49-release-build.log`.
+
+Actual process5552 loaded private game5/t at Boardwalk with681 cash. Inspected
+live captures are `pass49-moneybag-stable-real-after.png`,
+`pass49-race-stable-real-after-a.png` after Done/AI progression, and
+`pass49-hat-stable-real-after.png`, in the continuation proof directory. The
+actual RaceCar before is `pass49-central-race-small-real-before.png`; differing
+live backgrounds make the matched GPU poses the precise before/after comparison.
+The completed60-second warm sample has118 title-telemetry samples, median60,
+p5/minimum59,71.1864% at least60 and88.1356% at least59.5. Evidence is
+`pass49-warm-fps.csv` and `pass49-warm-fps-summary.txt` in that directory.
+It includes actual AI turns without concurrent build or other GPU tests; it
+does not prove individual frame times or a continuous60 FPS minimum.
+The completed pass48 ten-minute sample predates this rectangle change.

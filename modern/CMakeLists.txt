@@ -3888,7 +3888,8 @@ endif()
 if(BUILD_TESTING)
     add_executable(MonopolyWorld2DRendererTests tests/World2DRendererTests.cpp src/DiceDisplay.cpp src/FontRuntime.cpp src/TradeCashDialogPlayback.cpp
         src/BoardBackdropPlayback.cpp src/AuctionPennyBagsPlayback.cpp src/IBarCardPlayback.cpp
-        src/TradePartnerSelectionPlayback.cpp src/TradePropertyPlayback.cpp src/TradeUI.cpp)
+        src/TradePartnerSelectionPlayback.cpp src/TradePropertyPlayback.cpp src/TradeUI.cpp
+        src/IBarCurrentPlayerPlayback.cpp)
     target_include_directories(MonopolyWorld2DRendererTests PRIVATE src tests)
     target_link_libraries(MonopolyWorld2DRendererTests PRIVATE MonopolyGPU3DCore SDL3_ttf::SDL3_ttf)
     target_compile_definitions(MonopolyWorld2DRendererTests PRIVATE

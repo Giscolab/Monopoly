@@ -4,6 +4,8 @@
 #include "ModernIBarSkin.hpp"
 #include "ModernMenuSkin.hpp"
 #include "IBarCameraButtonPlayback.hpp"
+#include "IBarCurrentPlayerPlayback.hpp"
+#include "ModernTokenPreview.hpp"
 #include "MousePointerPlayback.hpp"
 #include "FontRuntime.hpp"
 #include "TradeCashDialogPlayback.hpp"
@@ -13,6 +15,8 @@
 #include "TradePartnerSelectionPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
 #include <fstream>
+#include <algorithm>
+#include <map>
 #include <ranges>
 #include <set>
 #include <cstdlib>
@@ -947,6 +951,142 @@ namespace
         }
         std::cout<<"Auction GPU qualification output="<<output.string()<<" (renderer fixture, not live gameplay)\n";
     }
+
+    // Frozen68bc35b fixture: same thumbnail255 crop and3x fit as the old
+    // central skin, fitted to this actual UAP phase's authored local box.
+    // Deliberately test-only: no production renderer mode or runtime optout.
+    auto oldCentralLeafFit(const data::BitmapRuntimeAsset& native,
+        const data::Sequence2DBoundingBoxAttribute& box,const data::LegacyBitmapRGBA8& photo)
+    {
+        unsigned left=photo.width,top=photo.height,right=0,bottom=0;
+        for(unsigned y=0;y<photo.height;++y)for(unsigned x=0;x<photo.width;++x)
+            if(photo.pixels[(std::size_t(y)*photo.width+x)*4+3])
+            {left=std::min(left,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);}
+        require(right>left && bottom>top,"same real thumbnail contains a valid alpha crop");
+        auto result=std::make_shared<data::BitmapRuntimeAsset>();
+        result->dataId=native.dataId;result->source=native.source;
+        result->sourceType=data::LegacyDataType::Native;result->preferLinearFiltering=true;
+        result->presentationRect=std::array<float,4>{float(box.left),float(box.top),float(box.right),float(box.bottom)};
+        auto& image=result->image;
+        image={native.image.width*3,native.image.height*3,
+            std::vector<std::uint8_t>(std::size_t(native.image.width)*native.image.height*36,0)};
+        const double fit=std::min(double(image.width-6)/(right-left),double(image.height-6)/(bottom-top));
+        const unsigned iw=std::max(1U,unsigned((right-left)*fit)),ih=std::max(1U,unsigned((bottom-top)*fit));
+        const unsigned ox=(image.width-iw)/2,oy=(image.height-ih)/2;
+        for(unsigned y=0;y<ih;++y)for(unsigned x=0;x<iw;++x)
+        {
+            const auto src=(std::size_t(top+y*(bottom-top)/ih)*photo.width+left+x*(right-left)/iw)*4;
+            const auto dst=(std::size_t(y+oy)*image.width+x+ox)*4;
+            std::copy_n(photo.pixels.data()+src,4,image.pixels.data()+dst);
+        }
+        return result;
+    }
+    void captureCurrentPlayerFixedOwners(SDL_GPUDevice* device,engine::World2DRenderer& renderer,
+        const std::filesystem::path& retailRoot,const std::filesystem::path& previewRoot,
+        const std::filesystem::path& output)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{retailRoot});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual current-player DAT opens for fixed-owner GPU proof");
+        menu::ModernTokenPreview previews(previewRoot);
+        std::filesystem::create_directories(output);
+        std::ofstream manifest(output/"current-token-gpu.tsv");
+        manifest<<"token\troot\tpose\ttick\tleaf\tnativeWidth\tnativeHeight\toldVisibleBox\tfixedVisibleBox\n";
+        constexpr unsigned width=1920,height=1080;
+        const auto visibleBox=[](const std::vector<std::uint8_t>& pixels)
+        {
+            std::array<int,4> box{int(width),int(height),0,0};
+            for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x)
+            {
+                const auto i=(std::size_t(y)*width+x)*4;
+                if(pixels[i] || pixels[i+1] || pixels[i+2])
+                {box[0]=std::min(box[0],int(x));box[1]=std::min(box[1],int(y));
+                    box[2]=std::max(box[2],int(x)+1);box[3]=std::max(box[3],int(y)+1);}
+            }
+            return box;
+        };
+        struct Pose {int tick{};data::DataId leaf{};unsigned width{},height{};};
+        for(const auto token:std::array<std::uint8_t,4>{1,3,5,10})
+        {
+            const auto photo=previews.image(token,255);
+            require(photo && photo->width==768 && photo->height==640,"actual qualified thumbnail255 reused for both old and fixed GPU fixtures");
+            rules::GameState game;game.numberOfPlayers=1;game.currentPlayer=0;game.players[0].token=token;
+            engine::SequencePlayback scan(resources.snapshot());ibar::CurrentPlayerPlayback scanConsumer;
+            require(scanConsumer.sync(game,true,scan).has_value(),"production current-player consumer queues exact root/priority/MoveXY/loop");
+            const auto owner=scanConsumer.currentToken();
+            std::map<data::DataId,Pose> phases;
+            for(int tick=0;tick<=120;++tick)
+            {
+                require(scan.update(tick).has_value(),"actual current-player consumer advances native authored phase clocks");
+                const auto leaves=sequence::collectSequenceBitmapRenderData(scan.runtime(),scan.resources());
+                require(leaves && leaves->size()==1 && leaves->front().rootSequenceDataId==owner && leaves->front().bounds,
+                    "actual central sequence supplies one qualified authored bitmap and local box");
+                const auto& leaf=leaves->front();
+                phases.try_emplace(leaf.contentsDataId,Pose{tick,leaf.contentsDataId,leaf.metadata.width,leaf.metadata.height});
+            }
+            require(phases.size()==(token==5 || token==10?29U:30U),"actual central29/30 phase counts retained without mapping to menu28-frame spin");
+            const auto area=[](const auto& pair){return pair.second.width*pair.second.height;};
+            const auto narrow=std::ranges::min_element(phases,[&](const auto& a,const auto& b){return area(a)<area(b);})->second;
+            const auto wide=std::ranges::max_element(phases,[&](const auto& a,const auto& b){return area(a)<area(b);})->second;
+            std::vector<std::uint8_t> fixedFirst,oldFirst;std::array<int,4> fixedBox{};
+            unsigned poseIndex=0;
+            for(const auto& pose:std::array{narrow,wide})
+            {
+                engine::SequencePlayback playback(resources.snapshot());ibar::CurrentPlayerPlayback consumer;
+                require(consumer.sync(game,true,playback).has_value(),"same production current-player root queues for selected real phase");
+                for(int tick=0;tick<=pose.tick;++tick)
+                    require(playback.update(tick).has_value(),"selected actual narrow/wide phase reached without skipped clocks");
+                auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+                require(leaves && leaves->size()==1 && leaves->front().contentsDataId==pose.leaf && leaves->front().bounds,
+                    "selected phase retains its actual retail leaf provenance");
+                const auto& leaf=leaves->front();
+                const auto original=*playback.world2D().find(leaf.node);
+                leaves->front().runtimeAsset=original.asset;
+                const auto nativePixels=capture(device,renderer,playback.world2D(),width,height);
+                auto oldItems=*leaves;oldItems.front().runtimeAsset=oldCentralLeafFit(*original.asset,*leaf.bounds,*photo);
+                engine::SequenceWorld2DSlot oldSlot;data::BitmapRuntimeCache cache;
+                require(oldSlot.sync(oldItems,cache).has_value(),"test-only frozen leaf-fit publishes with same actual node clock and matrix");
+                const auto oldPixels=capture(device,renderer,oldSlot,width,height);
+                bool qualified=true;
+                auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                    ibar::ModernIBarSkin::TextRasterizer{});
+                skin->configurePresentationContext([&]{return qualified;});
+                skin->configureTokenImages([&](std::uint8_t selected){require(selected==token,"exact central root uses same token thumbnail in fixed GPU path");return photo;});
+                playback.world2D().configureModernIBarSkin(skin);
+                require(playback.world2D().sync(*leaves,cache).has_value(),"same actual selected phase publishes fixed union skin");
+                const auto* fixed=playback.world2D().find(leaf.node);
+                require(fixed && fixed->asset!=original.asset && fixed->clock==original.clock &&
+                    fixed->priority==original.priority && fixed->contentsDataId==original.contentsDataId &&
+                    playback.world2D().order()==oldSlot.order(),"fixed GPU derivative preserves actual node ordering identity priority and clock");
+                const auto pixels=capture(device,renderer,playback.world2D(),width,height);
+                const auto oldBox=visibleBox(oldPixels),box=visibleBox(pixels);
+                require(box[2]>box[0] && box[3]>box[1] && box[1]>int(483*1.8) && box[3]<int(530*1.8),
+                    "actual1080p fixed owner pixels clear entire Roll action band and current-player name baseline");
+                if(poseIndex==0){fixedFirst=pixels;oldFirst=oldPixels;fixedBox=box;}
+                else
+                {
+                    require(pixels==fixedFirst && box==fixedBox,"actual narrow/wide phases have byteidentical fixed-owner GPU framebuffer and anchor");
+                    if(token==1 || token==3)require(oldPixels!=oldFirst,
+                        "same preview in frozen68bc35b variable leaf-fit produces actual RaceCar/TopHat GPU pulsing");
+                }
+                const std::string name=std::to_string(token)+(poseIndex==0?"-narrow":"-wide");
+                writeBmp(output/(name+"-before-leaf-fit.bmp"),oldPixels,width,height);
+                writeBmp(output/(name+"-after-fixed-owner.bmp"),pixels,width,height);
+                qualified=false;require(playback.world2D().sync(*leaves,cache).has_value(),"same-clock live eligibility loss restores native central leaf");
+                const auto* fallback=playback.world2D().find(leaf.node);
+                require(fallback && fallback->asset==original.asset && fallback->clock==original.clock &&
+                    fallback->priority==original.priority && fallback->worldTransform.values==original.worldTransform.values &&
+                    capture(device,renderer,playback.world2D(),width,height)==nativePixels,
+                    "real GPU context fallback restores complete native asset matrix and exact framebuffer without restart");
+                manifest<<unsigned(token)<<'\t'<<owner<<'\t'<<(poseIndex==0?"narrow":"wide")<<'\t'<<pose.tick<<'\t'
+                    <<pose.leaf<<'\t'<<pose.width<<'\t'<<pose.height<<'\t';
+                for(const auto v:oldBox)manifest<<v<<',';manifest<<'\t';
+                for(const auto v:box)manifest<<v<<',';manifest<<'\n';++poseIndex;
+            }
+        }
+        require(bool(manifest),"eight actual central old/fixed1080p pose records written");
+        std::cout<<"[PASS] actual RaceCar/TopHat narrow-wide fixed framebuffer, Horse Roll clearance, Moneybag regression and exact native fallback\n";
+    }
+
     void captureRetailNativeActions(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1576,6 +1716,12 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==5 && std::string_view(argv[1])=="--current-token-qualify")
+        {
+            captureCurrentPlayerFixedOwners(device,*renderer,std::filesystem::path(argv[2]),
+                std::filesystem::path(argv[3]),std::filesystem::path(argv[4]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==3 && std::string_view(argv[1])=="--native-action-qualify")
         {
             captureRetailNativeActions(device,*renderer,std::filesystem::path(argv[2]));
