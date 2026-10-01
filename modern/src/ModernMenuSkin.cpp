@@ -259,7 +259,8 @@ namespace monopoly::menu
             return true;
         }
         bool caption(data::LegacyBitmapRGBA8& target, const data::LegacyBitmapRGBA8& text,
-            bool heading, bool upperPanel = false, unsigned panelHeight = 0)
+            bool heading, bool upperPanel = false, unsigned panelHeight = 0, unsigned panelTop = 0,
+            unsigned verticalPadding = 24)
         {
             if (!text.width || !text.height || text.width > 4096 || text.height > 512 ||
                 text.pixels.size() != std::size_t(text.width) * text.height * 4 ||
@@ -267,11 +268,11 @@ namespace monopoly::menu
             const unsigned availableHeight = panelHeight ? panelHeight : target.height;
             const float scale = std::min({heading ? 2.0F : 1.0F,
                 float(target.width - 48) / text.width,
-                float(heading ? std::max(1U, availableHeight / 7) : availableHeight - 24) / text.height});
+                float(heading ? std::max(1U, availableHeight / 7) : availableHeight - verticalPadding) / text.height});
             const auto w = std::max(1U, unsigned(text.width * scale));
             const auto h = std::max(1U, unsigned(text.height * scale));
             const auto ox = (target.width - w) / 2;
-            const auto oy = heading ? availableHeight / 8 : upperPanel ? availableHeight / 4 : (availableHeight - h) / 2;
+            const auto oy = panelTop + (heading ? availableHeight / 8 : upperPanel ? availableHeight / 4 : (availableHeight - h) / 2);
             for (unsigned y = 0; y < h; ++y)
                 for (unsigned x = 0; x < w; ++x)
                 {
@@ -568,6 +569,12 @@ namespace monopoly::menu
                 const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
                     selected ? std::array<unsigned, 3>{42, 85, 82} : std::array<unsigned, 3>{22, 60, 61};
                 constexpr std::array<unsigned, 3> brass{188, 157, 94};
+                // Actual F03/F04 skyline uses gray69..116; the premultiplied
+                // F05 fade decodes to67..115. The measured art is wholly grayscale
+                // inside native[x7,202)Ã—[12,80), above baked caption/arrows.
+                const int citySkyBackground = original->dataId == 0x00050F05 ? 67 : 69;
+                const int citySkyForeground = original->dataId == 0x00050F05 ? 115 : 116;
+                constexpr std::array<unsigned,3> citySkyInk{117,139,123};
                 unsigned rowGradient = 0;
                 std::size_t sourceRow = 0;
                 paintMenuRaster(image, !photo && descriptor.kind != Kind::TokenThumbnail,
@@ -590,6 +597,21 @@ namespace monopoly::menu
                         {
                             image.pixels[offset] = 245; image.pixels[offset+1] = 235;
                             image.pixels[offset+2] = 211;
+                        }
+                        if (citySelector && x >= 21 && x < 606 && y >= 36 && y < 240)
+                        {
+                            const auto native = (sourceRow+x/3)*4;
+                            if (source.pixels[native] == source.pixels[native+1] &&
+                                source.pixels[native+1] == source.pixels[native+2])
+                            {
+                                const unsigned coverage = unsigned(std::clamp(
+                                    int(source.pixels[native])-citySkyBackground,0,
+                                    citySkyForeground-citySkyBackground))*255 /
+                                    unsigned(citySkyForeground-citySkyBackground);
+                                for (unsigned c=0;c<3;++c)
+                                    image.pixels[offset+c]=std::uint8_t((citySkyInk[c]*coverage+
+                                        image.pixels[offset+c]*(255-coverage)+127)/255);
+                            }
                         }
                         // Native white city name remains at local40,114,130x13.
                         // Keep its well dark without painting either independent arrow.
@@ -668,7 +690,9 @@ namespace monopoly::menu
                         descriptor.kind == Kind::StatsBarHeading;
                     const bool painted = statsLabel || calculatorKey ? compactCaption(image, *text,
                         descriptor.kind == Kind::StatsBarHeading, calculatorKey) :
-                        caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation, optionsHeader ? 135U : citySelector ? 270U : 0U);
+                        caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation,
+                            optionsHeader ? 135U : citySelector ? 60U : 0U, citySelector ? 264U : 0U,
+                            citySelector ? 6U : 24U);
                     if (!painted) return original;
 
                 }

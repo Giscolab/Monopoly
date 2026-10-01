@@ -1236,20 +1236,7 @@ namespace monopoly::engine
                         {
                             auto* font=fontPlayback();
                             if(!font || !font->ready()) return std::unexpected("HUD font unavailable");
-                            struct Guard
-                            {
-                                fonts::Runtime& font;
-                                fonts::Settings old;
-                                ~Guard()
-                                {
-                                    (void)font.setSize(old.size);font.setWeight(old.weight);
-                                    font.setItalic(old.italic);font.setUnderline(old.underline);
-                                    font.setStrikeOut(old.strikeOut);
-                                }
-                            } guard{*font,font->settings()};
-                            if(const auto sized=font->setSize(size);!sized) return std::unexpected(sized.error().detail);
-                            font->setWeight(bold ? 700 : 400);font->setItalic(italic);font->setUnderline(false);font->setStrikeOut(false);
-                            auto rendered=font->render(text,0xFFFFFF,true);
+                            auto rendered=font->renderPresentation(text,0xFFFFFF,size,bold ? 700 : 400,italic);
                             if(!rendered) return std::unexpected(rendered.error().detail);
                             return std::move(*rendered);
                         };

@@ -74,12 +74,8 @@ namespace
                     const auto start=Clock::now(); ++calls;
                     auto result=[&]()->std::expected<data::LegacyBitmapRGBA8,std::string>
                     {
-                        struct Guard { fonts::Runtime& font; fonts::Settings old;
-                            ~Guard(){(void)font.setSize(old.size);font.setWeight(old.weight);font.setItalic(old.italic);
-                                font.setUnderline(old.underline);font.setStrikeOut(old.strikeOut);} } guard{font,font.settings()};
-                        if(const auto resized=font.setSize(size);!resized)return std::unexpected(resized.error().detail);
-                        font.setWeight(bold?700:400);font.setItalic(italic);font.setUnderline(false);font.setStrikeOut(false);
-                        auto image=font.render(text,0xFFFFFF,true);
+                        auto image=font.renderPresentation(text,0xFFFFFF,size,bold?700:400,italic,
+                            false,false,true);
                         if(!image)return std::unexpected(image.error().detail);
                         return std::move(*image);
                     }();
@@ -323,33 +319,79 @@ namespace
         require(french.substitute(0x50037,original)==original,"other language artwork retains retail fallback");
     }
 
-    void testActualChanceNativeIdle(const std::filesystem::path& root)
+    void testAllNativeIdleSources()
+    {
+        unsigned textCalls=0;
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});
+        skin.configurePresentationContext([]{return true;});
+        std::map<data::DataId,ibar::ModernIBarSkin::DrawCardDescriptor> descriptors;
+        for(unsigned index=0;index<32;++index)
+        {
+            const auto owner=index<16?0x50028+index:0x50059+index-16;
+            descriptors.emplace(owner,ibar::ModernIBarSkin::DrawCardDescriptor{"Title","Caption",400,index==1?239U:240U});
+        }
+        skin.configureDrawCardDescriptors(std::move(descriptors),
+            [&](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{++textCalls;return std::unexpected("duplicate text");});
+        for(unsigned index=0;index<32;++index)
+        {
+            const auto owner=index<16?0x50028+index:0x50059+index-16;
+            const auto leaf=index<16?0x50982+index:0x50972+index-16;
+            const unsigned height=index==1?239:240;
+            const auto original=bitmap(leaf,400,height);
+            for(std::size_t p=0;p<original->image.pixels.size();p+=4)
+            {original->image.pixels[p]=255;original->image.pixels[p+1]=128;original->image.pixels[p+2]=0;}
+            original->image.pixels[0]=original->image.pixels[1]=original->image.pixels[2]=0;
+            const auto result=skin.substitute(owner,original);
+            require(result!=original,"all32 exact root/leaf pairs recover native illustrated artwork");
+            verifyFacePixels(*original,*result);
+            auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*original);wrong->dataId=leaf+1;
+            require(skin.substitute(owner,wrong)==wrong,"every idle owner rejects a different leaf");
+            wrong=bitmap(leaf,400,height==239?240:239);
+            require(skin.substitute(owner,wrong)==wrong,"every idle owner requires its exact authored height");
+        }
+        require(textCalls==0,"all32 recovered idle cards retain original captions without font calls");
+    }
+
+    void testActualNativeIdleCards(const std::filesystem::path& root,bool chanceOnly=false)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});
         data::ResourceRuntime resources;
-        require(paths && resources.initialize(*paths).has_value(),"licensed resources open for Chance15 qualification");
+        require(paths && resources.initialize(*paths).has_value(),"licensed resources open for native idle artwork qualification");
+        std::map<data::DataId,ibar::ModernIBarSkin::DrawCardDescriptor> descriptors;
+        for(unsigned index=0;index<32;++index)
+            descriptors.emplace(index<16?0x50028+index:0x50059+index-16,
+                ibar::ModernIBarSkin::DrawCardDescriptor{"Title","Caption",400,index==1?239U:240U});
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
+        bool context=true;skin->configurePresentationContext([&]{return context;});
+        unsigned textCalls=0;
+        skin->configureDrawCardDescriptors(std::move(descriptors),
+            [&](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{++textCalls;return std::unexpected("native art must retain printed text");});
+        data::BitmapRuntimeCache cache;
+        for(unsigned index=chanceOnly?15U:0U;index<(chanceOnly?16U:32U);++index)
+        {
+        const auto owner=index<16?0x50028+index:0x50059+index-16;
+        const auto expectedLeaf=index<16?0x50982+index:0x50972+index-16;
+        const unsigned expectedHeight=index==1?239:240;
         sequence::SequenceRuntime runtime;
-        const auto program=sequence::SequenceProgram::load(resources.snapshot(),0x50037);
-        require(program && runtime.start(*program,1005).has_value(),"production Chance15 idle root starts");
+        const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+        require(program && runtime.start(*program,1005).has_value(),"production illustrated idle root starts");
         require(runtime.update(0).has_value(),"production card child bitmap reaches its authored start");
         const auto leaves=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());
-        require(leaves && leaves->size()==1 && leaves->front().contentsDataId==0x50991,
-            "actual Chance15 is the measured single illustrated source leaf");
-        data::BitmapRuntimeCache cache;const auto& leaf=leaves->front();
+        require(leaves && leaves->size()==1 && leaves->front().contentsDataId==expectedLeaf,
+            "actual idle card is the measured single illustrated source leaf");
+        const auto& leaf=leaves->front();
         const auto original=cache.resolve(leaf.contentsDataId,leaf.metadata.type,leaf.bytes);
         require(original.has_value(),"licensed illustrated bitmap decodes");
-        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});
-        skin.configurePresentationContext([]{return true;});
-        skin.configureDrawCardDescriptors({{0x50037,{"Chance","Go back 3 spaces.",400,240}}},
-            [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("native art must retain printed text");});
-        const auto result=skin.substitute(0x50037,*original);
+        require((*original)->sourceType==data::LegacyDataType::Uap && (*original)->image.width==400 &&
+            (*original)->image.height==expectedHeight,"actual source provenance and dimensions match exact card contract");
+        const auto result=skin->substitute(owner,*original);
         require(result!=*original,"actual production palette qualifies native artwork recovery");
         verifyFacePixels(**original,*result);
         engine::SequenceWorld2DSlot retail;
         require(retail.sync(*leaves,cache).has_value(),"actual unskinned card establishes authored raster placement");
         const auto* retailObject=retail.find(leaf.node);
         require(retailObject && retailObject->asset==*original,"retail baseline retains decoded illustrated bitmap");
-        engine::SequenceWorld2DSlot slot;slot.configureModernIBarSkin(std::make_shared<ibar::ModernIBarSkin>(std::move(skin)));
+        engine::SequenceWorld2DSlot slot;slot.configureModernIBarSkin(skin);
         require(slot.sync(*leaves,cache).has_value(),"native derivative reaches actual sequence slot");
         const auto* object=slot.find(leaf.node);
         require(object && object->clock==leaf.clock && object->priority==leaf.priority &&
@@ -360,7 +402,13 @@ namespace
         std::cout<<"[PASS] actual raster placement nativeXY="<<retailObject->worldTransform.values[6]<<','
             <<retailObject->worldTransform.values[7]<<" sequenceXY="<<leaf.worldTransform.values[6]<<','
             <<leaf.worldTransform.values[7]<<" explicit_bounds="<<leaf.bounds.has_value()<<'\n';
-        std::cout<<"[PASS] licensed Chance15 full ink/alpha preservation; root0x50037 leaf0x50991 400x240\n";
+        require(skin->substitute(owner,*original)==result,"production native artwork reuses immutable cached derivative");
+        context=false;require(skin->substitute(owner,*original)==*original,"actual context change restores retail artwork even after cache hit");context=true;
+        std::cout<<"[PASS] native idle card="<<index<<" root="<<owner<<" leaf="<<expectedLeaf
+            <<" extent=400x"<<expectedHeight<<" exact_ink_alpha=true\n";
+        }
+        require(textCalls==0,"actual native idle artwork never duplicates title/body text");
+        std::cout<<"[PASS] licensed native idle artwork qualification count="<<(chanceOnly?1:32)<<'\n';
     }
 
     void testMeasuredStCharlesIdleCard()
@@ -375,10 +423,14 @@ namespace
             "Advance to St. Charles Place. If you pass GO, collect $200.",400,239}}},
             [&](std::string_view text,int,bool,bool){return raster(text);});
         const auto original=bitmap(0x00050983,400,239);
+        for(std::size_t p=0;p<original->image.pixels.size();p+=4)
+        {original->image.pixels[p]=255;original->image.pixels[p+1]=128;original->image.pixels[p+2]=0;}
+        original->image.pixels[0]=original->image.pixels[1]=original->image.pixels[2]=0;
         const auto result=skin.substitute(0x00050029,original);
-        require(result!=original && result->image.width==1200 && result->image.height==717 &&
-            result->dataId==original->dataId && result->preferLinearFiltering,
+        require(result!=original && result->image.width==400 && result->image.height==239 &&
+            result->dataId==original->dataId,
             "Production St. Charles idle400x239 face retains exact authored footprint");
+        verifyFacePixels(*original,*result);
         const auto wrong=bitmap(0x00050983,400,240);
         require(skin.substitute(0x00050029,wrong)==wrong,
             "St. Charles qualification rejects the assumed400x240 footprint");
@@ -890,6 +942,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualChanceNativeIdle(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

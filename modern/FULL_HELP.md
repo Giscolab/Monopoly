@@ -76,16 +76,16 @@ parseur ni lien interne cassé. Ce fichier contient **zéro ressource bitmap** ;
 export sans image est donc attendu. Le rapport, les versions des dépendances et le
 HTML restent dans `modern/build/full-help-qualification/`, hors des sources retail.
 
-Cette vérification structurelle ne prouve pas la fidélité sémantique de chaque sujet
-ni l’ouverture en jeu et la navigation dans le navigateur. Le parcours complet doit
-être qualifié sur le bureau Windows. La conversion est asynchrone et ce chemin
+Cette vérification structurelle ne prouve pas la fidélité sémantique de chaque sujet.
+L’ouverture réelle depuis le jeu est qualifiée ci-dessous. La conversion est
+asynchrone et ce chemin
 n’ajoute aucune pause globale : le libellé retail « game will pause » ne constitue
 pas une preuve que le jeu moderne se met en pause lors de l’ouverture du navigateur.
 
 Le contrat réel `openFullHelp`/`pollFullHelp` a également réussi avec l’environnement
 Windows complet et l’exporteur isolé. Les tests de blocage, délai, annulation et
-erreurs vérifient la réactivité sans ouvrir de navigateur. La navigation visuelle
-en jeu reste une qualification distincte.
+erreurs vérifient la réactivité sans ouvrir de navigateur. La qualification visuelle
+réelle complète ces tests ci-dessous.
 
 Le rendu compilé du thème a été comparé au véritable export dans Edge à
 1920×1080, ainsi qu’à390×844 :55 rubriques,55 liens de navigation et aucun
@@ -93,3 +93,11 @@ débordement horizontal. Les94577 octets HTML d’origine restent intacts ;2147
 octets CSS/métadonnées sont ajoutés. Les captures et le rapport sont dans
 `modern/build/help-theme-pass27/`. La traduction automatique visible dans Edge
 n’est pas une traduction produite par le jeu.
+
+Le 1er octobre 2026 à **21:44:50** (heure locale), le bouton **Full Help** du jeu
+a réellement ouvert la page complète et thématisée dans le navigateur. Le nouvel
+export `AppData/Roaming/Giscolab/Monopoly/full-help/export-617983628067200-1/contents.html`
+contient **96724 octets**. La page a été inspectée ; la capture
+`modern/build/polish-continuation-20261001/pass33-full-help-real-button.png`
+conserve cette preuve du parcours bouton → export → navigateur. Cela ne remplace
+pas une relecture humaine de chacun des 55 sujets.

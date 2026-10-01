@@ -48,6 +48,62 @@ namespace
         return *resolved;
     }
 
+    void testPresentationFaces(const std::filesystem::path& path)
+    {
+        fonts::Runtime shared, reference;
+        require(!shared.renderPresentation("text",0,12,400,false),"Presentation needs an actual loaded font");
+        checked(shared.setFont(path,"Arial"),"Load presentation Arial");
+        checked(reference.setFont(path,"Arial"),"Load independent reference Arial");
+        checked(shared.setSize(17),"Shared native font size"); shared.setWeight(700);
+        shared.setItalic(true); shared.setUnderline(true); shared.setStrikeOut(true);
+        checked(shared.saveSettings(0),"Save untouched native font slot");
+        const auto settings=shared.settings(); const auto slot=*shared.savedSettings(0);
+        const auto native=take(shared.render("Native unchanged",0xFFFFFF,true),"Render native before private faces");
+        for(const auto size:{3,12,18,36,54,96})for(unsigned style=0;style<16;++style)
+        {
+            const int weight=style&1?700:400;
+            const bool italic=bool(style&2),underline=bool(style&4),strike=bool(style&8);
+            checked(reference.setSize(size),"Set reference size");reference.setWeight(weight);
+            reference.setItalic(italic);reference.setUnderline(underline);reference.setStrikeOut(strike);
+            for(const bool aa:{false,true})
+            {
+                const auto expected=take(reference.render("Boardwalk $200 Wgj",0x7F80C040,aa),"Regular styled glyph raster");
+                const auto actual=take(shared.renderPresentation("Boardwalk $200 Wgj",0x7F80C040,size,weight,
+                    italic,underline,strike,aa),"Private styled glyph raster");
+                require(actual.width==expected.width && actual.height==expected.height && actual.pixels==expected.pixels,
+                    "Private CopyFont raster exactly matches regular font for all sizes/styles/AA/COLORREF");
+            }
+            require(shared.settings()==settings && *shared.savedSettings(0)==slot && !shared.savedSettings(1),
+                "Private raster never mutates native active settings or saved/empty slots");
+            require(shared.presentationFaceCount()<=fonts::Runtime::PresentationFaceLimit,
+                "Styled faces remain within fixed32 LRU bound");
+        }
+        require(shared.presentationFaceCount()==fonts::Runtime::PresentationFaceLimit,"More than32 faces evict oldest entries");
+        const auto currentCount=shared.presentationFaceCount();
+        require(!shared.renderPresentation("bad",0,0,400,false) &&
+            !shared.renderPresentation("bad",0,513,400,false) && shared.presentationFaceCount()==currentCount,
+            "Invalid presentation sizes retain loaded font and cache");
+        require(!shared.setFont(path.parent_path()/"missing-presentation-font.ttf","Missing") && shared.ready() &&
+            shared.settings()==settings && shared.presentationFaceCount()==currentCount,
+            "Failed loaded-face replacement preserves active native face and private generation");
+        const auto nativeAfter=take(shared.render("Native unchanged",0xFFFFFF,true),"Native after eviction and failed reload");
+        require(nativeAfter.width==native.width && nativeAfter.height==native.height && nativeAfter.pixels==native.pixels,
+            "Native pixels unchanged by presentation evictions/failures");
+        checked(shared.setFont(path,"Reloaded Arial"),"Reload actual font generation");
+        require(shared.presentationFaceCount()==0 && *shared.savedSettings(0)==slot,
+            "Successful reload clears all clones before loaded font replacement without changing slots");
+        (void)take(shared.renderPresentation("after reload",0xFFFFFF,36,400,false),"Clone new generation");
+        shared.resetCharacteristics();
+        require(shared.presentationFaceCount()==0,"Reset characteristics invalidates presentation face generation");
+        for(unsigned lifetime=0;lifetime<3;++lifetime)
+        {
+            fonts::Runtime temporary; checked(temporary.setFont(path),"Short lived presentation font");
+            (void)take(temporary.renderPresentation("owned clone",0xFFFFFF,54,700,false),"Short lived owned face");
+        }
+        (void)take(shared.renderPresentation("survives peer destruction",0xFFFFFF,36,400,false),
+            "TTF reference lifetime remains valid after peer caches close");
+    }
+
     void testSettingsAndFailures(const std::filesystem::path& path)
     {
         fonts::Runtime font;
@@ -419,6 +475,8 @@ int main()
     try
     {
         const auto path = realArial();
+        testPresentationFaces(path);
+        std::cout << "[PASS] bounded private presentation faces, exact glyph pixels and untouched retail settings\n";
         testSettingsAndFailures(path);
         std::cout << "[PASS] real Arial settings, retail slots and transactional failures\n";
         testMetricsAndRgba(path);

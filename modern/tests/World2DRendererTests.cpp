@@ -688,44 +688,82 @@ namespace
             std::cout<<"Menu GPU capture="<<prefix<<" changed="<<changed<<" output="<<output.string()<<'\n';
         }
     }
-    void captureRetailChance15(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    void captureRetailIdleCards(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
-        require(paths && resources.initialize(*paths),"actual DAT opens for Chance15 ink recovery GPU proof");
-        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
-            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("native caption retained");});
-        skin->configureDrawCardDescriptors({{0x00050037U,{"Chance","Go back 3 spaces.",400,240}}},
-            [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("must not duplicate native caption");});
-        bool qualified=false;skin->configurePresentationContext([&]{return qualified;});
-        engine::SequencePlayback playback(resources.snapshot());playback.world2D().configureModernIBarSkin(skin);
-        require(playback.start(0x00050037U,1005) && playback.update(0),"actual Chance15 idle starts at authored tick zero");
-        auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
-        require(leaves && leaves->size()==1 && leaves->front().contentsDataId==0x00050991U,
-            "actual Chance15 owns measured single50991 printed-illustration UAP");
-        auto& leaf=leaves->front();const auto native=*playback.world2D().find(leaf.node);leaf.runtimeAsset=native.asset;
-        const auto before=capture(device,renderer,playback.world2D());
-        qualified=true;data::BitmapRuntimeCache cache;
-        require(playback.world2D().sync(*leaves,cache).has_value(),"same actual Chance15 pose publishes recovered native ink");
-        const auto* modern=playback.world2D().find(leaf.node);
-        require(modern && modern->asset!=native.asset && modern->clock==native.clock && modern->priority==native.priority &&
-            modern->worldTransform.values==native.worldTransform.values && modern->asset->image.width==400 && modern->asset->image.height==240,
-            "actual Chance15 retains complete retail slot matrix clock priority and400x240 extent");
-        const auto& old=native.asset->image.pixels;const auto& painted=modern->asset->image.pixels;bool sameInk=true;
-        for(std::size_t i=0;i<old.size();i+=4)
-        {
-            const auto high=std::max({old[i],old[i+1],old[i+2]}),low=std::min({old[i],old[i+1],old[i+2]});
-            sameInk &= old[i+3]==painted[i+3];
-            if(old[i+3]==0 || high<=40 || high-low<=8)
-                for(unsigned c=0;c<3;++c)sameInk &= old[i+c]==painted[i+c];
-        }
-        require(sameInk,"actual Chance15 preserves every alpha and original dark/grayscale/transparent ink pixel");
-        const auto after=capture(device,renderer,playback.world2D());require(before!=after,"actual GPU Chance15 changes warm paper while retaining printed backward-walking artwork");
+        require(paths && resources.initialize(*paths),"actual DAT opens for32 idle-card ink recovery GPU proofs");
         const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"menu-panel-polish-20261001").lexically_normal();std::filesystem::create_directories(output);
-        writeBmp(output/"chance15-native-before.bmp",before,800,600);writeBmp(output/"chance15-ink-after.bmp",after,800,600);
-        qualified=false;
-        require(playback.world2D().sync(*leaves,cache).has_value() && playback.world2D().find(leaf.node)->asset==native.asset &&
-            capture(device,renderer,playback.world2D())==before,"actual GPU Chance15 context fallback is exact retail pointer and pixels");
-        std::cout<<"Chance15 actual GPU native-before/ink-after output="<<output.string()<<'\n';
+        constexpr unsigned sheetWidth=3200,sheetHeight=4800;
+        std::vector<std::uint8_t> nativeSheet(std::size_t(sheetWidth)*sheetHeight*4,0),modernSheet=nativeSheet;
+        for(unsigned index=0;index<32;++index)
+        {
+            const bool chance=index<16;const unsigned card=chance?index:index-16;
+            const data::DataId owner=chance?0x00050028U+card:0x00050059U+card;
+            const data::DataId expectedLeaf=chance?0x00050982U+card:0x00050972U+card;
+            const unsigned height=index==1?239:240;
+            auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("native caption retained");});
+            // The supplied body is a qualification sentinel, never painted:
+            // authoritative caption and illustration remain the actual UAP ink.
+            skin->configureDrawCardDescriptors({{owner,{chance?"Chance":"Community Chest","Native printed content retained",400,height}}},
+                [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("must not duplicate native caption");});
+            bool qualified=false;skin->configurePresentationContext([&]{return qualified;});
+            engine::SequencePlayback playback(resources.snapshot());playback.world2D().configureModernIBarSkin(skin);
+            require(playback.start(owner,1005) && playback.update(0),"actual licensed idle card starts at authored tick zero");
+            auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(leaves && leaves->size()==1 && leaves->front().contentsDataId==expectedLeaf,
+                "actual idle-card CNK owns its exact measured printed-illustration UAP");
+            auto& leaf=leaves->front();const auto native=*playback.world2D().find(leaf.node);leaf.runtimeAsset=native.asset;
+            const auto before=capture(device,renderer,playback.world2D());
+            qualified=true;data::BitmapRuntimeCache cache;
+            require(playback.world2D().sync(*leaves,cache).has_value(),"same actual idle-card pose publishes recovered native ink");
+            const auto* modern=playback.world2D().find(leaf.node);
+            require(modern && modern->asset!=native.asset && modern->clock==native.clock && modern->priority==native.priority &&
+                modern->worldTransform.values==native.worldTransform.values && modern->asset->image.width==400 && modern->asset->image.height==height,
+                "actual idle card retains complete retail slot matrix clock priority and measured400x239-or240 extent");
+            const auto replacement=modern->asset;
+            const auto& old=native.asset->image.pixels;const auto& painted=modern->asset->image.pixels;bool sameInk=true;
+            require(old.size()==painted.size(),"native idle-card recolor retains original raster byte count");
+            for(std::size_t i=0;i<old.size();i+=4)
+            {
+                const auto high=std::max({old[i],old[i+1],old[i+2]}),low=std::min({old[i],old[i+1],old[i+2]});
+                sameInk &= old[i+3]==painted[i+3];
+                if(old[i+3]==0 || high<=40 || high-low<=8)
+                    for(unsigned c=0;c<3;++c)sameInk &= old[i+c]==painted[i+c];
+            }
+            require(sameInk,"actual idle-card recolor preserves every alpha and original dark/grayscale/transparent ink pixel");
+            const auto after=capture(device,renderer,playback.world2D());
+            require(before!=after,"actual GPU idle-card paper changes while its complete printed artwork is retained");
+            const char* representative=index==15?"chance15":index==21?"chest-doctor5":index==1?"st-charles239":nullptr;
+            if(representative)
+            { writeBmp(output/(std::string(representative)+"-native-before.bmp"),before,800,600);
+              writeBmp(output/(std::string(representative)+"-ink-after.bmp"),after,800,600); }
+            const auto top=engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,0,0);
+            const auto bottom=engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,400,height);
+            // A239px UAP can have an authored240px CNK display rectangle.
+            // Keep full native GPU frames in the sheet: no crop, resize, or
+            // assumed equivalence between source pixels and logical bounds.
+            const unsigned sx=index%4*800,sy=index/4*600;
+            for(unsigned y=0;y<600;++y)
+            {
+                const auto destination=(std::size_t(sy+y)*sheetWidth+sx)*4;
+                const auto source=std::size_t(y)*800*4;
+                std::memcpy(nativeSheet.data()+destination,before.data()+source,800*4);
+                std::memcpy(modernSheet.data()+destination,after.data()+source,800*4);
+            }
+            qualified=false;
+            require(playback.world2D().sync(*leaves,cache).has_value() && playback.world2D().find(leaf.node)->asset==native.asset &&
+                capture(device,renderer,playback.world2D())==before,"actual GPU idle-card context fallback is exact retail pointer and framebuffer");
+            qualified=true;
+            require(playback.world2D().sync(*leaves,cache).has_value() && playback.world2D().find(leaf.node)->asset==replacement,
+                "compatible idle-card context restores its qualified cached native-art derivative");
+            std::cout<<"Idle-card GPU index="<<index<<" root="<<owner<<" leaf="<<expectedLeaf<<" height="<<height
+                <<" clock="<<native.clock<<" priority="<<native.priority<<" logical_top="<<top[0]<<','<<top[1]
+                <<" logical_bottom="<<bottom[0]<<','<<bottom[1]<<'\n';
+        }
+        writeBmp(output/"idle-cards32-native-before.bmp",nativeSheet,sheetWidth,sheetHeight);
+        writeBmp(output/"idle-cards32-ink-after.bmp",modernSheet,sheetWidth,sheetHeight);
+        std::cout<<"Actual32-card GPU contact sheets Chance0..15 then Community0..15: "<<output.string()<<'\n';
     }
     void extractRetailCardSheet(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
@@ -935,7 +973,8 @@ namespace
         // replacement for a licensed card/catalog transcription.
         std::string body;
         for(unsigned word=0;word<70;++word) body+=(word?" ":"")+std::string("word")+std::to_string(word);
-        const auto drawRoot=data::packDataId(data::LegacyGroupId::LanguageGraphics,0x002B);
+        // Synthetic descriptor-only root outside all licensed idle-card owners.
+        const auto drawRoot=data::packDataId(data::LegacyGroupId::Main,0x7FF0);
         skin->configureDrawCardDescriptors({{drawRoot,{"QUALIFICATION",body,400,240}}},raster);
         auto drawOriginal=std::make_shared<data::BitmapRuntimeAsset>();
         drawOriginal->image={400,240,std::vector<std::uint8_t>(400*240*4,255)};
@@ -1080,7 +1119,7 @@ int main(int argc, char** argv)
         if(argc==3 && std::string_view(argv[1])=="--menu-panels")
         {
             captureRetailMenuPanels(device,*renderer,std::filesystem::path(argv[2]));
-            captureRetailChance15(device,*renderer,std::filesystem::path(argv[2]));
+            captureRetailIdleCards(device,*renderer,std::filesystem::path(argv[2]));
             renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
         }
         if(argc==3 && std::string_view(argv[1])=="--cards")
@@ -1135,7 +1174,7 @@ int main(int argc, char** argv)
         if (argc == 2) { testRetailIBarBands(device, *renderer, std::filesystem::path(argv[1]));
             captureRetailFaceIn(device,*renderer,std::filesystem::path(argv[1]));
             captureRetailMenuPanels(device,*renderer,std::filesystem::path(argv[1]));
-            captureRetailChance15(device,*renderer,std::filesystem::path(argv[1])); }
+            captureRetailIdleCards(device,*renderer,std::filesystem::path(argv[1])); }
         else require(argc == 1, "optional argument is an explicit actual retail resource root");
         renderer.reset();
         SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;

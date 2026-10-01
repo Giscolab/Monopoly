@@ -1086,6 +1086,23 @@ namespace
                 const auto painted=skin.substitute(owner,*asset);
                 require(painted!=*asset && painted->image.width==630 && painted->image.height==399,
                     "Actual City owner/leaf has exact modern footprint");
+                // Actual x44/y14 is gray105 antialiased tower edge, not full fill.
+                // F03/F04 decode to output96/122/110; F05 to98/123/111.
+                const auto nativeEdge=(std::size_t(14)*210+44)*4;
+                require((*asset)->image.pixels[nativeEdge]==105 && (*asset)->image.pixels[nativeEdge+1]==105 &&
+                    (*asset)->image.pixels[nativeEdge+2]==105,"Actual measured tower edge retains native gray105");
+                const auto edge=(std::size_t(14*3)*630+44*3)*4;
+                const auto expectedEdge=id==0x00050F05 ? std::array<unsigned,3>{98,123,111} :
+                    std::array<unsigned,3>{96,122,110};
+                for(unsigned c=0;c<3;++c)require(painted->image.pixels[edge+c]==expectedEdge[c],
+                    "Actual tower edge preserves measured intermediate coverage in every fade pose");
+                for(const auto point:std::array{std::array{45U,14U},std::array{48U,20U}})
+                {
+                    const auto landmark=(std::size_t(point[1]*3)*630+point[0]*3)*4;
+                    require(painted->image.pixels[landmark]==117 && painted->image.pixels[landmark+1]==139 &&
+                        painted->image.pixels[landmark+2]==123,"Actual solid skyline landmarks survive every measured fade pose");
+                }
+
                 for(unsigned y=0;y<399;++y)for(unsigned x=0;x<630;++x)
                     require(painted->image.pixels[(std::size_t(y)*630+x)*4+3]==
                         (*asset)->image.pixels[(std::size_t(y/3)*210+x/3)*4+3],
@@ -1131,6 +1148,61 @@ namespace
                 require(skin.substitute(root,source)==painted && source->image.pixels==before &&
                     skin.substitute(root,source,false)==source,"City cache preserves source and unknown secondary leaves");
             }
+        // Actual art baselines and mask boundary; distinct landmarks prove a
+        // silhouette transfer rather than a filled rectangle or copied caption.
+        for(const auto leaf:{0x00050F03U,0x00050F04U,0x00050F05U})
+        {
+            auto art=measured(leaf);
+            const unsigned background=leaf==0x00050F05?67:69;
+            const unsigned foreground=leaf==0x00050F05?115:116;
+            for(std::size_t i=0;i<art->image.pixels.size();i+=4)
+                for(unsigned c=0;c<3;++c)art->image.pixels[i+c]=std::uint8_t(background);
+            const auto put=[&](unsigned x,unsigned y,unsigned gray)
+            { for(unsigned c=0;c<3;++c)art->image.pixels[(std::size_t(y)*210+x)*4+c]=std::uint8_t(gray); };
+            put(44,14,foreground);put(108,12,foreground);put(190,40,foreground);
+            put(45,14,(background+foreground)/2);put(44,11,foreground);
+            put(6,40,foreground);put(202,40,foreground);put(44,80,foreground);
+            put(90,90,foreground);put(30,120,foreground); // baked label/arrow regions.
+            const auto before=art->image.pixels;const auto painted=skin.substitute(0x00050214,art);
+            const auto rgb=[&](unsigned x,unsigned y)
+            { const auto i=(std::size_t(y*3)*630+x*3)*4;
+              return std::array<unsigned,3>{painted->image.pixels[i],painted->image.pixels[i+1],painted->image.pixels[i+2]}; };
+            for(const auto point:std::array{std::array{44U,14U},std::array{108U,12U},std::array{190U,40U}})
+                require(rgb(point[0],point[1])==std::array<unsigned,3>{117,139,123},
+                    "City skyline preserves measured landmark locations across all three fade poses");
+            require(rgb(45,14)[0]>rgb(46,14)[0] && rgb(45,14)[0]<117,
+                "Native skyline antialias coverage remains intermediate rather than binary colorkey");
+            for(const auto point:std::array{std::array{44U,11U},std::array{6U,40U},std::array{202U,40U},
+                std::array{44U,80U},std::array{90U,90U},std::array{30U,120U}})
+                require(rgb(point[0],point[1])!=std::array<unsigned,3>{117,139,123},
+                    "Measured art mask never copies native caption, arrows or neighboring border pixels");
+            unsigned captionPixels=0;
+            for(unsigned y=0;y<399;++y)for(unsigned x=0;x<630;++x)
+            { const auto i=(std::size_t(y)*630+x)*4;
+              if(painted->image.pixels[i]==245 && painted->image.pixels[i+1]==235 && painted->image.pixels[i+2]==211)
+              { ++captionPixels;require(y>=264 && y<324,"Select city caption stays inside native88..108 band"); } }
+            require(captionPixels>0 && art->image.pixels==before,
+                "Readable lower caption and skyline leave original immutable artwork intact");
+        }
+        menu::ModernMenuSkin largeType(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return data::LegacyBitmapRGBA8{360,54,std::vector<std::uint8_t>(360*54*4,255)}; });
+        const auto largeSource=measured(0x00050F03);
+        const auto largeCaption=largeType.substitute(0x00050215,largeSource);
+        unsigned firstInk=399,lastInk=0,inkRows=0;
+        for(unsigned y=0;y<399;++y)
+        {
+            bool rowInk=false;
+            for(unsigned x=0;x<630;++x)
+            { const auto i=(std::size_t(y)*630+x)*4;
+              if(largeCaption->image.pixels[i]==245 && largeCaption->image.pixels[i+1]==235 &&
+                  largeCaption->image.pixels[i+2]==211)rowInk=true; }
+            if(rowInk){firstInk=std::min(firstInk,y);lastInk=y;++inkRows;}
+        }
+        require(firstInk==267 && lastInk==320 && inkRows==54,
+            "54-pixel callback retains full18-native-pixel caption centered within measured88..108 band");
+        require(largeCaption->image.pixels[(std::size_t(336)*630+300)*4]==13,
+            "Larger City caption cannot enter the independent city-name well");
         const auto source=measured(0x00050F03);
         for(const auto id:{0x00050F02U,0x00050F06U,0x00030F03U})
         { const auto wrong=measured(id); require(skin.substitute(0x00050214,wrong)==wrong,"City rejects unknown leaf/group"); }

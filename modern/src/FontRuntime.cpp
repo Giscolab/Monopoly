@@ -190,6 +190,7 @@ namespace monopoly::fonts
 
     Runtime::~Runtime()
     {
+        clearPresentationFaces();
         if (font_) TTF_CloseFont(font_);
         if (ttfInitialized_) TTF_Quit();
     }
@@ -230,6 +231,8 @@ namespace monopoly::fonts
                 settings_.fontPath, SDL_GetError()));
 
         TTF_SetFontStyle(replacement, styleFlags(settings_));
+        // Successful replacement establishes a new loaded-face generation.
+        clearPresentationFaces();
         if (font_) TTF_CloseFont(font_);
         font_ = replacement;
         return {};
@@ -298,6 +301,7 @@ namespace monopoly::fonts
 
     void Runtime::resetCharacteristics()
     {
+        clearPresentationFaces();
         settings_.weight = 400;
         settings_.italic = false;
         settings_.underline = false;
@@ -472,8 +476,63 @@ namespace monopoly::fonts
         return lines;
     }
 
+    void Runtime::clearPresentationFaces() noexcept
+    {
+        for (auto& face : presentationFaces_) face.font.reset();
+        presentationClock_ = 0;
+    }
+
+    std::size_t Runtime::presentationFaceCount() const noexcept
+    {
+        return std::count_if(presentationFaces_.begin(), presentationFaces_.end(),
+            [](const auto& face) { return bool(face.font); });
+    }
+
+    std::expected<data::LegacyBitmapRGBA8, Error> Runtime::renderPresentation(
+        std::string_view utf8, std::uint32_t colorRef, int size, int weight,
+        bool italic, bool underline, bool strikeOut, bool antialiased)
+    {
+        if (size <= 0 || size > 512)
+            return std::unexpected(makeError(ErrorCode::InvalidSize, {},
+                "font size must be between 1 and 512 points"));
+        if (!ready())
+            return std::unexpected(makeError(ErrorCode::RenderFailed,
+                settings_.fontPath, "font runtime is not ready"));
+        if (utf8.empty()) return data::LegacyBitmapRGBA8{};
+        weight = std::clamp(weight, 0, 1000);
+        for (auto& face : presentationFaces_)
+            if (face.font && face.size == size && face.weight == weight &&
+                face.italic == italic && face.underline == underline && face.strikeOut == strikeOut)
+            {
+                face.lastUsed = ++presentationClock_;
+                return renderFace(face.font.get(), utf8, colorRef, antialiased);
+            }
+        std::unique_ptr<TTF_Font, CloseFont> clone(TTF_CopyFont(font_));
+        if (!clone)
+            return std::unexpected(makeError(ErrorCode::FontOpenFailed, settings_.fontPath, SDL_GetError()));
+        if (!TTF_SetFontSize(clone.get(), float(size)))
+            return std::unexpected(makeError(ErrorCode::InvalidSize, settings_.fontPath, SDL_GetError()));
+        Settings requested = settings_;
+        requested.weight = weight; requested.italic = italic;
+        requested.underline = underline; requested.strikeOut = strikeOut;
+        TTF_SetFontStyle(clone.get(), styleFlags(requested));
+        auto slot = std::find_if(presentationFaces_.begin(), presentationFaces_.end(),
+            [](const auto& face) { return !face.font; });
+        if (slot == presentationFaces_.end())
+            slot = std::min_element(presentationFaces_.begin(), presentationFaces_.end(),
+                [](const auto& a, const auto& b) { return a.lastUsed < b.lastUsed; });
+        *slot = PresentationFace{std::move(clone), size, weight, italic, underline, strikeOut, ++presentationClock_};
+        return renderFace(slot->font.get(), utf8, colorRef, antialiased);
+    }
+
     std::expected<data::LegacyBitmapRGBA8, Error> Runtime::render(
         std::string_view utf8, std::uint32_t colorRef, bool antialiased) const
+    {
+        return renderFace(font_, utf8, colorRef, antialiased);
+    }
+
+    std::expected<data::LegacyBitmapRGBA8, Error> Runtime::renderFace(
+        TTF_Font* face, std::string_view utf8, std::uint32_t colorRef, bool antialiased) const
     {
         if (utf8.empty()) return data::LegacyBitmapRGBA8{};
         if (!ready())
@@ -488,8 +547,8 @@ namespace monopoly::fonts
         SDL_Color foreground{red, green, blue, alpha};
 
         SDL_Surface* rendered = antialiased
-            ? TTF_RenderText_Blended(font_, utf8.data(), utf8.size(), foreground)
-            : TTF_RenderText_Solid(font_, utf8.data(), utf8.size(), foreground);
+            ? TTF_RenderText_Blended(face, utf8.data(), utf8.size(), foreground)
+            : TTF_RenderText_Solid(face, utf8.data(), utf8.size(), foreground);
         if (!rendered)
             return std::unexpected(makeError(ErrorCode::RenderFailed,
                 settings_.fontPath, SDL_GetError()));

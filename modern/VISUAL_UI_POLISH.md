@@ -395,8 +395,10 @@ Edge automatic translation visible in these captures is not game localization.
 
 Focused Windows tests pass for exact HTML preservation and single bounded
 asynchronous browser dispatch, including cancellation, timeout and errors.
-Actual launch through the in-game Full Help button remains to be qualified after
-rebuilding Release. No new global gameplay pause is introduced.
+The actual in-game button opened the themed full-help page at21:44:50 local
+time in pass33. Its distinct `export-617983628067200-1/contents.html` contains
+96724 bytes; `build/polish-continuation-20261001/pass33-full-help-real-button.png`
+records the inspected browser page. No new global gameplay pause is introduced.
 
 ## Warm player-profile text cost
 
@@ -428,8 +430,8 @@ native Morris illustration and printed caption are recovered together on cream,
 with original ink/alpha/placement intact. GPU proof is `chance15-native-before.png`
 versus `chance15-ink-after.png` in that directory; the earlier actual text-only
 in-game image is `build/polish-continuation-20261001/six-player-chance-real.jpg`.
-The32-card native audit sheet shows this artwork-loss issue affects other cards
-as well; extending recovery remains follow-up work. No new artwork was invented.
+The32-card native audit sheet showed this artwork-loss issue affected other cards
+as well; the complete recovery is qualified in pass32 below. No new artwork was invented.
 Focused menu/IBar CPU tests and full actual-resource World2D GPU tests pass.
 
 ## Cold deed wrapping cost
@@ -444,3 +446,69 @@ The isolated six-player first10-minute window-title sample has1180 FPS values,
 median60.0, p559.0,94.237% at least59.5; brief first-generation dips reach25.7.
 This does not establish a continuous60FPS minimum. No GPU/build work overlapped
 that sample. Later qualification builds/GPU work are outside its scope.
+
+## Native City skyline and larger caption (passes31 and33)
+
+The SelectCity panel now retains its actual native skyline inside the measured
+rectangle x7..201, y12..79. The three exact F03/F04/F05 leaves supply the
+silhouette and intermediate edge coverage; only its presentation palette changes.
+The baked caption and arrows are outside that mask. Native alpha/fades, logical
+corners, clocks, city-name field and independent arrow owners remain unchanged.
+
+Pass33 raises the modern caption limit from12 to18 native pixels, centered in the
+measured y88..108 band above the name well at y112..129. Focused tests verify the
+full18-pixel glyph extent without clipping. Actual seven owner/leaf CPU checks and
+matched production GPU captures pass; the inspected skyline and caption retain
+City identity. Captures remain under `build/menu-panel-polish-20261001/`; the
+smaller-caption comparison is retained as `city-idle-skyline-smalltype-before.png`.
+Logs are `pass32-city-skyline-real-tests.log`, `pass33-city-caption-cpu.log` and
+`pass33-city-caption-gpu.log` in `build/polish-continuation-20261001/`.
+
+## Complete idle-card artwork recovery (pass32)
+
+All32 actual Chance and Community Chest idle cards now retain their native
+illustrations and printed captions together on the modern paper. CPU checks
+qualify every actual owner/leaf and exact ink/alpha; GPU checks verify fixed
+logical placement, original clocks/priorities, cached compatible presentation and
+exact retail asset/framebuffer fallback outside the supported context. The
+400x239 St. Charles exception remains measured; the other31 cards are400x240.
+No illustration was invented or replaced with a text-only reconstruction.
+
+The complete matched GPU sheets are
+`build/menu-panel-polish-20261001/idle-cards32-native-before.png` and
+`idle-cards32-ink-after.png`, ordered Chance0..15 then Community0..15. These are
+isolated production fixtures, not proof that every card occurred in the live
+six-player session. Logs: `pass32-idle-cards-real-tests.log` and
+`pass32-all-cards-real-gpu.log` in `build/polish-continuation-20261001/`.
+
+## Bounded private font faces and live session evidence (passes32-33)
+
+Modern text can reuse at most32 private font faces without changing the active
+retail face or its saved settings. Focused real-Arial tests qualify the bound,
+exact glyph pixels, style/color behavior and failure handling. Across all28 actual
+USA front deeds, aggregate Debug cold CPU time is11804.7ms originally,8962.4ms
+with accepted wrap-raster reuse, then3055.4ms with private faces. All28 native
+extents and FNV pixel hashes are identical across the three runs. This is CPU
+raster cost, not a measured game FPS improvement. Evidence:
+`build/ibar-deed-wrap-before.log`, `build/ibar-deed-wrap-after.log`,
+`build/ibar-deed-private-font-after.log` and
+`build/polish-continuation-20261001/pass32-font-tests.log`.
+
+The actual SelectPlayer menu has a separate60-second window-title sample with
+118 values: median60.0 FPS, p5 59.6, minimum46.3 during transition, and98.305%
+at least59.5 FPS. It does not establish an uninterrupted60 FPS minimum or
+individual frame times. The actual menu capture and sample are
+`pass33-select-player-real.png`, `pass33-select-player-warm-fps.csv` and
+`pass33-select-player-warm-fps.summary.log` in that qualification directory.
+
+The real one-human/five-AI game ran from20:53 to the save at21:24:42 local time,
+approximately31 minutes of gameplay. The user confirmed audible physical game
+sound; software loopback alone was not used to establish that claim. The saved
+`game4` then loaded with the same six balances and positions. Actual F11
+fullscreen switched to4096x2160 and returned to1920x1080; fresh captures are
+`pass33-six-player-reloaded.png` and `pass33-six-player-fullscreen.png` in
+`build/polish-continuation-20261001/`. The in-game Full Help button also opened
+the inspected themed browser page, as recorded above.
+
+The new ten-minute FPS sample after the six-player session is still running.
+No result or performance gain is claimed for that unfinished sample.

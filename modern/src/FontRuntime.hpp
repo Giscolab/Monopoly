@@ -10,6 +10,7 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -113,6 +114,12 @@ namespace monopoly::fonts
             std::string_view utf8, std::uint32_t colorRef, bool antialiased = false) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> render(
             std::u16string_view utf16, std::uint32_t colorRef, bool antialiased = false) const;
+        // Independent bounded faces for modern text; active settings and retail slots stay untouched.
+        static constexpr std::size_t PresentationFaceLimit = 32;
+        [[nodiscard]] std::size_t presentationFaceCount() const noexcept;
+        [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderPresentation(
+            std::string_view utf8, std::uint32_t colorRef, int size, int weight,
+            bool italic, bool underline = false, bool strikeOut = false, bool antialiased = true);
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
             std::string_view utf8, std::uint32_t colorRef, ClipRect clip, bool antialiased = false) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
@@ -128,6 +135,19 @@ namespace monopoly::fonts
         [[nodiscard]] std::expected<void, Error> reopen();
         void applyStyle() noexcept;
 
+        struct CloseFont { void operator()(TTF_Font* font) const noexcept { TTF_CloseFont(font); } };
+        struct PresentationFace
+        {
+            std::unique_ptr<TTF_Font, CloseFont> font;
+            int size{}, weight{};
+            bool italic{}, underline{}, strikeOut{};
+            std::uint64_t lastUsed{};
+        };
+        void clearPresentationFaces() noexcept;
+        [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderFace(
+            TTF_Font* font, std::string_view utf8, std::uint32_t colorRef, bool antialiased) const;
+        std::array<PresentationFace, PresentationFaceLimit> presentationFaces_;
+        std::uint64_t presentationClock_{};
         bool ttfInitialized_{};
         TTF_Font* font_{};
         Settings settings_;

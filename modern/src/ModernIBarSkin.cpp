@@ -134,6 +134,17 @@ namespace monopoly::ibar
         constexpr std::array<unsigned,16> ChestFaceBackgrounds{
             0x8CB,0x8CC,0x8CD,0x8CE,0x8C8,0x8C9,0x8D1,0x8D2,
             0x8D3,0x8D4,0x8D5,0x8D6,0x8CA,0x8D8,0x86C,0x8DA};
+        struct NativeIdleCardSource { data::DataId leaf; unsigned height; };
+        std::optional<NativeIdleCardSource> nativeIdleCardSource(data::DataId root)
+        {
+            // All32 licensed USA idle faces have a single measured UAP leaf.
+            // St.Charles is239px high; do not expand its authored footprint.
+            if(root>=0x00050028 && root<=0x00050037)
+                return NativeIdleCardSource{0x00050982+root-0x00050028,root==0x00050029?239U:240U};
+            if(root>=0x00050059 && root<=0x00050068)
+                return NativeIdleCardSource{0x00050972+root-0x00050059,240U};
+            return {};
+        }
         std::optional<data::DataId> faceIdleRoot(data::DataId root)
         {
             if(root>=0x50018 && root<=0x50027) return root+0x10;
@@ -281,13 +292,13 @@ namespace monopoly::ibar
         }
         const auto deed = deeds_.find(root);
         const auto draw = drawCards_.find(root);
-        if(root==0x00050037 && draw!=drawCards_.end())
+        if(const auto native=nativeIdleCardSource(root);native && draw!=drawCards_.end())
         {
-            // Production Chance15 is one400x240 UAP containing both the
-            // backward-walking Morris illustration and its printed caption.
+            // Each production idle UAP contains both its Morris illustration
+            // and printed caption. Artwork often overlaps the caption.
             // Preserve that authored ink rather than covering it with a new
-            // title/body; the caption overlaps the hat and cannot be cropped.
-            if(!principal || original->dataId!=0x00050991 || w!=400 || h!=240 ||
+            // title/body; no generic crop can safely separate these layers.
+            if(!principal || original->dataId!=native->leaf || w!=400 || h!=native->height ||
                 original->sourceType!=data::LegacyDataType::Uap || !valid(original->image) ||
                 language_!=data::LanguageId::EnglishUs || !presentationContext_ ||
                 !presentationContext_()) return original;
