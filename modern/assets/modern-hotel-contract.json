@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "status": "authoring-contract-not-generated-asset",
+  "relativeGlbPath": "buildings/hotel.glb",
+  "legacyMeshDataId": "0x00080004",
+  "rootSequenceDataId": "0x00080004",
+  "sourceReference": "Source/monopoly/UDPieces.cpp:1768-1770,2192-2223; Source/monopoly/Dat_Mon/dat_3d.h:16",
+  "retailBoundsRaw": { "minimum": [-65, 0, -90], "maximum": [65, 155, 90] },
+  "authoringBoundsMetresYUp": { "minimum": [-0.325, 0, -0.45], "maximum": [0.325, 0.775, 0.45] },
+  "unitsPerMeter": 200,
+  "yawDegrees": 0,
+  "localOffsetRaw": [0, 0, 0],
+  "groundToZero": true,
+  "boundsToleranceRaw": 0.001,
+  "productionScale": 0.1,
+  "productionPriorities": { "base": 55, "squareCount": 40, "stride": 4, "slot": 0, "minimum": 55, "maximum": 211 },
+  "option": "--modern-buildings=house",
+  "requirements": [
+    "Export a static GLB with proper rotations, no skin/morph/animation, and embedded geometry/material images.",
+    "Preserve retail local axes: X width .65m, Z depth .9m, Y height .775m; center X/Z at zero and ground Y at zero.",
+    "Use opaque or mask PBR materials; unsupported blended materials retain retail fallback.",
+    "Validate actual production loader output bounds; this contract is not proof that an authored asset exists.",
+    "Gameplay keeps existing hotelPosition rotation/translation and scale .10; no camera, square, rule or placement changes.",
+    "Missing, rejected or GPU-incompatible hotel asset retains retail hotel independently of the house asset."
+  ]
+}

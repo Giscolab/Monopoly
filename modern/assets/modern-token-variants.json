@@ -68,5 +68,24 @@
     "source_namespace": "Source GameInc DAT_3D = 8; source manifest CNK_knfmx0 tag 0x02FC and exact HMD tags 0x0094, 0x00A8 through 0x00AC",
     "authoring_evidence": "Diagnostic modern/build/horse-idle-qualification/qualification.json: 182 exact retail controls, shared indexed topology, finite positive deformation Jacobians, reproducible fresh/repeat exports; diagnostic build artifacts are not shipped retail payloads"
   },
-  "verification_boundary": "Complete CPU sequence and loader contract; rendered authored shape correspondence requires separate visual qualification"
+  "complete_catalog_checkpoint": {
+    "root_descriptors": 401,
+    "generic100_complete_recovered_roots": 399,
+    "original_dog_horse_idle_roots": 2,
+    "geometry_definitions": 55,
+    "reviewed_recovered_geometry_states": 49,
+    "horse_geometry_states": 6,
+    "cpu_qualification": "399 production roots; every tick and event paired to retail, disk endings, ending action zero, zero errors",
+    "cpu_report": "build/qualified-complete-production-20261001.json",
+    "observed_distinct_hmds": 29,
+    "gpu_qualification": "29 requested observed-state captures at 1920x1080 with PBR and studio environment enabled; gallery inspected",
+    "gpu_gallery": "build/expanded-token-gpu-qualification/29_production_states_gpu.png",
+    "publication": "Shared lazy immutable per-HMD ownership; transactional complete-root publication; failed states retain retail for the whole root; GPU rejection invalidates published and future uses",
+    "grounding": "Raw canonical ship HMD 0x80018 and 0x8001B require shared rest grounding; other exported states are already grounded",
+    "offline_qualification": "Two fresh exports of six profiles; only 49 explicitly reviewed states stage; review hash rejection and three publication failure cases qualified; adjacent backups support cross-volume publication",
+    "catalog_generator": "modern/tools/generate_token_variant_catalog.py records source hashes, uses bounded build-only output and checks source consistency",
+    "export_target": "MonopolyExportCompleteTokenVariants successfully executed with full dependencies; build/expanded-hotel-export-targets-20261001.log exit zero",
+    "diagnostic_profiles": "Opt-in moneybag, iron and horse97 utility profiles are not runtime-active at this checkpoint"
+  },
+  "verification_boundary": "Production CPU timeline comparisons and requested observed-state GPU captures; no continuous gameplay animation, all-frame visual fidelity or glTF clips claim"
 }

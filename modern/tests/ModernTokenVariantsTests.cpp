@@ -46,7 +46,8 @@ namespace
                 return root / dogIdleVariantDefinitions()[state].relativeGlbPath;
             return root / horseIdleVariantDefinitions()[state].relativeGlbPath;
         }
-        void write(std::size_t state, float minimumY, bool reversed = false)
+        void write(std::size_t state, float minimumY, bool reversed = false,
+            std::filesystem::path relativePath = {})
         {
             std::string json = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"indices":2}]}],"buffers":[{"byteLength":84}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":36},{"buffer":0,"byteOffset":72,"byteLength":12}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":2,"componentType":5125,"count":3,"type":"SCALAR"}]})";
             while (json.size() % 4) json.push_back(' ');
@@ -65,11 +66,103 @@ namespace
             bytes.insert(bytes.end(), json.begin(), json.end());
             word(bytes, static_cast<std::uint32_t>(binary.size())); word(bytes, 0x004E4942);
             bytes.insert(bytes.end(), binary.begin(), binary.end());
-            std::ofstream output(path(state), std::ios::binary | std::ios::trunc);
+            const auto outputPath = relativePath.empty() ? path(state) : root / relativePath;
+            std::filesystem::create_directories(outputPath.parent_path());
+            std::ofstream output(outputPath, std::ios::binary | std::ios::trunc);
             output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
             if (!output) throw std::runtime_error("cannot create token variant fixture");
         }
     };
+
+    void testMixedShipGroundingFormats()
+    {
+        using namespace monopoly;
+        constexpr DataId Rest = 0x00080018, Squash = 0x0008001B, GroundedPose = 0x00080019;
+        constexpr DataId CanonicalRoot = 0x00080360, MixedRoot = 0x00080356;
+        Fixture fixture;
+        fixture.write(0, .025F);
+        fixture.write(1, .04F);
+        fixture.write(0, .01F, false, "tokens/ship_variants/pose_0019.glb");
+        for (const bool mixedFirst : {false, true})
+        {
+            ModernTokenVariantCache cache(fixture.root);
+            const auto initial = cache.resolve(Rest, mixedFirst ? MixedRoot : CanonicalRoot, pieces::Generic3DPriority);
+            const auto rest = cache.resolve(Rest, MixedRoot, pieces::Generic3DPriority);
+            const auto squash = cache.resolve(Squash, CanonicalRoot, pieces::Generic3DPriority);
+            const auto grounded = cache.resolve(GroundedPose, MixedRoot, pieces::Generic3DPriority);
+            expect(initial && rest == initial && squash && grounded &&
+                std::abs(rest->bounds.minimum[1]) < .001F &&
+                std::abs(squash->bounds.minimum[1] - .015F * 87.55F) < .001F &&
+                std::abs(grounded->bounds.minimum[1] - .01F * 87.55F) < .001F,
+                "mixed ship root subtracts common baseline only from raw canonical states, preserving already-grounded pose height");
+            expect(grounded && cache.rejectPack(grounded.get()) &&
+                !cache.resolve(Rest, MixedRoot, pieces::Generic3DPriority) &&
+                initial == cache.resolve(Rest, CanonicalRoot, pieces::Generic3DPriority),
+                "grounded ship pose GPU rejection leaves disjoint canonical rest/squash root modern");
+        }
+    }
+
+    void testCompleteRootSubsets()
+    {
+        using namespace monopoly;
+        constexpr DataId Base = 0x00080032, Bent = 0x00080033, Later = 0x00080036;
+        constexpr DataId BaseOnly = 0x00080160, BentOnly = 0x00080162;
+        constexpr DataId Pair = 0x00080161, Triple = 0x00080159, Future = 0x0008015A;
+        constexpr auto Priority = pieces::Generic3DPriority;
+        std::size_t generic{}, idle{};
+        bool excluded = true;
+        for (const auto& root : modernTokenVariantRootDefinitions())
+        {
+            if (root.idlePriority) ++idle; else ++generic;
+            for (const auto mesh : root.requiredMeshes)
+                if (mesh == 0x000800CD) excluded = false;
+        }
+        expect(generic == 399 && idle == 2 && excluded,
+            "explicit complete table retains 399 finished roots and two idle roots without excluded thimble pose");
+        expect(qualifiedModernTokenVariantSequence(Base, Pair, Priority) &&
+            qualifiedModernTokenVariantSequence(Bent, Pair, Priority) &&
+            !qualifiedModernTokenVariantSequence(Later, Pair, Priority) &&
+            !qualifiedModernTokenVariantSequence(Base, Pair, 0) &&
+            !qualifiedModernTokenVariantSequence(Base, Pair, pieces::TokenPriority) &&
+            !qualifiedModernTokenVariantSequence(Base, Pair, Priority - 1) &&
+            !qualifiedModernTokenVariantSequence(Base, Pair, Priority + 1),
+            "each complete generic root requires only its reviewed HMD subset and exact root priority100");
+        Fixture fixture;
+        fixture.write(0, 0.F, false, "tokens/race_car_variants/pose_0032.glb");
+        ModernTokenVariantCache missing(fixture.root);
+        expect(!missing.resolve(Base, Pair, Priority) && missing.loadError(Pair),
+            "missing later required state cannot publish an earlier valid state of the root");
+        const auto disjoint = missing.resolve(Base, BaseOnly, Priority);
+        expect(disjoint && !missing.loadError(BaseOnly),
+            "a failed pair leaves its healthy single-state subset available");
+        fixture.write(0, .1F, false, "tokens/race_car_variants/pose_0033.glb");
+        expect(!missing.resolve(Bent, Pair, Priority) && !missing.resolve(Bent, BentOnly, Priority),
+            "shared missing geometry is remembered across repaired roots until cache owner reset");
+        for (const bool pairFirst : {false, true})
+        {
+            ModernTokenVariantCache cache(fixture.root);
+            const auto first = cache.resolve(Base, pairFirst ? Pair : BaseOnly, Priority);
+            const auto second = cache.resolve(Base, pairFirst ? BaseOnly : Pair, Priority);
+            const auto bent = cache.resolve(Bent, BentOnly, Priority);
+            expect(first && first == second && bent && bent == cache.resolve(Bent, Pair, Priority),
+                "shared immutable per-HMD pointers survive both single/pair cache activation orders");
+            expect(!cache.resolve(Base, Triple, Priority) && cache.loadError(Triple) &&
+                second == cache.resolve(Base, Pair, Priority),
+                "unused token states are not preloaded and a missing third state only rejects its complete root");
+            expect(bent && cache.rejectPack(bent.get()) && !cache.resolve(Base, Pair, Priority) &&
+                !cache.resolve(Bent, BentOnly, Priority) && cache.loadError(Pair) && cache.loadError(BentOnly),
+                "one shared GPU failure invalidates every already-published referring root");
+            expect(!cache.attempted(Future) && !cache.resolve(Base, Future, Priority) && cache.loadError(Future) &&
+                first == cache.resolve(Base, BaseOnly, Priority),
+                "GPU-rejected geometry also blocks future referring roots while disjoint subset remains modern");
+            expect(!cache.rejectPack(bent.get()), "repeated GPU rejection preserves remembered immutable identity");
+        }
+        fixture.write(0, .2F, true, "tokens/race_car_variants/pose_0036.glb");
+        ModernTokenVariantCache topology(fixture.root);
+        expect(!topology.resolve(Base, Triple, Priority) && topology.loadError(Triple) &&
+            topology.resolve(Base, Pair, Priority),
+            "complete-root topology mismatch rejects that subset without disabling a valid disjoint pack");
+    }
 
     void testHorseIdleCompletePack()
     {
@@ -239,6 +332,8 @@ namespace
 
 int main()
 {
+    testMixedShipGroundingFormats();
+    testCompleteRootSubsets();
     testHorseIdleCompletePack();
     testDogIdleCompletePack();
     using namespace monopoly;
@@ -246,9 +341,10 @@ int main()
     constexpr auto Rest = packDataId(LegacyGroupId::ThreeD, 0x0018);
     constexpr auto Squash = packDataId(LegacyGroupId::ThreeD, 0x001B);
     constexpr auto Priority = pieces::Generic3DPriority;
+    constexpr DataId UnreviewedRoot = 0x0008FFFF;
     expect(qualifiedModernTokenVariantSequence(Rest, Root, Priority) &&
         qualifiedModernTokenVariantSequence(Squash, Root, Priority), "both reviewed ship states qualify");
-    expect(!qualifiedModernTokenVariantSequence(Rest, Root + 1, Priority) &&
+    expect(!qualifiedModernTokenVariantSequence(Rest, UnreviewedRoot, Priority) &&
         !qualifiedModernTokenVariantSequence(Rest, Root, Priority + 1) &&
         !qualifiedModernTokenVariantSequence(Rest, Root, pieces::TokenPriority) &&
         !qualifiedModernTokenVariantSequence(Rest, std::nullopt, Priority) &&
@@ -260,7 +356,7 @@ int main()
 
     Fixture fixture;
     ModernTokenVariantCache missing(fixture.root);
-    expect(!missing.resolve(Rest, Root + 1, Priority) && !missing.attempted(),
+    expect(!missing.resolve(Rest, UnreviewedRoot, Priority) && !missing.attempted(),
         "unqualified lookup does not attempt optional file loading");
     expect(!missing.resolve(Rest, Root, Priority) && missing.attempted() && missing.loadError(),
         "missing base state rejects and remembers the whole pack");
@@ -289,6 +385,9 @@ int main()
     auto squash = valid.resolve(Squash, Root, Priority);
     expect(rest && squash && rest != squash && !valid.loadError(),
         "complete valid pack selects distinct owned immutable states by actual HMD");
+    expect(rest && rest == valid.resolve(Rest, 0x00080348, Priority) &&
+        squash && squash == valid.resolve(Squash, 0x00080349, Priority),
+        "existing canonical ship states are shared across complete single and multi-state roots");
     expect(rest && rest == valid.resolve(Rest, Root, Priority) &&
         squash && squash == valid.resolve(Squash, Root, Priority), "successful pack is reused without reloading");
     if (rest && squash)
@@ -305,7 +404,8 @@ int main()
     expect(!valid.rejectPack(&unrelated) && rest == valid.resolve(Rest, Root, Priority),
         "unrelated GPU rejection does not invalidate a healthy pack");
     expect(rest && valid.rejectPack(rest.get()) && !valid.resolve(Rest, Root, Priority) &&
-        !valid.resolve(Squash, Root, Priority) && valid.loadError(),
-        "either state upload failure invalidates both states without file retries");
+        !valid.resolve(Squash, Root, Priority) && !valid.resolve(Rest, 0x00080348, Priority) &&
+        !valid.resolve(Squash, 0x00080349, Priority) && !valid.resolve(Rest, 0x0008034D, Priority) && valid.loadError(),
+        "shared ship rest rejection disables published and future dependent roots without file retries");
     return failures ? 1 : 0;
 }

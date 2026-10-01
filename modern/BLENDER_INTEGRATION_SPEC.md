@@ -483,4 +483,50 @@ Decorations require the actual modern board and inherit its CNK transform;
 failed assets retain retail geometry or omit optional scenery. The adapters have
 real SDL_GPU probe evidence, but French startup and in-game qualification remain
 blocked/pending. Most board/decor procedural graphs remain unbaked. Scenery hotels
-are not calibrated gameplay-hotel prototypes.
+remain distinct from the reconstructed gameplay-hotel prototype below.
+
+## Complete token catalog and gameplay hotel checkpoint
+
+The runtime now contains 401 distinct root descriptors: 399 complete roots for
+the six recovered tokens at Generic100 priority, plus the original dog/horse idle
+roots at priorities 224..229. Its 55 geometry definitions comprise 49 reviewed
+recovered-token states and six horse states. Immutable meshes load lazily per HMD;
+each root publishes transactionally. A failed state retains its whole root in
+retail, and GPU rejection invalidates published and future uses. Raw canonical
+ship HMDs `0x80018`/`0x8001B` require shared rest grounding; other exported states
+are already grounded and retain that distinction in the generated catalog.
+
+`build/qualified-complete-production-20261001.json` qualifies all 399 selected
+roots with production CPU playback, disk endings and ending action zero. Every
+tick and event matches paired retail clocks, matrices, HMD choices and lifecycle,
+with zero errors. Only 29 different HMDs were actually observed in these runs.
+Those 29 states also have real 1920x1080 GPU captures with environment enabled and
+PBR loaded; `build/expanded-token-gpu-qualification/29_production_states_gpu.png`
+was inspected. These proofs do not establish continuous gameplay animation,
+visual fidelity of every frame, or glTF animation clips.
+
+`tools/qualify_complete_token_variants.py` repeats two fresh exports for six
+profiles and stages only the 49 explicitly reviewed states. Review hash rejection,
+cross-volume publication using adjacent backups, and three injected failure cases
+are qualified. `tools/generate_token_variant_catalog.py` reproduces the table in
+bounded build output, records source hashes and checks source consistency.
+`MonopolyExportCompleteTokenVariants` executed successfully with its complete
+dependencies: six recovered tokens, five reconstructed tokens, 12 default states
+and 49 clean reviewed-state contracts. Additional diagnostic opt-in profiles
+(moneybag, iron and horse97) are not runtime-active at this checkpoint.
+
+`buildings/hotel.glb` is a newly reconstructed red gameplay asset using a recovered
+material, not a recovered original sculpture. `UDPieces` starts HMD/root 4
+directly with a RySTxz transform and scale 0.10; there is no hotel CNK. Building
+slot priority is decimal `55 + square*4`. At 200 units/metre, decoded bounds are
+[-65,0,-90]..[65,155,90], with zero measured bounds error. Its real GPU probe
+renders 40 triangles, three batches and 461,453 colored pixels; the inspected
+capture is `build/gameplay-hotel-gpu-20261001.png`. Focused hotel catalog
+bounds/eligibility and existing BuildingDisplay lifecycle tests pass; no dedicated
+Engine hotel-cache runtime test was added. Complete-token pack tests pass and
+the application compiles. `--modern-buildings=house` now opts into
+both house and hotel; they use separate caches and independently retain retail
+fallback on missing assets or invalid bounds. `MonopolyExportGameplayHotel` was
+successfully executed as a CMake target, together with the complete-token target;
+`build/expanded-hotel-export-targets-20261001.log` records exit zero. Application
+placement and visual gameplay remain unqualified.

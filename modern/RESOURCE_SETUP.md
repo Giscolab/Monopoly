@@ -145,6 +145,8 @@ cmake --build modern/build --config Debug --target MonopolyExportModernSceneAsse
 cmake --build modern/build --config Debug --target MonopolyExportAlignedBoardAssets
 cmake --build modern/build --config Debug --target MonopolyExportModernEnvironment
 cmake --build modern/build --config Debug --target MonopolyGenerateStudioEnvironment
+cmake --build modern/build --config Debug --target MonopolyExportCompleteTokenVariants
+cmake --build modern/build --config Debug --target MonopolyExportGameplayHotel
 ```
 
 Le plateau runtime est `board/paris_board_runtime.glb`, distinct du plateau
@@ -160,6 +162,20 @@ le rendu précédent. Deux générations fraîches donnent le même SHA-256. Les
 23 frames CNK demandées passent avec IBL/PBR actifs ; l'application reste vivante
 plus de 25 secondes avec neuf chargements de pions. Ces captures et ce démarrage
 borné ne qualifient pas une partie interactive.
+
+Les deux cibles complete-token/hôtel ont été exécutées avec succès, dépendances
+complètes comprises ; `build/expanded-hotel-export-targets-20261001.log` consigne
+la sortie zéro. La qualification offline
+des six profils répète deux exports frais et ne stage que les 49 états approuvés,
+avec contrôle du hash de revue et publication transactionnelle. Le catalogue
+runtime comprend 401 racines/55 géométries ; 399 racines ont une preuve CPU
+appariée au retail et 29 états réellement observés une capture GPU examinée.
+
+`--modern-buildings=house` couvre désormais aussi `buildings/hotel.glb`, prototype
+rouge reconstruit avec un matériau récupéré. Maison et hôtel restent désactivés
+par défaut et ont des caches/replis indépendants ; absence ou bornes invalides
+conservent le retail. Le probe réel de l'hôtel passe, mais son placement visible
+dans une partie n'est pas qualifié.
 
 La cible des variantes produit les états complets bateau/chien/cheval après
 leurs contrats de déformation de production et la reconstruction des pions

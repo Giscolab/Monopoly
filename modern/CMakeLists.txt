@@ -747,7 +747,7 @@ if(MONOPOLY_BLENDER_EXECUTABLE
     add_custom_target(MonopolyExportModernAssets
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
             -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
-            --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            --python-exit-code 1 --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
             --
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         COMMENT "Exporting modern Monopoly GLB assets from Blender"
@@ -756,15 +756,27 @@ if(MONOPOLY_BLENDER_EXECUTABLE
     add_custom_target(MonopolyExportModernSceneAssets
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
             -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
-            --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            --python-exit-code 1 --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
             -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
             --include-board --include-house --skip-tokens
         COMMENT "Exporting separate measured board and gameplay-house prototypes"
         VERBATIM
     )
+    add_custom_target(MonopolyExportGameplayHotel
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_gameplay_hotel.py"
+            -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --contract "${CMAKE_CURRENT_SOURCE_DIR}/assets/modern-hotel-contract.json"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --authoring "${CMAKE_CURRENT_BINARY_DIR}/authoring"
+            --probe "$<TARGET_FILE:MonopolyModernAssetProbe>"
+        DEPENDS MonopolyModernAssetProbe
+        COMMENT "Authoring and qualifying a separate calibrated gameplay hotel prototype"
+        VERBATIM
+    )
     add_custom_target(MonopolyReconstructModernTokens
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
-            -b --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/reconstruct_missing_tokens.py"
+            -b --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/reconstruct_missing_tokens.py"
             -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
             --authoring "${CMAKE_CURRENT_BINARY_DIR}/authoring"
             --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
@@ -784,20 +796,20 @@ if(MONOPOLY_BLENDER_EXECUTABLE
             "${MONOPOLY_RETAIL_ASSET_ROOT}" 0x80094 0x80094,0x800A8,0x800A9,0x800AA,0x800AB,0x800AC
             "${CMAKE_CURRENT_BINARY_DIR}/horse_contract_production.json"
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
-            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_ship_variants.py"
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_ship_variants.py"
             -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
             --base-glb "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens/ship.glb"
             --correspondence "${CMAKE_CURRENT_BINARY_DIR}/ship_contract_production.json"
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
-            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_token_variants.py"
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_token_variants.py"
             -- --token dog --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
             --base-glb "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens/dog.glb"
             --correspondence "${CMAKE_CURRENT_BINARY_DIR}/dog_contract_production.json"
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
             --diagnostics "${CMAKE_CURRENT_BINARY_DIR}/dog-idle-qualification"
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
-            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_token_variants.py"
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_token_variants.py"
             -- --token horse --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
             --base-glb "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}/tokens/horse.glb"
             --correspondence "${CMAKE_CURRENT_BINARY_DIR}/horse_contract_production.json"
@@ -807,13 +819,31 @@ if(MONOPOLY_BLENDER_EXECUTABLE
         COMMENT "Qualifying modern ship, dog and horse variants using production-decoded retail controls"
         VERBATIM
     )
+    if(Python3_Interpreter_FOUND)
+        add_custom_target(MonopolyExportCompleteTokenVariants
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/qualify_complete_token_variants.py"
+                --blender "${MONOPOLY_BLENDER_EXECUTABLE}"
+                --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+                --base-assets "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+                --contract-tool "$<TARGET_FILE:MonopolyTokenDeformationContract>"
+                --retail-root "${MONOPOLY_RETAIL_ASSET_ROOT}"
+                --probe "$<TARGET_FILE:MonopolyModernAssetProbe>"
+                --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+                --work-dir "${CMAKE_CURRENT_BINARY_DIR}/complete-token-staging"
+            DEPENDS MonopolyTokenDeformationContract MonopolyModernAssetProbe
+                MonopolyExportModernTokenVariants
+            COMMENT "Qualifying and staging 49 explicitly reviewed token poses transactionally"
+            VERBATIM
+        )
+    endif()
     add_custom_target(MonopolyExportAlignedBoardAssets
         COMMAND "$<TARGET_FILE:MonopolyModernAssetProbe>"
             "${MONOPOLY_RETAIL_ASSET_ROOT}" "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
             --dump-board "${CMAKE_CURRENT_BINARY_DIR}"
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}"
             -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
-            --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            --python-exit-code 1 --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
             -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
             --skip-tokens --align-retail-board
             --retail-board-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-reference-obj/boardmed.obj"
@@ -823,7 +853,7 @@ if(MONOPOLY_BLENDER_EXECUTABLE
     )
     add_custom_target(MonopolyExportModernEnvironment
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
-            --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_environment.py"
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_environment.py"
             -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         COMMENT "Exporting separate optional Paris decorations"

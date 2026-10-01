@@ -14,12 +14,15 @@
 
 namespace monopoly::data
 {
-    enum class ModernSceneKind : std::uint8_t { ParisBoard, House };
+    enum class ModernSceneKind : std::uint8_t { ParisBoard, House, Hotel };
+    inline constexpr std::size_t ModernSceneKindCount = 3;
 
     // Optional replacements remain off for ordinary retail play.
     struct ModernSceneOptions
     {
         bool parisBoard{};
+        // --modern-buildings=house enables both building prototypes. Hotels
+        // still retain retail geometry until their separate asset qualifies.
         bool house{};
         bool environment{};
     };
@@ -64,4 +67,10 @@ namespace monopoly::data
     // nullopt means geometry alignment has not yet been qualified.
     [[nodiscard]] std::optional<ModernGltfLoadOptions> modernSceneLoadOptions(
         ModernSceneKind kind) noexcept;
+
+    // Hotel authoring is an explicit bounds contract, not a measured claim
+    // about an asset that may be missing. Gate the loaded prototype before
+    // presentation. Existing board and house qualification stays unchanged.
+    [[nodiscard]] bool qualifiedModernSceneGeometry(ModernSceneKind kind,
+        const MeshRenderData& mesh) noexcept;
 }

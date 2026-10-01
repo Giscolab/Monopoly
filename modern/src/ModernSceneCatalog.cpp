@@ -5,6 +5,8 @@
 #include "RuleTypes.hpp"
 #include "TextureCatalog.hpp"
 
+#include <cmath>
+
 namespace monopoly::data
 {
     namespace
@@ -17,6 +19,10 @@ namespace monopoly::data
             ModernSceneKind::House,
             packDataId(LegacyGroupId::ThreeD, pieces::HouseMeshTag),
             "buildings/house.glb"};
+        constexpr ModernSceneDefinition Hotel{
+            ModernSceneKind::Hotel,
+            packDataId(LegacyGroupId::ThreeD, pieces::HotelMeshTag),
+            "buildings/hotel.glb"};
         constexpr ModernSceneDefinition Unknown{};
         constexpr int ParisCity = 1;
         // The recovered printed prices use euros, not the retail francs mode.
@@ -69,6 +75,7 @@ namespace monopoly::data
         {
         case ModernSceneKind::ParisBoard: return ParisBoard;
         case ModernSceneKind::House: return House;
+        case ModernSceneKind::Hotel: return Hotel;
         }
         return Unknown;
     }
@@ -77,7 +84,8 @@ namespace monopoly::data
         std::optional<DataId> rootSequenceDataId, std::uint16_t priority,
         const ModernSceneOptions& options, const ModernSceneContext& context) noexcept
     {
-        if (kind != ModernSceneKind::ParisBoard && kind != ModernSceneKind::House)
+        if (kind != ModernSceneKind::ParisBoard && kind != ModernSceneKind::House &&
+            kind != ModernSceneKind::Hotel)
             return false;
         const auto& definition = modernSceneDefinition(kind);
         if (meshId != definition.legacyMeshId || !rootSequenceDataId ||
@@ -90,7 +98,9 @@ namespace monopoly::data
                 context.customBoardPath.empty();
         const auto endPriority = static_cast<std::uint32_t>(pieces::BoardHousingPriority) +
             static_cast<std::uint32_t>(rules::SquareCount) * pieces::HouseSlotCount;
-        return options.house && priority >= pieces::BoardHousingPriority && priority < endPriority;
+        return options.house && priority >= pieces::BoardHousingPriority && priority < endPriority &&
+            (kind != ModernSceneKind::Hotel ||
+                (priority - pieces::BoardHousingPriority) % pieces::HouseSlotCount == 0U);
     }
 
     std::optional<ModernGltfLoadOptions> modernSceneLoadOptions(ModernSceneKind kind) noexcept
@@ -104,6 +114,17 @@ namespace monopoly::data
             options.groundToZero = false;
             return options;
         }
+        if (kind == ModernSceneKind::Hotel)
+        {
+            // Author at 200 raw units/metre: glTF Y-up bounds
+            // [-.325,0,-.45]..[.325,.775,.45]. The existing gameplay .10
+            // sequence scale gives a 13x15.5x18 world-unit hotel. Loaded
+            // geometry must independently satisfy the retail bounds below.
+            ModernGltfLoadOptions options;
+            options.unitsPerMeter = 200.0F;
+            options.groundToZero = true;
+            return options;
+        }
         if (kind != ModernSceneKind::House) return std::nullopt;
         ModernGltfLoadOptions options;
         options.unitsPerMeter = static_cast<float>(RetailHouseHeight / AuthoredHouseHeightMetres);
@@ -111,5 +132,20 @@ namespace monopoly::data
         options.localOffset = {0.0F, 0.0F, 0.0F};
         options.groundToZero = true;
         return options;
+    }
+
+    bool qualifiedModernSceneGeometry(ModernSceneKind kind, const MeshRenderData& mesh) noexcept
+    {
+        if (kind == ModernSceneKind::ParisBoard || kind == ModernSceneKind::House) return true;
+        if (kind != ModernSceneKind::Hotel || mesh.vertices.empty() || mesh.indices.empty()) return false;
+        // Production retail HMD 0x80004: [-65,0,-90]..[65,155,90].
+        constexpr std::array<float,3> minimum{-65.0F,0.0F,-90.0F};
+        constexpr std::array<float,3> maximum{65.0F,155.0F,90.0F};
+        constexpr float tolerance = 0.001F;
+        for (std::size_t axis = 0; axis < 3; ++axis)
+            if (!std::isfinite(mesh.bounds.minimum[axis]) || !std::isfinite(mesh.bounds.maximum[axis]) ||
+                std::abs(mesh.bounds.minimum[axis] - minimum[axis]) > tolerance ||
+                std::abs(mesh.bounds.maximum[axis] - maximum[axis]) > tolerance) return false;
+        return true;
     }
 }

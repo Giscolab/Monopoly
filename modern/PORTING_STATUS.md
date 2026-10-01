@@ -14,7 +14,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 - **GIS-9** : TextureCatalog → ResourcePaths/BMP → mesh raccordé. **GIS-10** : types HMD consommés portés. La suite porte sur les données et scénarios réels, pas sur la recréation de types désactivés.
 - Lecture DAT/CNK/LANG, ressources, séquences, fonts, rendu GPU, vidéo avec frames/PCM et cycle de vie, films d’ouverture. Les consommateurs DATA passent désormais par une interface logique `DataSource` : les DAT sont le backend de repli, avec surcharges par `DataId` et manifestes de payloads hors archive. Les codecs vidéo utilisent FFmpeg/FFprobe externes ; voir [vidéo](VIDEO_RUNTIME.md).
 - Présentation moderne : plein écran bureau par défaut, modes fenêtré/exclusif, 1080p/1440p/4K selon le mode d’affichage, VSync/Mailbox/Immediate, deux frames GPU en vol, F11, télémétrie résolution/FPS et canevas 3D 800x450 16:9 indépendant de l’UI 800x600. Voir [présentation](PRESENTATION.md).
-- Assets Blender/glTF : six pions récupérés et cinq sculptures nouvelles exportés séparément, staging optionnel, loader statique borné et fallback HMD selon la racine CNK et sa priorité d'activation. Le chemin PBR comprend les cinq cartes, samplers, mipmaps, bases tangentes et alpha OPAQUE/MASK. Les racines rigides qualifiées conservent le timing CNK ; les autres changements de forme restent retail. Plateau, maison et trois éléments de décor ont des adaptateurs optionnels. Les animations complètes et la qualification visuelle en partie restent ouvertes. Voir [contrat Blender/glTF](BLENDER_INTEGRATION_SPEC.md).
+- Assets Blender/glTF : six pions récupérés et cinq sculptures nouvelles exportés séparément, staging optionnel, loader statique borné et fallback HMD selon la racine CNK et sa priorité d'activation. Le chemin PBR comprend les cinq cartes, samplers, mipmaps, bases tangentes et alpha OPAQUE/MASK. Le catalogue étendu qualifie 399 racines complètes des six pions récupérés ; les contextes non qualifiés conservent le retail. Plateau, maison, hôtel reconstruit et trois éléments de décor ont des adaptateurs optionnels. Les animations complètes et la qualification visuelle en partie restent ouvertes. Voir [contrat Blender/glTF](BLENDER_INTEGRATION_SPEC.md).
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
@@ -184,3 +184,30 @@ procéduraux du plateau/décor restent à convertir ou à cuire.
 Le self-test de bake du chapeau utilise ses vrais facteurs, sans cartes normales,
 émissives ou AO inventées ; exports répétés, loader et comparaison Blender sont
 consignés dans le contrat, sans affirmation de fidélité procédurale ou de partie.
+
+Le catalogue étendu contient **401 racines distinctes et 55 géométries** : 399
+racines complètes des six pions récupérés à priorité Generic100, plus les idles
+chien/cheval d'origine à 224..229 ; 49 états récupérés revus et six états cheval.
+Le rapport `build/qualified-complete-production-20261001.json` compare chaque
+tick et événement des 399 racines au retail avec fins disque/action finale zéro,
+sans erreur. Seuls 29 HMD distincts y sont réellement observés ; leurs captures
+GPU PBR/IBL en 1080p ont été examinées. Le cache immutable partagé par HMD et
+la publication transactionnelle par racine conservent le repli du pack entier,
+y compris après rejet GPU. Cela ne prouve pas une animation continue en partie
+ni une qualification visuelle de toutes les frames.
+
+L'hôtel rouge de gameplay est un asset reconstruit utilisant un matériau
+récupéré. `UDPieces` démarre directement HMD/racine 4 avec transformation RySTxz
+et échelle 0,10, sans CNK d'hôtel ; la priorité du slot vaut `55 + square*4`
+(55 décimal). Un probe GPU réel examiné dessine 40 triangles en trois batches.
+Les tests ciblés du catalogue hôtel (bornes/éligibilité), du cycle de vie
+BuildingDisplay existant et des packs de pions passent ; l'application compile.
+Aucun test runtime dédié du cache hôtel Engine n'a été ajouté.
+`--modern-buildings=house` couvre maison/hôtel avec caches et replis indépendants,
+désactivés par défaut. Placement et gameplay visibles restent à qualifier.
+Les cibles `MonopolyExportCompleteTokenVariants` et `MonopolyExportGameplayHotel`
+ont été exécutées avec succès, dépendances complètes comprises (log
+`build/expanded-hotel-export-targets-20261001.log`, sortie zéro). L'outil offline
+qualifie deux exports frais de six profils et protège les 49 seuls états revus.
+Les profils diagnostiques opt-in moneybag/iron/horse97 ne sont pas actifs dans
+le runtime à ce checkpoint.

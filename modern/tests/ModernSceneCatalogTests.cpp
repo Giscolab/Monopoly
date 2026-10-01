@@ -4,8 +4,12 @@
 #include "RuleTypes.hpp"
 
 #include <array>
+#include <bit>
+#include <chrono>
 #include <cmath>
+#include <fstream>
 #include <iostream>
+#include <limits>
 #include <string_view>
 
 namespace
@@ -15,6 +19,36 @@ namespace
     {
         if (condition) std::cout << "[PASS] " << message << '\n';
         else { std::cerr << "[FAIL] " << message << '\n'; ++failures; }
+    }
+
+    std::filesystem::path hotelFixture()
+    {
+        std::vector<std::uint8_t> binary;
+        const auto word = [&](std::uint32_t value) {
+            for (unsigned shift=0;shift<32;shift+=8)
+                binary.push_back(static_cast<std::uint8_t>(value>>shift)); };
+        for (const float value : std::array<float,9>{-.325F,0,-.45F,.325F,0,-.45F,0,.775F,.45F})
+            word(std::bit_cast<std::uint32_t>(value));
+        for (unsigned vertex=0;vertex<3;++vertex)
+            for (const float value : std::array<float,3>{0,0,-1}) word(std::bit_cast<std::uint32_t>(value));
+        word(0);word(1);word(2);
+        std::string json = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"indices":2}]}],"buffers":[{"byteLength":84}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":36},{"buffer":0,"byteOffset":72,"byteLength":12}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[-0.325,0,-0.45],"max":[0.325,0.775,0.45]},{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":2,"componentType":5125,"count":3,"type":"SCALAR"}]})";
+        while (json.size()%4) json.push_back(' ');
+        std::vector<std::uint8_t> output;
+        const auto outputWord = [&](std::uint32_t value) {
+            for (unsigned shift=0;shift<32;shift+=8)
+                output.push_back(static_cast<std::uint8_t>(value>>shift)); };
+        outputWord(0x46546C67U);outputWord(2);
+        outputWord(static_cast<std::uint32_t>(28+json.size()+binary.size()));
+        outputWord(static_cast<std::uint32_t>(json.size()));outputWord(0x4E4F534AU);
+        output.insert(output.end(),json.begin(),json.end());
+        outputWord(static_cast<std::uint32_t>(binary.size()));outputWord(0x004E4942U);
+        output.insert(output.end(),binary.begin(),binary.end());
+        const auto path=std::filesystem::temp_directory_path()/
+            ("monopoly-hotel-contract-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+".glb");
+        std::ofstream file(path,std::ios::binary);
+        file.write(reinterpret_cast<const char*>(output.data()),static_cast<std::streamsize>(output.size()));
+        return path;
     }
 }
 
@@ -59,6 +93,7 @@ int main()
     ModernSceneContext context{BoardEdition::Europe, 1, LanguageId::French, 12, {}};
     const auto board = modernSceneDefinition(ModernSceneKind::ParisBoard).legacyMeshId;
     const auto house = modernSceneDefinition(ModernSceneKind::House).legacyMeshId;
+    const auto hotel = modernSceneDefinition(ModernSceneKind::Hotel).legacyMeshId;
     expect(board == 0x00080003U && house == 0x00080005U,
         "catalog identities match classic medium board and house retail IDs");
     const auto boardQualified = [&](const ModernSceneContext& candidate)
@@ -131,5 +166,58 @@ int main()
         calibration->yawDegrees == 0.0F && calibration->groundToZero &&
         calibration->localOffset == std::array<float, 3>{},
         "house calibration reproduces retail height and grounded centered pivot");
+    expect(ModernSceneKindCount==3 && hotel==0x00080004U &&
+        modernSceneDefinition(ModernSceneKind::Hotel).relativeGlbPath=="buildings/hotel.glb",
+        "hotel has its own retail identity and optional asset path");
+    expect(parsed && qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,
+        pieces::BoardHousingPriority,parsed->options,context),
+        "existing buildings house option also enables separate hotel prototype");
+    expect(!qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,
+        pieces::BoardHousingPriority,ModernSceneOptions{},context),
+        "default retail options disable hotels");
+    for (std::uint16_t priority=pieces::BoardHousingPriority;priority<end;++priority)
+        expect(qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,priority,options,context)==
+            ((priority-pieces::BoardHousingPriority)%pieces::HouseSlotCount==0),
+            "hotel eligibility matches slot-zero production housing priority");
+    expect(!qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,
+        pieces::BoardHousingPriority-1U,options,context) &&
+        !qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,
+            static_cast<std::uint16_t>(end),options,context),
+        "hotel excludes priorities outside production housing interval");
+    expect(!qualifiedModernSceneSequence(ModernSceneKind::Hotel,house,hotel,
+        pieces::BoardHousingPriority,options,context) &&
+        !qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,house,
+            pieces::BoardHousingPriority,options,context) &&
+        !qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,std::nullopt,
+            pieces::BoardHousingPriority,options,context),
+        "hotel requires exact mesh and HMD root without borrowing house identity");
+    const auto hotelCalibration=modernSceneLoadOptions(ModernSceneKind::Hotel);
+    expect(hotelCalibration && hotelCalibration->unitsPerMeter==200 && hotelCalibration->groundToZero &&
+        hotelCalibration->yawDegrees==0 && hotelCalibration->localOffset==std::array<float,3>{},
+        "hotel authoring contract uses explicit metre scale and retail grounded pivot");
+    const auto fixturePath=hotelFixture();
+    const auto hotelMesh=loadModernGltfMesh(fixturePath,*hotelCalibration);
+    expect(hotelMesh && qualifiedModernSceneGeometry(ModernSceneKind::Hotel,**hotelMesh),
+        "production GLB loader reproduces measured retail hotel bounds from authoring contract");
+    if (hotelMesh)
+    {
+        auto wrong=**hotelMesh;
+        wrong.bounds.maximum[1]+=1;
+        expect(!qualifiedModernSceneGeometry(ModernSceneKind::Hotel,wrong),
+            "incorrect hotel height cannot silently replace retail geometry");
+        wrong=**hotelMesh;wrong.bounds.minimum[0]+=.002F;
+        expect(!qualifiedModernSceneGeometry(ModernSceneKind::Hotel,wrong),
+            "off-center hotel footprint outside .001 raw units is rejected");
+        wrong=**hotelMesh;wrong.bounds.maximum[2]=std::numeric_limits<float>::quiet_NaN();
+        expect(!qualifiedModernSceneGeometry(ModernSceneKind::Hotel,wrong),
+            "nonfinite hotel bounds are rejected");
+        expect(qualifiedModernSceneGeometry(ModernSceneKind::House,wrong),
+            "hotel qualification does not change established house calibration");
+    }
+    std::filesystem::remove(fixturePath);
+    expect(!loadModernGltfMesh(fixturePath,*hotelCalibration),
+        "missing optional hotel asset yields loader failure for retail fallback");
+    expect(!qualifiedModernSceneGeometry(ModernSceneKind::Hotel,MeshRenderData{}),
+        "empty hotel geometry does not qualify");
     return failures ? 1 : 0;
 }

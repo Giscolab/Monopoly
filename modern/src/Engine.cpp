@@ -148,8 +148,8 @@ namespace monopoly::engine
             data::ModernTokenCount> modernTokenMeshes{};
         std::array<bool, data::ModernTokenCount> modernTokenAttempted{};
         data::ModernSceneOptions modernSceneOptions{};
-        std::array<std::shared_ptr<const data::MeshRenderData>, 2> modernSceneMeshes{};
-        std::array<bool, 2> modernSceneAttempted{};
+        std::array<std::shared_ptr<const data::MeshRenderData>, data::ModernSceneKindCount> modernSceneMeshes{};
+        std::array<bool, data::ModernSceneKindCount> modernSceneAttempted{};
         std::unique_ptr<data::ModernTokenVariantCache> modernTokenVariants;
         std::unique_ptr<ModernEnvironment> modernEnvironment;
         std::unordered_set<std::string> reportedModernAssetFailures;
@@ -995,7 +995,8 @@ namespace monopoly::engine
             const data::ModernSceneContext context{resources->context().board,
                 state.city, resources->context().language, state.system,
                 state.customBoardPath};
-            for (const auto kind : {data::ModernSceneKind::ParisBoard, data::ModernSceneKind::House})
+            for (const auto kind : {data::ModernSceneKind::ParisBoard, data::ModernSceneKind::House,
+                    data::ModernSceneKind::Hotel})
             {
                 if (!data::qualifiedModernSceneSequence(kind, id, root, priority,
                         modernSceneOptions, context)) continue;
@@ -1018,6 +1019,12 @@ namespace monopoly::engine
                 {
                     std::cerr << "Modern scene rejected: " << path.string() << ": "
                         << loaded.error().detail << " - using retail HMD fallback.\n";
+                    return {};
+                }
+                if (!data::qualifiedModernSceneGeometry(kind, **loaded))
+                {
+                    std::cerr << "Modern scene rejected: " << path.string()
+                        << ": geometry does not match its calibrated contract - using retail HMD fallback.\n";
                     return {};
                 }
                 modernSceneMeshes[index] = std::move(*loaded);

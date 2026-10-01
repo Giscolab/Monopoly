@@ -14,6 +14,7 @@ import argparse
 import copy
 import json
 from pathlib import Path
+import struct
 import sys
 
 import bpy
@@ -36,7 +37,11 @@ PROFILES = {"dog":{"scale":154.80,"yaw_degrees":90,"offset":[-.5,0,-15.05967734]
             "boot":{"scale":181.06,"yaw_degrees":-90,"offset":[0,0,25.94],"rest_tag":0xbf,
                     "states":[],"control_count":66,"triangle_count":130},
             "thimble":{"scale":130.89,"yaw_degrees":-90,"offset":[0,0,0],"rest_tag":0xcc,
-                       "states":[],"control_count":92,"triangle_count":180}}
+                       "states":[],"control_count":92,"triangle_count":180},
+            "moneybag":{"scale":275.57889,"yaw_degrees":-90,"offset":[-1.44884,-4,-6],"rest_tag":0x06,
+                        "states":[],"control_count":74,"triangle_count":134,"catalogue_grounded":True},
+            "iron":{"scale":135.72687,"yaw_degrees":-90,"offset":[.5,0,-6.49181],"rest_tag":0xad,
+                    "states":[],"control_count":82,"triangle_count":150,"catalogue_grounded":True}}
 
 
 def bake_node_transforms(doc,binary):
@@ -117,6 +122,7 @@ def create_pose(original,binary,profile,baseline,transfer,tag,provenance):
     points_all,displacement,determinants,normal_lengths = [],[],[],[]
     touched_positions,touched_normals = set(),{}
     singular_count = 0
+    face_folds,degenerate_faces = 0,0
     for mesh in original["meshes"]:
         for primitive in mesh["primitives"]:
             p_id,n_id = primitive["attributes"]["POSITION"],primitive["attributes"]["NORMAL"]
@@ -124,10 +130,33 @@ def create_pose(original,binary,profile,baseline,transfer,tag,provenance):
             engine = np.column_stack((sign*points[:,2]*scale+offset[0],(points[:,1]-baseline)*scale+offset[1],
                                        -sign*points[:,0]*scale+offset[2]))
             mapped = transfer(engine)
+            if profile.get("catalogue_grounded") or profile.get("verify_faces"):
+                # Discrete faces must also retain orientation relative to the
+                # transported source normal; vertex Jacobians alone can miss
+                # folds between widely spaced samples.
+                item = original["accessors"][primitive["indices"]]
+                view = original["bufferViews"][item["bufferView"]]
+                component = {5121:"B",5123:"H",5125:"I"}[item["componentType"]]
+                width = struct.calcsize("<"+component)
+                start = view.get("byteOffset",0)+item.get("byteOffset",0)
+                indices = np.asarray([struct.unpack_from("<"+component,binary,start+i*view.get("byteStride",width))[0]
+                                      for i in range(item["count"])]).reshape((-1,3))
+                old_tri,new_tri = engine[indices],mapped[indices]
+                old_cross = np.cross(old_tri[:,1]-old_tri[:,0],old_tri[:,2]-old_tri[:,0])
+                new_cross = np.cross(new_tri[:,1]-new_tri[:,0],new_tri[:,2]-new_tri[:,0])
+                source_area,new_area = np.linalg.norm(old_cross,axis=1),np.linalg.norm(new_cross,axis=1)
+                valid = (source_area>1e-10)&(new_area>1e-10)
+                degenerate_faces += int(((source_area>1e-10)&~valid).sum())
+                face_j = transfer.jacobian(old_tri.mean(axis=1))
+                face_safe = valid & (np.abs(np.linalg.det(face_j))>1e-8)
+                transported = np.zeros_like(old_cross)
+                transported[face_safe] = np.linalg.solve(np.transpose(face_j[face_safe],(0,2,1)),old_cross[face_safe,:,None])[:,:,0]
+                face_folds += int((valid & (~face_safe | (np.einsum("ij,ij->i",transported,new_cross)<=0))).sum())
             local = np.column_stack((-sign*(mapped[:,2]-offset[2])/scale,(mapped[:,1]-offset[1])/scale,
                                       sign*(mapped[:,0]-offset[0])/scale))
             if p_id not in touched_positions:
-                write_accessor(doc,data,p_id,local)
+                if not (profile.get("catalogue_grounded") and tag==profile["rest_tag"] and baseline==0):
+                    write_accessor(doc,data,p_id,local)
                 touched_positions.add(p_id)
                 points_all.append(local)
                 displacement.extend(np.linalg.norm(mapped-engine,axis=1).tolist())
@@ -152,10 +181,13 @@ def create_pose(original,binary,profile,baseline,transfer,tag,provenance):
             if not np.isfinite(lengths).all() or lengths.min()<1e-8:
                 raise RuntimeError("invalid transformed candidate normals")
             normal_lengths.extend(lengths.tolist())
-            write_accessor(doc,data,n_id,normals/lengths[:,None])
+            if not (profile.get("catalogue_grounded") and tag==profile["rest_tag"] and baseline==0):
+                write_accessor(doc,data,n_id,normals/lengths[:,None])
     points = np.concatenate(points_all)
     determinants = np.asarray(determinants)
     qualified = bool(np.isfinite(points).all() and np.isfinite(determinants).all() and determinants.min()>=.1 and singular_count==0)
+    if profile.get("catalogue_grounded") or profile.get("verify_faces"):
+        qualified = qualified and face_folds==0 and degenerate_faces==0
     root = doc["nodes"][doc["scenes"][doc.get("scene",0)]["nodes"][0]]
     root["name"] = f"{root.get('extras',{}).get('asset_slug','token')}_idle_{tag:04x}"
     root.setdefault("extras",{}).update(provenance)
@@ -168,6 +200,10 @@ def create_pose(original,binary,profile,baseline,transfer,tag,provenance):
               "low_jacobian_vertices":int((determinants<=.1).sum()),"singular_jacobian_vertices":singular_count,
               "max_displacement_engine_units":max(displacement),
               "bounds_y_up_metres":{"min":points.min(axis=0).tolist(),"max":points.max(axis=0).tolist()}}
+    if profile.get("catalogue_grounded") or profile.get("verify_faces"):
+        report.update({"discrete_face_folds":face_folds,"new_degenerate_faces":degenerate_faces})
+    if profile.get("catalogue_grounded"):
+        report["representative_payload_preserved"] = tag==profile["rest_tag"] and baseline==0
     return doc,data,report
 
 
@@ -182,16 +218,26 @@ def main():
     parser.add_argument("--render",action="store_true")
     parser.add_argument("--contract-states",action="store_true",help="Use every authoritative production-contract target with catalogue calibration; pose filenames")
     parser.add_argument("--allow-partial-qualification",action="store_true",help="Contract-state diagnostics: publish only individually qualified poses; never activate a runtime pack")
+    parser.add_argument("--states",nargs="+",type=lambda value:int(value,0),help="Explicit subset of authoritative contract targets; requires --contract-states")
+    parser.add_argument("--verify-faces",action="store_true",help="Additional discrete fold qualification for diagnostic expansions; default exports stay unchanged")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
     if args.allow_partial_qualification and not args.contract_states:
         parser.error("partial qualification requires --contract-states")
+    if args.states and not args.contract_states:
+        parser.error("explicit states require --contract-states")
     source,base,controls = Path(args.source).resolve(),Path(args.base_glb).resolve(),Path(args.correspondence).resolve()
     profile = copy.deepcopy(PROFILES[args.token])
+    if args.verify_faces:
+        profile["verify_faces"] = True
     reference = json.loads(controls.read_text(encoding="utf-8"))
     if args.contract_states:
         if not reference["evidence"].get("production_geometry_decoder",False):
             raise RuntimeError("contract-state expansion requires the production geometry decoder")
         profile["states"] = sorted(int(key,16) for key in reference["target_positions_engine"])
+        if args.states:
+            if not set(args.states).issubset(profile["states"]):
+                parser.error("requested states are absent from authoritative contract")
+            profile["states"] = sorted(set(args.states))
     if not profile["states"]:
         parser.error("this profile requires --contract-states")
     rest = np.asarray(reference["rest_positions_engine"],dtype=np.float64)
@@ -203,9 +249,10 @@ def main():
     production_geometry = evidence.get("production_geometry_decoder",False) or evidence.get("referenced_positions_match_production_obj",False)
     if not evidence["identical_triangle_multisets"] or not production_geometry:
         raise RuntimeError("unqualified indexed correspondence")
-    original,binary = read_glb(base,require_identity=args.token!="horse")
+    normalize_nodes = args.token=="horse" or profile.get("catalogue_grounded",False)
+    original,binary = read_glb(base,require_identity=not normalize_nodes)
     normalization = None
-    if args.token=="horse":
+    if normalize_nodes:
         original,binary,normalization = bake_node_transforms(original,binary)
     position_ids = {p["attributes"]["POSITION"] for m in original["meshes"] for p in m["primitives"]}
     base_points = np.concatenate([accessor(original,binary,i) for i in sorted(position_ids)])
@@ -225,6 +272,15 @@ def main():
               **provenance,"poses":{}}
     if normalization:
         report["node_transform_normalization"] = normalization
+    if profile.get("catalogue_grounded"):
+        # Production groundToZero subtracts the geometry minimum BEFORE
+        # applying localOffset: moneybag's catalogue offsetY=-4 is retained.
+        # The exported common rest baseline removes the need to ground each
+        # variant. Keeping the same offset preserves static rest and all
+        # target vertical motion without per-pose floor normalization.
+        report["calibration_derivation"].update({"catalogue_static_ground_to_zero":True,
+            "raw_retail_transfer_offset":profile["offset"],"variant_common_ground_to_zero":False,
+            "catalogue_ground_then_offset_order":True,"retail_to_grounded_y_translation":0})
     candidates = {}
     for tag in profile["states"]:
         key = f"0x{tag:x}"
@@ -267,6 +323,8 @@ def main():
         report.update({"scope":"all observed production-contract targets; numerical qualification only, no sequence activation",
                        "individually_published_tags":[tag for tag in profile["states"] if report["poses"][f"0x{tag:x}"]["qualified"]],
                        "excluded_tags":[tag for tag in profile["states"] if not report["poses"][f"0x{tag:x}"]["qualified"]]})
+        if args.states:
+            report["scope"] = "explicit observed production-contract subset; numerical qualification only, no sequence activation"
     (diagnostic/"qualification.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     print("TOKEN_VARIANTS",json.dumps(report))
     if args.render:

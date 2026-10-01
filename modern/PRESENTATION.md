@@ -117,3 +117,12 @@ chien, six du cheval et deux états du bateau. La mosaïque a été examinée ; 
 contrôle de frames demandées ne constitue pas une animation continue en partie
 ni un film de gameplay. Il ne transforme pas les neuf chargements observés au
 démarrage en onze pions qualifiés dans une partie réelle.
+
+Le catalogue étendu comprend 401 racines et 55 géométries : 399 racines des six
+pions récupérés passent une comparaison CPU de chaque tick/événement au retail.
+Seuls 29 HMD distincts ont été observés ; leurs captures PBR/IBL 1920x1080 ont
+été examinées. Cela ne qualifie ni animation continue en partie ni toutes les
+frames visuellement. Le prototype d'hôtel rouge reconstruit passe également un
+probe GPU réel (40 triangles, trois batches). L'option `--modern-buildings=house`
+active maison et hôtel avec repli indépendant ; leur placement visuel en partie
+reste à qualifier. Voir le [contrat Blender](BLENDER_INTEGRATION_SPEC.md).
