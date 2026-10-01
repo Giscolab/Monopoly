@@ -52,7 +52,7 @@ namespace monopoly::statsui
 
     [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, std::string>
     renderStatsTextSurface(const TextSurface& surface, fonts::Runtime& font,
-        int* historyScrollLimit = nullptr);
+        int* historyScrollLimit = nullptr, bool modernAA = false);
 
     class TextPlayback final
     {
@@ -62,7 +62,7 @@ namespace monopoly::statsui
             const PlayerPlaybackInputs& inputs, const CalculatorUIState& calculator,
             const FutureImmunityState& future, const AccountState& accounts,
             int city, int monetarySystem, display::Screen2D view,
-            fonts::Runtime* font, engine::SequencePlayback& playback);
+            fonts::Runtime* font, engine::SequencePlayback& playback, bool modernAA = false);
         void reset() noexcept;
         [[nodiscard]] std::size_t objectCount() const noexcept { return published_.size(); }
         [[nodiscard]] int historyScrollLimit() const noexcept { return historyScrollLimit_; }
@@ -73,5 +73,6 @@ namespace monopoly::statsui
         std::vector<TextSurface> current_;
         std::optional<fonts::Settings> fontSettings_;
         int historyScrollLimit_{};
+        bool modernAA_{};
     };
 }

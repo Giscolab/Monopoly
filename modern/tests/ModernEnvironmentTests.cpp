@@ -1,6 +1,8 @@
 #include "ModernEnvironment.hpp"
 #include "SequenceTransforms.hpp"
 
+#include <atomic>
+#include <thread>
 #include <bit>
 #include <algorithm>
 #include <chrono>
@@ -91,6 +93,8 @@ int main()
     engine::ModernEnvironment environment(fixture.root, false, diagnostic);
     expect(environment.items(identity, 0).empty() && reports.empty(),
         "environment is off by default and produces no diagnostics or scene instances");
+    expect(environment.decodeWorkers()>=1 && environment.decodeWorkers()<=8,
+        "production worker default remains bounded on every hardware count");
     environment.setEnabled(true);
     const auto original = environment.items(identity, 77);
     expect(original.size() == 3U && reports.empty(), "production loader creates three optional native decorations");
@@ -229,5 +233,49 @@ int main()
     city.rejectGeometry(completeCity.back().renderData.get());
     expect(city.items(board,1,true,true,true).size()==completeCity.size()-1 &&
         cityAttempts==completeCity.size(),"rejected city group falls back independently and is never retried");
+    // Injected bad_alloc qualifies exception containment, not actual heap exhaustion.
+    // Explicitly concurrent injected loader uses only atomic accounting and
+    // immutable shared geometry. Default injected callbacks above stay serial.
+    for(const unsigned workers:{1U,4U,8U})
+    {
+        std::atomic<unsigned> active{},peak{},calls{};
+        const auto caller=std::this_thread::get_id();
+        bool diagnosticsOnCaller=true;
+        std::vector<std::string> orderedErrors;
+        engine::ModernEnvironment parallel(fixture.root,true,
+            [&](std::string_view error)
+            {diagnosticsOnCaller&=std::this_thread::get_id()==caller;orderedErrors.emplace_back(error);},
+            [&](const std::filesystem::path& path,data::ModernGltfLoadOptions)->LoadResult
+            {
+                ++calls;const auto count=++active;auto old=peak.load();
+                while(old<count&&!peak.compare_exchange_weak(old,count)){}
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));--active;
+                const auto name=path.filename().string();
+                if(name=="procedural_city_buildings_back.glb")throw std::runtime_error("qualified thrown failure");
+                if(name=="procedural_city_trees_b.glb")throw std::bad_alloc{};
+                if(name=="procedural_city_trees_a.glb")return std::unexpected(data::MeshRuntimeError{data::MeshRuntimeErrorCode::ModernAssetInvalid,"qualified returned failure"});
+                return original[0].renderData;
+            });
+        parallel.setDecodeWorkers(workers);
+        const auto batch=parallel.items(board,0,true,false,true);
+        expect(batch.size()==engine::ModernCityCount-1 && calls==engine::ModernCityCount+2 &&
+            peak<=workers && diagnosticsOnCaller && orderedErrors.size()==3,
+            "bounded workers contain injected bad_alloc/runtime/returned failures and publish diagnostics only on caller");
+        expect(orderedErrors.size()==3 && orderedErrors[0].find("city back")!=std::string::npos &&
+            orderedErrors[1].find("city trees a")!=std::string::npos &&
+            orderedErrors[2].find("city trees b")!=std::string::npos,
+            "parallel failures retain catalog diagnostic order regardless of completion order");
+        bool order=true;
+        for(std::size_t i=1;i<batch.size();++i)order&=batch[i-1].node<batch[i].node;
+        expect(order && std::all_of(batch.begin(),batch.end(),[&](const auto& item)
+            {return item.renderData==original[0].renderData && item.asset->origin==data::MeshAssetOrigin::ModernGltf;}),
+            "1/4/8 workers preserve ordered logical identities and immutable geometry/material owner");
+        const auto next=parallel.items(board,1,true,false,true);
+        expect(next.size()==batch.size() && calls==engine::ModernCityCount+2,
+            "parallel success and failure are attempted once, repeated publication is cached");
+        parallel.setDecodeWorkers(100);
+        expect(parallel.decodeWorkers()==8,"explicit worker count is bounded at8");
+    }
     return failures ? 1 : 0;
+
 }

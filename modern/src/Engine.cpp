@@ -118,6 +118,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -158,6 +160,31 @@ namespace monopoly::engine
             data::ModernTokenCount> modernTokenMeshes{};
         std::array<bool, data::ModernTokenCount> modernTokenAttempted{};
         data::ModernSceneOptions modernSceneOptions{};
+        struct StartupCPUProfile
+        {
+            using Clock = std::chrono::steady_clock;
+            bool enabled{}, published{}, uploaded{}, presented{}, rendererReported{};
+            Clock::time_point epoch{};
+            void begin()
+            {
+                const auto* value = std::getenv("MONOPOLY_PROFILE_STARTUP");
+                *this = {};
+                enabled = value && std::string_view(value) == "1";
+                if (enabled) epoch = Clock::now();
+            }
+            [[nodiscard]] Clock::time_point start() const
+            { return enabled ? Clock::now() : Clock::time_point{}; }
+            void report(std::string_view phase, Clock::time_point started, std::size_t objects = 0) const
+            {
+                if (!enabled) return;
+                const auto ended = Clock::now();
+                std::cerr << "Startup CPU profile: phase=" << phase
+                    << " elapsed_ms=" << std::chrono::duration<double,std::milli>(ended-started).count()
+                    << " since_session_ms=" << std::chrono::duration<double,std::milli>(ended-epoch).count()
+                    << " objects=" << objects
+                    << " scope=CPU elapsed only; no added GPU fence; not completed GPU time\n";
+            }
+        } startupCPUProfile;
         std::array<std::shared_ptr<const data::MeshRenderData>, data::ModernSceneKindCount> modernSceneMeshes{};
         std::array<bool, data::ModernSceneKindCount> modernSceneAttempted{};
         std::unique_ptr<data::ModernTokenVariantCache> modernTokenVariants;
@@ -1151,6 +1178,7 @@ namespace monopoly::engine
 
         void resetModernTokenMeshes() noexcept
         {
+            startupCPUProfile = {};
             modernTokenMeshes = {};
             modernTokenAttempted = {};
             modernSceneMeshes = {};
@@ -1173,6 +1201,8 @@ namespace monopoly::engine
         if (!playback)
             if (auto resources = startup::resources())
             {
+                startupCPUProfile.begin();
+                const auto warmStarted = startupCPUProfile.start();
                 auto modernResolver = modernTokenMeshResolver();
                 // Warm the existing idle-safe modern geometry. Qualified
                 // rigid movement reuses it with complete CNK transforms;
@@ -1192,9 +1222,13 @@ namespace monopoly::engine
                             pieces::TokenPriority);
                 }
 
+                startupCPUProfile.report("idle_token_warm", warmStarted,
+                    std::count_if(modernTokenMeshes.begin(), modernTokenMeshes.end(), [](const auto& mesh){ return bool(mesh); }));
+                const auto sessionStarted = startupCPUProfile.start();
                 playback = std::make_unique<SequencePlayback>(
                     std::move(resources),
                     std::move(modernResolver));
+                startupCPUProfile.report("session_construct", sessionStarted);
                 if (modernSceneOptions.proceduralBoard)
                 {
                     const auto rasterText = [](std::string_view text, int size, bool bold = true, bool italic = false)
@@ -1265,15 +1299,17 @@ namespace monopoly::engine
                         const sequence::Matrix2D& raster) -> std::optional<std::array<float, 4>>
                     {
                         const auto& state = display::stateReadOnly();
-                        if (state.current2DView != display::Screen2D::Trade || priority != 1002 ||
+                        if ((state.current2DView != display::Screen2D::Trade &&
+                             state.current2DView != display::Screen2D::Portfolio) || priority != 1002 ||
                             !root || root != iBarBackdropPlayback.buyAuctionPopupDeed()) return {};
-                        // Present the pending purchase inside the unused right-hand deed panel.
+                        // Present the pending purchase in the Trade deed panel or Portfolio board viewport.
                         // Preserve the retail popup node, lifetime, input routing and clock.
                         const auto& m = raster.values;
                         if (m[0] != 1 || m[1] != 0 || m[2] != 0 || m[3] != 0 ||
                             m[4] != 1 || m[5] != 0 || m[8] != 1) return {};
-                        return std::array<float, 4>{601.37665F-m[6], -m[7],
-                            798.62335F-m[6], 225.0F-m[7]};
+                        const float panelLeft = state.current2DView == display::Screen2D::Trade ? 600.0F : 100.0F;
+                        return std::array<float, 4>{panelLeft+1.37665F-m[6], -m[7],
+                            panelLeft+198.62335F-m[6], 225.0F-m[7]};
                     });
                     skin->configurePropertyDescriptors(
                         [](unsigned propertyIndex) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
@@ -2179,6 +2215,9 @@ namespace monopoly::engine
         auto* session = sequencePlayback();
         if (session)
         {
+            // Starts may resolve/decode meshes before update(), so include
+            // the complete sync/publish CPU interval on the first board frame.
+            const auto publishStarted = !startupCPUProfile.published ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
             const auto tick = timers::tickCount();
             if (tick > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
                 return SDL_SetError("Sequence parent clock exceeds signed runtime range");
@@ -2560,12 +2599,17 @@ namespace monopoly::engine
                     statsDeedValueTextSync.error().c_str());
             if (statsAccountRuntime)
             {
+                const auto statsResources = session->resources();
                 const auto statsTextSync = statsTextPlayback.sync(
                     userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                     userinterface::statsCalculatorStateReadOnly(),
                     userinterface::statsFutureImmunityStateReadOnly(), statsAccountRuntime->state(),
                     displayState.city, displayState.system, displayState.desired2DView,
-                    fontPlayback(), *session);
+                    fontPlayback(), *session, modernSceneOptions.proceduralBoard && statsResources &&
+                    statsResources->context().board == data::BoardEdition::Usa &&
+                    statsResources->context().language == data::LanguageId::EnglishUs &&
+                    displayState.city == 0 && displayState.system == 13 &&
+                    displayState.customBoardPath.empty());
                 if (!statsTextSync)
                     return SDL_SetError("Stats text playback: %s", statsTextSync.error().c_str());
                 const auto& stats = userinterface::statsStateReadOnly();
@@ -2821,7 +2865,9 @@ namespace monopoly::engine
                         viewportQueued.error().c_str());
             }
 
+            const auto updateStarted = !startupCPUProfile.published ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
             const auto updated = session->update(static_cast<std::int32_t>(tick));
+            const auto sequenceUpdateEnded = !startupCPUProfile.published ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             std::vector<sequence::SequenceMeshRenderItem> decorations;
             std::vector<std::shared_ptr<const data::MeshRuntimeAsset>> staticSceneAssets;
@@ -2855,10 +2901,12 @@ namespace monopoly::engine
                         modernEnvironment = std::make_unique<ModernEnvironment>(
                             std::filesystem::path(SDL_GetBasePath()) / "assets/modern", true);
                     }
+                    const auto environmentStarted = !startupCPUProfile.published ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
                     decorations = modernEnvironment->items(board->worldTransform,
                         static_cast<std::uint32_t>(tick), true,
                         modernSceneOptions.environment && !modernSceneOptions.usaBoard,
                         modernSceneOptions.proceduralEnvironment);
+                    if (!startupCPUProfile.published) startupCPUProfile.report("environment_items", environmentStarted, decorations.size());
                     if(modernSceneOptions.proceduralEnvironment)
                         for(const auto& decoration:decorations)
                         {
@@ -2880,8 +2928,21 @@ namespace monopoly::engine
                     if (decoration.asset && std::none_of(staticSceneAssets.begin(), staticSceneAssets.end(),
                             [&](const auto& asset) { return asset == decoration.asset; }))
                         staticSceneAssets.push_back(decoration.asset);
+            const auto nativeStarted = !startupCPUProfile.published ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
             const auto nativeSync = session->setNativeSceneItems(std::move(decorations));
             if (!nativeSync) return SDL_SetError("Native scene: %s", nativeSync.error().c_str());
+            if (modernBoardBounds && !startupCPUProfile.published)
+            {
+                // Update ends before environment decode; retain separate CPU
+                // interval by reporting its saved end rather than including it.
+                if (startupCPUProfile.enabled)
+                    std::cerr << "Startup CPU profile: phase=sequence_update elapsed_ms="
+                        << std::chrono::duration<double,std::milli>(sequenceUpdateEnded-updateStarted).count()
+                        << " scope=CPU elapsed only; no added GPU fence\n";
+                startupCPUProfile.report("native_scene_publish", nativeStarted, session->world().size());
+                startupCPUProfile.report("modern_assets_publish_total", publishStarted, session->world().size());
+                startupCPUProfile.published = true;
+            }
             // Hidden 3D views skip rendering but must still retire stopped meshes.
             if (worldRenderer)
                 if (auto* cache = worldRenderer->meshCache())
@@ -2944,12 +3005,15 @@ namespace monopoly::engine
                 if (!worldRenderer)
                 {
                     const auto shaderPath = std::filesystem::path(SDL_GetBasePath()) / "shaders";
+                    const auto rendererStarted = startupCPUProfile.start();
                     auto loaded = World3DRenderer::load(gpuDevice, shaderPath,
                         SDL_GetGPUSwapchainTextureFormat(gpuDevice, gameWindow),
                         std::filesystem::path(SDL_GetBasePath()) /
                             "assets/modern/lighting/studio_environment.mstudio");
                     if (!loaded) return SDL_SetError("World3D pipeline: %s", loaded.error().detail.c_str());
                     worldRenderer = std::move(*loaded);
+                    if (!startupCPUProfile.rendererReported) startupCPUProfile.report("renderer_load_shaders_studio", rendererStarted);
+                    startupCPUProfile.rendererReported = true;
                 }
                 worldRenderer->setBilinearFiltering(displayState.optionFilteringOn);
             }
@@ -2977,6 +3041,8 @@ namespace monopoly::engine
         if (session && worldRenderer)
             if (auto* cache = worldRenderer->meshCache())
             {
+                const bool profileUpload = startupCPUProfile.published && !startupCPUProfile.uploaded;
+                const auto uploadStarted = profileUpload ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
                 bool modernBoardRejected{};
                 const auto prepared = session->prepareModernMeshes(*cache,
                     [&modernBoardRejected](const data::MeshRenderData* failed)
@@ -2992,6 +3058,11 @@ namespace monopoly::engine
                     });
                 if (!prepared)
                     return SDL_SetError("Modern asset fallback: %s", prepared.error().c_str());
+                if (profileUpload)
+                {
+                    startupCPUProfile.report("prepare_modern_meshes_cpu", uploadStarted, session->world().size());
+                    startupCPUProfile.uploaded = true;
+                }
                 if (modernBoardRejected)
                 {
                     (void)cache->retainStaticAssets({});
@@ -3021,10 +3092,17 @@ namespace monopoly::engine
              presentationState.current2DView == display::Screen2D::Trade);
         const SDL_FColor backdrop = modernMenuBackdrop ?
             SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
+        const bool profilePresent = startupCPUProfile.published && !startupCPUProfile.presented;
+        const auto presentStarted = profilePresent ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
         const auto presented=gpuframe::present(gpuDevice, gameWindow,
             worldRenderer ? &*worldRenderer : nullptr,
             session ? &session->world() : nullptr,
             overlayRenderer.get(), session ? &session->world2D() : nullptr, backdrop);
+        if (presented && profilePresent)
+        {
+            startupCPUProfile.report("first_modern_present_cpu", presentStarted, session ? session->world().size() : 0);
+            startupCPUProfile.presented = true;
+        }
         static bool presentationReported=false;
         if(presented && worldRenderer && worldRenderer->presentationShadowsActive() && !presentationReported)
         {

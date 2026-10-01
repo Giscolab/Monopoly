@@ -291,7 +291,7 @@ namespace monopoly::statsui
     }
 
     std::expected<data::LegacyBitmapRGBA8, std::string> renderStatsTextSurface(
-        const TextSurface& surface, fonts::Runtime& font, int* historyScrollLimit)
+        const TextSurface& surface, fonts::Runtime& font, int* historyScrollLimit, bool modernAA)
     {
         if (!font.ready()) return std::unexpected("UDStats font runtime is not ready");
         if (surface.width <= 0 || surface.height <= 0 || surface.width > 800 || surface.height > 600)
@@ -310,8 +310,10 @@ namespace monopoly::statsui
             font.settings().italic, font.settings().underline, font.settings().strikeOut};
         font.setItalic(false); font.setUnderline(false); font.setStrikeOut(false);
         if (historyScrollLimit) *historyScrollLimit = 0;
-        const auto blank = [](int width, int height, bool opaque)
+        const int rasterScale = modernAA ? 3 : 1;
+        const auto blank = [rasterScale](int width, int height, bool opaque)
         {
+            width *= rasterScale; height *= rasterScale;
             data::LegacyBitmapRGBA8 image{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), {}};
             image.pixels.resize(static_cast<std::size_t>(width) * height * 4, 0);
             if (opaque) for (std::size_t i = 3; i < image.pixels.size(); i += 4) image.pixels[i] = 255;
@@ -319,9 +321,9 @@ namespace monopoly::statsui
         };
         auto image = blank(surface.width, surface.height, surface.opaque);
         if (surface.blackRect)
-            for (int y = std::max(0, surface.blackRect->top); y < std::min(surface.height, surface.blackRect->bottom); ++y)
-                for (int x = std::max(0, surface.blackRect->left); x < std::min(surface.width, surface.blackRect->right); ++x)
-                    image.pixels[(static_cast<std::size_t>(y) * surface.width + x) * 4 + 3] = 255;
+            for (int y = std::max(0, surface.blackRect->top) * rasterScale; y < std::min(surface.height, surface.blackRect->bottom) * rasterScale; ++y)
+                for (int x = std::max(0, surface.blackRect->left) * rasterScale; x < std::min(surface.width, surface.blackRect->right) * rasterScale; ++x)
+                    image.pixels[(static_cast<std::size_t>(y) * image.width + x) * 4 + 3] = 255;
 
         const auto draw = [&](data::LegacyBitmapRGBA8& target, const TextRun& run)
             -> std::expected<void, std::string>
@@ -358,25 +360,37 @@ namespace monopoly::statsui
                 if (!metrics) return std::unexpected(metrics.error().detail);
                 if (!line.empty())
                 {
+                    // Native metrics above own layout; only glyph coverage uses
+                    // the enlarged font, restored before the next measurement.
+                    const int nativeSize = font.settings().size;
+                    struct RestoreGlyphSize
+                    {
+                        fonts::Runtime& font;
+                        int size;
+                        ~RestoreGlyphSize() { (void)font.setSize(size); }
+                    } restoreGlyph{font, nativeSize};
+                    if (modernAA)
+                        if (const auto resized = font.setSize(nativeSize * rasterScale); !resized)
+                            return std::unexpected(resized.error().detail);
                     const auto raster = font.renderClipped(
                         line, run.colour,
-                        {0, 0, static_cast<std::uint32_t>(run.width),
+                        {0, 0, static_cast<std::uint32_t>(run.width * rasterScale),
                             static_cast<std::uint32_t>(
-                                std::max(0, run.height - y))});
+                                std::max(0, run.height - y) * rasterScale)}, modernAA);
                     if (!raster) return std::unexpected(raster.error().detail);
                     int x{};
                     if (run.alignment == TextAlignment::Center && !(lines.size() > 1 && run.wrappedX >= 0))
                         x = (run.width - metrics->width) / 2;
                     else if (run.alignment == TextAlignment::Right) x = run.width - metrics->width;
-                    const auto blit = data::blitStraightRGBA8(clipped, *raster, x, y, data::BitmapBlitMode::SourceOver);
+                    const auto blit = data::blitStraightRGBA8(clipped, *raster, x * rasterScale, y * rasterScale, data::BitmapBlitMode::SourceOver);
                     if (!blit) return blit;
                 }
                 y += std::max(metrics->height, 1);
                 if (y >= run.height || (run.maxLines > 0 && ++drawnLines >= run.maxLines)) break;
             }
             return data::blitStraightRGBA8(target, clipped,
-                lines.size() > 1 && run.wrappedX >= 0 ? run.wrappedX : run.x,
-                lines.size() == 1 && run.singleLineY >= 0 ? run.singleLineY : run.y,
+                (lines.size() > 1 && run.wrappedX >= 0 ? run.wrappedX : run.x) * rasterScale,
+                (lines.size() == 1 && run.singleLineY >= 0 ? run.singleLineY : run.y) * rasterScale,
                 data::BitmapBlitMode::SourceOver);
         };
         for (const auto& run : surface.text)
@@ -399,14 +413,15 @@ namespace monopoly::statsui
                 rowHeights.push_back(height);
                 total += height;
             }
-            auto content = blank(surface.width, std::min(surface.height - 80, 120), false);
+            const int contentHeight = std::min(surface.height - 80, 120);
+            auto content = blank(surface.width, contentHeight, false);
             if (historyScrollLimit)
                 *historyScrollLimit = static_cast<int>(std::min<std::int64_t>(
-                    std::max<std::int64_t>(0, total - content.height + lineHeight - 1) / lineHeight,
+                    std::max<std::int64_t>(0, total - contentHeight + lineHeight - 1) / lineHeight,
                     std::numeric_limits<int>::max()));
             const auto scroll = std::clamp<std::int64_t>(
                 static_cast<std::int64_t>(surface.scrollLines) * lineHeight, 0,
-                std::max<std::int64_t>(0, total - content.height));
+                std::max<std::int64_t>(0, total - contentHeight));
             std::int64_t y = -scroll;
             int shown{};
             for (std::size_t i = 0; i < surface.history.size(); ++i)
@@ -425,9 +440,9 @@ namespace monopoly::statsui
                     if (++shown == 10) break;
                 }
                 y += height;
-                if (y >= content.height) break;
+                if (y >= contentHeight) break;
             }
-            if (const auto blit = data::blitStraightRGBA8(image, content, 0, 80, data::BitmapBlitMode::SourceOver); !blit)
+            if (const auto blit = data::blitStraightRGBA8(image, content, 0, 80 * rasterScale, data::BitmapBlitMode::SourceOver); !blit)
                 return std::unexpected(blit.error());
         }
         return image;
@@ -437,13 +452,14 @@ namespace monopoly::statsui
     {
         surfaces_.clear(); published_.clear(); current_.clear(); fontSettings_.reset();
         historyScrollLimit_ = 0;
+        modernAA_ = false;
     }
 
     std::expected<void, std::string> TextPlayback::sync(
         const State& state, const rules::GameState& game, const PlayerPlaybackInputs& inputs,
         const CalculatorUIState& calculator, const FutureImmunityState& future,
         const AccountState& accounts, int city, int system, display::Screen2D view,
-        fonts::Runtime* font, engine::SequencePlayback& playback)
+        fonts::Runtime* font, engine::SequencePlayback& playback, bool modernAA)
     {
         std::vector<TextSurface> desired;
         if (view == display::Screen2D::Portfolio)
@@ -457,16 +473,19 @@ namespace monopoly::statsui
         }
         if (!desired.empty() && (!font || !font->ready()))
             return std::unexpected("UDStats text requires a ready font runtime");
-        if (desired == current_ && (desired.empty() || (fontSettings_ && *fontSettings_ == font->settings())))
+        const bool unchangedPlan = desired == current_;
+        const bool unchangedFont = desired.empty() ||
+            (fontSettings_ && *fontSettings_ == font->settings());
+        if (unchangedPlan && unchangedFont && modernAA == modernAA_)
             return {};
-        if (published_.size() + desired.size() > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
+        if (!unchangedPlan && published_.size() + desired.size() > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
             return std::unexpected("sequence command queue cannot fit UDStats text transition");
         std::vector<data::LegacyBitmapRGBA8> images;
         int historyLimit{};
         for (const auto& surface : desired)
         {
             auto image = renderStatsTextSurface(surface, *font,
-                surface.key == 400 ? &historyLimit : nullptr);
+                surface.key == 400 ? &historyLimit : nullptr, modernAA);
             if (!image) return std::unexpected(image.error());
             images.push_back(std::move(*image));
         }
@@ -489,8 +508,19 @@ namespace monopoly::statsui
             next.push_back({found->second, surface.priority});
         }
         for (std::size_t i = 0; i < next.size(); ++i)
-            if (const auto updated = playback.runtimeBitmaps().update(next[i].id, std::move(images[i])); !updated)
+            if (const auto updated = playback.runtimeBitmaps().update(next[i].id, std::move(images[i]),
+                    modernAA ? std::optional<std::array<float, 4>>{{0, 0, float(desired[i].width), float(desired[i].height)}} : std::nullopt,
+                    modernAA); !updated)
                 return updated;
+        if (unchangedPlan)
+        {
+            // A presentation-mode refresh changes pixels, never the CNK node,
+            // placement, priority, clock or native history geometry.
+            modernAA_ = modernAA;
+            historyScrollLimit_ = historyLimit;
+            if (font) fontSettings_ = font->settings();
+            return {};
+        }
         for (const auto& object : published_)
             if (!playback.commands().enqueue(sequence::StopSequenceCommand{object.id, object.priority, false}))
                 return std::unexpected("validated UDStats text stop rejected");
@@ -501,6 +531,7 @@ namespace monopoly::statsui
         published_ = std::move(next);
         current_ = std::move(desired);
         historyScrollLimit_ = historyLimit;
+        modernAA_ = modernAA;
         if (font) fontSettings_ = font->settings();
         return {};
     }

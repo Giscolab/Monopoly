@@ -161,3 +161,41 @@ World2D GPU tests passed. GPU qualification covers purchase relocation, hover
 priority isolation, nonzero-origin/explicit-bounds fallback, unchanged clocks
 and exact retail restoration after rasterization failure. No global suite was
 repeated. The procedural Blender authoring file and Source tree stay unchanged.
+
+## Status typography and bounded environment loading
+
+`status-pass12-tabs-first.jpg` exposed oversized clipped captions. After the
+measured sizing/frame correction, `status-pass13-tabs-sized.jpg` shows readable
+Players/Turn tabs and headings, blended 3x dynamic status text and a pending
+purchase deed inside the Portfolio board viewport. Player balances, panel
+positions, sequence clocks, history limits and input rectangles are preserved.
+Only qualified USA presentation opts into the new text path; retail remains the
+fallback. Targeted MenuSkin and StatsTextPlayback tests passed.
+
+The environment decoder now uses half the available hardware threads, capped
+at eight, with caller-ordered publication and contained per-asset failures.
+Injected loaders stay serial unless explicitly enabled. Three real asset runs
+per setting measured median CPU decode times of 5148.89/1896.62/1409.71 ms for
+1/4/8 workers, with peak working sets of 370.7/383.2/383.6 MiB. All 19 ordered
+geometry/material signatures matched. The actual app measured environment
+publication at 1389.77 ms and total modern publication at 1646.35 ms, versus
+5123.04/5378.17 ms sequentially. These are CPU phase timings, not total launch
+or GPU fence timings. Focused failure/order/worker-bound tests passed.
+
+The fresh 1920x1080 GPU probe in `../environment-parallel-gpu-20261001/after`
+is byte-identical to the prior board-256 PPM. Its 100 fenced warm frames measured
+204.84 FPS; this is an offscreen probe, not a claim about continuous gameplay.
+`sample_game_fps.ps1` records actual window-title telemetry for an explicitly
+identified process. A 120-second real-turn sample measured median 60.0, p5 59.9
+and minimum 52.5 FPS (237 samples); 95.78% reached 59.5 FPS. Cold Portfolio
+opening still dipped to 22.6 FPS and remains a performance target. F11 entered
+4096x2160 desktop fullscreen (59.9 FPS title sample) and restored 1920x1080.
+`status13-fullscreen-real.jpg` records that actual fullscreen view.
+
+Physical sound output was captured from the unmuted Realtek default endpoint:
+180 seconds, 48 kHz stereo, RMS -28.08 dBFS and peak -1.33 dBFS. This proves
+software output, not that a person physically heard the speakers. The actual
+match also continued through AI auctions/building, GO and Community Chest,
+and saved the progressed state in slot q. Missing French DAT files remain real
+blockers; none were fabricated. Source and the recovered Blender file remain
+unchanged. Calculator keys and Bank/Deeds panels remain further visual work.

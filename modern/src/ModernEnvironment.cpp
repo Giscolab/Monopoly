@@ -3,6 +3,10 @@
 #include "Display.hpp"
 #include "SequenceTransforms.hpp"
 
+#include <cstdlib>
+#include <atomic>
+#include <charconv>
+#include <thread>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -93,7 +97,20 @@ namespace monopoly::engine
     ModernEnvironment::ModernEnvironment(std::filesystem::path modernAssetsRoot,
         bool enabled, Diagnostic diagnostic, Loader loader)
         : root_(std::move(modernAssetsRoot)), enabled_(enabled),
-          diagnostic_(std::move(diagnostic)), loader_(std::move(loader)) {}
+          diagnostic_(std::move(diagnostic)), loader_(std::move(loader))
+    {
+        const auto hardware=std::thread::hardware_concurrency();
+        decodeWorkers_=hardware ? std::clamp(hardware/2,1U,8U) : 4U;
+        if (loader_) decodeWorkers_ = 1;
+        else if (const auto* value = std::getenv("MONOPOLY_ENVIRONMENT_WORKERS"))
+        {
+            unsigned workers{};
+            const std::string_view text{value};
+            const auto parsed = std::from_chars(text.data(),text.data()+text.size(),workers);
+            if (parsed.ec==std::errc{} && parsed.ptr==text.data()+text.size() &&
+                (workers==1 || workers==4 || workers==8)) decodeWorkers_=workers;
+        }
+    }
 
     void ModernEnvironment::report(std::string_view message) const
     {
@@ -101,37 +118,76 @@ namespace monopoly::engine
         else std::cerr << "Modern environment: " << message << '\n';
     }
 
-    void ModernEnvironment::loadOnce(std::size_t index)
+    void ModernEnvironment::loadPending(const std::vector<std::size_t>& indices)
     {
-        if (attempted_[index]) return;
-        attempted_[index] = true;
-        const auto& definition = definitionAt(index);
-        data::ModernGltfLoadOptions options;
-        options.unitsPerMeter = SourceUnitsPerMetre;
-        // Center placement follows the aligned board mapping; the decoration
-        // itself uses a proper rotation so text/front faces are never mirrored.
-        options.yawDegrees = definition.localYawDegrees;
-        options.localOffset = {};
-        options.groundToZero = false;
+        struct Result { std::shared_ptr<const data::MeshRuntimeAsset> asset; bool failed{}; std::string error; };
+        std::vector<std::size_t> pending;
+        for(const auto index:indices)
+            if(!attempted_[index]) pending.push_back(index);
+        if(pending.empty()) return;
+        std::vector<Result> results(pending.size());
+        // Complete bookkeeping allocations before recording any attempt.
+        for(const auto index:pending) attempted_[index]=true;
+        std::atomic<std::size_t> next{};
+        const auto decode=[&]() noexcept
+        {
+            for(;;)
+            {
+                const auto slot=next.fetch_add(1,std::memory_order_relaxed);
+                if(slot>=pending.size()) return;
+                const auto& definition=definitionAt(pending[slot]);
+                auto& result=results[slot];
+                try
+                {
+                    data::ModernGltfLoadOptions options;
+                    options.unitsPerMeter=SourceUnitsPerMetre;
+                    options.yawDegrees=definition.localYawDegrees;
+                    options.localOffset={};options.groundToZero=false;
+                    const auto path=root_/definition.relativeGlbPath;
+                    auto loaded=loader_ ? loader_(path,options) : data::loadModernGltfMesh(path,options);
+                    if(!loaded || !*loaded || !validGeometry(**loaded))
+                    {
+                        result.failed=true;
+                        result.error=std::string(definition.slug)+": skipped "+
+                            (loaded ? "invalid native geometry" : loaded.error().detail);
+                        continue;
+                    }
+                    auto asset=std::make_shared<data::MeshRuntimeAsset>();
+                    asset->dataId=definition.logicalId;asset->origin=data::MeshAssetOrigin::ModernGltf;
+                    asset->renderData=std::move(*loaded);result.asset=std::move(asset);
+                }
+                catch(const std::exception& exception)
+                {
+                    result.failed=true;
+                    // Diagnostics are optional: even their allocation failure
+                    // must never escape a worker and terminate the process.
+                    try { result.error=std::string(definition.slug)+": skipped decode exception: "+exception.what(); }
+                    catch(...) {}
+                }
+                catch(...)
+                {
+                    result.failed=true;
+                    try { result.error=std::string(definition.slug)+": skipped unknown decode exception"; }
+                    catch(...) {}
+                }
+            }
+        };
+        // Workers only write their isolated result slot. Maps, callbacks and
+        // scene order publish on the calling thread after every worker joins.
+        const auto workers=std::min<std::size_t>(decodeWorkers_,pending.size());
+        std::vector<std::jthread> threads;
         try
         {
-            const auto path = root_ / definition.relativeGlbPath;
-            auto loaded = loader_ ? loader_(path, options) : data::loadModernGltfMesh(path, options);
-            if (!loaded || !*loaded || !validGeometry(**loaded))
-            {
-                report(std::string(definition.slug) + ": skipped " +
-                    (loaded ? "invalid native geometry" : loaded.error().detail));
-                return;
-            }
-            auto asset = std::make_shared<data::MeshRuntimeAsset>();
-            asset->dataId = definition.logicalId;
-            asset->origin = data::MeshAssetOrigin::ModernGltf;
-            asset->renderData = std::move(*loaded);
-            assets_[index] = std::move(asset);
+            threads.reserve(workers>0?workers-1:0);
+            for(std::size_t worker=1;worker<workers;++worker) threads.emplace_back(decode);
         }
-        catch (const std::bad_alloc&)
+        catch(const std::exception&) { /* remaining work runs on caller */ }
+        decode();threads.clear();
+        for(std::size_t slot=0;slot<pending.size();++slot)
         {
-            report("skipped decoration allocation failure");
+            assets_[pending[slot]]=std::move(results[slot].asset);
+            if(results[slot].failed)
+                report(results[slot].error.empty() ? std::string_view{"skipped environment decode failure; diagnostic unavailable"} : std::string_view{results[slot].error});
         }
     }
 
@@ -168,6 +224,7 @@ namespace monopoly::engine
         const auto count = Definitions.size() + PresentationDefinitions.size() +
             (includeCity ? CityDefinitions.size() : 0);
         result.reserve(count);
+        std::vector<std::size_t> selected;
         for (std::size_t index = includeLandmarks ? 0 : Definitions.size(); index < count; ++index)
         {
             // Complete city groups include these three source landmarks in
@@ -175,7 +232,11 @@ namespace monopoly::engine
             if(includeCity && index < Definitions.size()) continue;
             if(index >= Definitions.size() && index < Definitions.size()+PresentationDefinitions.size() &&
                 !includePresentation) continue;
-            loadOnce(index);
+            selected.push_back(index);
+        }
+        loadPending(selected);
+        for (const auto index:selected)
+        {
             if (!assets_[index]) continue;
             const auto& definition = definitionAt(index);
             const auto& position = definition.originalYup;

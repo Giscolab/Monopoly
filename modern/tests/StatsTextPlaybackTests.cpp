@@ -115,5 +115,70 @@ void testPublicationAndFailures() {
     f.state.screen=statsui::Screen::Bank; f.state.activeSort=2; f.accounts.dividendCount=std::numeric_limits<std::uint64_t>::max(); require(!f.plan(),"liability arithmetic cannot overflow");
     SyntheticSequenceResources incomplete; auto failed=statsui::planStatsTextSurfaces(f.state,f.game,f.inputs,{}, {}, {},0,13,display::Screen2D::Portfolio,*incomplete.service.snapshot()); require(!failed,"missing real LANG labels fail explicitly");
 }
+void testModernCoverageAndHistory() {
+    Fixture f; fonts::Runtime font; loadRealTestArial(font);
+    require(font.setSize(17).has_value(),"set caller font size");
+    font.setWeight(700); font.setItalic(true); font.setUnderline(true);
+    const auto saved=font.settings();
+    statsui::TextSurface glyph{900,7,11,120,35,501};
+    glyph.text.push_back({"Coverage edges",3,2,112,30,11});
+    const auto native=statsui::renderStatsTextSurface(glyph,font);
+    const auto modern=statsui::renderStatsTextSurface(glyph,font,nullptr,true);
+    require(native && modern && modern->width==360 && modern->height==105,"modern glyph raster is three times logical extent");
+    bool coverage=false,transparent=false;
+    for(std::size_t i=3;i<modern->pixels.size();i+=4) {
+        coverage|=modern->pixels[i]>0 && modern->pixels[i]<255;
+        transparent|=modern->pixels[i]==0;
+    }
+    require(coverage && transparent,"modern glyphs retain partial coverage and transparent background");
+    require(font.settings()==saved,"modern rendering restores caller font characteristics");
+    const auto restored=statsui::renderStatsTextSurface(glyph,font);
+    require(restored && restored->pixels==native->pixels,"default render remains exact native after modern pass");
+    f.state.screen=statsui::Screen::Bank; f.state.activeSort=3;
+    std::u16string description;
+    for(int i=0;i<45;++i) description+=u"wrapped transaction ";
+    for(unsigned i=0;i<12;++i) f.accounts.history.push_back({static_cast<rules::PlayerNumber>(i%2),i,description});
+    const auto planned=f.plan(); require(planned.has_value(),"modern journal uses unchanged plan");
+    auto journal=surface(*planned,400); int nativeLimit=-1,modernLimit=-2;
+    const auto oldJournal=statsui::renderStatsTextSurface(journal,font,&nativeLimit);
+    const auto newJournal=statsui::renderStatsTextSurface(journal,font,&modernLimit,true);
+    require(oldJournal && newJournal && nativeLimit==modernLimit && nativeLimit>12,"supersampling preserves native wrapped physical-line scroll limit");
+    journal.scrollLines=1;
+    const auto scrolled=statsui::renderStatsTextSurface(journal,font,nullptr,true);
+    require(scrolled && scrolled->pixels!=newJournal->pixels,"modern journal scrolls by native physical line");
+    const auto headingBytes=std::size_t(newJournal->width)*80*3*4;
+    require(std::equal(newJournal->pixels.begin(),newJournal->pixels.begin()+headingBytes,scrolled->pixels.begin()),"modern scrolling preserves native heading geometry");
+    for(unsigned y=600;y<newJournal->height;++y) for(unsigned x=0;x<newJournal->width;++x)
+        require(newJournal->pixels[(std::size_t(y)*newJournal->width+x)*4+3]==0,"modern journal clips at logical viewport bottom200");
+    require(font.settings()==saved,"journal measurements and enlarged glyphs restore font settings");
 }
-int main(){try{testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+void testModernModeRefreshPreservesSequence() {
+    Fixture f; fonts::Runtime font; loadRealTestArial(font);
+    engine::SequencePlayback sequence(f.resources.service.snapshot()); statsui::TextPlayback playback;
+    const auto sync=[&](bool modern){return playback.sync(f.state,f.game,f.inputs,f.calc,f.future,f.accounts,0,13,display::Screen2D::Portfolio,&font,sequence,modern);};
+    require(sync(false).has_value() && sequence.update(0).has_value(),"native stats initial publication");
+    const auto nodes=sequence.world2D().order();
+    const auto before=*sequence.world2D().find(nodes.front());
+    require(!before.asset->presentationRect && !before.asset->preferLinearFiltering,"default stats publishes exact native presentation");
+    require(sequence.update(7).has_value(),"advance native text clock");
+    const auto clock=sequence.world2D().find(nodes.front())->clock;
+    require(sync(true).has_value() && sequence.commands().pendingCount()==0,"mode refresh does not restart CNK nodes");
+    require(sequence.update(7).has_value() && sequence.world2D().order()==nodes,"modern mode retains sequence identities");
+    const auto modern=*sequence.world2D().find(nodes.front());
+    require(modern.clock==clock && modern.priority==before.priority && modern.contentsDataId==before.contentsDataId,"mode refresh retains clock priority and data identity");
+    require(modern.asset->preferLinearFiltering && modern.asset->presentationRect==std::optional<std::array<float,4>>{{0,0,float(before.asset->image.width),float(before.asset->image.height)}},"modern pixels retain authoritative logical extent");
+    require(modern.worldTransform.values[6]==before.worldTransform.values[6] && modern.worldTransform.values[7]==before.worldTransform.values[7] && modern.asset->image.width==before.asset->image.width*3,"modern raster preserves sequence position");
+    const auto modernAsset=modern.asset;
+    require(sync(true).has_value() && sequence.commands().pendingCount()==0 && sequence.runtimeBitmaps().asset(modern.contentsDataId)==modernAsset,"unchanged modern mode reuses immutable asset");
+    require(font.setSize(19).has_value(),"change external caller font settings");
+    require(sync(true).has_value() && sequence.commands().pendingCount()==0,"external font settings refresh pixels without restarting unchanged plan");
+    const auto fontRefresh=sequence.runtimeBitmaps().asset(modern.contentsDataId);
+    require(fontRefresh!=modernAsset && font.settings().size==19,"font refresh publishes once and restores caller settings");
+    require(sync(true).has_value() && sequence.commands().pendingCount()==0 && sequence.runtimeBitmaps().asset(modern.contentsDataId)==fontRefresh,"updated font settings reuse immutable asset on next frame");
+    require(sequence.update(7).has_value() && sequence.world2D().order()==nodes && sequence.world2D().find(nodes.front())->clock==clock,"font cache refresh retains existing nodes and clocks");
+    require(sync(false).has_value() && sequence.commands().pendingCount()==0 && sequence.update(7).has_value(),"native fallback restores pixels without sequence restart");
+    const auto native=*sequence.world2D().find(nodes.front());
+    require(native.clock==clock && native.worldTransform.values==before.worldTransform.values && !native.asset->presentationRect && !native.asset->preferLinearFiltering && native.asset->image.pixels==before.asset->image.pixels,"native mode restores exact pixels placement and flags");
+}
+}
+int main(){try{testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

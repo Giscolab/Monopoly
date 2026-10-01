@@ -67,7 +67,7 @@ namespace
             "options/rules backdrop has a neutral coherent frame");
         for (const auto root : {0x0002006BU, 0x0002006CU})
             require(skin.substitute(root, asset) != asset, "save slot shells support selected and idle states");
-        for (const auto root : {0x000502A7U, 0x0005008AU, 0xFFFE0001U, 0x00020069U, 0x00050287U})
+        for (const auto root : {0x000502A7U, 0x0005008AU, 0xFFFE0001U, 0x00020069U, 0x0005028DU})
             require(!skin.supports(root) && skin.substitute(root, asset) == asset,
                 "unqualified Stats labels, IBar buttons, runtime descriptions and unknown neighbors remain exact retail");
         require(skin.supports(0x0002006A) && skin.substitute(0x0002006A, asset) == asset,
@@ -483,6 +483,146 @@ namespace
         require(captions == 0, "Stats and calculator dynamic names, cash and instructions are never rebaked into shells");
     }
 
+    void testMeasuredStatsBarsAndTabs()
+    {
+        std::string captionText;
+        const auto raster = [&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8, std::string>
+        { captionText = text; return label(); };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa, data::LanguageId::EnglishUs, raster);
+        const auto measured = [](unsigned leaf, unsigned width, unsigned height)
+        {
+            auto asset = std::make_shared<data::BitmapRuntimeAsset>(*original(width, height));
+            asset->dataId = 0x00050000 + leaf;
+            for (std::size_t i = 3; i < asset->image.pixels.size(); i += 4)
+                asset->image.pixels[i] = std::uint8_t((i / 4) % 256);
+            return asset;
+        };
+        const auto verifyMask = [&](const auto& source, const auto& replacement)
+        {
+            require(replacement != source && replacement->dataId == source->dataId &&
+                replacement->image.width == source->image.width * 3 && replacement->image.height == source->image.height * 3,
+                "measured Stats control keeps identity and native visual footprint");
+            for (unsigned y = 0; y < replacement->image.height; ++y)
+                for (unsigned x = 0; x < replacement->image.width; ++x)
+                    require(replacement->image.pixels[(std::size_t(y) * replacement->image.width + x) * 4 + 3] ==
+                        source->image.pixels[(std::size_t(y / 3) * source->image.width + x / 3) * 4 + 3],
+                        "Stats labels and active controls retain every source alpha value");
+        };
+        struct Bar { unsigned root, leaf, width, height; const char* caption; };
+        for (const auto spec : {Bar{0x029B,0x0912,328,42,""}, Bar{0x029C,0x0911,337,80,"Display status by:"},
+                               Bar{0x0286,0x0CBB,313,42,""}, Bar{0x0287,0x0E7E,333,80,"Sort Players by:"}})
+        {
+            captionText.clear();
+            const auto source = measured(spec.leaf,spec.width,spec.height);
+            verifyMask(source,skin.substitute(0x00050000 + spec.root,source));
+            require(captionText == spec.caption, "Stats heading matches verified caption and bases contain no invented text");
+            require(skin.substitute(0x00050000 + spec.root,source,false) == source,
+                "Stats folded bar unqualified decorative leaves stay authored");
+            const auto wrong = measured(spec.leaf,spec.width,spec.height - 1);
+            require(skin.substitute(0x00050000 + spec.root,wrong) == wrong,
+                "Stats bar dimensions must match actual measured leaf");
+        }
+        struct Tab { unsigned first, leaf, width, height; const char* caption; };
+        constexpr std::array<Tab,7> tabs{{{0x019E,0x0E6C,114,43,"Players"},{0x017F,0x0900,106,43,"Deeds"},
+            {0x0176,0x02F6,95,43,"Bank"},{0x01A4,0x11BC,76,43,"Turn"},
+            {0x0198,0x0E3E,100,42,"Net worth"},{0x0195,0x092E,105,42,"Future value"},
+            {0x017C,0x0308,107,42,"Cash"}}};
+        for (const auto spec : tabs)
+        {
+            const auto source = measured(spec.leaf,spec.width,spec.height);
+            std::array<std::shared_ptr<const data::BitmapRuntimeAsset>,3> states;
+            for (unsigned state = 0; state < 3; ++state)
+            {
+                states[state] = skin.substitute(0x00050000 + spec.first + state,source);
+                verifyMask(source,states[state]);
+                require(captionText == spec.caption, "Exact Stats idle/press/return roots retain same verified label");
+                require(skin.substitute(0x00050000 + spec.first + state,source,false) == source,
+                    "Stats control only substitutes the qualified principal leaf");
+            }
+            require(states[0]->image.pixels == states[2]->image.pixels &&
+                states[0]->image.pixels != states[1]->image.pixels,
+                "Pressed root has distinct active colour while idle/return roots share quiet shell");
+            const auto unmeasured = measured(0x1FFE,spec.width,spec.height);
+            require(skin.substitute(0x00050000 + spec.first + 1,unmeasured) == unmeasured,
+                "Unmeasured animated press leaf stays exact retail rather than extending idle footprint");
+            const auto anotherNamespace = measured(spec.leaf,spec.width,spec.height);
+            anotherNamespace->dataId += 0x10000;
+            require(skin.substitute(0x00050000 + spec.first,anotherNamespace) == anotherNamespace,
+                "Same tag in another data namespace cannot qualify a Stats tab");
+        }
+        const auto source = measured(0x0E6C,114,43);
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        require(french.substitute(0x0005019E,source) == source && skin.substitute(0xFFFE019E,source) == source,
+            "Regional and dynamic runtime text retains exact fallback");
+        menu::ModernMenuSkin noFont(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return std::unexpected("font unavailable"); });
+        require(noFont.substitute(0x0005019E,source) == source,
+            "Failed actual caption rasterization retains original tab pixels");
+    }
+
+    void testStatsCaptionBoxesAndMeasuredAnimation()
+    {
+        const auto largeFont = [](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { return data::LegacyBitmapRGBA8{unsigned(text.size() * 34),72,
+            std::vector<std::uint8_t>(text.size() * 34 * 72 * 4,255)}; };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,largeFont);
+        const auto measured = [](unsigned leaf,unsigned width,unsigned height)
+        { auto source=std::make_shared<data::BitmapRuntimeAsset>(*original(width,height));
+          source->dataId=0x00050000+leaf;return source; };
+        const auto isCaption = [](const auto& image,unsigned x,unsigned y)
+        { return image.pixels[(std::size_t(y)*image.width+x)*4] > 230; };
+        for (const auto spec : {std::array<unsigned,4>{0x029C,0x0911,337,80},
+                               std::array<unsigned,4>{0x0287,0x0E7E,333,80}})
+        {
+            const auto source=measured(spec[1],spec[2],spec[3]);
+            const auto result=skin.substitute(0x00050000+spec[0],source);
+            require(result!=source,"Measured Stats header remains qualified with54px-class font provider");
+            unsigned count=0;
+            for(unsigned y=0;y<result->image.height;++y)for(unsigned x=0;x<result->image.width;++x)
+                if(isCaption(result->image,x,y))
+                { ++count;require(y>=72 && y<105,"Header caption stays in nativey24..35 above tab overlap"); }
+            require(count>0,"Header has visible caption pixels inside measured strip");
+        }
+        for(const auto spec:{std::array<unsigned,4>{0x0198,0x0E3E,100,42},
+                            std::array<unsigned,4>{0x0195,0x092E,105,42},
+                            std::array<unsigned,4>{0x017C,0x0308,107,42}})
+        {
+            const auto result=skin.substitute(0x00050000+spec[0],measured(spec[1],spec[2],spec[3]));
+            unsigned firstY=result->image.height,lastY=0,count=0;
+            for(unsigned y=0;y<result->image.height;++y)for(unsigned x=0;x<result->image.width;++x)
+                if(isCaption(result->image,x,y))
+                { ++count;firstY=std::min(firstY,y);lastY=std::max(lastY,y);
+                  require(x>=18 && x+18<result->image.width,"Tab labels keep6logicalpx sidepadding"); }
+            require(count && lastY-firstY+1<=30,"Large font provider cannot exceed10logicalpx tab caption height");
+        }
+        struct Frame{unsigned root,leaf,width,height;};
+        for(const auto frame:{Frame{0x01A0,0x124E,126,43},Frame{0x01A0,0x1254,125,43},
+            Frame{0x01A0,0x1255,122,43},Frame{0x01A0,0x1256,126,43},Frame{0x01A0,0x1257,130,43},
+            Frame{0x01A0,0x1258,133,78},Frame{0x01A0,0x1259,133,78},
+            Frame{0x01A6,0x1266,76,43},Frame{0x01A6,0x126D,75,43},Frame{0x01A6,0x126F,78,43},
+            Frame{0x01A6,0x1270,83,43},Frame{0x01A5,0x11C8,72,41},Frame{0x01A5,0x11C9,74,43},
+            Frame{0x01A5,0x11CC,72,41},Frame{0x019F,0x0E77,119,52},
+            Frame{0x0181,0x1212,122,43},Frame{0x0178,0x11EE,102,43},Frame{0x019A,0x1236,100,42},
+            Frame{0x0197,0x122A,105,42},Frame{0x017E,0x11FA,107,42}})
+        {
+            const auto source=measured(frame.leaf,frame.width,frame.height);
+            source->image.pixels[3]=0;source->image.pixels[7]=71;
+            const auto result=skin.substitute(0x00050000+frame.root,source);
+            require(result!=source && result->image.width==frame.width*3 && result->image.height==frame.height*3 &&
+                result->image.pixels[3]==0 && result->image.pixels[3*4+3]==71,
+                "Measured active/return bitmap variable footprint modernizes with exact alpha and intrinsic size");
+            const auto wrong=measured(frame.leaf,frame.width+1,frame.height);
+            require(skin.substitute(0x00050000+frame.root,wrong)==wrong,
+                "Animated leaf cannot qualify using guessed uniform idle extent");
+            require(skin.substitute(0x00050000+frame.root,source,false)==source,
+                "Animated Stats control excludes secondary decorations");
+        }
+        const auto anotherRoot=measured(0x124E,126,43);
+        require(skin.substitute(0x0005019E,anotherRoot)==anotherRoot,
+            "Return animation leaf does not qualify under unrelated idle root");
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -517,7 +657,7 @@ namespace
 }
 int main()
 {
-    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testActiveCacheRetention();
+    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testActiveCacheRetention();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

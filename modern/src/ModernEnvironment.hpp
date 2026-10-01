@@ -42,6 +42,12 @@ namespace monopoly::engine
         explicit ModernEnvironment(std::filesystem::path modernAssetsRoot,
             bool enabled = false, Diagnostic diagnostic = {}, Loader loader = {});
         void setEnabled(bool enabled) noexcept { enabled_ = enabled; }
+        // Production uses half logical CPUs, bounded1..8 (unknown CPU count4).
+        // Explicit override is bounded1..8. An injected
+        // loader stays sequential unless its caller opts in and guarantees safety.
+        void setDecodeWorkers(unsigned workers) noexcept
+        { decodeWorkers_ = workers < 1 ? 1 : workers > 8 ? 8 : workers; }
+        [[nodiscard]] unsigned decodeWorkers() const noexcept { return decodeWorkers_; }
         [[nodiscard]] bool enabled() const noexcept { return enabled_; }
         // Renderer rejection permanently drops this owner's optional geometry.
         // Pointer identity prevents unrelated/native-retail instances being rejected.
@@ -56,10 +62,11 @@ namespace monopoly::engine
             bool includeCity = false);
 
     private:
-        void loadOnce(std::size_t index);
+        void loadPending(const std::vector<std::size_t>& indices);
         void report(std::string_view message) const;
         std::filesystem::path root_;
         bool enabled_{};
+        unsigned decodeWorkers_{4};
         bool invalidMatrixReported_{};
         Diagnostic diagnostic_;
         Loader loader_;

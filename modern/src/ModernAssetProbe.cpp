@@ -4,6 +4,7 @@
 #include "FontRuntime.hpp"
 #include "MoneyFormat.hpp"
 #include "ModernGltfMesh.hpp"
+#include "ModernEnvironment.hpp"
 #include "ModernTokenCatalog.hpp"
 #include "ResourcePaths.hpp"
 #include "ResourceRuntime.hpp"
@@ -13,6 +14,8 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <chrono>
 #include <charconv>
 #include <cmath>
 #include <cwctype>
@@ -86,6 +89,68 @@ namespace
         case MeshRuntimeErrorCode::NoRenderableGeometry: return "NoRenderableGeometry";
         }
         return "Unknown";
+    }
+
+    std::uint64_t environmentSignature(const monopoly::sequence::SequenceMeshRenderItem& item)
+    {
+        std::uint64_t hash=14695981039346656037ULL;
+        auto word=[&](std::uint64_t value){for(unsigned shift=0;shift<64;shift+=8){hash^=(value>>shift)&255;hash*=1099511628211ULL;}};
+        auto floats=[&](const auto& values){for(const float value:values)word(std::bit_cast<std::uint32_t>(value));};
+        word(item.node);word(item.contentsDataId);floats(item.worldTransform.values);
+        const auto& mesh=*item.renderData;
+        floats(mesh.bounds.minimum);floats(mesh.bounds.maximum);
+        word(mesh.vertices.size());word(mesh.indices.size());word(mesh.batches.size());
+        for(const auto& vertex:mesh.vertices){floats(vertex.position);floats(vertex.normal);floats(vertex.uv);floats(vertex.tangent);}
+        for(const auto index:mesh.indices)word(index);
+        for(const auto& batch:mesh.batches)
+        {
+            word(batch.firstIndex);word(batch.indexCount);const auto& material=batch.material;
+            word(unsigned(material.model));word(material.rawDiffuse);floats(material.diffuse);floats(material.emissive);
+            floats(std::array{material.metallic,material.roughness,material.emissiveStrength,material.alphaCutoff});
+            word(material.doubleSided);word(unsigned(material.alphaMode));
+            for(const auto* map:std::array{&material.baseColorTexture,&material.metallicRoughnessTexture,&material.normalTexture,&material.emissiveTexture,&material.occlusionTexture})
+            {
+                word(map->has_value());if(!*map)continue;const auto& binding=**map;
+                word(binding.texCoord);word(unsigned(binding.colorSpace));floats(std::array{binding.scale});
+                word(unsigned(binding.sampler.wrapS));word(unsigned(binding.sampler.wrapT));
+                word(unsigned(binding.sampler.minFilter));word(unsigned(binding.sampler.magFilter));
+                word(bool(binding.image));if(!binding.image)continue;
+                word(binding.image->width);word(binding.image->height);
+                for(const auto byte:binding.image->rgba){hash^=byte;hash*=1099511628211ULL;}
+            }
+        }
+        return hash;
+    }
+    int benchmarkEnvironment(int argc,char** argv)
+    {
+        if(argc!=5){std::cerr<<"usage: MonopolyModernAssetProbe --environment-benchmark <assets-root> <workers:1|4|8> <runs:1..3>\n";return 2;}
+        unsigned workers{},runs{};
+        auto parse=[](const char* text,unsigned& result){const std::string_view value{text};const auto p=std::from_chars(value.data(),value.data()+value.size(),result);return p.ec==std::errc{}&&p.ptr==value.data()+value.size();};
+        if(!parse(argv[3],workers)||(workers!=1&&workers!=4&&workers!=8)||!parse(argv[4],runs)||runs<1||runs>3)return 2;
+        std::vector<std::uint64_t> baseline;
+        for(unsigned run=0;run<runs;++run)
+        {
+            monopoly::engine::ModernEnvironment environment(argv[2],true);
+            environment.setDecodeWorkers(workers);
+            const auto started=std::chrono::steady_clock::now();
+            const auto items=environment.items(monopoly::sequence::identity3D(),0,true,false,true);
+            const double milliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+            if(items.size()!=monopoly::engine::ModernCityCount+2){std::cerr<<"incomplete environment benchmark\n";return 1;}
+            std::vector<std::uint64_t> signatures;
+            std::size_t vertices=0,triangles=0;
+            for(const auto& item:items)
+            {
+                const auto signature=environmentSignature(item);signatures.push_back(signature);
+                vertices+=item.renderData->vertices.size();triangles+=item.renderData->indices.size()/3;
+                std::cout<<"asset_signature\trun\t"<<run<<"\tnode\t"<<item.node<<"\tid\t"<<item.contentsDataId
+                    <<"\tfnv1a64\t"<<std::hex<<signature<<std::dec<<'\n';
+            }
+            if(run==0)baseline=signatures;else if(signatures!=baseline){std::cerr<<"environment signatures changed between runs\n";return 1;}
+            std::cout<<"environment_decode_cpu\tworkers\t"<<workers<<"\trun\t"<<run<<"\telapsed_ms\t"<<milliseconds
+                <<"\titems\t"<<items.size()<<"\tvertices\t"<<vertices<<"\ttriangles\t"<<triangles
+                <<"\tscope\tdecode and ordered publish only; signature hashing excluded; no GPU\n";
+        }
+        return 0;
     }
 
     int probeGltf(int argc, char** argv)
@@ -385,6 +450,8 @@ int main(int argc, char** argv)
 {
     using namespace monopoly::data;
 
+    if (argc >= 2 && std::string_view(argv[1]) == "--environment-benchmark")
+        return benchmarkEnvironment(argc,argv);
     if (argc >= 2 && std::string_view(argv[1]) == "--gltf")
         return probeGltf(argc, argv);
 
