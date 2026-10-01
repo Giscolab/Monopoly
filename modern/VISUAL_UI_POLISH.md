@@ -300,3 +300,52 @@ A90-second fixed-hover sample recorded178 title observations: median58.9,
 p5 58.1, minimum56.1 FPS in Debug. This improves the observed roughly49 FPS
 regression but remains below a strict sustained60 target; Release qualification
 and continued real-game testing remain outstanding.
+
+## Continued Release UI qualification
+
+Actual GPU passes18-23 qualify authored house bevel edges, filtered action
+captions, unobstructed Options headings and selected music, modern Help chrome,
+visible Quick Help/credits, and complete help lines after native-metric fitting.
+Captures are in `build/polish-continuation-20261001/`: `actionbar-pass19-after.jpg`,
+`options-text-pass20-after.jpg`, `help-menu-pass21-after.jpg`,
+`credits-layer-pass22-after.jpg`, and `quick-help-pass23-native-fit-{first,next}.jpg`.
+Matched house closeups are recorded in PROCEDURAL_PLAY.md. The original Help
+and credits panel priority10 was covered by an older opaque backdrop at the
+same priority. Only the qualified modern presentation uses foreground11;
+retail priority, buttons, native metrics, pagination and sequence clocks remain.
+Blended glyph coverage fits the original measured line extent; text never
+changes wrapping or hit rectangles. Focused menu, IBar and Options tests pass.
+
+The launcher now prefers an already-built/staged Release and otherwise uses
+Debug. It copies Debug saves only when Release/savegame does not exist;
+existing Release saves remain intact. A real launcher invocation selected
+Release and reloaded save r; isolated migration copied all six save files with
+identical SHA256 values. Ordinary builds do not run Blender.
+
+Release startup CPU measurements recorded138-152ms for the19 environment
+items and221-235ms for modern asset publication, versus roughly1.4/1.67s in
+Debug. These exclude GPU completion and time spent at the menu. A38-minute
+Release session exercised actual purchases, auction handling, AI turns, jail,
+GO and save/reload; this included menu inspection and is not an uninterrupted
+full-game stress test. Its five-minute title sample measured median60.0,
+p5 59.9 and minimum43.7 FPS; two GPU diagnostics overlapped that sample, so
+isolated Release qualification follows. Physical human audibility remains
+unconfirmed; the Windows output loopback qualification is documented above.
+Isolated Release checks (no builds or other GPU captures) now record178 fixed
+Electric Company hover samples: median60.0, p5 60.0, minimum59.0 FPS,98.876%
+at least59.5 FPS. A five-minute real-turn sample records590 observations:
+median60.0, p5 59.9, minimum57.9,95.763% at least59.5 FPS. The window framebuffer
+is1920x1080; title telemetry is not individual frame-time measurement and does
+not establish a strict continuous60 FPS minimum. Actual play continued through
+AI Chance movement, human failed jail rolls, $50 exit payment and built-property
+payments. The user also played and confirmed audible game sound from the PC,
+then confirmed saving before the next qualified relaunch.
+
+Board/Options/Status/Trade labels now use the same optional3x blended action
+path with22 measured settled normal/disabled fixtures and moving/native fallback.
+The St. Charles idle Chance card is exactly400x239, so its descriptor now uses
+239 instead of240; the other31 measured idle cards retain400x240. Unknown and
+FaceIn roots keep native assets. The optional native-cursor experiment passes focused GPU fixtures, but the
+real game still showed the glowing pointer. That unqualified patch is withheld
+from this milestone. Navigation captures are `navigation-pass24-after.jpg` and
+`navigation-board-pass24-after.jpg`; F11 returned to1920x1080 after fullscreen.

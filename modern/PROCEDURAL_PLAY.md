@@ -4,6 +4,9 @@ On the configured Windows checkout, double-click `modern/PlayModern.cmd`.
 It opens `MonopolyModern.exe` at 1920x1080 with the procedural board, complete
 recovered city, modern tokens, gameplay houses/hotels and optional modern IBar.
 F11 toggles fullscreen; the ordinary menus start or load a real game.
+The launcher prefers staged Release, with Debug fallback. On first Release
+launch only, it copies existing Debug saves if Release/savegame is absent.
+It never replaces an existing Release save directory.
 
 The available licensed data uses USA rules and English labels. The recovered
 Paris city is decorative presentation; it does not substitute French rules,
@@ -19,7 +22,7 @@ The qualified procedural bake must exist first; normal builds never run Blender.
 cmake --build modern/build --config Debug --target MonopolyExportProceduralScene
 cmake --build modern/build --config Debug --target MonopolyExportProceduralGameplayScene
 cmake --build modern/build --config Debug --target MonopolyExportGameplayHouse
-cmake --build modern/build --config Debug --target MonopolyModern
+cmake --build modern/build --config Release --target MonopolyModern
 ```
 
 The second target exports the actual recovered sculpted foundation and centre,
@@ -61,7 +64,8 @@ checks pass; no gameplay or sequence timing is changed.
 A fresh MonopolyModern.exe session rendered at 1920x1080 with shadows and 4x
 MSAA. Five two-second title telemetry samples measured 60.0-60.1 FPS during a
 real turn; this is a short runtime sample, not a complete-game stability claim.
-The first Debug city load can take tens of seconds; the title shows Loading
+These initial measurements predate the continuation recorded in
+VISUAL_UI_POLISH.md. The first Debug city load could take tens of seconds; the title shows Loading
 game while the recovered geometry loads. Menus and Chance/deed artwork still
 use retail assets. French Paris DAT banks remain unavailable. Physical audio
 audibility and every animation state remain unverified.

@@ -27,9 +27,12 @@ namespace monopoly::optionsui
     class VisualPlayback final
     {
     public:
+        // Modern text uses3x AA; Help/Credits render on foreground layer11.
+        // Fixed-profile refreshes retain roots. Changing this profile may restart
+        // foreground UI roots; native layout and Credits scroll cadence remain fixed.
         [[nodiscard]] std::expected<void, std::string> sync(State& state,
             display::Screen2D view, std::uint64_t tick, fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool modernPresentation = false);
         void reset() noexcept;
     private:
         struct Object
@@ -43,6 +46,8 @@ namespace monopoly::optionsui
         std::vector<Object> published_;
         std::optional<Screen> lastScreen_;
         bool lastQuickHelp_{};
+        bool lastPresentation_{};
+        std::shared_ptr<fonts::Runtime> presentationFont_;
         int lastTune_{-1};
         std::size_t lastHelpLine_{static_cast<std::size_t>(-1)};
         std::uint64_t creditsStart_{};

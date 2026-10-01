@@ -1,4 +1,8 @@
 #include "ModernIBarSkin.hpp"
+#include "ResourcePaths.hpp"
+#include "ResourceRuntime.hpp"
+#include "SequenceBitmapRenderData.hpp"
+#include "SequenceWorld2DSlot.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -16,6 +20,33 @@ namespace
         asset->image={w,h,std::vector<std::uint8_t>(std::size_t(w)*h*4,255)};
         return asset;
     }
+    void testMeasuredStCharlesIdleCard()
+    {
+        const auto raster=[](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { return data::LegacyBitmapRGBA8{unsigned(text.size()*4+1),12,
+            std::vector<std::uint8_t>((text.size()*4+1)*12*4,255)}; };
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,raster);
+        bool context=true;
+        skin.configurePresentationContext([&]{return context;});
+        skin.configureDrawCardDescriptors({{0x00050029,{"Chance",
+            "Advance to St. Charles Place. If you pass GO, collect $200.",400,239}}},
+            [&](std::string_view text,int,bool,bool){return raster(text);});
+        const auto original=bitmap(0x00050983,400,239);
+        const auto result=skin.substitute(0x00050029,original);
+        require(result!=original && result->image.width==1200 && result->image.height==717 &&
+            result->dataId==original->dataId && result->preferLinearFiltering,
+            "Production St. Charles idle400x239 face retains exact authored footprint");
+        const auto wrong=bitmap(0x00050983,400,240);
+        require(skin.substitute(0x00050029,wrong)==wrong,
+            "St. Charles qualification rejects the assumed400x240 footprint");
+        context=false;
+        require(skin.substitute(0x00050029,original)==original,
+            "Presentation context is checked before returning cached239px card");
+        context=true;
+        require(skin.substitute(0x00050019,bitmap(0x00050815,400,240))->sourceType==data::LegacyDataType::Uap,
+            "Native FaceIn remains unqualified; idle dimension correction does not modernize animation");
+    }
+
     void testPortfolioMiniatures()
     {
         bool context=true,failFont=false;
@@ -100,6 +131,156 @@ namespace
         require(skin.substitute(normal->dataId,normal)==normal,"missing canonical property descriptor retains retail");
         ibar::ModernIBarSkin french(data::LanguageId::French,raster);
         require(!french.supports(normal->dataId),"miniature qualification remains USA English only");
+    }
+    void testMeasuredNavigationAA()
+    {
+        using Slot=ibar::layout::ActionButtonSlot;
+        struct Frame {unsigned first,last,leaf,width,height,x,y;Slot slot;const char* label;};
+        // Actual immutable DAT settled states. Large Board/Status artwork retains
+        // only its existing interactive band; moving leaves still use native guards.
+        constexpr std::array<Frame,8> frames{{
+            {0xBF,0xC0,0x1367,69,93,731,452,Slot::Status,"Board"},
+            {0x13A,0x13C,0x159E,60,32,730,454,Slot::Status,"Board"},
+            {0xC2,0xC4,0x136F,61,32,9,454,Slot::Options,"Options"},
+            {0x13E,0x140,0x15A2,61,32,9,454,Slot::Options,"Options"},
+            {0xD3,0xD4,0x1406,90,93,710,452,Slot::Status,"Status"},
+            {0x14E,0x150,0x1620,60,32,730,454,Slot::Status,"Status"},
+            {0xD6,0xD8,0x140E,60,32,70,454,Slot::Trade,"Trade"},
+            {0x152,0x154,0x1628,60,32,70,454,Slot::Trade,"Trade"}
+        }};
+        std::string caption;unsigned calls=0;bool context=true;
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {return std::unexpected("navigation must use optional high-resolution text");});
+        skin.configureLayoutProvider([]{return ibar::layout::ActionButtonLayout::General;});
+        skin.configurePresentationContext([&]{return context;});
+        skin.configureActionText([&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {caption=text;++calls;return data::LegacyBitmapRGBA8{unsigned(text.size()*18),36,
+            std::vector<std::uint8_t>(text.size()*18*36*4,128)};});
+        for(const auto& frame:frames)
+        {
+            const auto source=bitmap(0x50000+frame.leaf,frame.width,frame.height);
+            for(std::size_t i=3;i<source->image.pixels.size();i+=4)source->image.pixels[i]=std::uint8_t((i/4*37)%256);
+            const auto before=source->image.pixels;const auto raster=sequence::translate2D(float(frame.x),float(frame.y));
+            const auto hit=ibar::layout::actionButtonRect(frame.slot);
+            for(unsigned tag=frame.first;tag<=frame.last;++tag)
+            {
+                const auto result=skin.substitute(0x50000+tag,source,true,raster);
+                require(result!=source && caption==frame.label && result->image.width==frame.width*3 &&
+                    result->image.height==frame.height*3 && result->dataId==source->dataId &&
+                    result->preferLinearFiltering && !result->presentationRect && source->image.pixels==before,
+                    "All22 exact settled human/grey navigation states use high-resolution authentic captions at native footprint");
+                const auto& image=result->image;
+                for(unsigned y=0;y<image.height;++y)for(unsigned x=0;x<image.width;++x)
+                {
+                    const float wx=(x+.5F)/3+frame.x,wy=(y+.5F)/3+frame.y;
+                    const bool inside=wx>=hit.left&&wx<hit.right&&wy>=hit.top&&wy<hit.bottom;
+                    require(image.pixels[(std::size_t(y)*image.width+x)*4+3]==
+                        (inside?source->image.pixels[(std::size_t(y/3)*frame.width+x/3)*4+3]:0),
+                        "Navigation retains exact source alpha inside unchanged hit band and hides old glow outside it");
+                }
+                const unsigned cachedCalls=calls;
+                require(skin.substitute(0x50000+tag,source,true,raster)==result && calls==cachedCalls,
+                    "Source-aware navigation AA derivative is cached");
+                context=false;require(skin.substitute(0x50000+tag,source,true,raster)==source,
+                    "Unqualified presentation context restores original navigation pointer");context=true;
+                auto moved=raster;moved.values[6]+=float(frame.width*2);
+                require(skin.substitute(0x50000+tag,source,true,moved)==source,
+                    "Moving navigation raster that cannot carry its interactive band retains authored pixels");
+            }
+        }
+    }
+
+    void inspectActionButtons(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"real USA DAT action-button resources open");
+        const auto snapshot=resources.snapshot();
+        for(const unsigned index:{0U,1U,3U,12U,13U,14U,17U,18U,19U})for(const unsigned base:{0x008AU,0x0106U})for(unsigned state=0;state<4;++state)
+        {
+            const auto id=data::packDataId(data::LegacyGroupId::LanguageGraphics,data::DataTag(base+index*4+state));
+            auto program=sequence::SequenceProgram::load(snapshot,id,0);require(program.has_value(),"actual action CNK decodes");
+            sequence::SequenceRuntime runtime;require(runtime.start(*program,999).has_value(),"actual action CNK starts");
+            engine::SequenceWorld2DSlot slot;data::BitmapRuntimeCache cache;
+            for(int tick=0;tick<=12;++tick)
+            {
+                require(runtime.update(tick).has_value(),"actual action clock advances");
+                if(tick!=0 && tick!=4 && tick!=12)continue;
+                auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);require(items && slot.sync(*items,cache),"actual action leaves decode into production slot");
+                for(const auto& item:*items)
+                {
+                    const auto* object=slot.find(item.node);
+                    std::cout<<"action_leaf root="<<std::hex<<id<<" payload="<<item.contentsDataId<<std::dec
+                        <<" tick="<<tick<<" size="<<object->asset->image.width<<'x'<<object->asset->image.height
+                        <<" origin="<<item.metadata.originX<<','<<item.metadata.originY<<" matrix=";
+                    for(const auto value:object->worldTransform.values)std::cout<<value<<',';
+                    std::cout<<'\n';
+                }
+            }
+        }
+    }
+    void testActualActionButtons(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"actual action button DAT opens");
+        const auto snapshot=resources.snapshot();unsigned idleProofs=0,pressedProofs=0;
+        for(const unsigned index:{0U,1U,3U,12U,13U,14U,17U,18U,19U})for(const unsigned base:{0x008AU,0x0106U})for(unsigned state=0;state<4;++state)
+        {
+            const auto id=data::packDataId(data::LegacyGroupId::LanguageGraphics,data::DataTag(base+index*4+state));
+            auto program=sequence::SequenceProgram::load(snapshot,id,0);require(program.has_value(),"real action CNK loads");
+            sequence::SequenceRuntime runtime;require(runtime.start(*program,999).has_value(),"real action CNK starts");
+            std::string caption;unsigned glyphCalls=0;bool context=true;
+            auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("native raster must not be used");});
+            skin->configurePresentationContext([&]{return context;});
+            skin->configureActionText([&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {caption=text;++glyphCalls;return data::LegacyBitmapRGBA8{96,30,std::vector<std::uint8_t>(96*30*4,128)};});
+            const auto layout=(index==0||index==1)?ibar::layout::ActionButtonLayout::BuyAuction:ibar::layout::ActionButtonLayout::General;
+            skin->configureLayoutProvider([=]{return layout;});
+            engine::SequenceWorld2DSlot native,modern;data::BitmapRuntimeCache cache;
+            modern.configureModernIBarSkin(skin);
+            for(int tick=0;tick<=12;++tick)
+            {
+                require(runtime.update(tick).has_value(),"actual action state advances");
+                if(tick!=0 && tick!=4 && tick!=12)continue;
+                auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);
+                require(items && native.sync(*items,cache) && modern.sync(*items,cache),"actual metadata and sourcealpha reach skin seam");
+                bool replaced=false;
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    require(m && m->clock==a->clock && m->priority==a->priority && m->contentsDataId==a->contentsDataId,"actual CNK state clock/priority/content IDs unchanged");
+                    if(m->asset==a->asset)continue;
+                    replaced=true;
+                    require(m->asset->image.width==a->asset->image.width*3 && m->asset->image.height==a->asset->image.height*3 &&
+                        !m->asset->presentationRect,"actual action bitmap has3x pixels and original intrinsic rectangle");
+                    require(engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,m->asset->image.width,m->asset->image.height)==
+                        engine::SequenceWorld2DSlot::transformPoint(a->worldTransform,a->asset->image.width,a->asset->image.height),"actual action logical far corner stays fixed");
+                    const auto slot=index==13||index==18?ibar::layout::ActionButtonSlot::Status:
+                        index==14?ibar::layout::ActionButtonSlot::Options:index==19?ibar::layout::ActionButtonSlot::Trade:
+                        index==0||index==12?ibar::layout::ActionButtonSlot::General3:ibar::layout::ActionButtonSlot::Main;
+                    const auto hit=ibar::layout::actionButtonRect(slot,layout);
+                    const auto& im=m->asset->image;const auto& source=a->asset->image;const auto& mat=a->worldTransform.values;
+                    for(unsigned y=0;y<im.height;++y)for(unsigned x=0;x<im.width;++x)
+                    {
+                        const float lx=(x+.5F)/3,ly=(y+.5F)/3;
+                        const float wx=lx*mat[0]+ly*mat[3]+mat[6],wy=lx*mat[1]+ly*mat[4]+mat[7];
+                        const bool inside=wx>=hit.left&&wx<hit.right&&wy>=hit.top&&wy<hit.bottom;
+                        require(im.pixels[(std::size_t(y)*im.width+x)*4+3]==(inside?source.pixels[(std::size_t(y/3)*source.width+x/3)*4+3]:0),
+                            "actual source alpha preserved exactly inside immutable interactive band and zero outside");
+                    }
+                }
+                if(state==1 && tick==12){require(replaced,"every actual human/disabled idle action is modernized");++idleProofs;}
+                if(state==3 && tick==12 && replaced)++pressedProofs;
+                const auto calls=glyphCalls;
+                require(modern.sync(*items,cache) && glyphCalls==calls,"same actual action frame reuses O1 source-aware cache");
+                context=false;require(modern.sync(*items,cache).has_value(),"context fallback sync");
+                for(const auto node:native.order())require(modern.find(node)->asset==native.find(node)->asset,"context rejection restores exact actual retail pointers");
+                context=true;
+            }
+            std::cout<<"actual action qualified root="<<std::hex<<id<<std::dec<<" label="<<caption<<'\n';
+        }
+        require(idleProofs==18 && pressedProofs>=8,"eighteen actual idle families and settled pressed states qualified");
     }
     void testMeasuredDeedArtwork()
     {
@@ -338,8 +519,8 @@ namespace
             "actual mortgage idle already qualifies normal whole-band containment unchanged");
     }
 }
-int main()
+int main(int argc,char** argv)
 {
-    try{testPortfolioMiniatures();testMeasuredDeedArtwork();testMeasuredRetailTrade();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

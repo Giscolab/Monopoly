@@ -74,6 +74,9 @@ namespace monopoly::ibar
         // An absent predicate preserves the existing caller-qualified behavior.
         void configurePresentationContext(std::function<bool()> predicate)
         { presentationContext_ = std::move(predicate); }
+        // Optional3x blended labels for the five qualified action families.
+        void configureActionText(TextRasterizer rasterizer)
+        { actionText_=std::move(rasterizer);cache_.clear(); }
         using LayoutProvider = std::function<layout::ActionButtonLayout()>;
         void configureLayoutProvider(LayoutProvider provider)
         { layout_ = std::move(provider); cache_.clear(); }
@@ -86,6 +89,7 @@ namespace monopoly::ibar
     private:
         data::LanguageId language_;
         TextRasterizer text_;
+        TextRasterizer actionText_;
         TokenImageProvider tokenImages_;
         LayoutProvider layout_;
         std::function<bool()> presentationContext_;

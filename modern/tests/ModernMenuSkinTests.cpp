@@ -93,7 +93,7 @@ namespace
                 Owner{0x000502A4, "Save game"}, Owner{0x00050288,"Select player"},
                 Owner{0x0005027D,"Enter name"}, Owner{0x00050289,"Choose token"},
                 Owner{0x0005027C,"Computer difficulty"}, Owner{0x00050293,"Game rules"},
-                Owner{0x00050277,"Options"}, Owner{0x00050278,"Sound"}, Owner{0x00050262,"Display"}})
+                Owner{0x00050278,"Sound"}, Owner{0x00050262,"Display"}})
             require(skin.substitute(owner.first, asset) != asset && captions.back() == owner.caption,
                 "load/save and file headings use the exact production title owners");
         const auto background = original(800, 600);
@@ -966,6 +966,53 @@ namespace
         require(european.substitute(0x0002000C,bank)==bank,"Bank/Deeds cannot bypass USA/en-US skin qualification");
     }
 
+    void testOptionsHeaderAndHelpChrome()
+    {
+        std::vector<std::string> captions;
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { captions.emplace_back(text); return label(); });
+        const auto measured=[](data::DataId id,unsigned w,unsigned h)
+        { auto asset=std::make_shared<data::BitmapRuntimeAsset>(*original(w,h)); asset->dataId=id; return asset; };
+        const auto header=measured(0x0005108C,619,78);
+        const auto modern=skin.substitute(0x00050277,header);
+        require(modern!=header && modern->image.width==1857 && modern->image.height==234 && captions.back()=="Options",
+            "Measured Options owner retains full native footprint with supersampled title");
+        for(unsigned y=135;y<234;++y)for(unsigned x=0;x<1857;++x)
+            require(modern->image.pixels[(std::size_t(y)*1857+x)*4+3]==0,
+                "Options lower33 native rows cannot cover Sound and Display headings");
+        require(modern->image.pixels[(std::size_t(67)*1857+928)*4+3]==255 &&
+            modern->image.pixels[(std::size_t(67)*1857+928)*4]==245,
+            "Options caption stays in the opaque upper45 native rows");
+        const auto badHeader=measured(0x0005108D,619,78),wrongHeader=measured(0x0005108C,619,77);
+        require(skin.substitute(0x00050277,badHeader)==badHeader && skin.substitute(0x00050277,wrongHeader)==wrongHeader &&
+            skin.substitute(0x00050277,header,false)==header,"Unknown Options leaves and secondary owners retain original pixels");
+        const auto helpTitle=measured(0x00051028,619,78);
+        require(skin.substitute(0x00050249,helpTitle)!=helpTitle && captions.back()=="Help menu","Exact Help title uses its verified caption");
+        for(unsigned state=0;state<3;++state)
+        {
+            for(unsigned frame=0;frame<(state==2?1U:8U);++frame)
+            {
+                const auto full=measured(0x00051034+frame,220,62),quick=measured(0x0005104A+frame,220,62);
+                const auto fullSkin=skin.substitute(0x0005024A+state,full);
+                require(fullSkin!=full && fullSkin->image.width==660 && fullSkin->image.height==186 &&
+                    captions[captions.size()-2]=="Full help" && captions.back()=="(game will pause)",
+                    "Every measured Full help out/in/idle leaf retains both action and pause information");
+                require(skin.substitute(0x0005024F+state,quick)!=quick && captions.back()=="Quick help",
+                    "Every measured Quick help out/in/idle leaf uses the actual label");
+                require(skin.substitute(0x0005024A+state,full,false)==full,"Help secondary leaves are preserved");
+            }
+        }
+        const auto wrong=measured(0x00051035,219,62),unknown=measured(0x00051052,220,62),wrongGroup=measured(0x00021034,220,62);
+        require(skin.substitute(0x0005024A,wrong)==wrong && skin.substitute(0x00050250,unknown)==unknown &&
+            skin.substitute(0x0005024A,wrongGroup)==wrongGroup,"Help requires actual extent, contents group and whitelisted leaves");
+        const auto idleUnknown=measured(0x00051035,220,62);
+        require(skin.substitute(0x0005024C,idleUnknown)==idleUnknown,"Settled Help owners reject transition-only leaves");
+        menu::ModernMenuSkin uk(data::BoardEdition::Usa,data::LanguageId::EnglishUk,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        require(uk.substitute(0x00050249,helpTitle)==helpTitle,"Help chrome is USA/en-US only");
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -1000,7 +1047,7 @@ namespace
 }
 int main()
 {
-    try { testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention();
+    try { testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention(); testOptionsHeaderAndHelpChrome();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

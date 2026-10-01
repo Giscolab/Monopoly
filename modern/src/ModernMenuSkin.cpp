@@ -191,6 +191,9 @@ namespace monopoly::menu
                 {0x0277, "Options"}, {0x0278, "Sound"}, {0x0262, "Display"}}};
             for (const auto& title : titles)
                 if (tag == title.tag) return Descriptor{Kind::Title, title.label};
+            if (tag == 0x0249) return Descriptor{Kind::Title, "Help menu"};
+            if (tag >= 0x024A && tag <= 0x024C) return Descriptor{Kind::Button, "Full help\n(game will pause)"};
+            if (tag >= 0x024F && tag <= 0x0251) return Descriptor{Kind::Button, "Quick help"};
             if (tag == 0x023A) return Descriptor{Kind::Title, "File"};
             if (tag == 0x0255) return Descriptor{Kind::Title, "Load game"};
             if (tag == 0x02A4) return Descriptor{Kind::Title, "Save game"};
@@ -223,9 +226,9 @@ namespace monopoly::menu
             return true;
         }
         bool functionCaption(data::LegacyBitmapRGBA8& target,
-            const std::array<data::LegacyBitmapRGBA8,2>& lines, unsigned count)
+            const std::array<data::LegacyBitmapRGBA8,2>& lines, unsigned count, unsigned lineHeight = 24)
         {
-            // At most8 logical pixels per line, two pixels gap; fit the47x29 tile.
+            // Default calculator cap is8 logical pixels; Help uses18. Keep a two-pixel line gap.
             std::array<unsigned,2> widths{},heights{};
             unsigned totalHeight = count == 2 ? 6 : 0;
             for(unsigned i=0;i<count;++i)
@@ -233,7 +236,7 @@ namespace monopoly::menu
                 const auto& text=lines[i];
                 if(!text.width || !text.height || text.width>4096 || text.height>512 ||
                     text.pixels.size()!=std::size_t(text.width)*text.height*4)return false;
-                const double scale=std::min(double(target.width-18)/text.width,24.0/text.height);
+                const double scale=std::min(double(target.width-18)/text.width,double(lineHeight)/text.height);
                 widths[i]=std::max(1U,unsigned(text.width*scale));
                 heights[i]=std::max(1U,unsigned(text.height*scale));totalHeight+=heights[i];
             }
@@ -255,18 +258,19 @@ namespace monopoly::menu
             return true;
         }
         bool caption(data::LegacyBitmapRGBA8& target, const data::LegacyBitmapRGBA8& text,
-            bool heading, bool upperPanel = false)
+            bool heading, bool upperPanel = false, unsigned panelHeight = 0)
         {
             if (!text.width || !text.height || text.width > 4096 || text.height > 512 ||
                 text.pixels.size() != std::size_t(text.width) * text.height * 4 ||
                 target.width < 48 || target.height < 36) return false;
+            const unsigned availableHeight = panelHeight ? panelHeight : target.height;
             const float scale = std::min({heading ? 2.0F : 1.0F,
                 float(target.width - 48) / text.width,
-                float(heading ? std::max(1U, target.height / 7) : target.height - 24) / text.height});
+                float(heading ? std::max(1U, availableHeight / 7) : availableHeight - 24) / text.height});
             const auto w = std::max(1U, unsigned(text.width * scale));
             const auto h = std::max(1U, unsigned(text.height * scale));
             const auto ox = (target.width - w) / 2;
-            const auto oy = heading ? target.height / 8 : upperPanel ? target.height / 4 : (target.height - h) / 2;
+            const auto oy = heading ? availableHeight / 8 : upperPanel ? availableHeight / 4 : (availableHeight - h) / 2;
             for (unsigned y = 0; y < h; ++y)
                 for (unsigned x = 0; x < w; ++x)
                 {
@@ -314,6 +318,28 @@ namespace monopoly::menu
         if (descriptor.kind == Kind::PlayerCard &&
             (!principal || original->image.width != 97 || original->image.height != 110)) return original;
         const auto& source = original->image;
+        // Options authored box y30..108 overlaps subtitles starting y83/85.
+        // Keep its full footprint, but restrict the opaque panel to y30..75.
+        const bool optionsHeader = root == 0x00050277;
+        const auto helpTag = data::dataTag(root);
+        const bool helpChrome = root == 0x00050249 ||
+            (data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics) &&
+             ((helpTag >= 0x024A && helpTag <= 0x024C) || (helpTag >= 0x024F && helpTag <= 0x0251)));
+        if (optionsHeader && (!principal || original->dataId != 0x0005108C || source.width != 619 || source.height != 78))
+            return original;
+        if (helpChrome)
+        {
+            const auto leaf = data::dataTag(original->dataId);
+            const bool title = helpTag == 0x0249;
+            // UDOpts: state0 is out,1 in,2 idle; both transitions use eight measured leaves.
+            const bool full = helpTag >= 0x024A && helpTag <= 0x024C;
+            const bool qualifiedLeaf = title ? leaf == 0x1028 :
+                full ? (helpTag == 0x024C ? leaf == 0x1034 : leaf >= 0x1034 && leaf <= 0x103B) :
+                       (helpTag == 0x0251 ? leaf == 0x104A : leaf >= 0x104A && leaf <= 0x1051);
+            if (!principal || data::dataGroup(original->dataId) != data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics) ||
+                !qualifiedLeaf || source.width != (title ? 619U : 220U) || source.height != (title ? 78U : 62U))
+                return original;
+        }
         const bool trade = descriptor.kind == Kind::TradeBackground || descriptor.kind == Kind::TradePanel ||
             descriptor.kind == Kind::TradeOffer || descriptor.kind == Kind::TradeRail ||
             descriptor.kind == Kind::TradeTitle || descriptor.kind == Kind::TradeButton;
@@ -522,10 +548,10 @@ namespace monopoly::menu
                         if (x == 0)
                         { rowGradient = 6 * (h - y) / h; sourceRow = std::size_t(y/3) * source.width; }
                         const bool rim = background ? x < 9 || y < 9 || x + 9 >= w || y + 9 >= h :
-                            x < 3 || y < 3 || x + 3 >= w || y + 3 >= h;
+                            x < 3 || y < 3 || x + 3 >= w || y + 3 >= (optionsHeader ? 135U : h);
                         const bool rounded = roundedKind &&
                             (x < 9 || x + 9 >= w) && (y < 9 || y + 9 >= h);
-                        if (rounded) return;
+                        if (rounded || (optionsHeader && y >= 135)) return;
                         for (unsigned c = 0; c < 3; ++c)
                             image.pixels[offset + c] = std::uint8_t(rim ? brass[c] : fill[c] + rowGradient);
                         image.pixels[offset + 3] = 255;
@@ -582,7 +608,7 @@ namespace monopoly::menu
                             unsigned(image.pixels[dst+c])*(255-alpha)+127)/255);
                     }
                 }
-                if(calculatorFunction)
+                if(calculatorFunction || (helpChrome && descriptor.label.find('\n') != std::string_view::npos))
                 {
                     const auto split=descriptor.label.find('\n');
                     const unsigned count=split==std::string_view::npos?1:2;
@@ -596,7 +622,7 @@ namespace monopoly::menu
                         if(!second)return original;
                         lines[1]=*second;
                     }
-                    if(!functionCaption(image,lines,count))return original;
+                    if(!functionCaption(image,lines,count,helpChrome ? 54U : 24U))return original;
                 }
                 else if (!descriptor.label.empty())
                 {
@@ -606,7 +632,7 @@ namespace monopoly::menu
                         descriptor.kind == Kind::StatsBarHeading;
                     const bool painted = statsLabel || calculatorKey ? compactCaption(image, *text,
                         descriptor.kind == Kind::StatsBarHeading, calculatorKey) :
-                        caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation);
+                        caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation, optionsHeader ? 135U : 0U);
                     if (!painted) return original;
 
                 }

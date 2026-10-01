@@ -1286,6 +1286,7 @@ namespace monopoly::engine
                         [rasterText](std::string_view text) { return rasterText(text, 12); });
                     skin->configureTokenImages([tokenPreviews](std::uint8_t token)
                         { return tokenPreviews->image(token,255); });
+                    skin->configureActionText([rasterText](std::string_view text) { return rasterText(text, 36); });
                     skin->configureLayoutProvider([] { return ibar::stateReadOnly().actionButtonLayout; });
                     skin->configurePresentationContext([]
                     {
@@ -1391,7 +1392,8 @@ namespace monopoly::engine
                             const auto tag = static_cast<data::DataTag>((community ? 0x0059 : 0x0028) + index % 16);
                             drawCards.emplace(data::packDataId(data::LegacyGroupId::LanguageGraphics, tag),
                                 ibar::ModernIBarSkin::DrawCardDescriptor{community ? "Community Chest" : "Chance",
-                                    std::string(ModernUsaDrawCardBodies[index]), 400, 240});
+                                    // Production idle St. Charles face (root50029, leaf50983) is400x239; all other31 are400x240.
+                                    std::string(ModernUsaDrawCardBodies[index]), 400, index == 1 ? 239U : 240U});
                         }
                         const auto cardRaster = [rasterText](std::string_view text, int size, bool bold, bool italic)
                             -> std::expected<data::LegacyBitmapRGBA8, std::string>
@@ -2426,9 +2428,15 @@ namespace monopoly::engine
             if (!statsCalculatorPickerSync)
                 return SDL_SetError("UDStats calculator deed picker: %s",
                     statsCalculatorPickerSync.error().c_str());
+            const auto tradeTextResources = session->resources();
+            const bool modernTradeText = modernSceneOptions.proceduralBoard && tradeTextResources &&
+                tradeTextResources->context().board == data::BoardEdition::Usa &&
+                tradeTextResources->context().language == data::LanguageId::EnglishUs &&
+                displayState.city == 0 && displayState.system == 13 &&
+                displayState.customBoardPath.empty();
             const auto optionsVisualSync = optionsVisualPlayback.sync(
                 userinterface::optionsState(), displayState.desired2DView,
-                tick, fontPlayback(), *session);
+                tick, fontPlayback(), *session, modernTradeText);
             if (!optionsVisualSync)
                 return SDL_SetError("Options visual playback: %s", optionsVisualSync.error().c_str());
             const auto optionsNavigationSync = optionsNavigationPlayback.sync(
@@ -2468,12 +2476,6 @@ namespace monopoly::engine
             if (!tradeIconSync)
                 return SDL_SetError("Trade offer-icon playback: %s",
                     tradeIconSync.error().c_str());
-            const auto tradeTextResources = session->resources();
-            const bool modernTradeText = modernSceneOptions.proceduralBoard && tradeTextResources &&
-                tradeTextResources->context().board == data::BoardEdition::Usa &&
-                tradeTextResources->context().language == data::LanguageId::EnglishUs &&
-                displayState.city == 0 && displayState.system == 13 &&
-                displayState.customBoardPath.empty();
             const auto tradeCashTextSync = tradeCashTextPlayback.sync(
                 userinterface::tradeStateReadOnly(), ruleState,
                 displayState.desired2DView, displayState.system,

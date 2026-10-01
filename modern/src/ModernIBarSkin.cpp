@@ -281,8 +281,12 @@ namespace monopoly::ibar
                 std::clamp(int(std::ceil(right)),0,int(w)),std::clamp(int(std::ceil(bottom)),0,int(h))};
             if (band.right-band.left < 8 || band.bottom-band.top < 8) return original;
         }
+        const bool modernAction=b && actionText_ &&
+            (b->index==0 || b->index==1 || b->index==3 || b->index==12 || b->index==17 ||
+             b->index==13 || b->index==14 || b->index==18 || b->index==19);
+        if(modernAction && principal && !valid(original->image))return original;
         const Key key{root, w, h, principal, b && rasterToWorld ? rasterToWorld->values : std::array<float,9>{},
-            activeLayout, deedPlacement, miniature && miniature->miniature ? original.get() : nullptr};
+            activeLayout, deedPlacement, (miniature && miniature->miniature) || modernAction ? original.get() : nullptr};
         if (const auto it = cache_.find(key); it != cache_.end()) return it->second.replacement;
         const auto p = property(root);
         std::optional<PropertyDescriptor> descriptor;
@@ -300,6 +304,57 @@ namespace monopoly::ibar
         result->presentationRect = deedPlacement;
         auto& image = result->image;
         image = {w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 4)};
+        if(modernAction)
+        {
+            // Intrinsic UAP origin remains authoritative in the production slot.
+            image={w*3,h*3,std::vector<std::uint8_t>(std::size_t(w)*h*36,0)};
+            if(principal)
+            {
+                const auto label=actionText_((language_==data::LanguageId::French?French:English)[b->index]);
+                if(!label || !valid(*label))return original;
+                const bool pressed=b->state==3;
+                const std::array<unsigned,3> fill=b->grey?std::array<unsigned,3>{35,55,57}:
+                    pressed?std::array<unsigned,3>{13,47,48}:std::array<unsigned,3>{22,69,70};
+                const std::array<unsigned,3> trim=b->grey?std::array<unsigned,3>{110,116,104}:std::array<unsigned,3>{188,157,94};
+                for(unsigned y=unsigned(band.top)*3;y<unsigned(band.bottom)*3;++y)
+                    for(unsigned x=unsigned(band.left)*3;x<unsigned(band.right)*3;++x)
+                    {
+                        const auto i=(std::size_t(y)*image.width+x)*4;
+                        const auto native=(std::size_t(y/3)*w+x/3)*4;
+                        const bool edge=x<unsigned(band.left)*3+2 || y<unsigned(band.top)*3+2 ||
+                            x+2>=unsigned(band.right)*3 || y+2>=unsigned(band.bottom)*3;
+                        for(unsigned c=0;c<3;++c)image.pixels[i+c]=std::uint8_t(edge?trim[c]:fill[c]);
+                        image.pixels[i+3]=original->image.pixels[native+3];
+                    }
+                const float fit=std::min({1.0F,float((band.right-band.left-8)*3)/label->width,float((band.bottom-band.top-6)*3)/label->height});
+                const unsigned tw=std::max(1U,unsigned(label->width*fit)),th=std::max(1U,unsigned(label->height*fit));
+                const unsigned ox=unsigned(band.left)*3+(unsigned(band.right-band.left)*3-tw)/2;
+                const unsigned oy=unsigned(band.top)*3+(unsigned(band.bottom-band.top)*3-th)/2;
+                for(unsigned y=0;y<th;++y)for(unsigned x=0;x<tw;++x)
+                {
+                    const auto src=(std::size_t(y*label->height/th)*label->width+x*label->width/tw)*4;
+                    const auto dst=(std::size_t(y+oy)*image.width+x+ox)*4;
+                    const unsigned alpha=label->pixels[src+3];
+                    for(unsigned c=0;c<3;++c)
+                    {
+                        const unsigned ink=b->grey?180:(c==2?214:239);
+                        image.pixels[dst+c]=std::uint8_t((ink*alpha+image.pixels[dst+c]*(255-alpha)+127)/255);
+                    }
+                }
+                // Hit clipping uses subpixel centres but sourcealpha remains
+                // exactly authored; no opacity invented for moving leaves.
+                const auto& m=rasterToWorld->values;
+                for(unsigned y=0;y<image.height;++y)for(unsigned x=0;x<image.width;++x)
+                {
+                    const float lx=(x+.5F)/3,ly=(y+.5F)/3;
+                    const float wx=lx*m[0]+ly*m[3]+m[6],wy=lx*m[1]+ly*m[4]+m[7];
+                    if(wx<hit->left || wx>=hit->right || wy<hit->top || wy>=hit->bottom)
+                        image.pixels[(std::size_t(y)*image.width+x)*4+3]=0;
+                }
+            }
+            if(cache_.size()>=128)cache_.clear();
+            cache_.emplace(key,CachedArtwork{result,original});return result;
+        }
         if (fullCard)
         {
             DeedDescriptor drawPlan;
