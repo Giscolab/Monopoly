@@ -1,4 +1,5 @@
 #include "ModernMenuSkin.hpp"
+#include "ModernMenuRaster.hpp"
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -7,8 +8,14 @@ namespace monopoly::menu
 {
     namespace
     {
-        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame };
+        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction };
         struct Descriptor { Kind kind; std::string_view label; int colour{-1}; int token{-1}; };
+        // StatsCalculatorLogic function order; exact Main DAT idle leaves, pressed leaf+1.
+        constexpr std::array<data::DataTag,8> CalculatorFunctionLeaves{
+            0x0347,0x0331,0x0327,0x0325,0x0329,0x032D,0x032B,0x032F};
+        constexpr std::array<std::string_view,8> CalculatorFunctionLabels{
+            "Odds","Net\nworth","Future\nto you","Future\nto other","Maximum\nexpense",
+            "Current\nincome","Maximum\nincome","Potential\nincome"};
         // Canonical six identities, matching BoardLightingController and ModernIBarSkin.
         constexpr std::array<std::array<unsigned, 3>, 6> PlayerColours{{
             {255,0,0}, {0,0,255}, {60,150,60}, {255,255,0}, {255,0,255}, {255,128,0}}};
@@ -86,6 +93,10 @@ namespace monopoly::menu
                         return Descriptor{Kind::TokenThumbnail, {}, -1, int(token)};
             if (root >= 0x0002000B && root <= 0x0002000E) return Descriptor{Kind::BankSummary,{}};
             if (root == 0x000200CD) return Descriptor{Kind::DeedsFrame,{}};
+            if (root >= 0x0002006D && root <= 0x00020074)
+                return Descriptor{Kind::CalculatorFunction,CalculatorFunctionLabels[root-0x0002006D]};
+            if (root >= 0x00020075 && root <= 0x0002007C)
+                return Descriptor{Kind::CalculatorSelectedFunction,CalculatorFunctionLabels[root-0x00020075]};
             constexpr std::array<std::string_view,10> digits{"1","2","3","4","5","6","7","8","9","0"};
             if (root >= 0x0002007D && root <= 0x00020086)
                 return Descriptor{Kind::CalculatorKey,digits[root-0x0002007D]};
@@ -207,6 +218,38 @@ namespace monopoly::menu
                         target.pixels[dst + c] = std::uint8_t((ink[c] * alpha +
                             target.pixels[dst + c] * (255 - alpha) + 127) / 255);
                 }
+            return true;
+        }
+        bool functionCaption(data::LegacyBitmapRGBA8& target,
+            const std::array<data::LegacyBitmapRGBA8,2>& lines, unsigned count)
+        {
+            // At most8 logical pixels per line, two pixels gap; fit the47x29 tile.
+            std::array<unsigned,2> widths{},heights{};
+            unsigned totalHeight = count == 2 ? 6 : 0;
+            for(unsigned i=0;i<count;++i)
+            {
+                const auto& text=lines[i];
+                if(!text.width || !text.height || text.width>4096 || text.height>512 ||
+                    text.pixels.size()!=std::size_t(text.width)*text.height*4)return false;
+                const double scale=std::min(double(target.width-18)/text.width,24.0/text.height);
+                widths[i]=std::max(1U,unsigned(text.width*scale));
+                heights[i]=std::max(1U,unsigned(text.height*scale));totalHeight+=heights[i];
+            }
+            unsigned top=(target.height-totalHeight)/2;
+            for(unsigned i=0;i<count;++i)
+            {
+                const auto& text=lines[i];const unsigned left=(target.width-widths[i])/2;
+                for(unsigned y=0;y<heights[i];++y)for(unsigned x=0;x<widths[i];++x)
+                {
+                    const auto src=(std::size_t(y*text.height/heights[i])*text.width+x*text.width/widths[i])*4;
+                    const auto dst=(std::size_t(y+top)*target.width+x+left)*4;
+                    const unsigned alpha=text.pixels[src+3];
+                    constexpr std::array<unsigned,3> ink{245,235,211};
+                    for(unsigned c=0;c<3;++c)target.pixels[dst+c]=std::uint8_t(
+                        (ink[c]*alpha+target.pixels[dst+c]*(255-alpha)+127)/255);
+                }
+                top+=heights[i]+6;
+            }
             return true;
         }
         bool caption(data::LegacyBitmapRGBA8& target, const data::LegacyBitmapRGBA8& text,
@@ -364,13 +407,20 @@ namespace monopoly::menu
             if (original->dataId != data::packDataId(data::LegacyGroupId::LanguageGraphics, data::DataTag(leaf)) ||
                 source.width != width || source.height != height) return original;
         }
-        const bool calculatorKey = descriptor.kind == Kind::CalculatorKey || descriptor.kind == Kind::CalculatorSelectedKey;
+        const bool calculatorFunction = descriptor.kind == Kind::CalculatorFunction || descriptor.kind == Kind::CalculatorSelectedFunction;
+        const bool calculatorKey = descriptor.kind == Kind::CalculatorKey || descriptor.kind == Kind::CalculatorSelectedKey || calculatorFunction;
         if (calculatorKey)
         {
             if (!principal) return original;
             data::DataId expected{};
             unsigned width = 24, height = 25;
-            if (root == 0x000501FE) { expected = 0x00050F14; width = 50; }
+            if(calculatorFunction)
+            {
+                const bool pressed=descriptor.kind==Kind::CalculatorSelectedFunction;
+                expected=0x00020000+CalculatorFunctionLeaves[root-(pressed?0x00020075:0x0002006D)]+unsigned(pressed);
+                width=47;height=29;
+            }
+            else if (root == 0x000501FE) { expected = 0x00050F14; width = 50; }
             // Bitmap banks store zero first; CNK button roots run1..9 then0.
             else if (descriptor.kind == Kind::CalculatorSelectedKey) expected = 0x0002033D + (root - 0x00020087 + 1) % 10;
             else expected = 0x00020333 + (root - 0x0002007D + 1) % 10;
@@ -438,39 +488,50 @@ namespace monopoly::menu
                 const double cover = photo ? std::max(double(w) / photo->width, double(h) / photo->height) : 1;
                 const double photoOffsetX = photo ? (photo->width * cover - w) / 2 : 0;
                 const double photoOffsetY = photo ? (photo->height * cover - h) / 2 : 0;
-                for (unsigned y = 0; y < h; ++y)
-                    for (unsigned x = 0; x < w; ++x)
-                    {
-                        const bool selected = descriptor.kind == Kind::SelectedSlot || descriptor.kind == Kind::SelectedTab ||
+                const bool selected = descriptor.kind == Kind::SelectedSlot || descriptor.kind == Kind::SelectedTab ||
                             descriptor.kind == Kind::SelectedToggle || descriptor.kind == Kind::StatsSelectedTab ||
                             descriptor.kind == Kind::CalculatorSelectedKey ||
+                            descriptor.kind == Kind::CalculatorSelectedFunction ||
                             selectedThumbnail;
-                        const bool background = descriptor.kind == Kind::Background || descriptor.kind == Kind::Pattern ||
+                const bool background = descriptor.kind == Kind::Background || descriptor.kind == Kind::Pattern ||
                             descriptor.kind == Kind::AuctionBackground || descriptor.kind == Kind::TradeBackground ||
                             descriptor.kind == Kind::StatsBackground;
+                const bool roundedKind = descriptor.kind == Kind::Button || descriptor.kind == Kind::TradeButton;
+                const bool playerCard = descriptor.kind == Kind::PlayerCard;
+                const bool auctionPlayer = descriptor.kind == Kind::AuctionPlayer;
+                const bool playerPanel = descriptor.kind == Kind::StatsPanel;
+                const bool tradeRail = descriptor.kind == Kind::TradeRail;
+                const bool sourceAlpha = descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey;
+                const unsigned auctionBandX = root < 0x00030376 ? 99 : 0;
+                const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
+                    selected ? std::array<unsigned, 3>{42, 85, 82} : std::array<unsigned, 3>{22, 60, 61};
+                constexpr std::array<unsigned, 3> brass{188, 157, 94};
+                unsigned rowGradient = 0;
+                std::size_t sourceRow = 0;
+                paintMenuRaster(image, !photo && descriptor.kind != Kind::TokenThumbnail,
+                    [&](unsigned x, unsigned y, std::size_t offset)
+                    {
+                        // Evaluate every output row, including rows within one native pixel.
+                        if (x == 0)
+                        { rowGradient = 6 * (h - y) / h; sourceRow = std::size_t(y/3) * source.width; }
                         const bool rim = background ? x < 9 || y < 9 || x + 9 >= w || y + 9 >= h :
                             x < 3 || y < 3 || x + 3 >= w || y + 3 >= h;
-                        const bool rounded = (descriptor.kind == Kind::Button || descriptor.kind == Kind::TradeButton) &&
+                        const bool rounded = roundedKind &&
                             (x < 9 || x + 9 >= w) && (y < 9 || y + 9 >= h);
-                        if (rounded) continue;
-                        const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
-                            selected ? std::array<unsigned, 3>{42, 85, 82} : std::array<unsigned, 3>{22, 60, 61};
-                        constexpr std::array<unsigned, 3> brass{188, 157, 94};
-                        const auto offset = (std::size_t(y) * w + x) * 4;
+                        if (rounded) return;
                         for (unsigned c = 0; c < 3; ++c)
-                            image.pixels[offset + c] = std::uint8_t(rim ? brass[c] : fill[c] + 6 * (h - y) / h);
+                            image.pixels[offset + c] = std::uint8_t(rim ? brass[c] : fill[c] + rowGradient);
                         image.pixels[offset + 3] = 255;
                         // Native black name glyphs are published separately at x13/y16,
                         // 67x14. Give that untouched surface a cream band with two pixels padding.
-                        if (descriptor.kind == Kind::PlayerCard && x >= 33 && x < 246 && y >= 42 && y < 96)
+                        if (playerCard && x >= 33 && x < 246 && y >= 42 && y < 96)
                         {
                             image.pixels[offset] = 245; image.pixels[offset+1] = 235;
                             image.pixels[offset+2] = 211;
                         }
-                        if (descriptor.kind == Kind::AuctionPlayer)
+                        if (auctionPlayer)
                         {
-                            const unsigned bandX = root < 0x00030376 ? 99 : 0;
-                            if (x >= bandX && x < bandX + 402 && ((y >= 30 && y < 120) || (y >= 165 && y < 255)))
+                            if (x >= auctionBandX && x < auctionBandX + 402 && ((y >= 30 && y < 120) || (y >= 165 && y < 255)))
                             {
                                 image.pixels[offset] = 245; image.pixels[offset+1] = 235;
                                 image.pixels[offset+2] = 211;
@@ -480,14 +541,14 @@ namespace monopoly::menu
                                 for (unsigned c = 0; c < 3; ++c)
                                     image.pixels[offset+c] = std::uint8_t(PlayerColours[descriptor.colour][c]);
                         }
-                        if (descriptor.kind == Kind::StatsPanel && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
+                        if (playerPanel && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
                             for (unsigned c = 0; c < 3; ++c)
                                 image.pixels[offset+c] = std::uint8_t(PlayerColours[descriptor.colour][c]);
-                        if (descriptor.kind == Kind::TradeRail && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
+                        if (tradeRail && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
                             for (unsigned c = 0; c < 3; ++c) image.pixels[offset+c] = std::uint8_t(
                                 descriptor.colour < 6 ? PlayerColours[descriptor.colour][c] : std::array<unsigned,3>{130,145,143}[c]);
-                        if (descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey)
-                            image.pixels[offset+3] = source.pixels[(std::size_t(y/3)*source.width+x/3)*4+3];
+                        if (sourceAlpha)
+                            image.pixels[offset+3] = source.pixels[(sourceRow+x/3)*4+3];
                         if (!rim && photo)
                         {
                             const auto px = std::min(photo->width - 1, unsigned((x + photoOffsetX) / cover));
@@ -499,7 +560,7 @@ namespace monopoly::menu
                                 image.pixels[offset + c] = std::uint8_t((unsigned(photo->pixels[src + c]) * alpha +
                                     unsigned(image.pixels[offset + c]) * (255 - alpha) + 127) / 255);
                         }
-                    }
+                    });
                 if (descriptor.kind == Kind::TokenThumbnail)
                 {
                     const double fit = std::min(double(w-18)/tokenImage->width,double(h-18)/tokenImage->height);
@@ -514,7 +575,23 @@ namespace monopoly::menu
                             unsigned(image.pixels[dst+c])*(255-alpha)+127)/255);
                     }
                 }
-                if (!descriptor.label.empty())
+                if(calculatorFunction)
+                {
+                    const auto split=descriptor.label.find('\n');
+                    const unsigned count=split==std::string_view::npos?1:2;
+                    std::array<data::LegacyBitmapRGBA8,2> lines;
+                    const auto first=text_(descriptor.label.substr(0,split));
+                    if(!first)return original;
+                    lines[0]=*first;
+                    if(count==2)
+                    {
+                        const auto second=text_(descriptor.label.substr(split+1));
+                        if(!second)return original;
+                        lines[1]=*second;
+                    }
+                    if(!functionCaption(image,lines,count))return original;
+                }
+                else if (!descriptor.label.empty())
                 {
                     const auto text = text_(descriptor.label);
                     if (!text) return original;

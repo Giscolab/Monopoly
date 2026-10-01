@@ -523,8 +523,9 @@ namespace monopoly
                                 std::cerr << "Fullscreen toggle failed: "
                                     << toggled.error() << '\n';
                         }
-                        else
+                        else if (event.key.scancode != SDL_SCANCODE_ESCAPE || !event.key.repeat)
                         {
+                            // A held Escape must not activate a newly opened menu after skipping a movie.
                             uimsg::send(
                                 {
                                     uimsg::Type::KeyboardPressed,

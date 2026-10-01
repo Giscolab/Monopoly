@@ -1,4 +1,5 @@
 #include "ModernMenuSkin.hpp"
+#include "ModernMenuRaster.hpp"
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -11,6 +12,41 @@ namespace
     using namespace monopoly;
     void require(bool value, const char* description)
     { if (!value) throw std::runtime_error(description); }
+    void testExactHorizontalRaster()
+    {
+        for(const bool selected:{false,true})for(const bool rounded:{false,true})
+        {
+            data::LegacyBitmapRGBA8 scalar{24,30,std::vector<std::uint8_t>(24*30*4,0)};
+            auto triplets=scalar;
+            const auto paint=[&](auto& image,unsigned x,unsigned y,std::size_t offset)
+            {
+                if(rounded && (x<9 || x+9>=image.width) && (y<9 || y+9>=image.height))return;
+                const bool rim=x<3 || y<3 || x+3>=image.width || y+3>=image.height;
+                constexpr std::array<unsigned,3> brass{188,157,94};
+                const std::array<unsigned,3> fill=selected?std::array<unsigned,3>{42,85,82}:
+                    std::array<unsigned,3>{22,60,61};
+                for(unsigned c=0;c<3;++c)image.pixels[offset+c]=std::uint8_t(
+                    rim?brass[c]:fill[c]+6*(image.height-y)/image.height);
+                image.pixels[offset+3]=std::uint8_t((x/3*47+y/3*19)%256);
+            };
+            unsigned fullCalls=0,tripletCalls=0;
+            menu::paintMenuRaster(scalar,false,[&](unsigned x,unsigned y,std::size_t offset)
+                { ++fullCalls;paint(scalar,x,y,offset); });
+            menu::paintMenuRaster(triplets,true,[&](unsigned x,unsigned y,std::size_t offset)
+                { ++tripletCalls;paint(triplets,x,y,offset); });
+            require(scalar.pixels==triplets.pixels && tripletCalls*3==fullCalls,
+                "Triplet shell raster exactly preserves rounded holes, selected fill, asymmetric alpha and each output-row gradient");
+            if(!rounded)require(triplets.pixels[(std::size_t(10)*24+12)*4]!=
+                triplets.pixels[(std::size_t(11)*24+12)*4],
+                "Integer gradient remains distinct inside a native three-row block");
+        }
+        data::LegacyBitmapRGBA8 odd{17,5,std::vector<std::uint8_t>(17*5*4,0)};
+        unsigned calls=0;
+        menu::paintMenuRaster(odd,true,[&](unsigned x,unsigned y,std::size_t offset)
+            { ++calls;odd.pixels[offset]=std::uint8_t(x+y);odd.pixels[offset+3]=255; });
+        require(calls==85 && odd.pixels[(4*17+16)*4]==20,
+            "Non-triplet width uses every pixel including final column without overrunning storage");
+    }
     std::shared_ptr<const data::BitmapRuntimeAsset> original(unsigned w = 220, unsigned h = 62)
     {
         auto asset = std::make_shared<data::BitmapRuntimeAsset>();
@@ -122,8 +158,8 @@ namespace
                 "cream band under exact native13/16 67x14 name surface keeps original black glyphs readable");
             require(skin.substitute(root,card,false) == card,
                 "secondary player portrait/frame leaves preserve their actual immutable pointer");
-            const auto name = original(67,14);
-            require(skin.substitute(root,name,false) == name && skin.substitute(root,name) == name,
+            const auto cardName = original(67,14);
+            require(skin.substitute(root,cardName,false) == cardName && skin.substitute(root,cardName) == cardName,
                 "player names are never erased or accepted as principal frames");
             const auto wrongGeometry = original(97,109);
             require(skin.substitute(root,wrongGeometry) == wrongGeometry,
@@ -678,9 +714,6 @@ namespace
             "USA measured Clear key retains verified CLEAR label and50x25 footprint");
         require(skin.substitute(0x00050388,clear)==clear && skin.substitute(0x000501FF,clear)==clear,
             "Unmeasured Clear alternative/press owners retain authored fallback");
-        for(unsigned root=0x0002006D;root<=0x0002007C;++root)
-            require(skin.substitute(root,measured(0x00020347,47,29))->dataId==0x00020347 && !skin.supports(root),
-                "Calculator function icons are not replaced by guessed text or symbols");
         const auto digit=measured(0x00020334);
         const auto coverage=skin.substitute(0x0002007D,digit);
         menu::ModernMenuSkin blank(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
@@ -702,6 +735,71 @@ namespace
         auto malformed=measured(0x00020334);malformed->image.pixels.pop_back();
         require(skin.substitute(0x0002007D,malformed)==malformed,
             "Malformed calculator bitmap remains immutable fallback");
+    }
+
+    void testMeasuredCalculatorFunctions()
+    {
+        std::vector<std::string> captions;
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {
+            captions.emplace_back(text);
+            data::LegacyBitmapRGBA8 image{unsigned(text.size()*34),72,
+                std::vector<std::uint8_t>(text.size()*34*72*4,255)};
+            for(std::size_t i=3;i<image.pixels.size();i+=4)image.pixels[i]=128;
+            return image;
+        };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        constexpr std::array<unsigned,8> leaves{0x347,0x331,0x327,0x325,0x329,0x32D,0x32B,0x32F};
+        const std::array<std::vector<std::string>,8> labels{{{"Odds"},{"Net","worth"},{"Future","to you"},
+            {"Future","to other"},{"Maximum","expense"},{"Current","income"},
+            {"Maximum","income"},{"Potential","income"}}};
+        for(unsigned index=0;index<8;++index)
+        {
+            std::array<std::shared_ptr<const data::BitmapRuntimeAsset>,2> images;
+            for(unsigned pressed=0;pressed<2;++pressed)
+            {
+                const unsigned root=(pressed?0x20075:0x2006D)+index;
+                auto source=std::make_shared<data::BitmapRuntimeAsset>(*original(47,29));
+                source->dataId=0x20000+leaves[index]+pressed;
+                for(std::size_t i=3;i<source->image.pixels.size();i+=4)source->image.pixels[i]=std::uint8_t((i/4*37)%256);
+                const auto before=source->image.pixels;captions.clear();
+                images[pressed]=skin.substitute(root,source);const auto& image=images[pressed]->image;
+                require(images[pressed]!=source && image.width==141 && image.height==87 &&
+                    captions==labels[index] && source->image.pixels==before,
+                    "All16 measured function states use verified semantic lines and native47x29 footprint");
+                std::vector<unsigned> paintedRows;
+                for(unsigned y=0;y<87;++y)
+                {
+                    bool hasInk=false;
+                    for(unsigned x=0;x<141;++x)
+                    {
+                        const auto offset=(std::size_t(y)*141+x)*4;
+                        require(image.pixels[offset+3]==source->image.pixels[(std::size_t(y/3)*47+x/3)*4+3],
+                            "Function label keeps exact transparent, fractional and opaque source alpha");
+                        if(x>=3 && x+3<141 && y>=3 && y+3<87 && image.pixels[offset]>100)
+                        { hasInk=true;require(x>=9 && x+9<141,"Function captions retain three logical pixels side padding"); }
+                    }
+                    if(hasInk)paintedRows.push_back(y);
+                }
+                require(!paintedRows.empty() && paintedRows.size()==labels[index].size()*24 &&
+                    paintedRows.front()>3 && paintedRows.back()+3<87,
+                    "Oversized54px provider fits truthful function words at8 logical pixels per line without clipping");
+                if(labels[index].size()==2)require(paintedRows[24]-paintedRows[23]==7,
+                    "Two-line function caption retains two logical pixels of quiet separation");
+                auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*source);wrong->image.height=28;
+                auto leaf=std::make_shared<data::BitmapRuntimeAsset>(*source);leaf->dataId+=2;
+                require(skin.substitute(root,source,false)==source && skin.substitute(root,wrong)==wrong &&
+                    skin.substitute(root,leaf)==leaf && skin.substitute(root+0x30000,source)==source,
+                    "Function replacement requires exact principal Main leaf and47x29 measured extent");
+            }
+            require(images[0]->image.pixels!=images[1]->image.pixels,
+                "Idle and pressed function states retain distinct quiet/active appearance");
+        }
+        menu::ModernMenuSkin failing(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { if(text=="worth")return std::unexpected("missing font line");return label(); });
+        auto net=std::make_shared<data::BitmapRuntimeAsset>(*original(47,29));net->dataId=0x20331;
+        require(failing.substitute(0x2006E,net)==net,"Failure of either caption line preserves whole original function tile");
     }
 
     void testMeasuredBankAndDeedsViews()
@@ -856,7 +954,7 @@ namespace
 }
 int main()
 {
-    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention();
+    try { testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

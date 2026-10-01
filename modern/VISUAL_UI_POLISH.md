@@ -240,3 +240,28 @@ continued through built-property rent, doubles/prison, a $50 jail payment and
 Pennsylvania Railroad; distinct save r preserves Dog$42/human$663 with purchase
 pending. Existing p/q saves remain. Function-icon tiles and cold-menu costs are
 still further visible/performance work. Source and authoring Blender unchanged.
+
+## Exact-pixel menu raster optimization
+
+The optimized production shell evaluates each aligned horizontal triplet once,
+with direct RGBA stores and per-output-row gradients/source alpha. Photo and
+token artwork retain their original path; unaligned widths use scalar rendering.
+All 47 actual DAT fixtures retain their complete pixel hashes and focused
+MenuSkin tests pass. Debug cold medians improve from 28.3096 to 12.47055 ms for
+the 800x225 panel, 13.9123 to 6.1663 ms for the 400x225 panel, and 6.76275 to
+2.8208 ms for the calculator panel. These are CPU construction timings, not
+a game-FPS guarantee. Logs: `menu-skin-real-pass15-before-opt.log` and
+`menu-skin-real-pass15-after-opt.log`.
+
+`water-deed-pass16.jpg` qualifies Water Works artwork in the actual saved game
+at 1920x1080, with unchanged printed rents. Physical audibility remains
+unconfirmed by a person; Windows endpoint loopback proves software output.
+
+The real app now runs the optimized path. `calculator-functions-pass16-after.jpg`
+shows all eight function tiles with readable two-line meanings instead of metal
+buttons and dated symbols. Exact idle/pressed owners, dimensions, alpha and
+whole-font-failure fallback are tested; input rectangles and existing hover
+explanations are preserved. A real Escape during the opening movie now reached
+the main menu without the previously observed Quit prompt; the input filter
+only suppresses repeated Escape key-down, preserving first press and key-up.
+No deterministic repeated-input runtime test was performed.

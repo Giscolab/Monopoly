@@ -1,6 +1,5 @@
 #pragma once
 #include "LegacyBitmap.hpp"
-#include <algorithm>
 
 namespace monopoly::menu
 {
@@ -20,8 +19,11 @@ namespace monopoly::menu
                 paintPixel(x, y, offset);
                 if (step == 3)
                 {
-                    std::copy_n(image.pixels.data() + offset, 4, image.pixels.data() + offset + 4);
-                    std::copy_n(image.pixels.data() + offset, 4, image.pixels.data() + offset + 8);
+                    auto* pixel = image.pixels.data() + offset;
+                    pixel[4] = pixel[8] = pixel[0];
+                    pixel[5] = pixel[9] = pixel[1];
+                    pixel[6] = pixel[10] = pixel[2];
+                    pixel[7] = pixel[11] = pixel[3];
                 }
             }
     }
