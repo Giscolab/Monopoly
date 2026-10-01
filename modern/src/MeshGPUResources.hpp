@@ -155,6 +155,13 @@ namespace monopoly::engine
         // SDL defers GPU destruction until submitted commands no longer use it.
         void prune(std::span<const data::DataId> activeIds) noexcept;
         void pruneAssets(std::span<const data::MeshRuntimeAsset* const> activeAssets) noexcept;
+        // Explicit current-board/static-decoration identities only. Temporary
+        // empty scenes may retain these uploads; dynamic vertices still retire.
+        // Invalid/oversized input clears retention and returns false. Dropped
+        // pins are released on the next ordinary prune (or erase/clear).
+        inline static constexpr std::size_t MaximumRetainedStaticAssets = 23;
+        [[nodiscard]] bool retainStaticAssets(
+            std::vector<std::shared_ptr<const data::MeshRuntimeAsset>> assets) noexcept;
         void erase(data::DataId id) noexcept;
         void clear() noexcept;
         [[nodiscard]] SDL_GPUDevice* device() const noexcept { return device_; }
@@ -165,11 +172,13 @@ namespace monopoly::engine
         void eraseDynamicForDataId(data::DataId id) noexcept;
         void eraseDynamicForAsset(const data::MeshRuntimeAsset* asset) noexcept;
         void eraseOtherAssets(data::DataId id, const data::MeshRuntimeAsset* retained) noexcept;
+        [[nodiscard]] bool retainsStaticAsset(const data::MeshRuntimeAsset* asset) const noexcept;
         [[nodiscard]] std::expected<const MeshGPUResource*, MeshGPUError>
             resolveImpl(std::shared_ptr<const data::MeshRuntimeAsset> asset, bool coexist);
         SDL_GPUDevice* device_{};
         std::unordered_map<const data::MeshRuntimeAsset*, MeshGPUResource> resources_;
         std::uint64_t resolvedOrder_{};
         std::unordered_map<std::uint64_t, MeshGPUDynamicVertexResource> dynamicVertices_;
+        std::vector<std::shared_ptr<const data::MeshRuntimeAsset>> retainedStaticAssets_;
     };
 }

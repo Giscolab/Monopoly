@@ -299,6 +299,7 @@ add_library(
     src/ModernTokenVariants.cpp
     src/ModernEnvironment.cpp
     src/ModernIBarSkin.cpp
+    src/ModernMenuSkin.cpp
     src/IBarLayout.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
@@ -332,7 +333,7 @@ target_link_libraries(
 )
 
 if(MSVC)
-    set_source_files_properties(src/ModernIBarSkin.cpp PROPERTIES COMPILE_OPTIONS "/utf-8")
+    set_source_files_properties(src/ModernIBarSkin.cpp src/ModernMenuSkin.cpp PROPERTIES COMPILE_OPTIONS "/utf-8")
     target_compile_options(
         MonopolyDataCore
         PRIVATE
@@ -431,11 +432,28 @@ if(MSVC)
     target_compile_options(MonopolyTokenDeformationContract PRIVATE /W4 /permissive- /utf-8)
 endif()
 
+if(WIN32)
+    add_executable(MonopolyAudioOutputProbe tools/AudioOutputProbe.cpp)
+    target_link_libraries(MonopolyAudioOutputProbe PRIVATE ole32 propsys uuid)
+    if(MSVC)
+        target_compile_options(MonopolyAudioOutputProbe PRIVATE /W4 /permissive- /utf-8)
+    endif()
+endif()
+
 add_executable(MonopolyModernSceneRenderProbe tools/ModernSceneRenderProbe.cpp
     src/PiecePlacement.cpp src/BoardGeometry.cpp)
 target_link_libraries(MonopolyModernSceneRenderProbe PRIVATE MonopolyGPU3DCore)
 if(MSVC)
     target_compile_options(MonopolyModernSceneRenderProbe PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(MonopolyModernMenuSkinTests tests/ModernMenuSkinTests.cpp)
+    target_link_libraries(MonopolyModernMenuSkinTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyModernMenuSkinTests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME Monopoly.ModernMenuSkin COMMAND MonopolyModernMenuSkinTests)
 endif()
 
 if(BUILD_TESTING)

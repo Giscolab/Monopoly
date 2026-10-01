@@ -23,6 +23,8 @@
 #include "ModernEnvironment.hpp"
 #include "ModernScenePresentation.hpp"
 #include "ModernIBarSkin.hpp"
+#include "ModernMenuSkin.hpp"
+#include "ModernImageDecoder.hpp"
 #include "IBarLayout.hpp"
 #include "MoneyFormat.hpp"
 #include "StatsAccountRuntime.hpp"
@@ -114,6 +116,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -1193,7 +1196,7 @@ namespace monopoly::engine
                     std::move(modernResolver));
                 if (modernSceneOptions.proceduralBoard)
                 {
-                    const auto rasterText = [](std::string_view text, int size)
+                    const auto rasterText = [](std::string_view text, int size, bool bold = true, bool italic = false)
                         -> std::expected<data::LegacyBitmapRGBA8, std::string>
                         {
                             auto* font=fontPlayback();
@@ -1210,15 +1213,47 @@ namespace monopoly::engine
                                 }
                             } guard{*font,font->settings()};
                             if(const auto sized=font->setSize(size);!sized) return std::unexpected(sized.error().detail);
-                            font->setWeight(700);font->setItalic(false);font->setUnderline(false);font->setStrikeOut(false);
-                            auto rendered=font->render(text,0xFFFFFF);
+                            font->setWeight(bold ? 700 : 400);font->setItalic(italic);font->setUnderline(false);font->setStrikeOut(false);
+                            auto rendered=font->render(text,0xFFFFFF,true);
                             if(!rendered) return std::unexpected(rendered.error().detail);
                             return std::move(*rendered);
                         };
+                    auto menuSkin = std::make_shared<menu::ModernMenuSkin>(
+                        startup::resources()->context().board, startup::resources()->context().language,
+                        [rasterText](std::string_view text) { return rasterText(text, 54); });
+                    // Optional static preview captured from the qualified GPU scene.
+                    // A missing or malformed preview keeps the branded menu fallback.
+                    std::ifstream preview(std::filesystem::path(SDL_GetBasePath()) /
+                        "assets/modern/presentation/menu_city.png", std::ios::binary | std::ios::ate);
+                    if (preview && preview.tellg() > 0 && preview.tellg() <= 8 * 1024 * 1024)
+                    {
+                        std::vector<std::byte> bytes(static_cast<std::size_t>(preview.tellg()));
+                        preview.seekg(0);
+                        if (preview.read(reinterpret_cast<char*>(bytes.data()),
+                                static_cast<std::streamsize>(bytes.size())))
+                            if (const auto decoded = data::decodeModernImage(bytes, data::ModernImageEncoding::Png,
+                                    {8U * 1024U * 1024U, 4096, 64U * 1024U * 1024U}); decoded)
+                            {
+                                auto image = std::make_shared<data::LegacyBitmapRGBA8>();
+                                image->width = (*decoded)->width;
+                                image->height = (*decoded)->height;
+                                image->pixels = (*decoded)->rgba;
+                                menuSkin->configureBackground(std::move(image));
+                            }
+                    }
+                    playback->world2D().configureModernMenuSkin(std::move(menuSkin));
                     auto skin = std::make_shared<ibar::ModernIBarSkin>(
                         startup::resources()->context().language,
                         [rasterText](std::string_view text) { return rasterText(text, 12); });
                     skin->configureLayoutProvider([] { return ibar::stateReadOnly().actionButtonLayout; });
+                    skin->configurePresentationContext([]
+                    {
+                        const auto snapshot = startup::resources();
+                        const auto& state = display::stateReadOnly();
+                        return snapshot && snapshot->context().board == data::BoardEdition::Usa &&
+                            snapshot->context().language == data::LanguageId::EnglishUs &&
+                            state.city == 0 && state.system == 13 && state.customBoardPath.empty();
+                    });
                     skin->configurePropertyDescriptors(
                         [](unsigned propertyIndex) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
                         {
@@ -1244,6 +1279,68 @@ namespace monopoly::engine
                             }
                             return {};
                         }, [rasterText](std::string_view text) { return rasterText(text, 18); });
+                    const auto snapshot = startup::resources();
+                    if (snapshot && snapshot->context().board == data::BoardEdition::Usa &&
+                        snapshot->context().language == data::LanguageId::EnglishUs &&
+                        snapshot->language() && snapshot->language()->catalog)
+                    {
+                        std::map<data::DataId, ibar::ModernIBarSkin::DeedDescriptor> descriptors;
+                        for (int square = 0; square < 40; ++square)
+                        {
+                            const int index = ibar::layout::propertyIndex(square);
+                            if (index < 0) continue;
+                            const auto name16 = statsui::statsPropertyName(*snapshot->language()->catalog,
+                                data::BoardEdition::Usa, 0, square);
+                            if (!name16) continue;
+                            const auto name = fonts::transcodeUtf8(std::u16string_view(*name16));
+                            if (!name) continue;
+                            for (const bool front : {true, false})
+                            {
+                                const auto plan = deeds::plan({square, 1, 0, 13, front, 5, true});
+                                if (!plan || plan->text.empty()) continue;
+                                ibar::ModernIBarSkin::DeedDescriptor descriptor;
+                                for (const auto& fill : plan->fills)
+                                    descriptor.fills.push_back({fill.x, fill.y, fill.width, fill.height, fill.color});
+                                for (const auto& region : plan->text)
+                                    descriptor.text.push_back({region.text, region.y, region.height,
+                                        region.justification, region.verticalLeeway, region.fontSize,
+                                        region.color, region.bold, region.italic, region.verticalCenter});
+                                descriptor.text.front().text = *name;
+                                descriptors.emplace(data::packDataId(data::LegacyGroupId::LanguageGraphics,
+                                    static_cast<data::DataTag>((front ? 0x0CD0 : 0x0B53) + index)), std::move(descriptor));
+                            }
+                        }
+                        std::map<data::DataId, ibar::ModernIBarSkin::DrawCardDescriptor> drawCards;
+                        // Only the qualified idle face owners: original deck/flip/out
+                        // animation clocks and transitional artwork remain authored.
+#include "ModernDrawCardText.inc"
+                        for (unsigned index = 0; index < ModernUsaDrawCardBodies.size(); ++index)
+                        {
+                            const bool community = index >= 16;
+                            const auto tag = static_cast<data::DataTag>((community ? 0x0059 : 0x0028) + index % 16);
+                            drawCards.emplace(data::packDataId(data::LegacyGroupId::LanguageGraphics, tag),
+                                ibar::ModernIBarSkin::DrawCardDescriptor{community ? "Community Chest" : "Chance",
+                                    std::string(ModernUsaDrawCardBodies[index]), 400, 240});
+                        }
+                        const auto cardRaster = [rasterText](std::string_view text, int size, bool bold, bool italic)
+                            -> std::expected<data::LegacyBitmapRGBA8, std::string>
+                        {
+                            const auto& state = display::stateReadOnly();
+                            if (state.city != 0 || state.system != 13 || !state.customBoardPath.empty())
+                                return std::unexpected("USA card presentation context changed");
+                            return rasterText(text, size, bold, italic);
+                        };
+                        skin->configureDrawCardDescriptors(std::move(drawCards), cardRaster);
+                        skin->configureDeedDescriptors(std::move(descriptors),
+                            [rasterText](std::string_view text, int size, bool bold, bool italic)
+                                -> std::expected<data::LegacyBitmapRGBA8, std::string>
+                            {
+                                const auto& state = display::stateReadOnly();
+                                if (state.city != 0 || state.system != 13 || !state.customBoardPath.empty())
+                                    return std::unexpected("USA deed presentation context changed");
+                                return rasterText(text, size, bold, italic);
+                            });
+                    }
                     playback->world2D().configureModernIBarSkin(std::move(skin));
                 }
                 europeanDeedSelection.reset();
@@ -1988,7 +2085,7 @@ namespace monopoly::engine
         // display.cpp original charge le fond 3D pendant
         // DISPLAY_initialize().
         //
-        // Ce bitmap n'est pas indispensable au dÃƒÂ©marrage :
+        // Ce bitmap n'est pas indispensable au dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©marrage :
         // en cas d'absence on conserve simplement un fond noir.
         if (!legacyassets::initialize(gpuDevice))
         {
@@ -2004,8 +2101,8 @@ namespace monopoly::engine
 
     bool runCyclicFunctions()
     {
-        // Le vieux timer Windows tournait indÃƒÂ©pendamment ÃƒÂ  60 Hz.
-        // Notre implÃƒÂ©mentation moderne rattrape ici les ticks ÃƒÂ©coulÃƒÂ©s.
+        // Le vieux timer Windows tournait indÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©pendamment ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  60 Hz.
+        // Notre implÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©mentation moderne rattrape ici les ticks ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©coulÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s.
         timers::pump();
 
         messaging::pumpNetwork();
@@ -2050,7 +2147,7 @@ namespace monopoly::engine
             }
         }
 
-        // Ensuite viendront les ÃƒÂ©quivalents de :
+        // Ensuite viendront les ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©quivalents de :
         // LI_SEQNCR_TimerTick()
         // LI_ANIM3D_TickScene()
 
@@ -2701,6 +2798,7 @@ namespace monopoly::engine
             const auto updated = session->update(static_cast<std::int32_t>(tick));
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             std::vector<sequence::SequenceMeshRenderItem> decorations;
+            std::vector<std::shared_ptr<const data::MeshRuntimeAsset>> staticSceneAssets;
             std::optional<data::MeshBounds> modernBoardBounds;
             if (modernSceneOptions.parisBoard || modernSceneOptions.usaBoard || modernSceneOptions.proceduralBoard)
             {
@@ -2721,6 +2819,7 @@ namespace monopoly::engine
                     if (!boardRootPriority) continue;
                     const auto geometry = board->renderData ? board->renderData : board->asset->renderData;
                     modernBoardBounds = presentationWorldBounds(geometry->bounds, board->worldTransform);
+                    if (modernSceneOptions.proceduralBoard) staticSceneAssets.push_back(board->asset);
                     if (!modernSceneOptions.environment && !modernSceneOptions.usaBoard &&
                         !modernSceneOptions.proceduralBoard) break;
                     if (!modernEnvironment)
@@ -2750,12 +2849,33 @@ namespace monopoly::engine
                     break;
                 }
             }
+            if (!staticSceneAssets.empty())
+                for (const auto& decoration : decorations)
+                    if (decoration.asset && std::none_of(staticSceneAssets.begin(), staticSceneAssets.end(),
+                            [&](const auto& asset) { return asset == decoration.asset; }))
+                        staticSceneAssets.push_back(decoration.asset);
             const auto nativeSync = session->setNativeSceneItems(std::move(decorations));
             if (!nativeSync) return SDL_SetError("Native scene: %s", nativeSync.error().c_str());
             // Hidden 3D views skip rendering but must still retire stopped meshes.
             if (worldRenderer)
                 if (auto* cache = worldRenderer->meshCache())
+                {
+                    const bool validStaticContext = modernSceneOptions.proceduralBoard &&
+                        displayState.city == 0 && displayState.system == 13 && displayState.customBoardPath.empty();
+                    if (!staticSceneAssets.empty())
+                    {
+                        const auto retainedCount = staticSceneAssets.size();
+                        const bool retained = cache->retainStaticAssets(std::move(staticSceneAssets));
+                        static std::size_t reportedRetainedCount{};
+                        if (retained && retainedCount != reportedRetainedCount)
+                        {
+                            std::cerr << "Modern static GPU scene: retained=" << retainedCount << '\n';
+                            reportedRetainedCount = retainedCount;
+                        }
+                    }
+                    else if (!validStaticContext) (void)cache->retainStaticAssets({});
                     pruneWorld3DGPUScene(session->world(), *cache);
+                }
             publishSequenceLifecycleEvents(*session, static_cast<std::int32_t>(tick));
 
             {
@@ -2848,6 +2968,7 @@ namespace monopoly::engine
                     return SDL_SetError("Modern asset fallback: %s", prepared.error().c_str());
                 if (modernBoardRejected)
                 {
+                    (void)cache->retainStaticAssets({});
                     worldRenderer->setModernPresentation(false);
                     worldRenderer->setPresentationShadows(false);
                     worldRenderer->setPresentationAntialiasing(false);
@@ -2863,10 +2984,19 @@ namespace monopoly::engine
                         return SDL_SetError("Native scene fallback: %s", removed.error().c_str());
                 }
             }
+        const auto& presentationState = display::stateReadOnly();
+        const bool modernMenuBackdrop = modernSceneOptions.proceduralBoard && !openingMovies.active() &&
+            presentationState.city == 0 && presentationState.system == 13 &&
+            presentationState.customBoardPath.empty() &&
+            (presentationState.current2DView == display::Screen2D::Options ||
+             presentationState.current2DView == display::Screen2D::PlayerSelect ||
+             presentationState.current2DView == display::Screen2D::PlayerSelectRules);
+        const SDL_FColor backdrop = modernMenuBackdrop ?
+            SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
         const auto presented=gpuframe::present(gpuDevice, gameWindow,
             worldRenderer ? &*worldRenderer : nullptr,
             session ? &session->world() : nullptr,
-            overlayRenderer.get(), session ? &session->world2D() : nullptr);
+            overlayRenderer.get(), session ? &session->world2D() : nullptr, backdrop);
         static bool presentationReported=false;
         if(presented && worldRenderer && worldRenderer->presentationShadowsActive() && !presentationReported)
         {

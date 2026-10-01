@@ -32,6 +32,34 @@ namespace monopoly::ibar
         // Reconfiguration invalidates cached captions after city/currency changes.
         void configurePropertyDescriptors(DescriptorProvider provider, TextRasterizer text)
         { properties_ = std::move(provider); propertyText_ = std::move(text); cache_.clear(); }
+        struct DeedFill { int x{}, y{}, width{}, height{}; std::uint32_t color{}; };
+        struct DeedText
+        {
+            std::string text;
+            int y{}, height{}, justification{}, verticalLeeway{}, fontSize{};
+            std::uint32_t color{};
+            bool bold{}, italic{}, verticalCenter{};
+        };
+        struct DeedDescriptor { std::vector<DeedFill> fills; std::vector<DeedText> text; };
+        using DeedTextRasterizer = std::function<std::expected<data::LegacyBitmapRGBA8,std::string>(
+            std::string_view, int, bool, bool)>;
+        // Exact live root IDs only; the caller owns edition/currency/title proof.
+        // Payload strings and amounts come directly from EuropeanDeed::Plan.
+        void configureDeedDescriptors(std::map<data::DataId,DeedDescriptor> descriptors,
+            DeedTextRasterizer rasterizer)
+        { deeds_ = std::move(descriptors); deedText_ = std::move(rasterizer); cache_.clear(); }
+        struct DrawCardDescriptor
+        {
+            std::string title, body;
+            std::uint32_t nativeWidth{400}, nativeHeight{240};
+        };
+        void configureDrawCardDescriptors(std::map<data::DataId,DrawCardDescriptor> descriptors,
+            DeedTextRasterizer rasterizer)
+        { drawCards_ = std::move(descriptors); drawText_ = std::move(rasterizer); cache_.clear(); }
+        // Re-evaluated for every deed/draw/property substitution, including cache hits.
+        // An absent predicate preserves the existing caller-qualified behavior.
+        void configurePresentationContext(std::function<bool()> predicate)
+        { presentationContext_ = std::move(predicate); }
         using LayoutProvider = std::function<layout::ActionButtonLayout()>;
         void configureLayoutProvider(LayoutProvider provider)
         { layout_ = std::move(provider); cache_.clear(); }
@@ -44,6 +72,11 @@ namespace monopoly::ibar
         data::LanguageId language_;
         TextRasterizer text_;
         LayoutProvider layout_;
+        std::function<bool()> presentationContext_;
+        std::map<data::DataId,DeedDescriptor> deeds_;
+        DeedTextRasterizer deedText_;
+        std::map<data::DataId,DrawCardDescriptor> drawCards_;
+        DeedTextRasterizer drawText_;
         DescriptorProvider properties_;
         TextRasterizer propertyText_;
         using Key = std::tuple<data::DataId, std::uint32_t, std::uint32_t, bool, std::array<float,9>, int>;

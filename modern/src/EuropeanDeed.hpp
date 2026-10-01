@@ -22,6 +22,7 @@ namespace monopoly::deeds
         int monetarySystem{}; // Source currency IDs 0..13.
         bool front{true};
         int housesPerHotel{5};
+        bool usaPresentation{false}; // Explicit modern USA text plan; ordinary Europe path unchanged.
     };
 
     struct Fill

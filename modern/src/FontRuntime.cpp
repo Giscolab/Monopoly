@@ -468,7 +468,7 @@ namespace monopoly::fonts
     }
 
     std::expected<data::LegacyBitmapRGBA8, Error> Runtime::render(
-        std::string_view utf8, std::uint32_t colorRef) const
+        std::string_view utf8, std::uint32_t colorRef, bool antialiased) const
     {
         if (utf8.empty()) return data::LegacyBitmapRGBA8{};
         if (!ready())
@@ -482,8 +482,9 @@ namespace monopoly::fonts
         const std::uint8_t alpha = encodedAlpha == 0 ? 255U : encodedAlpha;
         SDL_Color foreground{red, green, blue, alpha};
 
-        SDL_Surface* rendered = TTF_RenderText_Solid(
-            font_, utf8.data(), utf8.size(), foreground);
+        SDL_Surface* rendered = antialiased
+            ? TTF_RenderText_Blended(font_, utf8.data(), utf8.size(), foreground)
+            : TTF_RenderText_Solid(font_, utf8.data(), utf8.size(), foreground);
         if (!rendered)
             return std::unexpected(makeError(ErrorCode::RenderFailed,
                 settings_.fontPath, SDL_GetError()));
@@ -521,25 +522,25 @@ namespace monopoly::fonts
     }
 
     std::expected<data::LegacyBitmapRGBA8, Error> Runtime::render(
-        std::u16string_view utf16, std::uint32_t colorRef) const
+        std::u16string_view utf16, std::uint32_t colorRef, bool antialiased) const
     {
         const auto utf8 = utf16ToUtf8(utf16, settings_.fontPath);
         if (!utf8) return std::unexpected(utf8.error());
-        return render(*utf8, colorRef);
+        return render(*utf8, colorRef, antialiased);
     }
 
     std::expected<data::LegacyBitmapRGBA8, Error> Runtime::renderClipped(
-        std::string_view utf8, std::uint32_t colorRef, ClipRect clip) const
+        std::string_view utf8, std::uint32_t colorRef, ClipRect clip, bool antialiased) const
     {
-        const auto image = render(utf8, colorRef);
+        const auto image = render(utf8, colorRef, antialiased);
         if (!image) return std::unexpected(image.error());
         return clipBitmap(*image, clip);
     }
 
     std::expected<data::LegacyBitmapRGBA8, Error> Runtime::renderClipped(
-        std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip) const
+        std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip, bool antialiased) const
     {
-        const auto image = render(utf16, colorRef);
+        const auto image = render(utf16, colorRef, antialiased);
         if (!image) return std::unexpected(image.error());
         return clipBitmap(*image, clip);
     }

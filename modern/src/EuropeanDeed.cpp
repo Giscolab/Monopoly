@@ -149,7 +149,10 @@ namespace monopoly::deeds
     {
         const int property = propertyIndex(request.square);
         if (property < 0) return std::unexpected("European deed square is not ownable");
-        if (request.languageId < 2 || request.languageId > 10)
+        if (request.usaPresentation &&
+            (request.languageId != 1 || request.board != 0 || request.monetarySystem != 13))
+            return std::unexpected("USA deed presentation requires USA English, classic board and US dollars");
+        if (request.languageId < (request.usaPresentation ? 1 : 2) || request.languageId > 10)
             return std::unexpected("European deed language must be UK..Norwegian (2..10)");
         const int board = request.board == -1 ? request.languageId - 2 : request.board;
         if (board < 0 || board > 11)
@@ -165,14 +168,14 @@ namespace monopoly::deeds
         const auto& square = rules::board::originalDefinition(
             static_cast<rules::board::SquareType>(request.square));
         const int language = request.languageId - 1;
-        const char* name = TRANS_PROP[property][board + 1];
+        const char* name = TRANS_PROP[property][request.usaPresentation ? 0 : board + 1];
         Plan result;
         result.background = templateId(request);
         std::optional<std::string> moneyError;
         const auto amount = [&](std::int64_t value, bool symbol = true)
         {
             const auto formatted = money::format(value, request.monetarySystem,
-                symbol, data::BoardEdition::Europe);
+                symbol, request.usaPresentation ? data::BoardEdition::Usa : data::BoardEdition::Europe);
             if (!formatted)
             {
                 moneyError = formatted.error();

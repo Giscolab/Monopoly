@@ -77,3 +77,8 @@ turn variants. Audible audio is not qualified: real speech/game playback reports
 `dat_borde.dat`, `dat_ln03.dat`, `dat_lm03.dat`, `dat_lk03.dat` remain absent,
 so Paris is still a presentation capture, not an in-game French qualification.
 The older menu/HUD presentation and low-resolution USA artwork remain retail.
+
+The continuation from `a58c16f`, including updated menu/card presentation, loader
+measurements, longer real play and current audio proof limits, is documented in
+[VISUAL_UI_POLISH.md](VISUAL_UI_POLISH.md). Its evidence supersedes the historical
+audio/menu qualification paragraph above; physical audibility remains separate.

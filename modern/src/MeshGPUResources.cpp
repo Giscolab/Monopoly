@@ -873,6 +873,12 @@ namespace monopoly::engine
                 ++iterator;
                 continue;
             }
+            if (retainsStaticAsset(iterator->first))
+            {
+                eraseDynamicForAsset(iterator->first);
+                ++iterator;
+                continue;
+            }
             eraseDynamicForAsset(iterator->first);
             // ReleaseGPUBuffer/Texture defer physical destruction until safe;
             // dropping the CPU source reference needs no GPU idle wait.
@@ -899,6 +905,7 @@ namespace monopoly::engine
 
     void MeshGPUCache::erase(data::DataId id) noexcept
     {
+        std::erase_if(retainedStaticAssets_, [id](const auto& asset) { return asset->dataId == id; });
         eraseDynamicForDataId(id);
         for (auto iterator = resources_.begin(); iterator != resources_.end();)
         {
@@ -929,6 +936,8 @@ namespace monopoly::engine
     void MeshGPUCache::eraseOtherAssets(data::DataId id,
         const data::MeshRuntimeAsset* retained) noexcept
     {
+        std::erase_if(retainedStaticAssets_, [id, retained](const auto& asset)
+            { return asset->dataId == id && asset.get() != retained; });
         for (auto iterator = resources_.begin(); iterator != resources_.end();)
         {
             if (iterator->second.dataId != id || iterator->first == retained)
@@ -942,6 +951,26 @@ namespace monopoly::engine
         }
     }
 
+    bool MeshGPUCache::retainStaticAssets(
+        std::vector<std::shared_ptr<const data::MeshRuntimeAsset>> assets) noexcept
+    {
+        if (assets.size() > MaximumRetainedStaticAssets ||
+            std::any_of(assets.begin(), assets.end(), [](const auto& asset)
+                { return !asset || !asset->renderData; }))
+        {
+            retainedStaticAssets_.clear();
+            return false;
+        }
+        retainedStaticAssets_ = std::move(assets);
+        return true;
+    }
+
+    bool MeshGPUCache::retainsStaticAsset(const data::MeshRuntimeAsset* asset) const noexcept
+    {
+        return std::any_of(retainedStaticAssets_.begin(), retainedStaticAssets_.end(),
+            [asset](const auto& retained) { return retained.get() == asset; });
+    }
+
     void MeshGPUCache::pruneAssets(
         std::span<const data::MeshRuntimeAsset* const> activeAssets) noexcept
     {
@@ -949,6 +978,12 @@ namespace monopoly::engine
         {
             if (std::find(activeAssets.begin(), activeAssets.end(), iterator->first) != activeAssets.end())
             {
+                ++iterator;
+                continue;
+            }
+            if (retainsStaticAsset(iterator->first))
+            {
+                eraseDynamicForAsset(iterator->first);
                 ++iterator;
                 continue;
             }
@@ -960,6 +995,7 @@ namespace monopoly::engine
 
     void MeshGPUCache::clear() noexcept
     {
+        retainedStaticAssets_.clear();
         for (auto& [key, resource] : dynamicVertices_)
         {
             (void)key;

@@ -106,14 +106,15 @@ namespace monopoly::fonts
         // an owning vector instead of reproducing that unsafe global buffer.
         [[nodiscard]] std::expected<std::vector<std::string>, Error> wrap(
             std::string_view utf8, int width) const;
+        // Optional coverage alpha for modern presentation; retail remains solid.
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> render(
-            std::string_view utf8, std::uint32_t colorRef) const;
+            std::string_view utf8, std::uint32_t colorRef, bool antialiased = false) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> render(
-            std::u16string_view utf16, std::uint32_t colorRef) const;
+            std::u16string_view utf16, std::uint32_t colorRef, bool antialiased = false) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
-            std::string_view utf8, std::uint32_t colorRef, ClipRect clip) const;
+            std::string_view utf8, std::uint32_t colorRef, ClipRect clip, bool antialiased = false) const;
         [[nodiscard]] std::expected<data::LegacyBitmapRGBA8, Error> renderClipped(
-            std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip) const;
+            std::u16string_view utf16, std::uint32_t colorRef, ClipRect clip, bool antialiased = false) const;
         [[nodiscard]] std::expected<void, Error> blitText(
             data::LegacyBitmapRGBA8& destination, std::string_view utf8,
             int x, int y, std::uint32_t colorRef) const;

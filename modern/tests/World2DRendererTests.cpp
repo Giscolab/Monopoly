@@ -4,6 +4,8 @@
 #include "ModernIBarSkin.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "FontRuntime.hpp"
+#include <fstream>
+#include <set>
 #include <cstdlib>
 #include "SyntheticSequenceResources.hpp"
 #include <SDL3/SDL.h>
@@ -277,6 +279,18 @@ namespace
             items.push_back(item);
         }
         require(slot.sync(items, cache).has_value(), "all three thumbnail states reach production2D slot");
+        const auto cachedProperty=slot.find(1)->asset;
+        bool compatibleContext=true;
+        skin->configurePresentationContext([&]{return compatibleContext;});
+        compatibleContext=false;
+        require(slot.sync(items,cache).has_value() && slot.find(1)->asset==original &&
+            slot.find(2)->asset==original && slot.find(3)->asset==original,
+            "changed display context rejects cached full/low/mortgaged names and purchase amounts");
+        require(skin->substitute(items.front().rootSequenceDataId,original,false)==original,
+            "incompatible property context also preserves secondary retail assets");
+        compatibleContext=true;
+        require(slot.sync(items,cache).has_value() && slot.find(1)->asset==cachedProperty,
+            "compatible display context restores the previously qualified property cache");
         for (unsigned state = 0; state < 3; ++state)
         {
             const auto* object = slot.find(state+1);
@@ -383,6 +397,191 @@ namespace
         }
     }
 
+    void writePpm(const std::filesystem::path& path, const std::vector<std::uint8_t>& rgba,unsigned w,unsigned h)
+    {
+        std::ofstream out(path,std::ios::binary);
+        require(bool(out),"capture file opens under existing executable build directory");
+        out<<"P6\n"<<w<<' '<<h<<"\n255\n";
+        for (std::size_t i=0;i<rgba.size();i+=4) out.write(reinterpret_cast<const char*>(rgba.data()+i),3);
+        require(bool(out),"actual GPU capture RGB bytes finish writing");
+    }
+    void extractRetailCardSheet(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});
+        data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"licensed USA resources open for32 native idle card captures");
+        const std::filesystem::path output=SDL_GetBasePath();
+        // Native800x600 cells retain all card text pixels, with no OCR/resizing.
+        constexpr unsigned sw=3200,sh=4800;
+        std::vector<std::uint8_t> sheet(std::size_t(sw)*sh*4,255);
+        for (unsigned index=0;index<32;++index)
+        {
+            engine::SequencePlayback playback(resources.snapshot());
+            const auto id=data::packDataId(data::LegacyGroupId::LanguageGraphics,
+                data::DataTag(index<16?0x0028+index:0x0059+index-16));
+            require(playback.start(id,1005) && playback.update(0),"actual licensed idle card CNK decodes without modern substitutions");
+            const auto pixels=capture(device,renderer,playback.world2D());
+            const auto name=std::string(index<16?"chance-":"community-")+std::to_string(index%16);
+            writePpm(output/("retail-card-"+name+".ppm"),pixels,800,600);
+            // Preserve each decoded source face independently, before any mascot
+            // or child overlay can obscure authoritative wording in the GPU view.
+            const auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(leaves && leaves->size()==playback.world2D().size(),"real card leaves retain native source provenance");
+            std::size_t largestArea=0;const engine::SequenceWorld2DObject* principal=nullptr;
+            for (const auto& leaf:*leaves)
+            {
+                const auto* object=playback.world2D().find(leaf.node);
+                require(object && object->asset,"native card source leaf resolves before composition");
+                const auto& image=object->asset->image;
+                const auto file=output/("retail-card-"+name+"-leaf-"+std::to_string(leaf.node)+"-data-"+
+                    std::to_string(leaf.contentsDataId));
+                writePpm(std::filesystem::path(file.string()+".ppm"),image.pixels,image.width,image.height);
+                // RGBA dump retains actual transparency as well as RGB evidence.
+                std::ofstream raw(std::filesystem::path(file.string()+".rgba"),std::ios::binary);
+                raw.write(reinterpret_cast<const char*>(image.pixels.data()),std::streamsize(image.pixels.size()));
+                require(bool(raw),"raw native RGBA leaf preserves alpha evidence");
+                unsigned visible=0;
+                for(std::size_t i=3;i<image.pixels.size();i+=4) if(image.pixels[i]) ++visible;
+                std::cout<<"native card="<<index<<" leaf="<<leaf.node<<" data="<<leaf.contentsDataId<<" extent="<<image.width<<'x'<<image.height
+                    <<" origin="<<leaf.metadata.originX<<','<<leaf.metadata.originY<<" worldXY="<<leaf.worldTransform.values[6]<<','<<leaf.worldTransform.values[7]
+                    <<" alphaNonzero="<<visible<<" file="<<file.string()<<'\n';
+                const auto area=std::size_t(image.width)*image.height;
+                if(area>largestArea) {largestArea=area;principal=object;}
+            }
+            require(principal,"actual card has an identifiable principal native bitmap");
+            writePpm(output/("retail-card-"+name+"-principal.ppm"),principal->asset->image.pixels,
+                principal->asset->image.width,principal->asset->image.height);
+
+            const unsigned ox=(index%4)*800,oy=(index/4)*600;
+            for (unsigned y=0;y<600;++y)
+                std::memcpy(sheet.data()+(std::size_t(y+oy)*sw+ox)*4,pixels.data()+std::size_t(y)*800*4,800*4);
+            std::cout<<"licensed card index="<<index<<" root="<<id<<" actual native capture="<<(output/("retail-card-"+name+".ppm")).string()<<'\n';
+        }
+        writePpm(output/"retail-cards-contact-sheet.ppm",sheet,sw,sh);
+        std::cout<<"Licensed32-card sheet (Chance first16, Community last16): "<<(output/"retail-cards-contact-sheet.ppm").string()<<'\n';
+    }
+    void testModernDeeds(SDL_GPUDevice* device,engine::World2DRenderer& renderer)
+    {
+        fonts::Runtime font;
+        std::vector<std::filesystem::path> roots;
+        if (const auto* base=SDL_GetBasePath()) roots.emplace_back(base);
+#ifdef _WIN32
+        if (const auto* windows=std::getenv("WINDIR")) roots.emplace_back(std::filesystem::path(windows)/"Fonts");
+#endif
+        const auto path=fonts::resolveRetailArial(roots);
+        require(path && font.setFont(*path),"modern deed uses actual Arial glyph rasterizer");
+        std::set<std::string> requested;
+        auto raster=[&](std::string_view text,int size,bool bold,bool italic)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {
+            requested.insert(std::string(text));
+            if (const auto changed=font.setSize(size);!changed) return std::unexpected(changed.error().detail);
+            font.setWeight(bold?1000:400); font.setItalic(italic);
+            auto result=font.render(text,0x00FFFFFF);
+            if (!result) return std::unexpected(result.error().detail);
+            return std::move(*result);
+        };
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("unused");});
+        const auto root=data::packDataId(data::LegacyGroupId::LanguageGraphics,0x0CEB);
+        ibar::ModernIBarSkin::DeedDescriptor plan;
+        plan.fills={{19,16,162,36,45U|(65U<<8)|(144U<<16)}};
+        plan.text={{"BOARDWALK",18,32,1,2,10,0,true,false,true},
+            {"RENT $50",56,12,1,0,12,0,true,false,false},
+            {"With 1 House",68,12,0,0,12,0,false,false,false},
+            {"$200",68,12,2,0,12,0,false,false,false},
+            {"Mortgage Value",130,12,0,0,12,0,false,false,false},
+            {"$200",130,12,2,0,12,0,false,false,false}};
+        skin->configureDeedDescriptors({{root,plan}},raster);
+        auto original=std::make_shared<data::BitmapRuntimeAsset>();
+        original->image={199,227,std::vector<std::uint8_t>(199*227*4,255)};
+        sequence::SequenceBitmapRenderItem item;
+        item.node=1; item.rootSequenceNode=10;item.rootSequenceDataId=root;item.runtimeAsset=original;
+        item.metadata={data::LegacyDataType::Native,199,227,0,0,32};
+        item.worldTransform=sequence::translate2D(540,130);item.clock=37;item.priority=1003;
+        engine::SequenceWorld2DSlot slot;data::BitmapRuntimeCache cache;
+        require(slot.sync({item},cache).has_value(),"original deed fixture reaches production slot");
+        const auto baseline=capture(device,renderer,slot);
+        slot.configureModernIBarSkin(skin);
+        require(slot.sync({item},cache).has_value() && slot.find(1)->asset!=original &&
+            slot.find(1)->asset->image.width==597 && slot.find(1)->asset->image.height==681 &&
+            requested.contains("BOARDWALK") && requested.contains("RENT $50") && requested.contains("Mortgage Value"),
+            "modern deed rerasterizes exact supplied authoritative strings at3x without invented rents");
+        require(engine::SequenceWorld2DSlot::transformPoint(slot.find(1)->worldTransform,597,681)==
+            std::array<std::int32_t,2>{739,357} && slot.find(1)->clock==37 && slot.find(1)->priority==1003,
+            "full deed keeps original199x227 bounds, priority and sequence clock");
+        const auto cachedDeed=slot.find(1)->asset;
+        bool presentationContext=true;
+        skin->configurePresentationContext([&]{return presentationContext;});
+        presentationContext=false;
+        require(slot.sync({item},cache).has_value() && slot.find(1)->asset==original,
+            "changed display context rejects cached deed and restores exact retail pointer");
+        presentationContext=true;
+        require(slot.sync({item},cache).has_value() && slot.find(1)->asset==cachedDeed,
+            "compatible display context restores the previously qualified cached deed");
+        const auto pixels=capture(device,renderer,slot);
+        unsigned ink=0;
+        for(unsigned y=186;y<275;++y) for(unsigned x=561;x<718;++x) if(pixel(pixels,x,y)[0]<120) ++ink;
+        const std::array<std::uint8_t,4> black{0,0,0,255};
+        require(ink>100 && pixel(pixels,539,200)==black && pixel(pixels,600,357)==black,
+            "real GPU canonical deed text is visible and never expands outside its authored rectangle");
+        writePpm(std::filesystem::path(SDL_GetBasePath())/"modern-deed-qualified.ppm",pixels,800,600);
+        // Stress a supplied70-word body; this is qualification text, never a
+        // replacement for a licensed card/catalog transcription.
+        std::string body;
+        for(unsigned word=0;word<70;++word) body+=(word?" ":"")+std::string("word")+std::to_string(word);
+        const auto drawRoot=data::packDataId(data::LegacyGroupId::LanguageGraphics,0x002B);
+        skin->configureDrawCardDescriptors({{drawRoot,{"QUALIFICATION",body,400,240}}},raster);
+        auto drawOriginal=std::make_shared<data::BitmapRuntimeAsset>();
+        drawOriginal->image={400,240,std::vector<std::uint8_t>(400*240*4,255)};
+        auto drawItem=item;drawItem.rootSequenceDataId=drawRoot;drawItem.runtimeAsset=drawOriginal;
+        drawItem.metadata.width=400;drawItem.metadata.height=240;
+        drawItem.worldTransform=sequence::translate2D(200,100);drawItem.priority=1005;drawItem.clock=29;
+        auto mascot=drawItem;mascot.node=2;
+        auto red=std::make_shared<data::BitmapRuntimeAsset>();
+        red->image={8,8,std::vector<std::uint8_t>(8*8*4)};
+        for(std::size_t i=0;i<red->image.pixels.size();i+=4) {red->image.pixels[i]=255;red->image.pixels[i+3]=255;}
+        mascot.runtimeAsset=red;mascot.metadata.width=mascot.metadata.height=8;
+        mascot.worldTransform=sequence::translate2D(220,200);
+        require(slot.sync({drawItem,mascot},cache).has_value() && slot.find(1)->asset!=drawOriginal &&
+            slot.find(1)->asset->image.width==1200 && slot.find(1)->asset->image.height==720 &&
+            engine::SequenceWorld2DSlot::transformPoint(slot.find(1)->worldTransform,1200,720)==
+                std::array<std::int32_t,2>{600,340} && slot.find(1)->clock==29 && slot.find(1)->priority==1005,
+            "supplied70-word true-text draw card preserves qualified400x240 footprint, clock and priority");
+        bool lastWordRasterized=false;
+        for(const auto& text:requested) if(text.ends_with("word69")) lastWordRasterized=true;
+        require(slot.find(2)->asset!=red && lastWordRasterized,
+            "successful complete body reaches its last word and suppresses original covering mascot child");
+        const auto cachedDraw=slot.find(1)->asset;
+        presentationContext=false;
+        require(slot.sync({drawItem,mascot},cache).has_value() && slot.find(1)->asset==drawOriginal && slot.find(2)->asset==red,
+            "changed display context rejects cached draw card as a complete original owner");
+        presentationContext=true;
+        require(slot.sync({drawItem,mascot},cache).has_value() && slot.find(1)->asset==cachedDraw && slot.find(2)->asset!=red,
+            "compatible display context restores cached draw card and child suppression");
+        const auto drawPixels=capture(device,renderer,slot);
+        const std::array<std::uint8_t,4> pureRed{255,0,0,255};
+        unsigned drawInk=0;
+        for(unsigned y=170;y<318;++y) for(unsigned x=221;x<579;++x) if(pixel(drawPixels,x,y)[0]<120) ++drawInk;
+        require(drawInk>300 && pixel(drawPixels,220,200)!=pureRed && pixel(drawPixels,600,200)==black,
+            "actual GPU highresolution draw-card body remains readable and old covering child is absent");
+        writePpm(std::filesystem::path(SDL_GetBasePath())/"modern-draw-card-qualified.ppm",drawPixels,800,600);
+        skin->configureDrawCardDescriptors({{drawRoot,{"QUALIFICATION",body,401,240}}},raster);
+        require(slot.sync({drawItem,mascot},cache).has_value() && slot.find(1)->asset==drawOriginal && slot.find(2)->asset==red,
+            "unqualified native card extent falls back as complete original owner including mascot");
+        skin->configureDrawCardDescriptors({},raster);
+        auto invalid=plan;invalid.text.front().text.clear();invalid.text.front().fontSize=0;
+        invalid.text.push_back({"bad",225,50,1,0,12,0,false,false,false});
+        skin->configureDeedDescriptors({{root,invalid}},raster);
+        require(slot.sync({item,},cache).has_value() && slot.find(1)->asset==original,
+            "invalid complete deed plan falls back to intact original artwork");
+        skin->configureDeedDescriptors({{root,plan}},[](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {return std::unexpected("font failure");});
+        require(slot.sync({item},cache).has_value() && capture(device,renderer,slot)==baseline,
+            "failed true-text deed rasterization restores exact retail framebuffer");
+        skin->configureDeedDescriptors({},raster);
+        require(!skin->supports(root),"unclassified deed/card roots retain retail path");
+    }
+
     void testLabeledCamera(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
     {
         SyntheticSequenceResources resources;
@@ -472,6 +671,11 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==3 && std::string_view(argv[1])=="--cards")
+        {
+            extractRetailCardSheet(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         SyntheticSequenceResources resources(true);
         engine::SequencePlayback playback(resources.service.snapshot());
         const auto face=data::packDataId(data::LegacyGroupId::Main,0x96);
@@ -512,6 +716,7 @@ int main(int argc, char** argv)
         testModernIBarSkin(device, *renderer);
         testOptInLinearSampling(device, *renderer);
         testModernPropertyThumbnails(device, *renderer);
+        testModernDeeds(device,*renderer);
         if (argc == 2) testRetailIBarBands(device, *renderer, std::filesystem::path(argv[1]));
         else require(argc == 1, "optional argument is an explicit actual retail resource root");
         renderer.reset();

@@ -101,6 +101,89 @@ namespace
             engine::MeshGPUErrorCode::MissingDevice,
             "GPU cache reports a missing SDL device without mutating state");
         expect(cache.size() == 0, "failed upload does not populate GPU cache");
+        auto retained = asset(data::packDataId(8, 5));
+        std::weak_ptr<const data::MeshRuntimeAsset> weak = retained;
+        expect(cache.retainStaticAssets({retained}), "explicit static retention does not require an upload");
+        retained.reset();
+        expect(!weak.expired(), "bounded retention owns the immutable identity");
+        expect(!cache.retainStaticAssets({nullptr}) && weak.expired(),
+            "null retention input is rejected and clears prior pins");
+        retained = asset(data::packDataId(8, 5));
+        weak = retained;
+        expect(cache.retainStaticAssets(std::vector<std::shared_ptr<const data::MeshRuntimeAsset>>(
+            engine::MeshGPUCache::MaximumRetainedStaticAssets, retained)),
+            "retention accepts its explicit bounded maximum safely");
+        const bool oversized = cache.retainStaticAssets(
+            std::vector<std::shared_ptr<const data::MeshRuntimeAsset>>(
+                engine::MeshGPUCache::MaximumRetainedStaticAssets + 1U, retained));
+        retained.reset();
+        expect(!oversized && weak.expired(), "oversized retention is rejected and clears prior pins");
+        expect(!cache.retainStaticAssets({std::make_shared<data::MeshRuntimeAsset>()}),
+            "retention refuses an asset without immutable render geometry");
+    }
+
+    void testStaticSceneRetention(SDL_GPUDevice* device)
+    {
+        engine::MeshGPUCache cache(device);
+        auto pinned = asset(data::packDataId(0xFFFB, 1), 1, true);
+        auto transient = asset(data::packDataId(8, 10));
+        const auto uploaded = cache.resolveForScene(pinned);
+        const auto ordinary = cache.resolveForScene(transient);
+        expect(uploaded && ordinary, "static retention fixture uploads sampled and ordinary meshes");
+        if (!uploaded || !ordinary) return;
+        const auto* entry = *uploaded;
+        auto* vertices = entry->vertexBuffer;
+        auto* indices = entry->indexBuffer;
+        auto* texture = entry->texture(77);
+        expect(cache.retainStaticAssets({pinned}), "current static scene identity can be explicitly retained");
+        auto animated = std::make_shared<data::MeshRenderData>(*pinned->renderData);
+        animated->vertices[0].position[0] = 20;
+        expect(cache.resolveDynamicVertices(500, pinned, animated).has_value(),
+            "retained static source may also have a live per-node dynamic buffer");
+        for (unsigned menuFrame = 0; menuFrame < 3; ++menuFrame) cache.pruneAssets({});
+        expect(cache.size() == 1 && !cache.find(transient->dataId) && cache.dynamicSize() == 0,
+            "empty menu scene prunes unpinned geometry and dynamic vertices while retaining the current static source");
+        const auto restored = cache.resolveForScene(pinned);
+        expect(restored && *restored == entry && (*restored)->vertexBuffer == vertices &&
+            (*restored)->indexBuffer == indices && (*restored)->texture(77) == texture,
+            "returning from an empty scene reuses exact cached vertex/index/texture handles without another upload");
+        std::weak_ptr<const data::MeshRuntimeAsset> oldSource = pinned;
+        auto nextScene = asset(data::packDataId(0xFFFB, 2), 2, true);
+        expect(cache.resolveForScene(nextScene).has_value() && cache.retainStaticAssets({nextScene}),
+            "new static scene replaces the bounded retained identity set");
+        pinned.reset();
+        cache.pruneAssets({});
+        expect(cache.size() == 1 && oldSource.expired() && cache.find(nextScene->dataId),
+            "old static scene GPU and CPU ownership retire after its pins are replaced");
+        std::weak_ptr<const data::MeshRuntimeAsset> nextSource = nextScene;
+        nextScene.reset();
+        cache.clear();
+        expect(cache.size() == 0 && nextSource.expired(), "cache clear releases GPU resources and all retained CPU pins");
+
+        auto oldVersion = asset(data::packDataId(8, 11));
+        std::weak_ptr<const data::MeshRuntimeAsset> oldVersionWeak = oldVersion;
+        expect(cache.resolve(oldVersion).has_value() && cache.retainStaticAssets({oldVersion}),
+            "same-DATA replacement fixture starts with a retained immutable source");
+        auto newVersion = asset(oldVersion->dataId, 40);
+        expect(cache.resolve(newVersion).has_value(), "replacement source uploads transactionally");
+        oldVersion.reset();
+        cache.pruneAssets({});
+        expect(cache.size() == 0 && oldVersionWeak.expired(),
+            "same-DATA immutable replacement drops stale pins rather than retaining by DATA identity");
+        expect(cache.resolve(newVersion).has_value() && cache.retainStaticAssets({newVersion}),
+            "explicit erase fixture starts with a retained source");
+        const auto erasedId = newVersion->dataId;
+        std::weak_ptr<const data::MeshRuntimeAsset> erasedSource = newVersion;
+        newVersion.reset();
+        cache.erase(erasedId);
+        expect(cache.size() == 0 && erasedSource.expired(), "explicit DATA erase also releases retained identities");
+
+        auto last = asset(data::packDataId(8, 12));
+        expect(cache.resolve(last).has_value() && cache.retainStaticAssets({last}),
+            "empty retention fixture begins with an uploaded pinned source");
+        expect(cache.retainStaticAssets({}), "empty retention input explicitly disables static retention");
+        cache.pruneAssets({});
+        expect(cache.size() == 0, "ordinary pruning resumes after explicitly clearing retention");
     }
 
     void testRealSDLUploadWhenAvailable()
@@ -123,6 +206,7 @@ namespace
         }
 
         {
+            testStaticSceneRetention(device);
             engine::MeshGPUCache cache(device);
             auto firstAsset = asset(data::packDataId(8, 6));
             const auto first = cache.resolve(firstAsset);

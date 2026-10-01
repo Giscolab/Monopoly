@@ -60,7 +60,7 @@ namespace monopoly::engine::gpuframe
         World3DRenderer* renderer,
         const SequenceWorld3DSlot* world,
         World2DRenderer* overlayRenderer,
-        const SequenceWorld2DSlot* overlay)
+        const SequenceWorld2DSlot* overlay, SDL_FColor backdrop)
     {
         if (device == nullptr || window == nullptr)
         {
@@ -97,16 +97,9 @@ namespace monopoly::engine::gpuframe
 
             target.texture = swapchainTexture;
 
-            // Aucun faux asset :
-            // tant que le véritable BMP_sybkgrnd n'est pas
-            // disponible, le framebuffer est simplement noir.
-            target.clear_color =
-            {
-                0.0f,
-                0.0f,
-                0.0f,
-                1.0f
-            };
+            // Extend the optional menu palette into widescreen gutters.
+            // The authored UI projection and hit rectangles remain unchanged.
+            target.clear_color = backdrop;
 
             target.load_op =
                 SDL_GPU_LOADOP_CLEAR;
@@ -243,8 +236,8 @@ namespace monopoly::engine::gpuframe
                         destinationHeight;
 
 
-                    // Le framebuffer a déjà été vidé en noir
-                    // par le render pass précédent.
+                    // Le framebuffer a dÃ©jÃ  Ã©tÃ© vidÃ© en noir
+                    // par le render pass prÃ©cÃ©dent.
                     blit.load_op =
                         SDL_GPU_LOADOP_LOAD;
 

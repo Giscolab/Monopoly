@@ -1,5 +1,6 @@
 #include "SequenceWorld2DSlot.hpp"
 #include "ModernIBarSkin.hpp"
+#include "ModernMenuSkin.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -103,7 +104,8 @@ namespace monopoly::engine
                 asset = *decoded;
             }
             assets.emplace(item.node, asset);
-            if (modernSkin_ && modernSkin_->supports(item.rootSequenceDataId))
+            if ((modernSkin_ && modernSkin_->supports(item.rootSequenceDataId)) ||
+                (modernMenuSkin_ && modernMenuSkin_->supports(item.rootSequenceDataId)))
             {
                 const Owner owner{item.rootSequenceDataId, item.rootSequenceNode};
                 const auto it = shells.find(owner);
@@ -126,12 +128,16 @@ namespace monopoly::engine
             else
             { raster.values[6] = float(item.metadata.originX); raster.values[7] = float(item.metadata.originY); }
             const auto rasterWorld = sequence::multiply(raster,item.worldTransform);
-            auto replacement = modernSkin_->substitute(owner.first, assets.at(node), true, rasterWorld);
+            const bool menuOwner = modernMenuSkin_ && modernMenuSkin_->supports(owner.first);
+            auto replacement = menuOwner ? modernMenuSkin_->substitute(owner.first, assets.at(node), true) :
+                modernSkin_->substitute(owner.first, assets.at(node), true, rasterWorld);
             if (replacement == assets.at(node)) continue;
             assets[node] = std::move(replacement);
             for (const auto& item : items)
                 if (item.node != node && Owner{item.rootSequenceDataId, item.rootSequenceNode} == owner)
-                    assets[item.node] = modernSkin_->substitute(owner.first, assets.at(item.node), false);
+                    assets[item.node] = menuOwner ?
+                        modernMenuSkin_->substitute(owner.first, assets.at(item.node), false) :
+                        modernSkin_->substitute(owner.first, assets.at(item.node), false);
         }
         std::map<sequence::SequenceNodeId, SequenceWorld2DObject> next;
         std::vector<sequence::SequenceNodeId> order;

@@ -276,6 +276,76 @@ namespace
             "invalid destination storage is rejected before writing pixels");
     }
 
+    void testOptionalAntialiasing(const std::filesystem::path& path)
+    {
+        fonts::Runtime font;
+        checked(font.setFont(path, "Arial"), "open actual Arial for antialiased coverage");
+        checked(font.setSize(20), "set coverage test size");
+        for (const bool styled : {false, true})
+        {
+            font.setWeight(styled ? 700 : 400);
+            font.setItalic(styled);
+            font.setUnderline(styled);
+            font.setStrikeOut(styled);
+            const auto settings = font.settings();
+            const auto metrics = take(font.measure("Ag"), "measure coverage footprint");
+            const auto solid = take(font.render("Ag", 0x80563412u), "render default solid text");
+            const auto explicitSolid = take(font.render("Ag", 0x80563412u, false), "render explicit solid text");
+            const auto smooth = take(font.render("Ag", 0x80563412u, true), "render coverage alpha text");
+            const auto opaqueSmooth = take(font.render("Ag", 0x00563412u, true), "render opaque coverage text");
+            require(solid.pixels == explicitSolid.pixels && solid.width == explicitSolid.width &&
+                solid.height == explicitSolid.height, "default text remains exactly the explicit solid raster");
+            require(smooth.width == solid.width && smooth.height == solid.height &&
+                smooth.width == static_cast<std::uint32_t>(metrics.width) &&
+                smooth.height == static_cast<std::uint32_t>(metrics.height),
+                "antialiasing preserves styled layout and retail one-pixel footprint");
+            require(smooth.pixels.size() == solid.pixels.size() && opaqueSmooth.width == smooth.width &&
+                opaqueSmooth.height == smooth.height, "coverage surfaces retain packed RGBA dimensions");
+            std::size_t fractional = 0;
+            for (std::size_t i = 0; i < smooth.pixels.size(); i += 4U)
+            {
+                const auto alpha = smooth.pixels[i + 3U];
+                require(solid.pixels[i + 3U] == 0 || solid.pixels[i + 3U] == 128,
+                    "retail solid pixels retain binary glyph coverage");
+                require(alpha <= 128, "coverage alpha respects explicit COLORREF opacity");
+                if (alpha > 0 && alpha < 128) ++fractional;
+                if (alpha > 0)
+                    require(smooth.pixels[i] == 0x12 && smooth.pixels[i + 1U] == 0x34 &&
+                        smooth.pixels[i + 2U] == 0x56,
+                        "antialiased ink retains straight RGB COLORREF channels");
+                const int expectedAlpha = (opaqueSmooth.pixels[i + 3U] * 128 + 127) / 255;
+                require(std::abs(static_cast<int>(alpha) - expectedAlpha) <= 1,
+                    "coverage and explicit opacity combine without replacing edge alpha");
+            }
+            require(fractional > 0, "actual Arial outlines contain fractional coverage alpha");
+            for (std::uint32_t y = 0; y < smooth.height; ++y)
+            {
+                const auto offset = (static_cast<std::size_t>(y) * smooth.width + smooth.width - 1U) * 4U;
+                require(std::all_of(smooth.pixels.begin() + offset, smooth.pixels.begin() + offset + 4U,
+                    [](std::uint8_t value) { return value == 0; }),
+                    "antialiased extra layout column stays transparent");
+            }
+            const fonts::ClipRect clip{1, 1, smooth.width - 2U, smooth.height - 2U};
+            const auto clipped = take(font.renderClipped("Ag", 0x80563412u, clip, true),
+                "clip coverage alpha without changing glyph layout");
+            require(clipped.width == clip.width && clipped.height == clip.height,
+                "antialiased crop retains exact requested extent");
+            for (std::uint32_t y = 0; y < clipped.height; ++y)
+                require(std::equal(clipped.pixels.begin() + static_cast<std::size_t>(y) * clipped.width * 4U,
+                    clipped.pixels.begin() + static_cast<std::size_t>(y + 1U) * clipped.width * 4U,
+                    smooth.pixels.begin() + (static_cast<std::size_t>(y + clip.y) * smooth.width + clip.x) * 4U),
+                    "cropping preserves fractional alpha and RGB bytes");
+            const auto utf16 = take(font.render(std::u16string_view(u"Ag"), 0x80563412u, true),
+                "render UTF-16 with optional coverage");
+            require(utf16.pixels == smooth.pixels && font.settings() == settings,
+                "UTF-16 uses the same coverage without mutating font styles");
+            require(take(font.render("Ag", 0x80563412u), "render retail after coverage").pixels == solid.pixels,
+                "modern coverage requests do not alter subsequent retail rasters");
+        }
+        require(take(font.render("", 0, true), "render empty coverage text").pixels.empty(),
+            "optional coverage keeps empty text empty");
+    }
+
     void testOneUtf16UnitWrapFallback(const std::filesystem::path& path)
     {
         fonts::Runtime font;
@@ -347,6 +417,8 @@ int main()
         std::cout << "[PASS] real Arial settings, retail slots and transactional failures\n";
         testMetricsAndRgba(path);
         std::cout << "[PASS] actual SDL_ttf metrics, COLORREF alpha and RGBA glyph surfaces\n";
+        testOptionalAntialiasing(path);
+        std::cout << "[PASS] optional antialiasing preserves styles, COLORREF, footprint and crops\n";
         testLegacyWrap(path);
         std::cout << "[PASS] source-backed CHAT wrap boundaries and Unicode progress\n";
         testOneUtf16UnitWrapFallback(path);

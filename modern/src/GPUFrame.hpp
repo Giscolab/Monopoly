@@ -19,6 +19,7 @@ namespace monopoly::engine::gpuframe
         World3DRenderer* renderer = nullptr,
         const SequenceWorld3DSlot* world = nullptr,
         World2DRenderer* overlayRenderer = nullptr,
-        const SequenceWorld2DSlot* overlay = nullptr
+        const SequenceWorld2DSlot* overlay = nullptr,
+        SDL_FColor backdrop = {0, 0, 0, 1}
     );
 }

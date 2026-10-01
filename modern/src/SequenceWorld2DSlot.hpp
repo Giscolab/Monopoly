@@ -5,6 +5,7 @@
 #include <map>
 
 namespace monopoly::ibar { class ModernIBarSkin; }
+namespace monopoly::menu { class ModernMenuSkin; }
 
 namespace monopoly::engine
 {
@@ -32,6 +33,8 @@ namespace monopoly::engine
         // nullptr preserves the complete legacy bitmap path. The skin changes pixels only.
         void configureModernIBarSkin(std::shared_ptr<ibar::ModernIBarSkin> skin) noexcept
         { modernSkin_ = std::move(skin); }
+        void configureModernMenuSkin(std::shared_ptr<menu::ModernMenuSkin> skin) noexcept
+        { modernMenuSkin_ = std::move(skin); }
         // Removing sequence objects does not uninstall the legacy render slot:
         // its last camera remains until another label owner supplies a view.
         void clear() noexcept { objects_.clear(); order_.clear(); }
@@ -58,6 +61,7 @@ namespace monopoly::engine
         sequence::Matrix2D worldToScreen_{sequence::identity2D()};
         sequence::Matrix2D screenToWorld_{sequence::identity2D()};
         std::shared_ptr<ibar::ModernIBarSkin> modernSkin_;
+        std::shared_ptr<menu::ModernMenuSkin> modernMenuSkin_;
         std::map<sequence::SequenceNodeId, SequenceWorld2DObject> objects_;
         std::vector<sequence::SequenceNodeId> order_;
     };

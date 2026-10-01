@@ -62,6 +62,25 @@ namespace
         1, 3, 6, 8, 9, 11, 13, 14, 16, 18, 19, 21, 23, 24,
         26, 27, 29, 31, 32, 34, 37, 39, 5, 15, 25, 35, 12, 28};
 
+    void testExplicitUsaPresentation()
+    {
+        auto value = request(21);
+        value.languageId = 1;
+        value.monetarySystem = 13;
+        require(!deeds::plan(value), "ordinary European path continues to reject USA language");
+        value.usaPresentation = true;
+        const auto usa = planned(value);
+        require(usa.text.front().text == "KENTUCKY AVE.", "USA plan uses original USA title rather than UK translation");
+        require(line(usa, 56, 1).text == "RENT $ 18", "USA plan prints canonical USA rent and terminology");
+        require(line(usa, 130, 2).text == "$ 110", "USA plan preserves canonical mortgage amount");
+        value.front = false;
+        require(contains(planned(value), "$ 110"), "USA mortgage reverse preserves canonical value");
+        value.board = 1;
+        require(!deeds::plan(value), "USA opt-in cannot silently substitute a foreign board");
+        value.board = 0; value.monetarySystem = 0;
+        require(!deeds::plan(value), "USA opt-in cannot silently print a foreign currency");
+    }
+
     void testPropertyMappingAndTemplates()
     {
         for (std::size_t index = 0; index < TranslationSquares.size(); ++index)
@@ -416,6 +435,7 @@ int main()
     {
         require(monopoly::rules::board::initializeForOptions(monopoly::rules::GameOptions{}),
             "initialize standard rule table");
+        testExplicitUsaPresentation();
         testPropertyMappingAndTemplates();
         testIndependentBoardLanguageAndCurrency();
         testRentsAndSpecialCases();

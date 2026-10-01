@@ -112,6 +112,8 @@ namespace monopoly::ibar
     {
         const bool language = language_ == data::LanguageId::French ||
             language_ == data::LanguageId::EnglishUs || language_ == data::LanguageId::EnglishUk;
+        if (deedText_ && deeds_.contains(root)) return true;
+        if (drawText_ && drawCards_.contains(root)) return true;
         return language && text_ && (backdrop(root) || (button(root).has_value() && layout_) || scoreColour(root).has_value() ||
             (property(root).has_value() && properties_ && propertyText_));
     }
@@ -123,7 +125,16 @@ namespace monopoly::ibar
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
         if (!w || !h || w > 1600 || h > 600) return original;
-        const auto b = button(root);
+        const auto deed = deeds_.find(root);
+        const auto draw = drawCards_.find(root);
+        const bool fullCard = deed != deeds_.end() || draw != drawCards_.end();
+        if ((fullCard || property(root).has_value()) && presentationContext_ && !presentationContext_()) return original;
+        if (fullCard && presentationContext_ && !presentationContext_()) return original;
+        if (deed != deeds_.end() && principal && (w != 199 || h != 227)) return original;
+        if (draw != drawCards_.end() && principal &&
+            (w != draw->second.nativeWidth || h != draw->second.nativeHeight || w < 199 || h < 150 || w > 600 || h > 400 ||
+             draw->second.title.empty() || draw->second.title.size()>128 || draw->second.body.empty())) return original;
+        const auto b = !fullCard ? button(root) : std::optional<Button>{};
         layout::Rect band{0,0,int(w),int(h)};
         std::optional<layout::Rect> hit;
         const int activeLayout = b && layout_ ? int(layout_()) : 0;
@@ -172,6 +183,123 @@ namespace monopoly::ibar
         result->preferLinearFiltering = true;
         auto& image = result->image;
         image = {w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 4)};
+        if (fullCard)
+        {
+            DeedDescriptor drawPlan;
+            const DeedDescriptor* content = deed != deeds_.end() ? &deed->second : &drawPlan;
+            const auto& rasterizer = deed != deeds_.end() ? deedText_ : drawText_;
+            if (draw != drawCards_.end())
+            {
+                const bool community = data::dataGroup(root)==data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics) &&
+                    data::dataTag(root)>=0x0059;
+                drawPlan.fills={{14,10,int(w)-28,48,community ? (22U|(69U<<8)|(70U<<16)) : (162U|(98U<<8)|(33U<<16))}};
+                drawPlan.text={{draw->second.title,17,32,1,2,22,0x00EFEFEF,true,false,true},
+                    {draw->second.body,70,int(h)-91,1,0,16,0x00191919,false,false,false}};
+            }
+            image = {w*3,h*3,std::vector<std::uint8_t>(std::size_t(w)*h*36)};
+            if (principal)
+            {
+                if (content->text.empty() || content->text.size() > 64 || content->fills.size() > 32) return original;
+                for (unsigned y=0; y<image.height; ++y)
+                    for (unsigned x=0; x<image.width; ++x)
+                    {
+                        const bool border = x<6 || y<6 || x+6>=image.width || y+6>=image.height;
+                        const bool brass = !border && (x==8 || y==8 || x+9==image.width || y+9==image.height);
+                        const std::array<unsigned,3> color = border ? std::array<unsigned,3>{22,69,70} :
+                            brass ? std::array<unsigned,3>{188,157,94} : std::array<unsigned,3>{237,232,215};
+                        const auto i=(std::size_t(y)*image.width+x)*4;
+                        for (unsigned c=0;c<3;++c) image.pixels[i+c]=std::uint8_t(color[c]);
+                        image.pixels[i+3]=255;
+                    }
+                for (const auto& fill : content->fills)
+                {
+                    if (fill.x<0 || fill.y<0 || fill.width<0 || fill.height<0 ||
+                        fill.x>w || fill.y>h || fill.width>int(w)-fill.x || fill.height>int(h)-fill.y) return original;
+                    for (int y=fill.y*3; y<(fill.y+fill.height)*3; ++y)
+                        for (int x=fill.x*3; x<(fill.x+fill.width)*3; ++x)
+                        {
+                            const auto i=(std::size_t(y)*image.width+unsigned(x))*4;
+                            for (unsigned c=0;c<3;++c) image.pixels[i+c]=std::uint8_t(fill.color>>(c*8));
+                        }
+                }
+                for (const auto& region : content->text)
+                {
+                    if (region.text.empty()) continue;
+                    if (region.text.size()>2048 || region.y<0 || region.y>=int(h) || region.height<=0 ||
+                        region.height>int(h)-region.y || region.verticalLeeway<0 || region.verticalLeeway>12 ||
+                        region.fontSize<=0 || region.fontSize>32 || region.justification<0 || region.justification>2) return original;
+                    bool fitted=false;
+                    for (int size=region.fontSize; size>=1 && !fitted; --size)
+                    {
+                        std::vector<data::LegacyBitmapRGBA8> lines;
+                        std::istringstream words(region.text);
+                        std::string word,line;
+                        bool tooWide=false;
+                        while (words>>word)
+                        {
+                            const auto candidate=line.empty()?word:line+" "+word;
+                            auto measure=rasterizer(candidate,size*3,region.bold,region.italic);
+                            if (!measure || !valid(*measure)) return original;
+                            if (measure->width>(w-42)*3)
+                            {
+                                if (line.empty()) { tooWide=true; break; }
+                                auto previous=rasterizer(line,size*3,region.bold,region.italic);
+                                if (!previous || !valid(*previous)) return original;
+                                lines.push_back(std::move(*previous)); line=word;
+                                auto one=rasterizer(word,size*3,region.bold,region.italic);
+                                if (!one || !valid(*one)) return original;
+                                if (one->width>(w-42)*3) { tooWide=true; break; }
+                            }
+                            else line=candidate;
+                        }
+                        if (tooWide) continue;
+                        if (line.empty()) return original;
+                        auto last=rasterizer(line,size*3,region.bold,region.italic);
+                        if (!last || !valid(*last)) return original;
+                        lines.push_back(std::move(*last));
+                        unsigned total=0;
+                        for (const auto& rendered:lines) total+=rendered.height;
+                        if (total>unsigned(region.height+region.verticalLeeway)*3) continue;
+                        int y=region.y*3;
+                        const int overflow=std::max(0,int(total)-region.height*3);
+                        if (overflow<=region.verticalLeeway*3) y+=overflow;
+                        if (region.verticalCenter && lines.size()==1) y+=(region.height*3-int(total))/2;
+                        for (const auto& rendered:lines)
+                        {
+                            const int x=region.justification==0?63:region.justification==1?
+                                (int(image.width)-int(rendered.width))/2:int(image.width)-63-int(rendered.width);
+                            if (x<0 || y<0 || x+int(rendered.width)>int(image.width) || y+int(rendered.height)>int(image.height)) return original;
+                            for (unsigned py=0;py<rendered.height;++py)
+                                for (unsigned px=0;px<rendered.width;++px)
+                                {
+                                    const auto src=(std::size_t(py)*rendered.width+px)*4;
+                                    const auto dst=(std::size_t(y+int(py))*image.width+x+px)*4;
+                                    const unsigned alpha=rendered.pixels[src+3];
+                                    std::uint32_t inkColor=region.color;
+                                    // Modern title contrast changes ink only; the exact
+                                    // title/canonical group colour remain unchanged.
+                                    if (region.bold && region.verticalCenter)
+                                        for (const auto& fill:content->fills)
+                                            if (region.y>=fill.y && region.y<fill.y+fill.height &&
+                                                0.2126*(fill.color&255)+0.7152*((fill.color>>8)&255)+0.0722*((fill.color>>16)&255)<125)
+                                                inkColor=0x00EFEFEF;
+                                    for (unsigned c=0;c<3;++c)
+                                    {
+                                        const unsigned ink=(inkColor>>(c*8))&255;
+                                        image.pixels[dst+c]=std::uint8_t((ink*alpha+image.pixels[dst+c]*(255-alpha)+127)/255);
+                                    }
+                                }
+                            y+=int(rendered.height);
+                        }
+                        fitted=true;
+                    }
+                    if (!fitted) return original;
+                }
+            }
+            if (cache_.size()>=128) cache_.clear();
+            cache_.emplace(key,result);
+            return result;
+        }
         if (p)
         {
             image = {w * 3, h * 3, std::vector<std::uint8_t>(std::size_t(w) * h * 36)};
