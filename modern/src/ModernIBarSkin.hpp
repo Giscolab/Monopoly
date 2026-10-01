@@ -43,7 +43,13 @@ namespace monopoly::ibar
             std::uint32_t color{};
             bool bold{}, italic{}, verticalCenter{};
         };
-        struct DeedDescriptor { std::vector<DeedFill> fills; std::vector<DeedText> text; };
+        enum class DeedArtwork { Railroad, Electric, Water };
+        struct DeedDescriptor
+        {
+            std::vector<DeedFill> fills; std::vector<DeedText> text;
+            // Exact measured USA front only; recover its actual monochrome art.
+            std::optional<DeedArtwork> artwork;
+        };
         // Local presentation rect for the current purchase overlay; hover and CNK timing stay authored.
         using DeedPlacementProvider = std::function<std::optional<std::array<float,4>>(
             data::DataId, std::uint16_t priority, const sequence::Matrix2D& rasterToWorld)>;

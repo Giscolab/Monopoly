@@ -26,7 +26,8 @@ inline bool textRefreshPreservesRoots(monopoly::engine::SequencePlayback& playba
 // A rejected refresh must remain retryable: neither immutable bitmap revisions
 // nor node ownership may be committed before there is room for redraw commands.
 template<class Refresh>
-bool textRefreshRejectsFullQueue(monopoly::engine::SequencePlayback& playback, Refresh refresh)
+bool textRefreshRejectsFullQueue(monopoly::engine::SequencePlayback& playback, Refresh refresh,
+    std::int32_t tick = 0)
 {
     const auto roots = playback.runtime().roots();
     std::vector<std::shared_ptr<const monopoly::data::BitmapRuntimeAsset>> assets;
@@ -37,5 +38,5 @@ bool textRefreshRejectsFullQueue(monopoly::engine::SequencePlayback& playback, R
         playback.runtime().roots() != roots) return false;
     for (const auto& asset : assets)
         if (playback.runtimeBitmaps().asset(asset->dataId) != asset) return false;
-    return playback.update(0).has_value() && playback.runtime().roots() == roots;
+    return playback.update(tick).has_value() && playback.runtime().roots() == roots;
 }

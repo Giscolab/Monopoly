@@ -199,3 +199,44 @@ match also continued through AI auctions/building, GO and Community Chest,
 and saved the progressed state in slot q. Missing French DAT files remain real
 blockers; none were fabricated. Source and the recovered Blender file remain
 unchanged. Calculator keys and Bank/Deeds panels remain further visual work.
+
+## Calculator, Bank, Deeds and railroad continuation
+
+Actual GPU inspection rejected the first numeric-key mapping: production roots
+are 1..9,0, but bitmap leaves are 0..9. The corrected exact mapping now skins all
+20 idle/pressed states. Selected Bank/Deeds controls also required measured
+terminal/return frames. Unknown intermediate frames retain authored artwork.
+`calculator-pass14-first.jpg` versus `calculator-pass15-after.jpg`, and
+`bank-pass14-before.jpg` versus `bank-pass15-after.jpg`, record real 1920x1080
+comparisons in the continuation directory. Settled title samples were 60 FPS.
+
+`deeds-pass14-first.jpg` versus `deeds-pass15-after.jpg` records the removal of
+the heavy gray grid frame. Canonical deed icons and game-derived values remain
+separate. Values, Trade names/instructions/cash now use optional blended 3x
+actual fonts inside their native logical footprints. Cache/queue/clock/font
+restoration and exact retail fallback tests passed. Deed values cache the
+actual slot0+size8+weight500 glyph settings, avoiding irrelevant caller refresh.
+`deeds-owner-sort-pass15.jpg` confirms a real owner sort with unchanged holdings.
+
+Railroad/utility deed templates had been omitted from full-card repainting.
+The six measured USA fronts now recover their actual train/bulb/water artwork
+from original pixels, convert white to coverage on cream, and enlarge only the
+title above the unchanged rent rows. Unknown IDs, dimensions, colored or invalid
+art keep the whole original deed. `railroad-deed-before.jpg` versus
+`railroad-deed-pass15-after.jpg` shows the actual Pennsylvania Railroad fix.
+The real electric/water runtime views still need individual qualification.
+
+`MonopolyModernMenuSkinBenchmark <runtime-data-root>` loads 47 real DAT fixtures,
+checks root/leaf ownership against actual decoded production sequences, rejects
+fallback, and records deterministic pixel hashes plus cold/text/cache CPU costs.
+All47 passed before raster optimization. The separate isolated shell benchmark
+proved horizontal-triplet equivalence but measured only about9% gain in Debug;
+its helper is not yet enabled in the game and no game-FPS gain is claimed.
+
+A further ten-minute real-turn/UI telemetry sample recorded1183 observations:
+median60.0, p5 54.8, minimum39.3 FPS. This included concurrent targeted builds
+and diagnostics; it is not an isolated performance guarantee. Actual play
+continued through built-property rent, doubles/prison, a $50 jail payment and
+Pennsylvania Railroad; distinct save r preserves Dog$42/human$663 with purchase
+pending. Existing p/q saves remain. Function-icon tiles and cold-menu costs are
+still further visible/performance work. Source and authoring Blender unchanged.

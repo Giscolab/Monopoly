@@ -7,7 +7,7 @@ namespace monopoly::menu
 {
     namespace
     {
-        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab };
+        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame };
         struct Descriptor { Kind kind; std::string_view label; int colour{-1}; int token{-1}; };
         // Canonical six identities, matching BoardLightingController and ModernIBarSkin.
         constexpr std::array<std::array<unsigned, 3>, 6> PlayerColours{{
@@ -20,6 +20,18 @@ namespace monopoly::menu
             {0x0176,0x02F6,95,43,"Bank"}, {0x01A4,0x11BC,76,43,"Turn"},
             {0x0198,0x0E3E,100,42,"Net worth"}, {0x0195,0x092E,105,42,"Future value"},
             {0x017C,0x0308,107,42,"Cash"}
+        }};
+        struct StatsViewControl { std::array<data::DataTag,3> roots; data::DataTag leaf; unsigned width, height; std::string_view label; };
+        // Explicit idle/return/press roots: Bank's return tags precede its idle tags.
+        constexpr std::array<StatsViewControl,8> StatsViewControls{{
+            {{{0x00FE,0x00FD,0x00FF}},0x0C94,76,43,"houses hotels"},
+            {{{0x0104,0x0103,0x0105}},0x0CAE,100,42,"properties"},
+            {{{0x0101,0x0100,0x0102}},0x0CA1,105,42,"liabilities"},
+            {{{0x00FB,0x00FA,0x00FC}},0x0C87,107,42,"turn history"},
+            {{{0x01A1,0x01A3,0x01A2}},0x0E9B,76,43,"price"},
+            {{{0x019B,0x019D,0x019C}},0x0E5E,100,42,"owner"},
+            {{{0x0179,0x017B,0x017A}},0x07FC,105,42,"current rent"},
+            {{{0x0182,0x0184,0x0183}},0x0917,107,42,"game earnings"}
         }};
         struct StatsTabFrame { data::DataTag root, leaf; unsigned width, height; };
         // Exact DAT-decoded variable footprints; no extension by nearby tag or idle size.
@@ -43,6 +55,26 @@ namespace monopoly::menu
             {0x0181,0x1212,122,43},{0x0178,0x11EE,102,43},{0x019A,0x1236,100,42},
             {0x0197,0x122A,105,42},{0x017E,0x11FA,107,42}
         }};
+        // Measured first/last authored leaves: selected CNK branches can hold either.
+        // Intermediate frames require their own measured footprint before qualification.
+        constexpr std::array<StatsTabFrame, 33> StatsViewBoundaryFrames{{
+            {0x00FF,0x0EA7,72,43},{0x00FF,0x0CA0,83,43},
+            {0x0105,0x0E4A,72,42},{0x0105,0x0CBA,104,42},
+            {0x0102,0x0808,73,42},{0x0102,0x0CAD,110,50},
+            {0x00FC,0x080D,74,41},{0x00FC,0x0C93,116,50},
+            {0x01A2,0x0EA7,72,43},{0x01A2,0x0EA6,83,43},
+            {0x019C,0x0E59,71,41},{0x019C,0x0E69,104,42},
+            {0x017A,0x0808,73,42},{0x017A,0x0807,110,50},
+            {0x0183,0x0923,74,41},{0x0183,0x0922,116,50},
+            {0x00FD,0x0C9E,83,43},{0x0103,0x0CB8,104,42},
+            {0x0100,0x0CAB,110,50},{0x00FA,0x0C91,116,50},
+            {0x01A3,0x1265,83,43},{0x01A3,0x125A,76,43},
+            {0x019D,0x124D,104,42},{0x019D,0x1242,100,42},
+            {0x017B,0x1211,110,50},{0x017B,0x1206,105,42},
+            {0x0184,0x1229,116,50},{0x0184,0x121E,108,42},
+            {0x0177,0x0303,87,34},{0x0177,0x0301,101,51},
+            {0x0180,0x08FB,88,33},{0x0180,0x090B,111,52},{0x0181,0x121D,129,79}
+        }};
         std::optional<Descriptor> describe(data::DataId root) noexcept
         {
             if (root >= 0x0003002D && root <= 0x00030037)
@@ -52,6 +84,13 @@ namespace monopoly::menu
                 for (unsigned token=0;token<TokenThumbnailFirstTags.size();++token)
                     if (data::dataTag(root)>=TokenThumbnailFirstTags[token] && data::dataTag(root)<=TokenThumbnailFirstTags[token]+2)
                         return Descriptor{Kind::TokenThumbnail, {}, -1, int(token)};
+            if (root >= 0x0002000B && root <= 0x0002000E) return Descriptor{Kind::BankSummary,{}};
+            if (root == 0x000200CD) return Descriptor{Kind::DeedsFrame,{}};
+            constexpr std::array<std::string_view,10> digits{"1","2","3","4","5","6","7","8","9","0"};
+            if (root >= 0x0002007D && root <= 0x00020086)
+                return Descriptor{Kind::CalculatorKey,digits[root-0x0002007D]};
+            if (root >= 0x00020087 && root <= 0x00020090)
+                return Descriptor{Kind::CalculatorSelectedKey,digits[root-0x00020087]};
             // Measured direct Main bitmaps; player text/deeds remain separate owners.
             if (root >= 0x00020349 && root <= 0x0002034E)
                 return Descriptor{Kind::StatsPanel, {}, int(root - 0x00020349)};
@@ -78,9 +117,16 @@ namespace monopoly::menu
             if (data::dataGroup(root) != data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics))
                 return {};
             const auto tag = data::dataTag(root);
-            if (tag == 0x029B || tag == 0x0286) return Descriptor{Kind::StatsBar,{}};
+            if (tag == 0x01FE) return Descriptor{Kind::CalculatorKey,"CLEAR"};
+            if (tag == 0x029B || tag == 0x0286 || tag == 0x022C || tag == 0x0006) return Descriptor{Kind::StatsBar,{}};
             if (tag == 0x029C) return Descriptor{Kind::StatsBarHeading,"Display status by:"};
             if (tag == 0x0287) return Descriptor{Kind::StatsBarHeading,"Sort Players by:"};
+            if (tag == 0x022D) return Descriptor{Kind::StatsBarHeading,"Sort deeds by:"};
+            if (tag == 0x0007) return Descriptor{Kind::StatsBarHeading,"Show Summary of:"};
+            for (const auto& control : StatsViewControls)
+                for (const auto owner : control.roots)
+                    if (tag == owner)
+                        return Descriptor{tag == control.roots[2] ? Kind::StatsSelectedTab : Kind::StatsTab, control.label};
             for (const auto& control : StatsControls)
                 if (tag >= control.first && tag <= control.first + 2)
                     return Descriptor{tag == control.first + 1 ? Kind::StatsSelectedTab : Kind::StatsTab, control.label};
@@ -137,14 +183,14 @@ namespace monopoly::menu
             if (tag == 0x02A4) return Descriptor{Kind::Title, "Save game"};
             return {};
         }
-        bool statsCaption(data::LegacyBitmapRGBA8& target, const data::LegacyBitmapRGBA8& text, bool heading)
+        bool compactCaption(data::LegacyBitmapRGBA8& target, const data::LegacyBitmapRGBA8& text, bool heading, bool calculator)
         {
             if (!text.width || !text.height || text.width > 4096 || text.height > 512 ||
                 text.pixels.size() != std::size_t(text.width) * text.height * 4 ||
-                target.width <= 36 || target.height < 105) return false;
+                target.width <= 36 || target.height < (heading ? 105U : 36U)) return false;
             // Capture-measured header strip is native y24..35 inside the overlay.
             // Explicit logical caps are independent of the high-resolution font provider.
-            const unsigned boxHeight = heading ? 33 : 30;
+            const unsigned boxHeight = heading || calculator ? 33 : 30;
             const double scale = std::min(double(target.width - 36) / text.width, double(boxHeight) / text.height);
             const unsigned width = std::max(1U, unsigned(text.width * scale));
             const unsigned height = std::max(1U, unsigned(text.height * scale));
@@ -250,7 +296,8 @@ namespace monopoly::menu
                 source.width!=expectedWidth || source.height!=expectedHeight)return original;
         }
         const bool statsPanel = descriptor.kind == Kind::StatsPanel || descriptor.kind == Kind::CalculatorPanel ||
-            descriptor.kind == Kind::CalculatorDescription || descriptor.kind == Kind::StatsBackground;
+            descriptor.kind == Kind::CalculatorDescription || descriptor.kind == Kind::StatsBackground ||
+            descriptor.kind == Kind::BankSummary || descriptor.kind == Kind::DeedsFrame;
         if (statsPanel)
         {
             data::DataId expected = root;
@@ -268,7 +315,12 @@ namespace monopoly::menu
             else
             {
                 if (!principal) return original;
-                if (descriptor.kind == Kind::StatsPanel)
+                if (descriptor.kind == Kind::BankSummary)
+                { constexpr std::array<data::DataId,4> leaves{0x0002009E,0x0002009F,0x000200A0,0x000200A2};
+                  expected = leaves[root-0x0002000B]; width = 786; height = 223; }
+                else if (descriptor.kind == Kind::DeedsFrame)
+                { width = 790; height = 215; }
+                else if (descriptor.kind == Kind::StatsPanel)
                 { const bool large = root <= 0x0002034E; width = large ? 198 : 130; height = large ? 222 : 226; }
                 else if (descriptor.kind == Kind::CalculatorPanel)
                 { expected = 0x00020324; width = 199; height = 208; }
@@ -288,6 +340,10 @@ namespace monopoly::menu
                 for (const auto& control : StatsControls)
                     if (tag >= control.first && tag <= control.first + 2)
                     { leaf = control.leaf; width = control.width; height = control.height; break; }
+                for (const auto& control : StatsViewControls)
+                    for (const auto owner : control.roots)
+                        if (tag == owner)
+                        { leaf = control.leaf; width = control.width; height = control.height; }
                 const auto actualLeaf = data::dataTag(original->dataId);
                 const auto acceptMeasured = [&](const auto& frames) {
                     for (const auto& frame : frames)
@@ -296,14 +352,29 @@ namespace monopoly::menu
                 };
                 acceptMeasured(StatsAnimatedFrames);
                 acceptMeasured(StatsReturnEndFrames);
+                acceptMeasured(StatsViewBoundaryFrames);
                 // Unmeasured animation leaves keep their original pixels and placement.
             }
             else if (tag == 0x029B) { leaf = 0x0912; width = 328; height = 42; }
             else if (tag == 0x029C) { leaf = 0x0911; width = 337; height = 80; }
-            else if (tag == 0x0286) { leaf = 0x0CBB; width = 313; height = 42; }
-            else { leaf = 0x0E7E; width = 333; height = 80; }
+            else if (tag == 0x0286 || tag == 0x022C || tag == 0x0006) { leaf = 0x0CBB; width = 313; height = 42; }
+            else if (tag == 0x0287) { leaf = 0x0E7E; width = 333; height = 80; }
+            else if (tag == 0x022D) { leaf = 0x090F; width = 333; height = 80; }
+            else { leaf = 0x0CBC; width = 334; height = 80; }
             if (original->dataId != data::packDataId(data::LegacyGroupId::LanguageGraphics, data::DataTag(leaf)) ||
                 source.width != width || source.height != height) return original;
+        }
+        const bool calculatorKey = descriptor.kind == Kind::CalculatorKey || descriptor.kind == Kind::CalculatorSelectedKey;
+        if (calculatorKey)
+        {
+            if (!principal) return original;
+            data::DataId expected{};
+            unsigned width = 24, height = 25;
+            if (root == 0x000501FE) { expected = 0x00050F14; width = 50; }
+            // Bitmap banks store zero first; CNK button roots run1..9 then0.
+            else if (descriptor.kind == Kind::CalculatorSelectedKey) expected = 0x0002033D + (root - 0x00020087 + 1) % 10;
+            else expected = 0x00020333 + (root - 0x0002007D + 1) % 10;
+            if (original->dataId != expected || source.width != width || source.height != height) return original;
         }
         const bool tokenOwner = descriptor.kind == Kind::TokenPreview || descriptor.kind == Kind::TokenThumbnail ||
             descriptor.kind == Kind::TokenFrame;
@@ -372,6 +443,7 @@ namespace monopoly::menu
                     {
                         const bool selected = descriptor.kind == Kind::SelectedSlot || descriptor.kind == Kind::SelectedTab ||
                             descriptor.kind == Kind::SelectedToggle || descriptor.kind == Kind::StatsSelectedTab ||
+                            descriptor.kind == Kind::CalculatorSelectedKey ||
                             selectedThumbnail;
                         const bool background = descriptor.kind == Kind::Background || descriptor.kind == Kind::Pattern ||
                             descriptor.kind == Kind::AuctionBackground || descriptor.kind == Kind::TradeBackground ||
@@ -414,7 +486,7 @@ namespace monopoly::menu
                         if (descriptor.kind == Kind::TradeRail && y >= 3 && y < 18 && x >= 3 && x + 3 < w)
                             for (unsigned c = 0; c < 3; ++c) image.pixels[offset+c] = std::uint8_t(
                                 descriptor.colour < 6 ? PlayerColours[descriptor.colour][c] : std::array<unsigned,3>{130,145,143}[c]);
-                        if (descriptor.kind == Kind::TradeOffer || statsPanel || statsControl)
+                        if (descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey)
                             image.pixels[offset+3] = source.pixels[(std::size_t(y/3)*source.width+x/3)*4+3];
                         if (!rim && photo)
                         {
@@ -448,7 +520,8 @@ namespace monopoly::menu
                     if (!text) return original;
                     const bool statsLabel = descriptor.kind == Kind::StatsTab || descriptor.kind == Kind::StatsSelectedTab ||
                         descriptor.kind == Kind::StatsBarHeading;
-                    const bool painted = statsLabel ? statsCaption(image, *text, descriptor.kind == Kind::StatsBarHeading) :
+                    const bool painted = statsLabel || calculatorKey ? compactCaption(image, *text,
+                        descriptor.kind == Kind::StatsBarHeading, calculatorKey) :
                         caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation);
                     if (!painted) return original;
 

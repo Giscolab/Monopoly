@@ -2,6 +2,7 @@
 
 #include "StatsDeedPlayback.hpp"
 #include "SequencePlayback.hpp"
+#include "FontRuntime.hpp"
 
 #include <expected>
 #include <optional>
@@ -26,7 +27,7 @@ namespace monopoly::statsui
             int monetarySystem,
             display::Screen2D desiredView,
             fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool modernAA = false);
 
         void reset() noexcept;
 
@@ -42,5 +43,7 @@ namespace monopoly::statsui
         std::vector<std::optional<data::DataId>> surfaces_;
         std::vector<Published> published_;
         std::vector<std::string> content_;
+        std::optional<fonts::Settings> fontSettings_;
+        bool modernAA_{};
     };
 }

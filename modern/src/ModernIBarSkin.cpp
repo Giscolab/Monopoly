@@ -110,6 +110,17 @@ namespace monopoly::ibar
         constexpr std::array<std::array<unsigned,2>,11> ScoreTokenSizes{{
             {53,29},{52,22},{39,29},{39,26},{39,26},{22,29},
             {54,32},{47,28},{22,29},{49,20},{24,31}}};
+        std::optional<std::array<unsigned,4>> deedArtworkRect(data::DataId root,
+            ModernIBarSkin::DeedArtwork kind)
+        {
+            if(data::dataGroup(root)!=data::legacyGroupValue(data::LegacyGroupId::LanguageGraphics)) return {};
+            const auto tag=data::dataTag(root);
+            if(kind==ModernIBarSkin::DeedArtwork::Railroad &&
+                (tag==0x0CD2 || tag==0x0CDA || tag==0x0CE1 || tag==0x0CE9)) return std::array<unsigned,4>{68,18,125,61};
+            if(kind==ModernIBarSkin::DeedArtwork::Electric && tag==0x0CD7) return std::array<unsigned,4>{74,16,114,63};
+            if(kind==ModernIBarSkin::DeedArtwork::Water && tag==0x0CE4) return std::array<unsigned,4>{73,18,127,63};
+            return {};
+        }
         bool backdrop(data::DataId root)
         {
             return data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
@@ -179,6 +190,25 @@ namespace monopoly::ibar
         if ((fullCard || property(root).has_value()) && presentationContext_ && !presentationContext_()) return original;
         if (fullCard && presentationContext_ && !presentationContext_()) return original;
         if (deed != deeds_.end() && principal && (w != 199 || h != 227)) return original;
+        std::optional<std::array<unsigned,4>> artwork;
+        if(deed!=deeds_.end() && deed->second.artwork)
+        {
+            artwork=deedArtworkRect(root,*deed->second.artwork);
+            if(!artwork || language_!=data::LanguageId::EnglishUs) return original;
+            if(principal)
+            {
+                if(original->dataId!=root || !valid(original->image)) return original;
+                bool ink=false;
+                for(unsigned y=(*artwork)[1];y<(*artwork)[3];++y)
+                    for(unsigned x=(*artwork)[0];x<(*artwork)[2];++x)
+                    {
+                        const auto i=(std::size_t(y)*w+x)*4;const auto& pixels=original->image.pixels;
+                        if(pixels[i]!=pixels[i+1] || pixels[i]!=pixels[i+2] || pixels[i+3]!=255) return original;
+                        ink|=pixels[i]<250;
+                    }
+                if(!ink) return original;
+            }
+        }
         if (draw != drawCards_.end() && principal &&
             (w != draw->second.nativeWidth || h != draw->second.nativeHeight || w < 199 || h < 150 || w > 600 || h > 400 ||
              draw->second.title.empty() || draw->second.title.size()>128 || draw->second.body.empty())) return original;
@@ -294,8 +324,25 @@ namespace monopoly::ibar
                             for (unsigned c=0;c<3;++c) image.pixels[i+c]=std::uint8_t(fill.color>>(c*8));
                         }
                 }
-                for (const auto& region : content->text)
+                if(artwork)
+                    for(unsigned y=(*artwork)[1]*3;y<(*artwork)[3]*3;++y)
+                        for(unsigned x=(*artwork)[0]*3;x<(*artwork)[2]*3;++x)
+                        {
+                            const auto source=(std::size_t(y/3)*w+x/3)*4;
+                            const auto destination=(std::size_t(y)*image.width+x)*4;
+                            // Original opaque white-backed grayscale yields
+                            // exact ink coverage255-gray; no generated icon.
+                            const unsigned gray=original->image.pixels[source];
+                            for(unsigned c=0;c<3;++c)
+                                image.pixels[destination+c]=std::uint8_t((image.pixels[destination+c]*gray+127)/255);
+                        }
+                for(std::size_t textIndex=0;textIndex<content->text.size();++textIndex)
                 {
+                    auto region=content->text[textIndex];
+                    const bool artTitle=artwork && textIndex==0;
+                    if(artTitle)
+                    {region.y=70;region.height=20;region.fontSize=16;region.bold=true;region.verticalLeeway=0;region.verticalCenter=true;}
+                    const unsigned textInset=artTitle?12U:21U;
                     if (region.text.empty()) continue;
                     if (region.text.size()>2048 || region.y<0 || region.y>=int(h) || region.height<=0 ||
                         region.height>int(h)-region.y || region.verticalLeeway<0 || region.verticalLeeway>12 ||
@@ -312,7 +359,7 @@ namespace monopoly::ibar
                             const auto candidate=line.empty()?word:line+" "+word;
                             auto measure=rasterizer(candidate,size*3,region.bold,region.italic);
                             if (!measure || !valid(*measure)) return original;
-                            if (measure->width>(w-42)*3)
+                            if (measure->width>(w-textInset*2)*3)
                             {
                                 if (line.empty()) { tooWide=true; break; }
                                 auto previous=rasterizer(line,size*3,region.bold,region.italic);
@@ -320,7 +367,7 @@ namespace monopoly::ibar
                                 lines.push_back(std::move(*previous)); line=word;
                                 auto one=rasterizer(word,size*3,region.bold,region.italic);
                                 if (!one || !valid(*one)) return original;
-                                if (one->width>(w-42)*3) { tooWide=true; break; }
+                                if (one->width>(w-textInset*2)*3) { tooWide=true; break; }
                             }
                             else line=candidate;
                         }
@@ -338,8 +385,8 @@ namespace monopoly::ibar
                         if (region.verticalCenter && lines.size()==1) y+=(region.height*3-int(total))/2;
                         for (const auto& rendered:lines)
                         {
-                            const int x=region.justification==0?63:region.justification==1?
-                                (int(image.width)-int(rendered.width))/2:int(image.width)-63-int(rendered.width);
+                            const int x=region.justification==0?int(textInset*3):region.justification==1?
+                                (int(image.width)-int(rendered.width))/2:int(image.width)-int(textInset*3)-int(rendered.width);
                             if (x<0 || y<0 || x+int(rendered.width)>int(image.width) || y+int(rendered.height)>int(image.height)) return original;
                             for (unsigned py=0;py<rendered.height;++py)
                                 for (unsigned px=0;px<rendered.width;++px)

@@ -78,20 +78,32 @@ namespace monopoly::statsui
             return rows;
         }
 
-        [[nodiscard]] data::LegacyBitmapRGBA8 blankValueImage()
+        [[nodiscard]] data::LegacyBitmapRGBA8 blankValueImage(int scale)
         {
             data::LegacyBitmapRGBA8 image{
-                DeedValueTextWidth, DeedValueTextHeight, {}};
+                DeedValueTextWidth * scale, DeedValueTextHeight * scale, {}};
             image.pixels.assign(
                 static_cast<std::size_t>(DeedValueTextWidth) *
-                static_cast<std::size_t>(DeedValueTextHeight) * 4U, 0U);
+                static_cast<std::size_t>(DeedValueTextHeight) * scale * scale * 4U, 0U);
             return image;
         }
 
         struct RestoreFont final
         {
             fonts::Runtime& font;
-            ~RestoreFont() { (void)font.restoreSettings(0); }
+            std::optional<fonts::Settings> caller;
+            ~RestoreFont()
+            {
+                if (!caller) (void)font.restoreSettings(0);
+                else
+                {
+                    if (font.settings().fontPath != caller->fontPath || font.settings().familyName != caller->familyName)
+                        (void)font.setFont(caller->fontPath, caller->familyName);
+                    (void)font.setSize(caller->size); font.setWeight(caller->weight);
+                    font.setItalic(caller->italic); font.setUnderline(caller->underline);
+                    font.setStrikeOut(caller->strikeOut);
+                }
+            }
         };
     }
 
@@ -102,7 +114,7 @@ namespace monopoly::statsui
         int monetarySystem,
         display::Screen2D desiredView,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool modernAA)
     {
         std::vector<PlannedRow> rows;
         if (desiredView == display::Screen2D::Portfolio &&
@@ -120,6 +132,22 @@ namespace monopoly::statsui
         }
 
         bool layoutChanged = rows.size() != published_.size();
+        const auto callerSettings = fontRuntime && fontRuntime->ready() ?
+            std::optional{fontRuntime->settings()} : std::nullopt;
+        std::optional<fonts::Settings> effectiveSettings;
+        if (!rows.empty() && callerSettings)
+        {
+            // Values always use saved slot0 at size8/weight500. Unrelated
+            // caller sizes/styles are not keys for these authoritative glyphs.
+            RestoreFont restore{*fontRuntime, callerSettings};
+            if (const auto selected = fontRuntime->restoreSettings(0); !selected)
+                return std::unexpected(selected.error().detail);
+            if (const auto sized = fontRuntime->setSize(8); !sized)
+                return std::unexpected(sized.error().detail);
+            fontRuntime->setWeight(500);
+            effectiveSettings = fontRuntime->settings();
+        }
+        const bool presentationChanged = modernAA != modernAA_ || effectiveSettings != fontSettings_;
         if (!layoutChanged)
         {
             for (std::size_t index = 0; index < rows.size(); ++index)
@@ -148,9 +176,10 @@ namespace monopoly::statsui
         {
             std::size_t redraws{};
             for (std::size_t index = 0; index < rows.size(); ++index)
-                if (index >= content_.size() || content_[index] != rows[index].text) ++redraws;
+                if (presentationChanged || index >= content_.size() || content_[index] != rows[index].text) ++redraws;
             if (redraws > sequence::SequenceCommandQueue::Capacity - playback.commands().pendingCount())
                 return std::unexpected("sequence command queue cannot fit deed value redraws");
+            if (redraws == 0) return {};
         }
 
         if (rows.empty())
@@ -176,7 +205,7 @@ namespace monopoly::statsui
         std::vector<data::LegacyBitmapRGBA8> images;
         images.reserve(rows.size());
         {
-            RestoreFont restore{*fontRuntime};
+            RestoreFont restore{*fontRuntime, modernAA ? callerSettings : std::nullopt};
             if (const auto restored = fontRuntime->restoreSettings(0);
                 !restored)
                 return std::unexpected(restored.error().detail);
@@ -186,16 +215,28 @@ namespace monopoly::statsui
 
             for (const auto& row : rows)
             {
-                auto image = blankValueImage();
+                auto image = blankValueImage(modernAA ? 3 : 1);
                 const auto metrics = fontRuntime->measure(row.text);
                 if (!metrics)
                     return std::unexpected(metrics.error().detail);
                 const int x =
                     static_cast<int>(DeedValueTextWidth) - metrics->width;
-                const auto copied = fontRuntime->blitText(
-                    image, row.text, x, 0, TextColour);
-                if (!copied)
-                    return std::unexpected(copied.error().detail);
+                if (!modernAA)
+                {
+                    const auto copied = fontRuntime->blitText(image, row.text, x, 0, TextColour);
+                    if (!copied) return std::unexpected(copied.error().detail);
+                }
+                else
+                {
+                    const auto enlarged = fontRuntime->setSize(24);
+                    if (!enlarged) return std::unexpected(enlarged.error().detail);
+                    const auto raster = fontRuntime->render(row.text, TextColour, true);
+                    const auto native = fontRuntime->setSize(8);
+                    if (!native) return std::unexpected(native.error().detail);
+                    if (!raster) return std::unexpected(raster.error().detail);
+                    const auto copied = data::blitStraightRGBA8(image, *raster, x * 3, 0, data::BitmapBlitMode::SourceOver);
+                    if (!copied) return std::unexpected(copied.error());
+                }
                 images.push_back(std::move(image));
             }
         }
@@ -215,12 +256,12 @@ namespace monopoly::statsui
             }
 
             const bool changed =
-                index >= content_.size() ||
+                presentationChanged || index >= content_.size() ||
                 content_[index] != rows[index].text;
             if (changed)
             {
                 const auto updated = playback.runtimeBitmaps().update(
-                    *surfaces_[index], std::move(images[index]));
+                    *surfaces_[index], std::move(images[index]), modernAA ? std::optional<std::array<float,4>>{{0,0,float(DeedValueTextWidth),float(DeedValueTextHeight)}} : std::nullopt, modernAA);
                 if (!updated) return updated;
                 changedRows.push_back(index);
             }
@@ -237,6 +278,7 @@ namespace monopoly::statsui
             content_.resize(rows.size());
             for (std::size_t index = 0; index < rows.size(); ++index)
                 content_[index] = rows[index].text;
+            fontSettings_ = effectiveSettings; modernAA_ = modernAA;
             return {};
         }
 
@@ -272,6 +314,7 @@ namespace monopoly::statsui
         content_.resize(rows.size());
         for (std::size_t index = 0; index < rows.size(); ++index)
             content_[index] = rows[index].text;
+        fontSettings_ = effectiveSettings; modernAA_ = modernAA;
         return {};
     }
 
@@ -280,5 +323,6 @@ namespace monopoly::statsui
         surfaces_.clear();
         published_.clear();
         content_.clear();
+        fontSettings_.reset(); modernAA_ = false;
     }
 }

@@ -16,20 +16,29 @@ namespace monopoly::tradeui
         // LEG_MCR(220,220,220): COLORREF byte order is R,G,B.
         constexpr std::uint32_t NameColour = 0x00DCDCDCU;
 
-        [[nodiscard]] data::LegacyBitmapRGBA8 blankImage()
+        [[nodiscard]] data::LegacyBitmapRGBA8 blankImage(int scale)
         {
-            data::LegacyBitmapRGBA8 image{NameWidth, NameHeight, {}};
-            image.pixels.assign(NameWidth * NameHeight * 4U, 0U);
+            data::LegacyBitmapRGBA8 image{NameWidth * scale, NameHeight * scale, {}};
+            image.pixels.assign(std::size_t(image.width) * image.height * 4U, 0U);
             return image;
         }
 
         struct RestoreDefaultFont final
         {
             fonts::Runtime* runtime{};
+            std::optional<fonts::Settings> caller;
             ~RestoreDefaultFont()
             {
                 if (runtime != nullptr)
-                    (void)runtime->restoreSettings(0);
+                {
+                    if (!caller) (void)runtime->restoreSettings(0);
+                    else
+                    {
+                        (void)runtime->setSize(caller->size); runtime->setWeight(caller->weight);
+                        runtime->setItalic(caller->italic); runtime->setUnderline(caller->underline);
+                        runtime->setStrikeOut(caller->strikeOut);
+                    }
+                }
             }
         };
     }
@@ -39,7 +48,7 @@ namespace monopoly::tradeui
         const rules::GameState& gameState,
         display::Screen2D desiredView,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool modernAA)
     {
         const std::array<rules::PlayerNumber, 2> players{{state.playerA, state.playerB}};
         std::array<bool, 2> desiredVisible{};
@@ -72,11 +81,13 @@ namespace monopoly::tradeui
         std::array<bool, 2> contentChanged{};
         if (anyVisible)
         {
+            RestoreDefaultFont restore{fontRuntime, modernAA ? std::optional{fontRuntime->settings()} : std::nullopt};
             const auto sized = fontRuntime->setSize(12);
             if (!sized) return std::unexpected(sized.error().detail);
             fontRuntime->setWeight(700);
             fontRuntime->setUnderline(false);
-            RestoreDefaultFont restore{fontRuntime};
+            const auto selectedSettings = fontRuntime->settings();
+            const int scale = modernAA ? 3 : 1;
 
             for (std::size_t side = 0; side < 2; ++side)
             {
@@ -85,18 +96,34 @@ namespace monopoly::tradeui
                     std::wstring_view(gameState.players[players[side]].name));
                 if (!encoded) return std::unexpected(encoded.error().detail);
                 const auto& text = *encoded;
-                if (textCache_[side] && *textCache_[side] == text) continue;
-                auto image = blankImage();
+                if (textCache_[side] && *textCache_[side] == text && modernAA_[side] == modernAA &&
+                    fontSettings_[side] && *fontSettings_[side] == selectedSettings) continue;
+                auto image = blankImage(scale);
                 if (!text.empty())
                 {
-                    const auto blitted = fontRuntime->blitText(
-                        image, text, 8, 9, NameColour);
-                    if (!blitted) return std::unexpected(blitted.error().detail);
+                    if (!modernAA)
+                    {
+                        const auto blitted = fontRuntime->blitText(image, text, 8, 9, NameColour);
+                        if (!blitted) return std::unexpected(blitted.error().detail);
+                    }
+                    else
+                    {
+                        const auto enlarged = fontRuntime->setSize(12 * scale);
+                        if (!enlarged) return std::unexpected(enlarged.error().detail);
+                        const auto raster = fontRuntime->render(text, NameColour, true);
+                        const auto native = fontRuntime->setSize(12);
+                        if (!native) return std::unexpected(native.error().detail);
+                        if (!raster) return std::unexpected(raster.error().detail);
+                        const auto blitted = data::blitStraightRGBA8(image, *raster, 8 * scale, 9 * scale, data::BitmapBlitMode::SourceOver);
+                        if (!blitted) return std::unexpected(blitted.error());
+                    }
                 }
                 const auto updated = playback.runtimeBitmaps().update(
-                    *surfaces_[side], std::move(image));
+                    *surfaces_[side], std::move(image), modernAA ? std::optional<std::array<float,4>>{{0,0,float(NameWidth),float(NameHeight)}} : std::nullopt, modernAA);
                 if (!updated) return std::unexpected(updated.error());
                 textCache_[side] = text;
+                modernAA_[side] = modernAA;
+                fontSettings_[side] = selectedSettings;
                 contentChanged[side] = true;
             }
         }
@@ -139,5 +166,6 @@ namespace monopoly::tradeui
         surfaces_.fill(std::nullopt);
         textCache_.fill(std::nullopt);
         visible_.fill(false);
+        modernAA_.fill(false); fontSettings_.fill(std::nullopt);
     }
 }

@@ -120,6 +120,46 @@ namespace
             "Most Valuable value text follows compacted deed grid");
     }
 
+    void testModernPresentation()
+    {
+        SyntheticTextResources resources; fonts::Runtime font; loadRealTestArial(font);
+        require(font.saveSettings(0).has_value(),"save modern deed-value native font");
+        engine::SequencePlayback playback(resources.service.snapshot());
+        statsui::DeedValueTextPlayback owner; auto state=deedState(); rules::GameState game{};
+        const auto sync=[&](bool modern){return owner.sync(state,game,{},13,display::Screen2D::Portfolio,&font,playback,modern);};
+        require(sync(false).has_value() && playback.update(0).has_value() && playback.update(60).has_value(),"native deed values reach original sixty-tick clock");
+        const auto nodes=playback.world2D().order(); const auto roots=playback.runtime().roots();
+        const auto native=*playback.world2D().find(nodes.front());
+        require(native.clock==60 && !native.asset->presentationRect && !native.asset->preferLinearFiltering,"native deed-value presentation and clock are authoritative");
+        require(textRefreshRejectsFullQueue(playback,[&]{return sync(true);},60),"saturated modern mode refresh preserves native pixels and roots");
+        require(playback.world2D().find(nodes.front())->clock==native.clock && native.clock==60,"rejected refresh and same-tick queue drain preserve native clock60");
+        const auto caller=font.settings();
+        require(sync(true).has_value() && playback.commands().pendingCount()==28 && font.settings()==caller,"modern values refresh existing surfaces and restore caller font");
+        require(playback.update(60).has_value() && playback.world2D().order()==nodes && playback.runtime().roots()==roots,"modern glyph mode retains every deed sequence node and root");
+        const auto modern=*playback.world2D().find(nodes.front());
+        require(modern.clock==native.clock && modern.priority==native.priority && modern.contentsDataId==native.contentsDataId &&
+            modern.worldTransform.values[6]==native.worldTransform.values[6] && modern.worldTransform.values[7]==native.worldTransform.values[7],"modern values preserve clock priority identity and native right-aligned placement");
+        require(modern.asset->image.width==156 && modern.asset->image.height==39 && modern.asset->preferLinearFiltering &&
+            modern.asset->presentationRect==std::optional<std::array<float,4>>{{0,0,52,13}},"modern values rasterize at three times native logical52x13 strip");
+        bool coverage=false,transparent=false;
+        for(std::size_t i=3;i<modern.asset->image.pixels.size();i+=4)
+        {coverage|=modern.asset->image.pixels[i]>0 && modern.asset->image.pixels[i]<255;transparent|=modern.asset->image.pixels[i]==0;}
+        require(coverage && transparent,"actual deed glyphs keep blended coverage on transparent strip");
+        require(sync(true).has_value() && playback.commands().pendingCount()==0 && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,"unchanged modern deed values reuse cached immutable pixels");
+        require(font.setSize(19).has_value(),"change caller font setting for deed-value cache");
+        require(sync(true).has_value() && playback.commands().pendingCount()==0 && font.settings().size==19 && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,"unrelated caller size leaves authoritative slot0 glyph cache unchanged and restores caller");
+        font.setItalic(true);
+        require(font.saveSettings(0).has_value() && sync(true).has_value() && playback.update(60).has_value() && font.settings().size==19 && font.settings().italic,"effective saved font style refreshes modern values without resetting clocks");
+        const auto changed=playback.runtimeBitmaps().asset(modern.contentsDataId);
+        require(changed!=modern.asset && sync(true).has_value() && playback.commands().pendingCount()==0 && playback.runtimeBitmaps().asset(modern.contentsDataId)==changed,"modern deed font cache remembers refreshed caller settings");
+        require(font.setSize(caller.size).has_value(),"restore original native caller size");
+        font.setItalic(caller.italic);
+        require(font.saveSettings(0).has_value() && sync(false).has_value() && playback.update(60).has_value(),"native mode restores after modern font-cache refresh");
+        const auto restored=*playback.world2D().find(nodes.front());
+        require(restored.clock==native.clock && restored.worldTransform.values==native.worldTransform.values && restored.asset->image.pixels==native.asset->image.pixels &&
+            !restored.asset->preferLinearFiltering && !restored.asset->presentationRect,"native fallback restores exact deed-value pixels geometry and flags");
+    }
+
     void testFailurePreflight()
     {
         SyntheticTextResources resources;
@@ -156,6 +196,7 @@ int main()
     try
     {
         testValuesAndRefresh();
+        testModernPresentation();
         testFailurePreflight();
         std::cout << "Stats Deed value text playback tests passed\n";
         return 0;

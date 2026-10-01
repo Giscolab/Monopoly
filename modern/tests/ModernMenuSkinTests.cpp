@@ -623,6 +623,205 @@ namespace
             "Return animation leaf does not qualify under unrelated idle root");
     }
 
+    void testMeasuredCalculatorDigitsAndClear()
+    {
+        std::string renderedLabel;
+        const auto raster = [&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {
+            renderedLabel=text;
+            data::LegacyBitmapRGBA8 image{unsigned(text.size()*34),72,
+                std::vector<std::uint8_t>(text.size()*34*72*4,255)};
+            for(std::size_t i=3;i<image.pixels.size();i+=4)image.pixels[i]=128;
+            return image;
+        };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        const auto measured=[](unsigned id,unsigned width=24,unsigned height=25)
+        {
+            auto source=std::make_shared<data::BitmapRuntimeAsset>(*original(width,height));source->dataId=id;
+            for(std::size_t i=3;i<source->image.pixels.size();i+=4)source->image.pixels[i]=std::uint8_t((i/4)%256);
+            return source;
+        };
+        for(unsigned index=0;index<10;++index)
+        {
+            std::array<std::shared_ptr<const data::BitmapRuntimeAsset>,2> images;
+            for(unsigned pressed=0;pressed<2;++pressed)
+            {
+                const unsigned root=(pressed?0x00020087:0x0002007D)+index;
+                const auto source=measured((pressed?0x0002033D:0x00020333)+(index+1)%10);
+                const auto before=source->image.pixels;
+                images[pressed]=skin.substitute(root,source);
+                const auto& result=images[pressed];
+                require(result!=source && renderedLabel==std::to_string((index+1)%10) &&
+                    result->image.width==72 && result->image.height==75 && result->dataId==source->dataId &&
+                    result->preferLinearFiltering && !result->presentationRect,
+                    "All ten exact idle/pressed calculator keys preserve authentic1..9,0 and24x25 footprint");
+                for(unsigned y=0;y<75;++y)for(unsigned x=0;x<72;++x)
+                    require(result->image.pixels[(std::size_t(y)*72+x)*4+3]==
+                        source->image.pixels[(std::size_t(y/3)*24+x/3)*4+3],
+                        "Digit caption and shell retain exact original clear/partial/opaque alpha");
+                require(source->image.pixels==before && skin.substitute(root,source)==result &&
+                    skin.substitute(root,source,false)==source,
+                    "Calculator keys preserve immutable source/cache and secondary leaves");
+                const auto wrongSize=measured(source->dataId,24,24);
+                const auto wrongLeaf=measured(source->dataId+1);
+                const auto wrongGroup=measured(source->dataId+0x10000);
+                require(skin.substitute(root,wrongSize)==wrongSize && skin.substitute(root,wrongLeaf)==wrongLeaf &&
+                    skin.substitute(root,wrongGroup)==wrongGroup,
+                    "Calculator number key requires exact measured leaf, data namespace and dimensions");
+            }
+            require(images[0]->image.pixels!=images[1]->image.pixels,
+                "Actual idle and pressed roots retain distinct quiet/active fills");
+        }
+        const auto clear=measured(0x00050F14,50,25);
+        const auto result=skin.substitute(0x000501FE,clear);
+        require(result!=clear && renderedLabel=="CLEAR" && result->image.width==150 && result->image.height==75,
+            "USA measured Clear key retains verified CLEAR label and50x25 footprint");
+        require(skin.substitute(0x00050388,clear)==clear && skin.substitute(0x000501FF,clear)==clear,
+            "Unmeasured Clear alternative/press owners retain authored fallback");
+        for(unsigned root=0x0002006D;root<=0x0002007C;++root)
+            require(skin.substitute(root,measured(0x00020347,47,29))->dataId==0x00020347 && !skin.supports(root),
+                "Calculator function icons are not replaced by guessed text or symbols");
+        const auto digit=measured(0x00020334);
+        const auto coverage=skin.substitute(0x0002007D,digit);
+        menu::ModernMenuSkin blank(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {return data::LegacyBitmapRGBA8{34,72,std::vector<std::uint8_t>(34*72*4,0)};});
+        menu::ModernMenuSkin opaque(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {return data::LegacyBitmapRGBA8{34,72,std::vector<std::uint8_t>(34*72*4,255)};});
+        const auto background=blank.substitute(0x0002007D,digit),full=opaque.substitute(0x0002007D,digit);
+        const auto center=(std::size_t(37)*72+36)*4;
+        for(unsigned channel=0;channel<3;++channel)
+            require(background->image.pixels[center+channel]<coverage->image.pixels[center+channel] &&
+                coverage->image.pixels[center+channel]<full->image.pixels[center+channel],
+                "Fractional antialiased glyph coverage blends into key RGB without thresholding edge alpha");
+        menu::ModernMenuSkin european(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        menu::ModernMenuSkin british(data::BoardEdition::Usa,data::LanguageId::EnglishUk,raster);
+        require(european.substitute(0x0002007D,digit)==digit && british.substitute(0x000501FE,clear)==clear,
+            "Digits and Clear cannot bypass qualified USA/en-US context");
+        auto malformed=measured(0x00020334);malformed->image.pixels.pop_back();
+        require(skin.substitute(0x0002007D,malformed)==malformed,
+            "Malformed calculator bitmap remains immutable fallback");
+    }
+
+    void testMeasuredBankAndDeedsViews()
+    {
+        std::string captionText;
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { captionText=text;return label(); };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        const auto measured=[](unsigned id,unsigned width,unsigned height)
+        { auto source=std::make_shared<data::BitmapRuntimeAsset>(*original(width,height));source->dataId=id;
+          for(std::size_t i=3;i<source->image.pixels.size();i+=4)source->image.pixels[i]=std::uint8_t((i/4)%256);
+          return source; };
+        const auto verifyMask=[](const auto& source,const auto& result)
+        {
+            require(result!=source && result->dataId==source->dataId && result->preferLinearFiltering &&
+                result->image.width==source->image.width*3 && result->image.height==source->image.height*3,
+                "Bank/Deeds measured shell keeps exact native footprint and owner");
+            for(unsigned y=0;y<result->image.height;++y)for(unsigned x=0;x<result->image.width;++x)
+                require(result->image.pixels[(std::size_t(y)*result->image.width+x)*4+3]==
+                    source->image.pixels[(std::size_t(y/3)*source->image.width+x/3)*4+3],
+                    "Bank/Deeds retains every original alpha value beneath independent dynamic overlays");
+        };
+        for(const auto spec:{std::array<unsigned,2>{0x0002000C,0x0002009F},
+            std::array<unsigned,2>{0x0002000E,0x000200A2},std::array<unsigned,2>{0x0002000D,0x000200A0},
+            std::array<unsigned,2>{0x0002000B,0x0002009E}})
+        {
+            captionText.clear();const auto source=measured(spec[1],786,223);const auto before=source->image.pixels;
+            const auto result=skin.substitute(spec[0],source);verifyMask(source,result);
+            require(captionText.empty() && source->image.pixels==before,
+                "Four Bank summary modes never rebake names, amounts or icons into static shell");
+            const auto center=(std::size_t(200)*result->image.width+500)*4;
+            require(result->image.pixels[center]<90 && result->image.pixels[center+1]<90 && result->image.pixels[center+2]<90,
+                "White Bank dynamic summary text keeps dark interior contrast");
+            require(skin.substitute(spec[0],source,false)==source,
+                "Bank summary only skins exact principal frame");
+            const auto wrongLeaf=measured(spec[1]+1,786,223),wrongSize=measured(spec[1],785,223);
+            require(skin.substitute(spec[0],wrongLeaf)==wrongLeaf && skin.substitute(spec[0],wrongSize)==wrongSize &&
+                skin.substitute(spec[0]+0x30000,source)==source,
+                "Bank summary rejects guessed leaf, extent and similarly numbered language root");
+        }
+        struct Bar{unsigned root,leaf,width;const char* text;};
+        for(const auto spec:{Bar{0x0006,0x0CBB,313,""},Bar{0x022C,0x0CBB,313,""},
+            Bar{0x0007,0x0CBC,334,"Show Summary of:"},Bar{0x022D,0x090F,333,"Sort deeds by:"}})
+        {
+            captionText.clear();const auto source=measured(0x00050000+spec.leaf,spec.width,*spec.text?80:42);
+            verifyMask(source,skin.substitute(0x00050000+spec.root,source));
+            require(captionText==spec.text,"Bank/Deeds headings retain actual decoded caption spelling");
+        }
+        struct Tab{std::array<unsigned,3> roots;unsigned leaf,width,height;const char* text;};
+        constexpr std::array<Tab,8> tabs{{
+            {{{0x00FE,0x00FD,0x00FF}},0x0C94,76,43,"houses hotels"},
+            {{{0x0104,0x0103,0x0105}},0x0CAE,100,42,"properties"},
+            {{{0x0101,0x0100,0x0102}},0x0CA1,105,42,"liabilities"},
+            {{{0x00FB,0x00FA,0x00FC}},0x0C87,107,42,"turn history"},
+            {{{0x01A1,0x01A3,0x01A2}},0x0E9B,76,43,"price"},
+            {{{0x019B,0x019D,0x019C}},0x0E5E,100,42,"owner"},
+            {{{0x0179,0x017B,0x017A}},0x07FC,105,42,"current rent"},
+            {{{0x0182,0x0184,0x0183}},0x0917,107,42,"game earnings"}
+        }};
+        for(const auto spec:tabs)
+        {
+            const auto source=measured(0x00050000+spec.leaf,spec.width,spec.height);
+            std::array<std::shared_ptr<const data::BitmapRuntimeAsset>,3> images;
+            for(unsigned state=0;state<3;++state)
+            {
+                images[state]=skin.substitute(0x00050000+spec.roots[state],source);verifyMask(source,images[state]);
+                require(captionText==spec.text,"Bank/Deeds state roots retain verified semantic label");
+                require(skin.substitute(0x00050000+spec.roots[state],source,false)==source,
+                    "Bank/Deeds control leaves unqualified siblings unchanged");
+            }
+            require(images[0]->image.pixels==images[1]->image.pixels && images[0]->image.pixels!=images[2]->image.pixels,
+                "Explicit Bank reversed return IDs and Deeds press IDs retain quiet/active distinction");
+            const auto unmeasured=measured(0x00051FFE,spec.width,spec.height);
+            require(skin.substitute(0x00050000+spec.roots[2],unmeasured)==unmeasured,
+                "Unmeasured variable Bank/Deeds press frames remain original");
+        }
+        // Production-selected roots use distinct leaves, not the idle leaf fixtures above.
+        struct Boundary { unsigned root,leaf,width,height;const char* text; };
+        for(const auto spec:{
+            Boundary{0x00FF,0x0CA0,83,43,"houses hotels"},Boundary{0x0105,0x0CBA,104,42,"properties"},
+            Boundary{0x0102,0x0CAD,110,50,"liabilities"},Boundary{0x00FC,0x0C93,116,50,"turn history"},
+            Boundary{0x01A2,0x0EA6,83,43,"price"},Boundary{0x019C,0x0E69,104,42,"owner"},
+            Boundary{0x017A,0x0807,110,50,"current rent"},Boundary{0x0183,0x0922,116,50,"game earnings"},
+            Boundary{0x00FF,0x0EA7,72,43,"houses hotels"},Boundary{0x019C,0x0E59,71,41,"owner"},
+            Boundary{0x00FD,0x0C9E,83,43,"houses hotels"},Boundary{0x0184,0x1229,116,50,"game earnings"},
+            Boundary{0x0184,0x121E,108,42,"game earnings"},Boundary{0x0177,0x0303,87,34,"Bank"},
+            Boundary{0x0177,0x0301,101,51,"Bank"},Boundary{0x0180,0x08FB,88,33,"Deeds"},
+            Boundary{0x0180,0x090B,111,52,"Deeds"},Boundary{0x0181,0x121D,129,79,"Deeds"}})
+        {
+            const auto source=measured(0x00050000+spec.leaf,spec.width,spec.height);
+            const auto before=source->image.pixels;
+            verifyMask(source,skin.substitute(0x00050000+spec.root,source));
+            require(captionText==spec.text && source->image.pixels==before,
+                "Actual selected and returning leaves retain compact semantic caption and immutable source");
+            const auto wrongSize=measured(source->dataId,spec.width+1,spec.height);
+            require(skin.substitute(0x00050000+spec.root,wrongSize)==wrongSize &&
+                skin.substitute(0x00050000+spec.root,source,false)==source &&
+                skin.substitute(0x000501FE,source)==source,
+                "Measured boundary cannot qualify a guessed footprint, secondary instance or unrelated owner");
+        }
+        const auto unknownTransition=measured(0x00050CA2,83,43);
+        require(skin.substitute(0x000500FF,unknownTransition)==unknownTransition,
+            "Unmeasured intermediate selected frame remains retail despite neighboring qualified leaves");
+        const auto deeds=measured(0x000200CD,790,215);captionText.clear();
+        verifyMask(deeds,skin.substitute(0x000200CD,deeds));
+        require(captionText.empty(),"Direct Deeds frame does not rebake separate icons or white value text");
+        const auto wrongDeeds=measured(0x000200CD,789,215),wrongDeedsLeaf=measured(0x000200CE,790,215);
+        require(skin.substitute(0x000200CD,deeds,false)==deeds &&
+            skin.substitute(0x000200CD,wrongDeeds)==wrongDeeds &&
+            skin.substitute(0x000200CD,wrongDeedsLeaf)==wrongDeedsLeaf &&
+            skin.substitute(0x000500CD,deeds)==deeds,
+            "Direct Deeds frame requires exact Main owner, extent and principal instance");
+        const auto runtime=measured(0xFFFE0001,786,223);
+        require(skin.substitute(0xFFFE0001,runtime)==runtime && skin.substitute(0x0002000F,runtime)==runtime,
+            "Dynamic signed amounts, descriptions and unknown Bank neighbors remain native");
+        menu::ModernMenuSkin european(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        const auto bank=measured(0x0002009F,786,223);
+        require(european.substitute(0x0002000C,bank)==bank,"Bank/Deeds cannot bypass USA/en-US skin qualification");
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -657,7 +856,7 @@ namespace
 }
 int main()
 {
-    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testActiveCacheRetention();
+    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

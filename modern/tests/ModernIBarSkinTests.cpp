@@ -16,6 +16,72 @@ namespace
         asset->image={w,h,std::vector<std::uint8_t>(std::size_t(w)*h*4,255)};
         return asset;
     }
+    void testMeasuredDeedArtwork()
+    {
+        using Kind=ibar::ModernIBarSkin::DeedArtwork;
+        struct Case {data::DataId root;Kind kind;std::array<unsigned,4> crop;};
+        const std::array cases{Case{0x00050CD2,Kind::Railroad,{68,18,125,61}},
+            Case{0x00050CDA,Kind::Railroad,{68,18,125,61}},Case{0x00050CE1,Kind::Railroad,{68,18,125,61}},
+            Case{0x00050CE9,Kind::Railroad,{68,18,125,61}},Case{0x00050CD7,Kind::Electric,{74,16,114,63}},
+            Case{0x00050CE4,Kind::Water,{73,18,127,63}}};
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});
+        bool usa=true;skin.configurePresentationContext([&]{return usa;});
+        for(const auto& c:cases)
+        {
+            ibar::ModernIBarSkin::DeedDescriptor descriptor;
+            descriptor.artwork=c.kind;
+            descriptor.text={{"EXACT TITLE",72,12,1,0,12,0,false,false,false},
+                {"EXACT RENT $25",92,14,1,0,12,0,false,false,false}};
+            std::vector<std::tuple<std::string,int,bool>> requests;
+            skin.configureDeedDescriptors({{c.root,descriptor}},
+                [&](std::string_view text,int size,bool bold,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {
+                    requests.emplace_back(text,size,bold);
+                    return data::LegacyBitmapRGBA8{24,12,std::vector<std::uint8_t>(24*12*4,0)};
+                });
+            auto source=bitmap(c.root,199,227);
+            const unsigned x=c.crop[0]+1,y=c.crop[1]+1;
+            const auto native=(std::size_t(y)*199+x)*4;
+            source->image.pixels[native]=source->image.pixels[native+1]=source->image.pixels[native+2]=128;
+            const auto modern=skin.substitute(c.root,source);
+            require(modern!=source && modern->image.width==597 && modern->image.height==681 &&
+                modern->dataId==source->dataId,"six exact measured USA front owners preserve199x227 authored extents at3x");
+            for(unsigned dy=0;dy<3;++dy)for(unsigned dx=0;dx<3;++dx)
+            {
+                const auto pixel=(std::size_t(y*3+dy)*597+x*3+dx)*4;
+                require(modern->image.pixels[pixel]==119 && modern->image.pixels[pixel+1]==116 &&
+                    modern->image.pixels[pixel+2]==108 && modern->image.pixels[pixel+3]==255,
+                    "original grayscale128 retains exact127 ink coverage composited onto cream without white patch");
+            }
+            const auto white=(std::size_t(y*3)*597+(x+1)*3)*4;
+            require(modern->image.pixels[white]==237 && modern->image.pixels[white+1]==232 &&
+                modern->image.pixels[white+2]==215,"original white artwork background becomes unchanged cream");
+            require(std::find(requests.begin(),requests.end(),std::tuple{std::string{"EXACT TITLE"},48,true})!=requests.end() &&
+                std::find(requests.begin(),requests.end(),std::tuple{std::string{"EXACT RENT $25"},36,false})!=requests.end(),
+                "only title gets bold16px; exact canonical rent text and font remain unchanged");
+            usa=false;require(skin.substitute(c.root,source)==source,"artwork context checked before cached principal");usa=true;
+            auto bad=std::make_shared<data::BitmapRuntimeAsset>(*source);bad->image.pixels[native+3]=128;
+            require(skin.substitute(c.root,bad)==bad,"partial-alpha unqualified native art falls back before cache");
+            bad->image.pixels[native+3]=255;bad->image.pixels[native+1]=127;
+            require(skin.substitute(c.root,bad)==bad,"nonmonochrome unqualified artwork retains entire original deed");
+            auto wrong=bitmap(c.root+1,199,227);
+            require(skin.substitute(c.root,wrong)==wrong,"artwork requires exact original payload identity");
+            bad=bitmap(c.root,199,227);
+            require(skin.substitute(c.root,bad)==bad,"empty all-white artwork fails whole owner before cache");
+            descriptor.artwork=c.kind==Kind::Railroad?Kind::Water:Kind::Railroad;
+            skin.configureDeedDescriptors({{c.root,descriptor}},[](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {return std::unexpected("must not reach font");});
+            require(skin.substitute(c.root,source)==source,"mismatched measured kind/root preserves original owner");
+        }
+        ibar::ModernIBarSkin::DeedDescriptor invalid;
+        invalid.artwork=Kind::Water;invalid.text.push_back({"Unknown",72,12,1,0,12});
+        skin.configureDeedDescriptors({{0x00050CE3,invalid}},
+            [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {return data::LegacyBitmapRGBA8{1,1,{0,0,0,0}};});
+        const auto ventnor=bitmap(0x00050CE3,199,227);
+        require(skin.substitute(0x00050CE3,ventnor)==ventnor,
+            "Ventnor CE3 never accepts Water Works CE4 artwork");
+    }
     void testScoreTokenImages()
     {
         const auto raster=[](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
@@ -189,6 +255,6 @@ namespace
 }
 int main()
 {
-    try{testMeasuredRetailTrade();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{testMeasuredDeedArtwork();testMeasuredRetailTrade();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

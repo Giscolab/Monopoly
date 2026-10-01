@@ -5,6 +5,7 @@
 #include "RuleTypes.hpp"
 #include "SequencePlayback.hpp"
 #include "TradeUI.hpp"
+#include "FontRuntime.hpp"
 
 #include <array>
 #include <cstdint>
@@ -28,7 +29,7 @@ namespace monopoly::tradeui
             const rules::GameState& gameState,
             display::Screen2D desiredView,
             fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool modernAA = false);
 
         void reset() noexcept;
 
@@ -36,5 +37,7 @@ namespace monopoly::tradeui
         std::array<std::optional<data::DataId>, 2> surfaces_{};
         std::array<std::optional<std::string>, 2> textCache_{};
         std::array<bool, 2> visible_{};
+        std::array<bool, 2> modernAA_{};
+        std::array<std::optional<fonts::Settings>, 2> fontSettings_{};
     };
 }

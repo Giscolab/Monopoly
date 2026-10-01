@@ -34,10 +34,10 @@ namespace monopoly::tradeui
             return *encoded;
         }
 
-        [[nodiscard]] data::LegacyBitmapRGBA8 blankPanel()
+        [[nodiscard]] data::LegacyBitmapRGBA8 blankPanel(int scale)
         {
-            data::LegacyBitmapRGBA8 image{PanelWidth, PanelHeight, {}};
-            image.pixels.assign(PanelWidth * PanelHeight * 4U, 0U);
+            data::LegacyBitmapRGBA8 image{PanelWidth * scale, PanelHeight * scale, {}};
+            image.pixels.assign(std::size_t(image.width) * image.height * 4U, 0U);
             return image;
         }
 
@@ -45,7 +45,7 @@ namespace monopoly::tradeui
             data::LegacyBitmapRGBA8& image,
             fonts::Runtime& font,
             const std::vector<std::string>& lines,
-            int& y)
+            int& y, bool modernAA)
         {
             int height{};
             if (!lines.empty())
@@ -61,9 +61,23 @@ namespace monopoly::tradeui
                     const auto metrics = font.measure(line);
                     if (!metrics) return std::unexpected(metrics.error().detail);
                     const int x = (static_cast<int>(PanelWidth) - metrics->width) / 2;
-                    const auto blitted = font.blitText(
-                        image, line, x, y, PanelTextColour);
-                    if (!blitted) return std::unexpected(blitted.error().detail);
+                    if (!modernAA)
+                    {
+                        const auto blitted = font.blitText(image, line, x, y, PanelTextColour);
+                        if (!blitted) return std::unexpected(blitted.error().detail);
+                    }
+                    else
+                    {
+                        const int nativeSize = font.settings().size;
+                        const auto enlarged = font.setSize(nativeSize * 3);
+                        if (!enlarged) return std::unexpected(enlarged.error().detail);
+                        const auto raster = font.render(line, PanelTextColour, true);
+                        const auto native = font.setSize(nativeSize);
+                        if (!native) return std::unexpected(native.error().detail);
+                        if (!raster) return std::unexpected(raster.error().detail);
+                        const auto blitted = data::blitStraightRGBA8(image, *raster, x * 3, y * 3, data::BitmapBlitMode::SourceOver);
+                        if (!blitted) return std::unexpected(blitted.error());
+                    }
                 }
                 y += height;
             }
@@ -73,10 +87,19 @@ namespace monopoly::tradeui
         struct RestoreDefaultFont final
         {
             fonts::Runtime* runtime{};
+            std::optional<fonts::Settings> caller;
             ~RestoreDefaultFont()
             {
                 if (runtime != nullptr)
-                    (void)runtime->restoreSettings(0);
+                {
+                    if (!caller) (void)runtime->restoreSettings(0);
+                    else
+                    {
+                        (void)runtime->setSize(caller->size); runtime->setWeight(caller->weight);
+                        runtime->setItalic(caller->italic); runtime->setUnderline(caller->underline);
+                        runtime->setStrikeOut(caller->strikeOut);
+                    }
+                }
             }
         };
     }
@@ -85,7 +108,7 @@ namespace monopoly::tradeui
         const State& state,
         display::Screen2D desiredView,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool modernAA)
     {
         const bool desiredVisible = desiredView == display::Screen2D::Trade &&
             state.playerA < rules::MaxPlayers;
@@ -113,13 +136,15 @@ namespace monopoly::tradeui
         const auto trading2 = languageText(playback, Trading2MessageId);
         if (!trading2) return std::unexpected(trading2.error());
         const std::string key = *trading + '\n' + *trading2;
+        const auto callerSettings = fontRuntime->settings();
 
         const bool contentChanged =
-            !contentKey_ || *contentKey_ != key;
+            !contentKey_ || *contentKey_ != key || modernAA_ != modernAA ||
+            !fontSettings_ || *fontSettings_ != callerSettings;
         if (contentChanged)
         {
-            auto image = blankPanel();
-            RestoreDefaultFont restore{fontRuntime};
+            auto image = blankPanel(modernAA ? 3 : 1);
+            RestoreDefaultFont restore{fontRuntime, modernAA ? std::optional{callerSettings} : std::nullopt};
             auto sized = fontRuntime->setSize(12);
             if (!sized) return std::unexpected(sized.error().detail);
             fontRuntime->setWeight(700);
@@ -128,7 +153,7 @@ namespace monopoly::tradeui
             if (!firstLines) return std::unexpected(firstLines.error().detail);
             int y = 14;
             if (auto printed = printCenteredLines(
-                    image, *fontRuntime, *firstLines, y); !printed)
+                    image, *fontRuntime, *firstLines, y, modernAA); !printed)
                 return printed;
             y += 3;
 
@@ -139,13 +164,15 @@ namespace monopoly::tradeui
             const auto secondLines = fontRuntime->wrap(*trading2, WrapWidth);
             if (!secondLines) return std::unexpected(secondLines.error().detail);
             if (auto printed = printCenteredLines(
-                    image, *fontRuntime, *secondLines, y); !printed)
+                    image, *fontRuntime, *secondLines, y, modernAA); !printed)
                 return printed;
 
             const auto updated = playback.runtimeBitmaps().update(
-                *surface_, std::move(image));
+                *surface_, std::move(image), modernAA ? std::optional<std::array<float,4>>{{0,0,float(PanelWidth),float(PanelHeight)}} : std::nullopt, modernAA);
             if (!updated) return std::unexpected(updated.error());
             contentKey_ = key;
+            modernAA_ = modernAA;
+            fontSettings_ = callerSettings;
         }
 
         if (visible_)
@@ -178,5 +205,6 @@ namespace monopoly::tradeui
         surface_.reset();
         contentKey_.reset();
         visible_ = false;
+        modernAA_ = false; fontSettings_.reset();
     }
 }

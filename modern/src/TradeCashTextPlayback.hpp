@@ -4,6 +4,7 @@
 #include "Display.hpp"
 #include "SequencePlayback.hpp"
 #include "TradeUI.hpp"
+#include "FontRuntime.hpp"
 
 #include <array>
 #include <cstdint>
@@ -38,7 +39,7 @@ namespace monopoly::tradeui
             display::Screen2D desiredView,
             int monetarySystem,
             fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback);
+            engine::SequencePlayback& playback, bool modernAA = false);
 
         void reset() noexcept;
 
@@ -58,5 +59,7 @@ namespace monopoly::tradeui
         std::array<std::optional<data::DataId>, 4> textSurfaces_{};
         std::array<std::optional<std::string>, 4> textCache_{};
         std::vector<Published> current_;
+        std::array<bool, 4> modernAA_{};
+        std::array<std::optional<fonts::Settings>, 4> fontSettings_{};
     };
 }

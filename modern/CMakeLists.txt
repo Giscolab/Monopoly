@@ -449,6 +449,14 @@ if(MSVC)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(MonopolyModernMenuSkinBenchmark tools/BenchmarkModernMenuSkin.cpp src/FontRuntime.cpp)
+    target_include_directories(MonopolyModernMenuSkinBenchmark PRIVATE src)
+    target_link_libraries(MonopolyModernMenuSkinBenchmark PRIVATE MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+    add_executable(MonopolyModernMenuRasterBenchmark tools/BenchmarkMenuRaster.cpp)
+    target_include_directories(MonopolyModernMenuRasterBenchmark PRIVATE src)
+    if(MSVC)
+        target_compile_options(MonopolyModernMenuRasterBenchmark PRIVATE /W4 /permissive-)
+    endif()
     add_executable(MonopolyModernMenuSkinTests tests/ModernMenuSkinTests.cpp)
     target_link_libraries(MonopolyModernMenuSkinTests PRIVATE MonopolyDataCore)
     if(MSVC)
@@ -3984,12 +3992,14 @@ if(BUILD_TESTING)
         src/StatsTextPlayback.cpp src/StatsDeedPlayback.cpp src/StatsUI.cpp
         src/StatsCalculatorUI.cpp src/StatsCalculatorLogic.cpp src/AIUtility.cpp
         src/BoardRules.cpp src/IBarLayout.cpp src/MoneyFormat.cpp src/FontRuntime.cpp)
+    add_executable(MonopolyTradeDynamicTextPlaybackTests tests/TradeDynamicTextPlaybackTests.cpp
+        src/TradeNamePlayback.cpp src/TradePanelTextPlayback.cpp src/TradeCashTextPlayback.cpp src/FontRuntime.cpp src/MoneyFormat.cpp)
     add_executable(MonopolyStatsAccountRuntimeTests tests/StatsAccountRuntimeTests.cpp
         src/RuleCards.cpp src/CardDeckRuntime.cpp src/RuleEconomy.cpp src/RuleLifecycle.cpp
         src/PhaseStack.cpp src/Messaging.cpp src/BoardRules.cpp src/RuleOptions.cpp
         src/RuleResync.cpp src/RuleArchive.cpp)
     foreach(UI_TEST IN ITEMS ChatTextPlayback OptionsVisualPlayback OptionsCustomBoardPlayback
-            PlayerSelectionPlayback StatsTextPlayback StatsAccountRuntime)
+            PlayerSelectionPlayback StatsTextPlayback StatsAccountRuntime TradeDynamicTextPlayback)
         target_include_directories(Monopoly${UI_TEST}Tests PRIVATE src tests)
         target_link_libraries(Monopoly${UI_TEST}Tests PRIVATE
             MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)

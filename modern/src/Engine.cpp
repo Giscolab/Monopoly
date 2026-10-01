@@ -1363,8 +1363,22 @@ namespace monopoly::engine
                                         region.justification, region.verticalLeeway, region.fontSize,
                                         region.color, region.bold, region.italic, region.verticalCenter});
                                 descriptor.text.front().text = *name;
+                                const auto deedTag = static_cast<data::DataTag>((front ? 0x0CD0 : 0x0B53) + index);
+                                if (front)
+                                {
+                                    switch (deedTag)
+                                    {
+                                    case 0x0CD2: case 0x0CDA: case 0x0CE1: case 0x0CE9:
+                                        descriptor.artwork = ibar::ModernIBarSkin::DeedArtwork::Railroad; break;
+                                    case 0x0CD7:
+                                        descriptor.artwork = ibar::ModernIBarSkin::DeedArtwork::Electric; break;
+                                    case 0x0CE4:
+                                        descriptor.artwork = ibar::ModernIBarSkin::DeedArtwork::Water; break;
+                                    default: break;
+                                    }
+                                }
                                 descriptors.emplace(data::packDataId(data::LegacyGroupId::LanguageGraphics,
-                                    static_cast<data::DataTag>((front ? 0x0CD0 : 0x0B53) + index)), std::move(descriptor));
+                                    deedTag), std::move(descriptor));
                             }
                         }
                         std::map<data::DataId, ibar::ModernIBarSkin::DrawCardDescriptor> drawCards;
@@ -2454,22 +2468,28 @@ namespace monopoly::engine
             if (!tradeIconSync)
                 return SDL_SetError("Trade offer-icon playback: %s",
                     tradeIconSync.error().c_str());
+            const auto tradeTextResources = session->resources();
+            const bool modernTradeText = modernSceneOptions.proceduralBoard && tradeTextResources &&
+                tradeTextResources->context().board == data::BoardEdition::Usa &&
+                tradeTextResources->context().language == data::LanguageId::EnglishUs &&
+                displayState.city == 0 && displayState.system == 13 &&
+                displayState.customBoardPath.empty();
             const auto tradeCashTextSync = tradeCashTextPlayback.sync(
                 userinterface::tradeStateReadOnly(), ruleState,
                 displayState.desired2DView, displayState.system,
-                fontPlayback(), *session);
+                fontPlayback(), *session, modernTradeText);
             if (!tradeCashTextSync)
                 return SDL_SetError("Trade cash-text playback: %s",
                     tradeCashTextSync.error().c_str());
             const auto tradeNameSync = tradeNamePlayback.sync(
                 userinterface::tradeStateReadOnly(), ruleState,
-                displayState.desired2DView, fontPlayback(), *session);
+                displayState.desired2DView, fontPlayback(), *session, modernTradeText);
             if (!tradeNameSync)
                 return SDL_SetError("Trade name playback: %s",
                     tradeNameSync.error().c_str());
             const auto tradePanelTextSync = tradePanelTextPlayback.sync(
                 userinterface::tradeStateReadOnly(),
-                displayState.desired2DView, fontPlayback(), *session);
+                displayState.desired2DView, fontPlayback(), *session, modernTradeText);
             if (!tradePanelTextSync)
                 return SDL_SetError("Trade panel-text playback: %s",
                     tradePanelTextSync.error().c_str());
@@ -2593,7 +2613,7 @@ namespace monopoly::engine
             const auto statsDeedValueTextSync = statsDeedValueTextPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.system, displayState.desired2DView,
-                fontPlayback(), *session);
+                fontPlayback(), *session, modernTradeText);
             if (!statsDeedValueTextSync)
                 return SDL_SetError("UDStats Deed value-text playback: %s",
                     statsDeedValueTextSync.error().c_str());

@@ -42,20 +42,29 @@ namespace monopoly::tradeui
             return index < 2 || state.cashDesired[index] != 0;
         }
 
-        [[nodiscard]] data::LegacyBitmapRGBA8 blankCashImage()
+        [[nodiscard]] data::LegacyBitmapRGBA8 blankCashImage(int scale)
         {
-            data::LegacyBitmapRGBA8 image{CashWidth, CashHeight, {}};
-            image.pixels.assign(CashWidth * CashHeight * 4U, 0U);
+            data::LegacyBitmapRGBA8 image{CashWidth * scale, CashHeight * scale, {}};
+            image.pixels.assign(std::size_t(image.width) * image.height * 4U, 0U);
             return image;
         }
 
         struct RestoreDefaultFont final
         {
             fonts::Runtime* runtime{};
+            std::optional<fonts::Settings> caller;
             ~RestoreDefaultFont()
             {
                 if (runtime != nullptr)
-                    (void)runtime->restoreSettings(0);
+                {
+                    if (!caller) (void)runtime->restoreSettings(0);
+                    else
+                    {
+                        (void)runtime->setSize(caller->size); runtime->setWeight(caller->weight);
+                        runtime->setItalic(caller->italic); runtime->setUnderline(caller->underline);
+                        runtime->setStrikeOut(caller->strikeOut);
+                    }
+                }
             }
         };
     }
@@ -80,7 +89,7 @@ namespace monopoly::tradeui
         display::Screen2D desiredView,
         int monetarySystem,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback)
+        engine::SequencePlayback& playback, bool modernAA)
     {
         std::array<bool, 4> visible{};
         bool anyVisible{};
@@ -134,7 +143,7 @@ namespace monopoly::tradeui
         }
 
         const std::size_t required = current_.size() + desired.size();
-        if (required > sequence::SequenceCommandQueue::Capacity -
+        if (desired != current_ && required > sequence::SequenceCommandQueue::Capacity -
                 playback.commands().pendingCount())
             return std::unexpected(
                 "sequence command queue cannot fit Trade cash-text transition");
@@ -145,12 +154,14 @@ namespace monopoly::tradeui
             if (!resources)
                 return std::unexpected("Trade cash text has no resource snapshot");
 
+            RestoreDefaultFont restore{fontRuntime, modernAA ? std::optional{fontRuntime->settings()} : std::nullopt};
             const auto selected = fontRuntime->restoreSettings(8);
             if (!selected)
                 return std::unexpected(
                     "Trade cash title-font slot is unavailable: " +
                     selected.error().detail);
-            RestoreDefaultFont restore{fontRuntime};
+            const auto selectedSettings = fontRuntime->settings();
+            const int scale = modernAA ? 3 : 1;
 
             for (std::size_t index = 0; index < visible.size(); ++index)
             {
@@ -159,20 +170,36 @@ namespace monopoly::tradeui
                     state.cashDesired[index], monetarySystem, true,
                     resources->context().board);
                 if (!text) return std::unexpected(text.error());
-                if (textCache_[index] && *textCache_[index] == *text)
+                if (textCache_[index] && *textCache_[index] == *text && modernAA_[index] == modernAA &&
+                    fontSettings_[index] && *fontSettings_[index] == selectedSettings)
                     continue;
 
-                auto image = blankCashImage();
+                auto image = blankCashImage(scale);
                 const auto metrics = fontRuntime->measure(*text);
                 if (!metrics) return std::unexpected(metrics.error().detail);
                 const int x = (static_cast<int>(CashWidth) - metrics->width) / 2;
-                const auto blitted = fontRuntime->blitText(
-                    image, *text, x, 0, White);
-                if (!blitted) return std::unexpected(blitted.error().detail);
+                if (!modernAA)
+                {
+                    const auto blitted = fontRuntime->blitText(image, *text, x, 0, White);
+                    if (!blitted) return std::unexpected(blitted.error().detail);
+                }
+                else
+                {
+                    const auto enlarged = fontRuntime->setSize(selectedSettings.size * scale);
+                    if (!enlarged) return std::unexpected(enlarged.error().detail);
+                    const auto raster = fontRuntime->render(*text, White, true);
+                    const auto native = fontRuntime->setSize(selectedSettings.size);
+                    if (!native) return std::unexpected(native.error().detail);
+                    if (!raster) return std::unexpected(raster.error().detail);
+                    const auto blitted = data::blitStraightRGBA8(image, *raster, x * scale, 0, data::BitmapBlitMode::SourceOver);
+                    if (!blitted) return std::unexpected(blitted.error());
+                }
                 const auto updated = playback.runtimeBitmaps().update(
-                    *textSurfaces_[index], std::move(image));
+                    *textSurfaces_[index], std::move(image), modernAA ? std::optional<std::array<float,4>>{{0,0,float(CashWidth),float(CashHeight)}} : std::nullopt, modernAA);
                 if (!updated) return std::unexpected(updated.error());
                 textCache_[index] = *text;
+                modernAA_[index] = modernAA;
+                fontSettings_[index] = selectedSettings;
                 changedTextSurfaces.push_back(*textSurfaces_[index]);
             }
         }
@@ -210,5 +237,6 @@ namespace monopoly::tradeui
         textSurfaces_.fill(std::nullopt);
         textCache_.fill(std::nullopt);
         current_.clear();
+        modernAA_.fill(false); fontSettings_.fill(std::nullopt);
     }
 }
