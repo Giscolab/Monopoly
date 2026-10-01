@@ -829,6 +829,14 @@ if(MONOPOLY_BLENDER_EXECUTABLE
         COMMENT "Exporting separate measured board and gameplay-house prototypes"
         VERBATIM
     )
+    add_custom_target(MonopolyExportGameplayHouse
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --python-exit-code 1 --python "${MONOPOLY_BLENDER_EXPORT_SCRIPT}"
+            -- --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --include-house --skip-tokens --smooth-house-edges
+        COMMENT "Exporting the recovered gameplay house with smooth authored bevels"
+        VERBATIM
+    )
     add_custom_target(MonopolyExportGameplayHotel
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b
             --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_gameplay_hotel.py"

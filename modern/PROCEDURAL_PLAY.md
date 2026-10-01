@@ -18,6 +18,7 @@ The qualified procedural bake must exist first; normal builds never run Blender.
 ```powershell
 cmake --build modern/build --config Debug --target MonopolyExportProceduralScene
 cmake --build modern/build --config Debug --target MonopolyExportProceduralGameplayScene
+cmake --build modern/build --config Debug --target MonopolyExportGameplayHouse
 cmake --build modern/build --config Debug --target MonopolyModern
 ```
 
@@ -71,3 +72,21 @@ the property and changed player g's visible balance from $1500 to $1300.
 Modern token movement and the retail double-roll continuation were observed.
 F11 switched to the actual desktop fullscreen framebuffer (4096x2160), with
 60.0 FPS displayed in that observed state, and toggled back to windowed mode.
+
+## Gameplay house edge qualification
+
+`MonopolyExportGameplayHouse` exports only the recovered `Maison jeu avant 00`
+prototype. It evaluates temporary copies, increases the authored bevel from two
+segments to four, and exports hardened weighted normals without changing its
+bounds, pivot, two materials or gameplay scale. The recovered blend stays intact.
+The ordinary exporter remains byte-identical when this opt-in flag is absent.
+
+Matched1920x1080 GPU closeups are in
+`build/house-edge-polish-20261001/gpu/before/modern-house-closeup.png` and
+`gpu/after/modern-house-closeup.png`. The existing production scene probe now
+accepts `--house-closeup --tabletop-samples <runtime-data>` to frame the real
+catalog house at historical square1, slot2. This is an offscreen qualification
+layout, not a saved game. Softer roof edges are visible; diagonal self-shadow
+bands exposed by the closeup remain under investigation. Degenerate iron bevel
+triangles inherited from the authoring mesh increase22 to34, with no new
+nondegenerate zero normals. Total house geometry824 triangles; bounds drift0.

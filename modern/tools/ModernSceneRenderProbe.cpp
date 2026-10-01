@@ -413,7 +413,8 @@ int main(int argc, char** argv)
             throw std::runtime_error("Usage: ModernSceneRenderProbe <modern-assets-root> "
                 "<shader-directory> <existing-build-output-directory> "
                 "[board/paris_board_runtime.glb] [--environment] OR "
-                "--token-frame <runtime-root> <sequence-id> <tick:0..36000> <root-priority> [--benchmark] OR --token-turntable <slug-or-index>");
+                "--token-frame <runtime-root> <sequence-id> <tick:0..36000> <root-priority> [--benchmark] OR --token-turntable <slug-or-index>; "
+                "--house-closeup requires --tabletop-samples <runtime-root>");
         const std::filesystem::path assetRoot{argv[1]}, shaders{argv[2]};
         const auto outputDir = std::filesystem::canonical(argv[3]);
         require(std::filesystem::is_directory(outputDir), "Output directory must exist");
@@ -428,6 +429,7 @@ int main(int argc, char** argv)
         std::filesystem::path relativeBoard{"board/paris_board_runtime.glb"};
         bool includeEnvironment = false, boardArgument = false, includeCity = false;
         bool benchmarkToken = false;
+        bool houseCloseup = false;
         unsigned polishLevel = 0;
         unsigned cameraYaw = 28, cameraElevation = 55, uiSafePercent = 0;
         std::optional<std::filesystem::path> tabletopSamples;
@@ -449,6 +451,8 @@ int main(int argc, char** argv)
             { if (++i >= argc) throw std::runtime_error("--ui-safe-percent requires 0..40"); uiSafePercent = number(argv[i],40); }
             else if (std::string{argv[i]} == "--tabletop-samples")
             { if (++i >= argc) throw std::runtime_error("--tabletop-samples requires runtime-root"); tabletopSamples = argv[i]; }
+            else if (std::string{argv[i]} == "--house-closeup")
+            { if(houseCloseup)throw std::runtime_error("Duplicate --house-closeup");houseCloseup=true; }
             else if (std::string{argv[i]} == "--animation-tick")
             { if (++i >= argc) throw std::runtime_error("--animation-tick requires 0..600"); animationTick = number(argv[i],600); }
             else if (std::string{argv[i]} == "--benchmark") benchmarkToken = true;
@@ -469,12 +473,14 @@ int main(int argc, char** argv)
         }
         if(turntable)
         {
-            if(tokenFrame || includeEnvironment || boardArgument || tabletopSamples || benchmarkToken || polishLevel || animationTick)
+            if(tokenFrame || includeEnvironment || boardArgument || tabletopSamples || benchmarkToken || polishLevel || animationTick || houseCloseup)
                 throw std::runtime_error("Turntable cannot be combined with board/CNK/polish modes");
             tokenTurntable(assetRoot,shaders,outputDir,*turntable);return 0;
         }
         if (tokenFrame && (includeEnvironment || boardArgument))
             throw std::runtime_error("Token-frame and board presentation modes cannot be combined");
+        if(houseCloseup && (!tabletopSamples || tokenFrame))
+            throw std::runtime_error("--house-closeup requires tabletop board samples");
         std::vector<sequence::SequenceMeshRenderItem> items;
         if (tokenFrame) items = loadTokenFrame(assetRoot, *tokenFrame);
         else
@@ -558,7 +564,16 @@ int main(int argc, char** argv)
         engine::SequenceWorld3DSlot slot;
         require(slot.sync(items).has_value(), "Production scene slot sync");
         std::vector<sequence::SequenceMeshRenderItem> framingItems=items;
-        if(!tokenFrame && polishLevel >= 2)
+        if(houseCloseup)
+        {
+            // Keep every production scene item and its historical placement.
+            // Only camera fitting changes: sample2 is square1, house slot2,
+            // nearest this camera so the other two houses do not obscure it.
+            std::erase_if(framingItems,[](const auto& item){return item.node!=0x8000FFF800000002ULL;});
+            require(framingItems.size()==1,"House closeup requires actual square1 slot2 sample");
+            std::cout<<"house_closeup\tsquare1 slot2; actual catalog mesh and historical transform\n";
+        }
+        else if(!tokenFrame && polishLevel >= 2)
         {
             std::erase_if(framingItems,[](const auto& item)
             {
@@ -579,7 +594,7 @@ int main(int argc, char** argv)
         for (unsigned axis = 0; axis < 3; ++axis)
             radiusSquared += std::pow((bounds.maximum[axis] - bounds.minimum[axis]) * .5F, 2.0F);
         const float radius = std::max(.01F, std::sqrt(radiusSquared));
-        if (tokenFrame)
+        if (tokenFrame || houseCloseup)
         {
             camera.location = {center[0] + radius * 1.3F,
                 center[1] + radius * .9F, center[2] - radius * 2.7F};
@@ -588,7 +603,7 @@ int main(int argc, char** argv)
             camera.forward[axis] = center[axis] - camera.location[axis];
         camera.up = {0, 1, 0}; camera.fieldOfView = .7853981633974483F;
         camera.nearPlane = 10; camera.farPlane = 2500;
-        if (tokenFrame)
+        if (tokenFrame || houseCloseup)
         {
             camera.nearPlane = radius * .01F;
             camera.farPlane = radius * 8;
@@ -619,7 +634,7 @@ int main(int argc, char** argv)
                 std::abs(dot(relative, up)) * static_cast<float>(Width) / Height) / depth);
         }
         camera.fieldOfView = 2 * std::atan(requiredTan * 1.08F);
-        if (polishLevel && !tokenFrame) camera = engine::modernBoardPresentationCamera(bounds, static_cast<float>(Width)/Height, static_cast<float>(cameraElevation), static_cast<float>(cameraYaw), uiSafePercent/100.0F);
+        if (polishLevel && !tokenFrame && !houseCloseup) camera = engine::modernBoardPresentationCamera(bounds, static_cast<float>(Width)/Height, static_cast<float>(cameraElevation), static_cast<float>(cameraYaw), uiSafePercent/100.0F);
         std::cout << "polish_level\t" << polishLevel << '\n';
         require(slot.configureView({0, 0, static_cast<int>(Width), static_cast<int>(Height)},
             camera).has_value(), "Production camera configuration");
@@ -690,7 +705,7 @@ int main(int argc, char** argv)
         std::vector<unsigned char> pixels(Width * Height * 4);
         std::memcpy(pixels.data(), mapped, pixels.size());
         SDL_UnmapGPUTransferBuffer(gpu.device, gpu.transfer);
-        const auto output = outputDir / (tokenFrame ? "modern-token-probe.ppm" : "modern-scene-probe.ppm");
+        const auto output = outputDir / (houseCloseup ? "modern-house-closeup.ppm" : tokenFrame ? "modern-token-probe.ppm" : "modern-scene-probe.ppm");
         std::ofstream image(output, std::ios::binary);
         image << "P6\n" << Width << ' ' << Height << "\n255\n";
         std::size_t foreground = 0, colored = 0, opaque = 0;

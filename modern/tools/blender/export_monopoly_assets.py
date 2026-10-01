@@ -293,7 +293,8 @@ def reflect_runtime_print(mesh, source):
 
 
 def export_static_group(collection_names, kind, slug, output_dir, local_root=None,
-                        object_bases=None, alignment=None, procedural_baker=None):
+                       object_bases=None, alignment=None, procedural_baker=None,
+                       smooth_house_edges=False):
     """Export evaluated copies only; retain the recovered scene untouched."""
     sources = {}
     for name in collection_names:
@@ -338,6 +339,9 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
     created_materials = {}
     material_records = []
     reflected_prints = []
+    house_records = []
+    reference_low = [float("inf")] * 3
+    reference_high = [float("-inf")] * 3
     low = [float("inf")] * 3
     high = [float("-inf")] * 3
     try:
@@ -346,7 +350,57 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
             if procedural_baker:
                 depsgraph = bpy.context.evaluated_depsgraph_get()
             evaluated = source.evaluated_get(depsgraph)
-            mesh = bpy.data.meshes.new_from_object(evaluated, depsgraph=depsgraph)
+            if smooth_house_edges:
+                reference = bpy.data.meshes.new_from_object(evaluated, depsgraph=depsgraph)
+                try:
+                    for vertex in reference.vertices:
+                        p = basis @ source.matrix_world @ vertex.co
+                        for axis, value in enumerate((p.x, p.z, -p.y)):
+                            reference_low[axis] = min(reference_low[axis], value)
+                            reference_high[axis] = max(reference_high[axis], value)
+                finally:
+                    bpy.data.meshes.remove(reference)
+                copy = source.copy()
+                copy.name = "HOUSE_POLISH_" + name
+                copy.data = source.data.copy()
+                temporary.objects.link(copy)
+                copied_mesh = copy.data
+                try:
+                    bevels = [modifier for modifier in copy.modifiers if modifier.type == "BEVEL"]
+                    if not bevels or copy.type != "MESH":
+                        raise RuntimeError(f"{name}: house polish requires an authored mesh bevel")
+                    records = []
+                    for modifier in bevels:
+                        records.append({"width": modifier.width, "profile": modifier.profile,
+                                        "source_segments": modifier.segments, "segments": 4})
+                        modifier.segments = 4
+                        modifier.harden_normals = True
+                        modifier.face_strength_mode = "FSTR_ALL"
+                    for polygon in copied_mesh.polygons:
+                        polygon.use_smooth = True
+                    weighted = copy.modifiers.new("House export weighted normals", "WEIGHTED_NORMAL")
+                    weighted.keep_sharp = True
+                    weighted.use_face_influence = True
+                    bpy.context.view_layer.update()
+                    depsgraph = bpy.context.evaluated_depsgraph_get()
+                    mesh = bpy.data.meshes.new_from_object(copy.evaluated_get(depsgraph), depsgraph=depsgraph)
+                    mesh.calc_loop_triangles()
+                    largest = max(polygon.area for polygon in mesh.polygons)
+                    planar = [polygon for polygon in mesh.polygons if polygon.area >= largest * 0.2]
+                    error = max((math.degrees(mesh.corner_normals[loop].vector.angle(polygon.normal))
+                                 for polygon in planar for loop in polygon.loop_indices), default=0.0)
+                    house_records.append({"object": name, "bevels": records,
+                        "triangles": len(mesh.loop_triangles), "large_face_count": len(planar),
+                        "large_face_max_normal_angle_degrees": error})
+                    if error > 0.1:
+                        bpy.data.meshes.remove(mesh)
+                        raise RuntimeError(f"{name}: large planar face normal drift {error} degrees")
+                finally:
+                    bpy.data.objects.remove(copy, do_unlink=True)
+                    if copied_mesh.users == 0:
+                        bpy.data.meshes.remove(copied_mesh)
+            else:
+                mesh = bpy.data.meshes.new_from_object(evaluated, depsgraph=depsgraph)
             if procedural_baker:
                 for index, slot in enumerate(source.material_slots):
                     material = slot.material.copy()
@@ -384,6 +438,10 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
         if not all(math.isfinite(value) for value in low + high):
             raise RuntimeError(f"{slug}: empty or non-finite geometry bounds")
         bounds = {"min": low, "max": high}
+        if smooth_house_edges:
+            drift = max(abs(a-b) for a,b in zip(low+high, reference_low+reference_high))
+            if drift > 1e-6:
+                raise RuntimeError(f"house polish changes authored bounds by {drift} metres")
         root["bounds_min_y_up"] = low
         root["bounds_max_y_up"] = high
         root["authoring_units"] = "metres"
@@ -422,6 +480,11 @@ def export_static_group(collection_names, kind, slug, output_dir, local_root=Non
             "materials": "Unbaked Principled factors; procedural textures are not preserved",
             "animations": False,
         }
+        if smooth_house_edges:
+            manifest["house_edge_polish"] = {"source_scene_unchanged": True,
+                "source_blend_sha256": hashlib.sha256(Path(bpy.data.filepath).read_bytes()).hexdigest(),
+                "bounds_max_drift_metres": drift, "objects": house_records,
+                "normal_policy": "four-segment authored bevels, hardened and face-influenced weighted normals"}
         if alignment is not None:
             manifest["retail_alignment"] = alignment
             manifest["materials"] = "Authored mascot image alpha masked at 0.5; other Principled alpha/transmission approximated as opaque; procedural textures are not preserved"
@@ -569,16 +632,23 @@ def main():
                         default=Path(__file__).resolve().parents[2] / "build/retail-reference-obj/boardmed.obj",
                         help="production-decoder boardmed OBJ used to verify measured alignment")
     parser.add_argument("--include-house", action="store_true", help="Export one grounded gameplay-house prototype")
+    parser.add_argument("--smooth-house-edges", action="store_true",
+                        help="House-only build candidate: four-segment authored bevels and weighted normals on copies")
     parser.add_argument("--skip-tokens", action="store_true", help="Export only explicitly requested static groups")
     parser.add_argument("--bake-procedural", action="store_true", help="Bake source procedural graphs on copies; stage build-only candidates transactionally")
     args = parser.parse_args(blender_arguments())
 
     output_dir = Path(args.output).resolve()
+    if args.smooth_house_edges:
+        if not args.skip_tokens or not args.include_house or args.include_board or args.align_retail_board or args.bake_procedural:
+            raise RuntimeError("house edge polish requires --skip-tokens --include-house only")
+        if not output_dir.is_relative_to(Path(__file__).resolve().parents[2] / "build"):
+            raise RuntimeError("house edge candidates must remain under modern/build")
     staging = None
     baker = None
     requested_output = output_dir
     source_path = Path(bpy.data.filepath)
-    before = hashlib.sha256(source_path.read_bytes()).hexdigest() if args.bake_procedural else None
+    before = hashlib.sha256(source_path.read_bytes()).hexdigest() if args.bake_procedural or args.smooth_house_edges else None
     if args.bake_procedural:
         if not args.skip_tokens or not args.align_retail_board or args.include_board or args.include_house:
             raise RuntimeError("procedural board bake requires --skip-tokens --align-retail-board only")
@@ -610,7 +680,10 @@ def main():
         collection = bpy.data.collections.get(name)
         if collection is None:
             raise RuntimeError(f"missing Blender collection: {name}")
-        export_static_group([name], "building", "house", output_dir, root_for_collection(collection))
+        export_static_group([name], "building", "house", output_dir, root_for_collection(collection),
+                            smooth_house_edges=args.smooth_house_edges)
+    if args.smooth_house_edges and hashlib.sha256(source_path.read_bytes()).hexdigest() != before:
+        raise RuntimeError("recovered source changed during house edge export")
 
     missing = [
         ("cannon", 0),
