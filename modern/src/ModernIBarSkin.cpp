@@ -63,9 +63,16 @@ namespace monopoly::ibar
         constexpr std::array<std::array<int, 3>, 6> PlayerColours{{
             {255, 0, 0}, {0, 0, 255}, {60, 150, 60},
             {255, 255, 0}, {255, 0, 255}, {255, 128, 0}}};
-        struct Property { unsigned index{}, style{}; };
+        struct Property { unsigned index{}, style{}; bool miniature{}; };
         std::optional<Property> property(data::DataId root)
         {
+            if (data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Patterns))
+            {
+                const auto tag=data::dataTag(root);
+                if(tag>=0x05E6 && tag<=0x0601) return Property{unsigned(tag-0x05E6),0,true};
+                if(tag>=0x05CA && tag<=0x05E5) return Property{unsigned(tag-0x05CA),2,true};
+                return {};
+            }
             if (data::dataGroup(root) != data::legacyGroupValue(data::LegacyGroupId::Main)) return {};
             const auto tag = data::dataTag(root);
             if (tag < 0x0163 || tag > 0x01B6) return {};
@@ -131,6 +138,8 @@ namespace monopoly::ibar
 
     bool ModernIBarSkin::supports(data::DataId root) const noexcept
     {
+        if(const auto p=property(root);p && p->miniature)
+            return language_==data::LanguageId::EnglishUs && properties_ && propertyText_ && presentationContext_;
         const bool language = language_ == data::LanguageId::French ||
             language_ == data::LanguageId::EnglishUs || language_ == data::LanguageId::EnglishUk;
         if (scoreToken(root)) return language_ == data::LanguageId::EnglishUs && tokenImages_ && presentationContext_;
@@ -147,13 +156,18 @@ namespace monopoly::ibar
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
         if (!w || !h || w > 1600 || h > 600) return original;
+        const auto miniature=property(root);
+        if(miniature && miniature->miniature &&
+            (!principal || original->dataId!=root || original->sourceType!=data::LegacyDataType::Uap ||
+             w!=36 || h!=42 || original->image.pixels.size()!=std::size_t(w)*h*4 ||
+             !presentationContext_ || !presentationContext_())) return original;
         if (const auto token = scoreToken(root))
         {
             if (!principal || original->dataId != root || w != ScoreTokenSizes[*token][0] ||
                 h != ScoreTokenSizes[*token][1] || !presentationContext_ || !presentationContext_() ||
                 original->image.pixels.size() != std::size_t(w)*h*4) return original;
-            const Key key{root,w,h,true,std::array<float,9>{},0,{}};
-            if (const auto found=cache_.find(key);found!=cache_.end())return found->second;
+            const Key key{root,w,h,true,std::array<float,9>{},0,{},nullptr};
+            if (const auto found=cache_.find(key);found!=cache_.end())return found->second.replacement;
             const auto source=tokenImages_(std::uint8_t(*token));
             if (!source || source->width!=768 || source->height!=640 || source->pixels.size()!=std::size_t(768)*640*4)
                 return original;
@@ -182,7 +196,7 @@ namespace monopoly::ibar
                 std::copy_n(source->pixels.data()+src,4,image.pixels.data()+dst);
             }
             if(cache_.size()>=128)cache_.clear();
-            cache_.emplace(key,result);return result;
+            cache_.emplace(key,CachedArtwork{result,{}});return result;
         }
         const auto deed = deeds_.find(root);
         const auto draw = drawCards_.find(root);
@@ -267,8 +281,9 @@ namespace monopoly::ibar
                 std::clamp(int(std::ceil(right)),0,int(w)),std::clamp(int(std::ceil(bottom)),0,int(h))};
             if (band.right-band.left < 8 || band.bottom-band.top < 8) return original;
         }
-        const Key key{root, w, h, principal, b && rasterToWorld ? rasterToWorld->values : std::array<float,9>{}, activeLayout, deedPlacement};
-        if (const auto it = cache_.find(key); it != cache_.end()) return it->second;
+        const Key key{root, w, h, principal, b && rasterToWorld ? rasterToWorld->values : std::array<float,9>{},
+            activeLayout, deedPlacement, miniature && miniature->miniature ? original.get() : nullptr};
+        if (const auto it = cache_.find(key); it != cache_.end()) return it->second.replacement;
         const auto p = property(root);
         std::optional<PropertyDescriptor> descriptor;
         if (p && principal)
@@ -416,7 +431,7 @@ namespace monopoly::ibar
                 }
             }
             if (cache_.size()>=128) cache_.clear();
-            cache_.emplace(key,result);
+            cache_.emplace(key,CachedArtwork{result,{}});
             return result;
         }
         if (p)
@@ -481,8 +496,11 @@ namespace monopoly::ibar
                     caption(image, *price, image.height - 23, 17, p->style == 1 ? 115 : 25);
                 }
             }
+            if(p->miniature)
+                for(unsigned y=0;y<image.height;++y)for(unsigned x=0;x<image.width;++x)
+                    image.pixels[(std::size_t(y)*image.width+x)*4+3]=original->image.pixels[(std::size_t(y/3)*w+x/3)*4+3];
             if (cache_.size() >= 128) cache_.clear();
-            cache_.emplace(key, result);
+            cache_.emplace(key, CachedArtwork{result,p->miniature?original:nullptr});
             return result;
         }
         const auto playerColour = scoreColour(root);
@@ -554,7 +572,7 @@ namespace monopoly::ibar
                 }
         }
         if (cache_.size() >= 128) cache_.clear();
-        cache_.emplace(key, result);
+        cache_.emplace(key, CachedArtwork{result,{}});
         return result;
     }
 }

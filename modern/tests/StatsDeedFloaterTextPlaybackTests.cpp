@@ -138,6 +138,64 @@ namespace
             "deed floater text Stop removes runtime overlay");
     }
 
+    void testModernPresentation()
+    {
+        SyntheticTextResources resources(texts());fonts::Runtime font;loadRealTestArial(font);
+        require(font.saveSettings(0).has_value(),"save authoritative floater font");
+        const auto originalFont=font.settings();
+        engine::SequencePlayback playback(resources.service.snapshot());statsui::DeedFloaterTextPlayback owner;
+        auto state=deedState(24,236);const auto rules=game();
+        auto sync=[&](bool modern){return owner.sync(state,rules,{},13,display::Screen2D::Portfolio,&font,playback,false,modern);};
+        require(sync(false).has_value() && playback.update(0).has_value() && playback.update(60).has_value(),"native floater has actual glyphs at clock60");
+        const auto native=*at(playback,410,220);const auto roots=playback.runtime().roots();
+        const auto nodes=playback.world2D().order();
+        std::uint64_t nativeHash=14695981039346656037ULL;
+        for(const auto byte:native.asset->image.pixels){nativeHash^=byte;nativeHash*=1099511628211ULL;}
+        std::cout<<"native deed floater RGBA FNV1a64="<<std::hex<<nativeHash<<std::dec<<'\n';
+        require(textRefreshRejectsFullQueue(playback,[&]{return sync(true);},60),"saturated modern refresh preserves native raster and queue clocks");
+        require(font.setSize(19).has_value(),"set unrelated caller font size");font.setItalic(true);font.setUnderline(true);font.setStrikeOut(true);font.setWeight(900);
+        const auto caller=font.settings();
+        require(sync(true).has_value() && font.settings()==caller && playback.commands().pendingCount()==1 && playback.update(60).has_value(),
+            "modern floater restores full caller size/style and refreshes once");
+        const auto modern=*at(playback,410,220);
+        require(modern.clock==native.clock && modern.priority==native.priority && modern.contentsDataId==native.contentsDataId &&
+            playback.runtime().roots()==roots && playback.world2D().order()==nodes &&
+            engine::SequenceWorld2DSlot::transformPoint(modern.worldTransform,0,0)==engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,0,0) &&
+            engine::SequenceWorld2DSlot::transformPoint(modern.worldTransform,1200,705)==engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,400,235),
+            "modern floater keeps original nodes roots clock60 priority and placement");
+        require(modern.asset->image.width==1200 && modern.asset->image.height==705 && modern.asset->preferLinearFiltering &&
+            modern.asset->presentationRect==std::optional<std::array<float,4>>{{0,0,400,235}},
+            "modern floater rasterizes3x with exact logical400x235 footprint");
+        bool blended=false,transparent=false;
+        for(std::size_t i=3;i<modern.asset->image.pixels.size();i+=4){blended|=modern.asset->image.pixels[i]>0&&modern.asset->image.pixels[i]<255;transparent|=modern.asset->image.pixels[i]==0;}
+        require(blended && transparent,"actual glyph raster includes blended coverage and transparent layout");
+        const auto separator=(std::size_t(15)*1200+193*3)*4;
+        require(modern.asset->image.pixels[separator]==13 && modern.asset->image.pixels[separator+1]==35 && modern.asset->image.pixels[separator+2]==38,
+            "modern separator uses deepteal in unchanged authored rectangle");
+        require(sync(true).has_value() && playback.commands().pendingCount()==0 && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,
+            "unchanged effective font and content reuse modern immutable cache");
+        require(font.setSize(23).has_value() && sync(true).has_value() && font.settings().size==23 && playback.commands().pendingCount()==0,
+            "unrelated caller size leaves logical metrics and cache unchanged");
+        const auto warmCaller=font.settings();
+        const auto warmSaved=*font.savedSettings(0);
+        for(unsigned frame=0;frame<100;++frame)
+            require(sync(true).has_value() && playback.commands().pendingCount()==0 && font.settings()==warmCaller &&
+                *font.savedSettings(0)==warmSaved && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,
+                "100 warm floater cache probes preserve caller/saved font and immutable raster without redraw");
+        font.setItalic(true);require(font.saveSettings(0).has_value() && sync(true).has_value() && playback.update(60).has_value(),
+            "effective saved face style refreshes modern glyphs at same root clock");
+        require(at(playback,410,220)->asset!=modern.asset && at(playback,410,220)->clock==native.clock,
+            "effective font cache invalidates without restarting floater");
+        require(font.setSize(originalFont.size).has_value(),"restore original saved font size");font.setWeight(originalFont.weight);
+        font.setItalic(originalFont.italic);font.setUnderline(originalFont.underline);font.setStrikeOut(originalFont.strikeOut);
+        require(font.saveSettings(0).has_value() && sync(false).has_value() && playback.update(60).has_value(),"return to native floater presentation");
+        const auto restored=*at(playback,410,220);
+        require(restored.asset->image.pixels==native.asset->image.pixels && !restored.asset->presentationRect && !restored.asset->preferLinearFiltering &&
+            restored.clock==native.clock && restored.worldTransform.values==native.worldTransform.values,
+            "native branch restores exact pre-modern RGBA hash/pixels and geometry");
+        require(!owner.sync(state,rules,{},13,display::Screen2D::Portfolio,nullptr,playback,false,true) && playback.commands().pendingCount()==0 &&
+            playback.runtimeBitmaps().asset(restored.contentsDataId)==restored.asset,"modern missing-font failure leaves native cache and queue intact");
+    }
     void testPopupHideAndRestore()
     {
         SyntheticTextResources resources(texts());
@@ -216,6 +274,7 @@ int main()
     try
     {
         testTextLifecycle();
+        testModernPresentation();
         testFailures();
         testPopupHideAndRestore();
         std::cout << "Stats Deed floater text playback tests passed\n";

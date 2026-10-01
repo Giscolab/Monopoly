@@ -2600,7 +2600,7 @@ namespace monopoly::engine
             const auto statsDeedFloaterTextSync = statsDeedFloaterTextPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.system, displayState.desired2DView,
-                fontPlayback(), *session, calculatorDeedPopupVisible);
+                fontPlayback(), *session, calculatorDeedPopupVisible, modernTradeText);
             if (!statsDeedFloaterTextSync)
                 return SDL_SetError("UDStats Deed floater text playback: %s",
                     statsDeedFloaterTextSync.error().c_str());

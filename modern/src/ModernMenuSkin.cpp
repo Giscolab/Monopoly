@@ -8,7 +8,7 @@ namespace monopoly::menu
 {
     namespace
     {
-        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction };
+        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction, PortfolioFrame, PortfolioAmount };
         struct Descriptor { Kind kind; std::string_view label; int colour{-1}; int token{-1}; };
         // StatsCalculatorLogic function order; exact Main DAT idle leaves, pressed leaf+1.
         constexpr std::array<data::DataTag,8> CalculatorFunctionLeaves{
@@ -93,6 +93,8 @@ namespace monopoly::menu
                         return Descriptor{Kind::TokenThumbnail, {}, -1, int(token)};
             if (root >= 0x0002000B && root <= 0x0002000E) return Descriptor{Kind::BankSummary,{}};
             if (root == 0x000200CD) return Descriptor{Kind::DeedsFrame,{}};
+            if (root == 0x000200C6) return Descriptor{Kind::PortfolioFrame,{}};
+            if (root == 0x000200D0) return Descriptor{Kind::PortfolioAmount,{}};
             if (root >= 0x0002006D && root <= 0x00020074)
                 return Descriptor{Kind::CalculatorFunction,CalculatorFunctionLabels[root-0x0002006D]};
             if (root >= 0x00020075 && root <= 0x0002007C)
@@ -340,7 +342,8 @@ namespace monopoly::menu
         }
         const bool statsPanel = descriptor.kind == Kind::StatsPanel || descriptor.kind == Kind::CalculatorPanel ||
             descriptor.kind == Kind::CalculatorDescription || descriptor.kind == Kind::StatsBackground ||
-            descriptor.kind == Kind::BankSummary || descriptor.kind == Kind::DeedsFrame;
+            descriptor.kind == Kind::BankSummary || descriptor.kind == Kind::DeedsFrame ||
+            descriptor.kind == Kind::PortfolioFrame || descriptor.kind == Kind::PortfolioAmount;
         if (statsPanel)
         {
             data::DataId expected = root;
@@ -363,6 +366,10 @@ namespace monopoly::menu
                   expected = leaves[root-0x0002000B]; width = 786; height = 223; }
                 else if (descriptor.kind == Kind::DeedsFrame)
                 { width = 790; height = 215; }
+                else if (descriptor.kind == Kind::PortfolioFrame)
+                { width = 400; height = 235; }
+                else if (descriptor.kind == Kind::PortfolioAmount)
+                { width = 52; height = 13; }
                 else if (descriptor.kind == Kind::StatsPanel)
                 { const bool large = root <= 0x0002034E; width = large ? 198 : 130; height = large ? 222 : 226; }
                 else if (descriptor.kind == Kind::CalculatorPanel)

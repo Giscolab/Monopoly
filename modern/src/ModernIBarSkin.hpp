@@ -96,7 +96,15 @@ namespace monopoly::ibar
         DeedTextRasterizer drawText_;
         DescriptorProvider properties_;
         TextRasterizer propertyText_;
-        using Key = std::tuple<data::DataId, std::uint32_t, std::uint32_t, bool, std::array<float,9>, int, std::optional<std::array<float,4>>>;
-        std::map<Key, std::shared_ptr<const data::BitmapRuntimeAsset>> cache_;
+        using Key = std::tuple<data::DataId, std::uint32_t, std::uint32_t, bool, std::array<float,9>, int,
+            std::optional<std::array<float,4>>, const data::BitmapRuntimeAsset*>;
+        struct CachedArtwork
+        {
+            std::shared_ptr<const data::BitmapRuntimeAsset> replacement;
+            // Keeps miniature identity alive so allocator address reuse cannot
+            // produce a stale derivative. Bounded together with the128 entries.
+            std::shared_ptr<const data::BitmapRuntimeAsset> original;
+        };
+        std::map<Key, CachedArtwork> cache_;
     };
 }

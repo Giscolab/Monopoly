@@ -802,6 +802,52 @@ namespace
         require(failing.substitute(0x2006E,net)==net,"Failure of either caption line preserves whole original function tile");
     }
 
+    void testMeasuredPortfolioFrames()
+    {
+        unsigned captionCalls=0;
+        const auto raster=[&](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { ++captionCalls;return label(); };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        menu::ModernMenuSkin uk(data::BoardEdition::Usa,data::LanguageId::EnglishUk,raster);
+        for(const auto spec:{std::array<unsigned,3>{0x200C6,400,235},std::array<unsigned,3>{0x200D0,52,13}})
+        {
+            auto source=std::make_shared<data::BitmapRuntimeAsset>(*original(spec[1],spec[2]));source->dataId=spec[0];
+            for(std::size_t i=3;i<source->image.pixels.size();i+=4)source->image.pixels[i]=std::uint8_t((i/4*53)%256);
+            const auto before=source->image.pixels;const auto result=skin.substitute(spec[0],source);
+            require(result!=source && result==skin.substitute(spec[0],source) && result->dataId==source->dataId &&
+                result->preferLinearFiltering && !result->presentationRect &&
+                result->image.width==spec[1]*3 && result->image.height==spec[2]*3 && source->image.pixels==before,
+                "Exact portfolio frame and amount pill retain logical footprint, immutable identity and derivative cache");
+            const auto& image=result->image;
+            for(unsigned y=0;y<image.height;++y)for(unsigned x=0;x<image.width;++x)
+                require(image.pixels[(std::size_t(y)*image.width+x)*4+3]==
+                    source->image.pixels[(std::size_t(y/3)*source->image.width+x/3)*4+3],
+                    "Portfolio shell preserves every clear, fractional and opaque alpha pixel");
+            require(image.pixels[0]==188 && image.pixels[1]==157 && image.pixels[2]==94,
+                "Portfolio shells use existing brass rim");
+            const auto center=(std::size_t(image.height/2)*image.width+image.width/2)*4;
+            require(image.pixels[center]<40 && image.pixels[center+1]<80 && image.pixels[center+2]<80,
+                "Portfolio frame and narrow amount pill use quiet deep teal behind separate value text");
+            auto wrongSize=std::make_shared<data::BitmapRuntimeAsset>(*original(spec[1]-1,spec[2]));wrongSize->dataId=spec[0];
+            auto wrongLeaf=std::make_shared<data::BitmapRuntimeAsset>(*source);++wrongLeaf->dataId;
+            auto otherOwner=std::make_shared<data::BitmapRuntimeAsset>(*source);
+            require(skin.substitute(spec[0],source,false)==source && skin.substitute(spec[0],wrongSize)==wrongSize &&
+                skin.substitute(spec[0],wrongLeaf)==wrongLeaf && skin.substitute(spec[0]+0x30000,source)==source &&
+                french.substitute(spec[0],source)==source && uk.substitute(spec[0],source)==source &&
+                skin.substitute(spec[0],otherOwner)!=result,
+                "Portfolio requires exact principal Main identity, dimensions and USA/en-US context without stale owner reuse");
+            auto malformed=std::make_shared<data::BitmapRuntimeAsset>(*source);malformed->image.pixels.pop_back();
+            require(skin.substitute(spec[0],malformed)==malformed,"Malformed portfolio frame keeps exact retail pointer");
+        }
+        require(captionCalls==0,"Portfolio shell never regenerates separate floater or right-anchored amount text");
+        for(unsigned root=0x200C7;root<=0x200CC;++root)
+        { const auto ownerBar=original(400,3);require(!skin.supports(root) && skin.substitute(root,ownerBar)==ownerBar,
+            "All six authored portfolio owner-colour bars remain unchanged"); }
+        const auto dynamic=original(52,13);
+        require(skin.substitute(0xFFFE0001,dynamic)==dynamic,"Separate dynamic portfolio value surface remains native");
+    }
+
     void testMeasuredBankAndDeedsViews()
     {
         std::string captionText;
@@ -954,7 +1000,7 @@ namespace
 }
 int main()
 {
-    try { testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention();
+    try { testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

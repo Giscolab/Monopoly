@@ -62,6 +62,12 @@ namespace
         checked(font.saveSettings(0), "save display font slot zero");
         checked(font.setSize(7), "derive chat point size");
         checked(font.saveSettings(9), "save chat font slot nine");
+        const auto activeBeforeRead = font.settings();
+        const auto savedDisplay = font.savedSettings(0);
+        require(savedDisplay && *savedDisplay == original &&
+            font.settings() == activeBeforeRead && !font.savedSettings(1) &&
+            !font.savedSettings(10) && !font.savedSettings(static_cast<std::size_t>(-1)),
+            "saved settings inspection preserves active font and rejects unavailable slots");
         font.setItalic(true);
         font.setUnderline(true);
         font.setStrikeOut(true);

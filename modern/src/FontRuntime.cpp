@@ -314,6 +314,11 @@ namespace monopoly::fonts
         return {};
     }
 
+    const Settings* Runtime::savedSettings(std::size_t slot) const noexcept
+    {
+        return slot < SlotCount && slots_[slot] ? &*slots_[slot] : nullptr;
+    }
+
     std::expected<void, Error> Runtime::restoreSettings(std::size_t slot)
     {
         if (slot >= SlotCount || !slots_[slot])

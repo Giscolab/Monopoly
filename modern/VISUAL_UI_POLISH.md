@@ -265,3 +265,38 @@ explanations are preserved. A real Escape during the opening movie now reached
 the main menu without the previously observed Quit prompt; the input filter
 only suppresses repeated Escape key-down, preserving first press and key-up.
 No deterministic repeated-input runtime test was performed.
+
+The Electric Company was individually qualified via the separated Portfolio
+grid hover: `electric-deed-pass16-qualified.jpg`. A five-minute actual-turn
+sample after optimization (no concurrent builds) recorded592 title observations:
+median60.0, p5 58.4, minimum54.3 FPS; 87.5% were at least59.5 FPS. This included
+menu departure, the railroad purchase, AI movement, Chance sending the human
+to jail, and failed jail rolls. It does not establish a continuous60 FPS minimum.
+
+## Portfolio deed miniatures and details
+
+Actual before/after captures: `deed-detail-panel-pass17-before.jpg` and
+`deed-detail-panel-pass17-after.jpg`, plus `miniatures-grid-pass17-after.jpg`.
+The 56 measured normal/mortgaged Patterns miniatures use authentic property
+names, immutable canonical costs and group colors in their exact36x42 footprint.
+Mortgaged cards retain a separate red treatment. Source alpha, hit rectangles,
+owner bars and full-size deed content remain unchanged. The gray detail frame
+and black value bars now follow the teal/brass UI, with optional3x blended
+labels/values at the original logical400x235 footprint. Focused MenuSkin,
+IBarSkin, FloaterText, DeedValueText and FontRuntime tests pass, including
+exact native fallback pixels, saved-font invalidation and clock/root stability.
+
+GPU inspection exposed a warm-grid slowdown near49 FPS. Saved font inspection
+now avoids TTF size/style mutations on cache hits, and miniature cache keys use
+retained immutable source identity instead of scanning all1512 alpha samples
+per card per frame. Runtime cadence after these changes remains to be measured.
+The enlarged fullscreen capture `deeds-fullscreen-pass17-values-qualified.jpg`
+confirms180 for St. James; temporary grid diagnostics also matched all28
+metrics to their canonical costs. No rule or price correction was necessary.
+
+After the constant-time miniature cache correction, `deed-detail-cache-fixed-
+pass17.jpg` and `water-deed-cache-fixed-pass17.jpg` show the actual revised UI.
+A90-second fixed-hover sample recorded178 title observations: median58.9,
+p5 58.1, minimum56.1 FPS in Debug. This improves the observed roughly49 FPS
+regression but remains below a strict sustained60 target; Release qualification
+and continued real-game testing remain outstanding.

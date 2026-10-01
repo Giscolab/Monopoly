@@ -81,6 +81,8 @@ namespace monopoly::fonts
 
         [[nodiscard]] bool ready() const noexcept;
         [[nodiscard]] const Settings& settings() const noexcept;
+        // Read a saved face without resizing the active font or flushing glyph caches.
+        [[nodiscard]] const Settings* savedSettings(std::size_t slot) const noexcept;
 
         [[nodiscard]] std::expected<void, Error> setFont(
             const std::filesystem::path& path,

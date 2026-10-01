@@ -137,15 +137,12 @@ namespace monopoly::statsui
         std::optional<fonts::Settings> effectiveSettings;
         if (!rows.empty() && callerSettings)
         {
-            // Values always use saved slot0 at size8/weight500. Unrelated
-            // caller sizes/styles are not keys for these authoritative glyphs.
-            RestoreFont restore{*fontRuntime, callerSettings};
-            if (const auto selected = fontRuntime->restoreSettings(0); !selected)
-                return std::unexpected(selected.error().detail);
-            if (const auto sized = fontRuntime->setSize(8); !sized)
-                return std::unexpected(sized.error().detail);
-            fontRuntime->setWeight(500);
-            effectiveSettings = fontRuntime->settings();
+            // Values always use saved slot0 at size8/weight500. A read-only
+            // snapshot leaves TTF caches untouched on unchanged frames.
+            const auto* savedSettings=fontRuntime->savedSettings(0);
+            if(!savedSettings)return std::unexpected("font setting slot is unavailable");
+            effectiveSettings=*savedSettings;
+            effectiveSettings->size=8;effectiveSettings->weight=500;
         }
         const bool presentationChanged = modernAA != modernAA_ || effectiveSettings != fontSettings_;
         if (!layoutChanged)

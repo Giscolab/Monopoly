@@ -59,6 +59,8 @@ namespace monopoly::statsui
         void fillRect(data::LegacyBitmapRGBA8& image, Rect rect,
             std::uint32_t colour, std::uint8_t alpha = 255)
         {
+            const int scale=int(image.width/SurfaceWidth);
+            rect={rect.left*scale,rect.top*scale,rect.right*scale,rect.bottom*scale};
             for (int y = std::max(0, rect.top);
                  y < std::min(static_cast<int>(image.height), rect.bottom); ++y)
                 for (int x = std::max(0, rect.left);
@@ -82,6 +84,19 @@ namespace monopoly::statsui
             std::string_view text, int x, int y)
         {
             if (text.empty()) return {};
+            if(image.width==SurfaceWidth*3)
+            {
+                const int logicalSize=font.settings().size;
+                const auto enlarged=font.setSize(logicalSize*3);
+                if(!enlarged)return std::unexpected(enlarged.error().detail);
+                const auto glyphs=font.render(text,TextColour,true);
+                const auto restored=font.setSize(logicalSize);
+                if(!restored)return std::unexpected(restored.error().detail);
+                if(!glyphs)return std::unexpected(glyphs.error().detail);
+                const auto copied=data::blitStraightRGBA8(image,*glyphs,x*3,y*3,data::BitmapBlitMode::SourceOver);
+                if(!copied)return std::unexpected(copied.error());
+                return {};
+            }
             const auto blitted = font.blitText(
                 image, text, x, y, TextColour);
             if (!blitted) return std::unexpected(blitted.error().detail);
@@ -169,7 +184,18 @@ namespace monopoly::statsui
         struct RestoreFont final
         {
             fonts::Runtime& font;
-            ~RestoreFont() { (void)font.restoreSettings(0); }
+            std::optional<fonts::Settings> caller;
+            ~RestoreFont()
+            {
+                if(!caller)(void)font.restoreSettings(0);
+                else
+                {
+                    if(font.settings().fontPath!=caller->fontPath || font.settings().familyName!=caller->familyName)
+                        (void)font.setFont(caller->fontPath,caller->familyName);
+                    (void)font.setSize(caller->size);font.setWeight(caller->weight);
+                    font.setItalic(caller->italic);font.setUnderline(caller->underline);font.setStrikeOut(caller->strikeOut);
+                }
+            }
         };
     }
 
@@ -180,7 +206,7 @@ namespace monopoly::statsui
         int monetarySystem,
         display::Screen2D desiredView,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback, bool deedPopupVisible)
+        engine::SequencePlayback& playback, bool deedPopupVisible, bool modernAA)
     {
         std::optional<int> square;
         // Match UDStats normal-hover !IsPopUpIDOn; the picker owns its preview.
@@ -286,23 +312,31 @@ namespace monopoly::statsui
             *ownerLabel + ':' + *rentLabel + ':' +
             *earningsLabel + ':' + *futureLabel;
 
+        const auto callerSettings=fontRuntime->settings();
+        const auto* savedSettings=fontRuntime->savedSettings(0);
+        if(!savedSettings)return std::unexpected("font setting slot is unavailable");
+        std::optional<fonts::Settings> effectiveSettings{*savedSettings};
+        // Read-only cache probe: never disturb TTF glyph caches on warm hover.
+        // Label/value routines choose fixed sizes/weights during actual raster.
+        effectiveSettings->size=10;effectiveSettings->weight=700;
         const bool contentChanged =
-            !contentKey_ || *contentKey_ != key;
+            !contentKey_ || *contentKey_ != key || modernAA!=modernAA_ || effectiveSettings!=fontSettings_;
         if (visible_ && currentX_ == desiredX && contentChanged &&
             playback.commands().pendingCount() >= sequence::SequenceCommandQueue::Capacity)
             return std::unexpected("sequence command queue cannot fit deed text redraw");
         if (contentChanged)
         {
-            RestoreFont restore{*fontRuntime};
+            RestoreFont restore{*fontRuntime,modernAA ? std::optional{callerSettings} : std::nullopt};
             if (const auto restored = fontRuntime->restoreSettings(0);
                 !restored)
                 return std::unexpected(restored.error().detail);
 
+            const unsigned scale=modernAA?3U:1U;
             data::LegacyBitmapRGBA8 image{
-                SurfaceWidth, SurfaceHeight, {}};
+                SurfaceWidth*scale, SurfaceHeight*scale, {}};
             image.pixels.assign(
-                SurfaceWidth * SurfaceHeight * 4U, 0U);
-            fillRect(image, {193, 5, 200, 230}, 0x00000000U);
+                SurfaceWidth * SurfaceHeight * scale * scale * 4U, 0U);
+            fillRect(image, {193, 5, 200, 230}, modernAA ? 0x0026230DU : 0x00000000U);
 
             if (auto result = setLabelFont(*fontRuntime); !result)
                 return result;
@@ -361,9 +395,9 @@ namespace monopoly::statsui
                 surface_ = *created;
             }
             const auto updated = playback.runtimeBitmaps().update(
-                *surface_, std::move(image));
+                *surface_, std::move(image),modernAA ? std::optional<std::array<float,4>>{{0,0,float(SurfaceWidth),float(SurfaceHeight)}} : std::nullopt,modernAA);
             if (!updated) return updated;
-            contentKey_ = key;
+            contentKey_ = key;fontSettings_=effectiveSettings;modernAA_=modernAA;
         }
 
         if (visible_ && currentX_ == desiredX && contentChanged)
@@ -410,6 +444,7 @@ namespace monopoly::statsui
     {
         surface_.reset();
         contentKey_.reset();
+        fontSettings_.reset();modernAA_=false;
         currentX_ = 0;
         visible_ = false;
     }

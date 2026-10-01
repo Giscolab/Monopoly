@@ -16,6 +16,91 @@ namespace
         asset->image={w,h,std::vector<std::uint8_t>(std::size_t(w)*h*4,255)};
         return asset;
     }
+    void testPortfolioMiniatures()
+    {
+        bool context=true,failFont=false;
+        std::vector<std::string> labels;
+        unsigned requested=99;
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string> {
+            labels.emplace_back(text);
+            if(failFont)return std::unexpected("font unavailable");
+            return data::LegacyBitmapRGBA8{unsigned(text.size()*4+1),10,
+                std::vector<std::uint8_t>((text.size()*4+1)*10*4,127)};
+        };
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,raster);
+        skin.configurePresentationContext([&]{return context;});
+        skin.configurePropertyDescriptors([&](unsigned index)->std::optional<ibar::ModernIBarSkin::PropertyDescriptor> {
+            requested=index;
+            return ibar::ModernIBarSkin::PropertyDescriptor{index==26?"Park Place":"Reading Railroad",
+                std::uint8_t(index==26?7:8),"$350"};
+        },raster);
+        const auto normal=bitmap(0x00030600,36,42),mortgage=bitmap(0x000305E4,36,42);
+        for(std::size_t index=3;index<normal->image.pixels.size();index+=4)
+            normal->image.pixels[index]=mortgage->image.pixels[index]=std::uint8_t(index/4%256);
+        const auto modern=skin.substitute(normal->dataId,normal);
+        require(modern!=normal && requested==26 && modern->image.width==108 && modern->image.height==126 &&
+            !modern->presentationRect,"miniature retains exact36x42 footprint at3x with no placement override");
+        require(std::find(labels.begin(),labels.end(),"Park Place")!=labels.end() &&
+            std::find(labels.begin(),labels.end(),"$350")!=labels.end(),"authentic descriptor name and purchase text reach rasterizer");
+        const auto header=(std::size_t(10)*108+30)*4;
+        require(modern->image.pixels[header]==45 && modern->image.pixels[header+1]==65 && modern->image.pixels[header+2]==144,
+            "Park Place preserves canonical darkblue group header");
+        const auto mortgaged=skin.substitute(mortgage->dataId,mortgage);
+        require(mortgaged!=mortgage && requested==26 && mortgaged->image.pixels!=modern->image.pixels,
+            "mortgage miniature retains same property identity and visibly distinct state");
+        for(const auto& pair:{std::pair{normal,modern},std::pair{mortgage,mortgaged}})
+            for(unsigned y=0;y<126;++y)for(unsigned x=0;x<108;++x)
+                require(pair.second->image.pixels[(std::size_t(y)*108+x)*4+3]==
+                    pair.first->image.pixels[(std::size_t(y/3)*36+x/3)*4+3],"every original miniature alpha byte survives supersampling and captions");
+        require(skin.substitute(normal->dataId,normal)==modern,"qualified miniature uses bounded existing derivative cache");
+        context=false;require(skin.substitute(normal->dataId,normal)==normal,"context loss returns retail before cache hit");context=true;
+        require(skin.substitute(normal->dataId,normal,false)==normal,"secondary leaves remain untouched");
+        const auto wrongLeaf=bitmap(normal->dataId+1,36,42);
+        require(skin.substitute(normal->dataId,wrongLeaf)==wrongLeaf,
+            "different root and leaf cannot reuse qualified derivative");
+        auto changedAlpha=std::make_shared<data::BitmapRuntimeAsset>(*normal);
+        const auto hash=[](const auto& pixels){std::uint64_t value=14695981039346656037ULL;
+            for(const auto byte:pixels){value^=byte;value*=1099511628211ULL;}return value;};
+        const auto retiredHash=hash(modern->image.pixels);
+        changedAlpha->image.pixels[3]=255;
+        const auto refreshed=skin.substitute(normal->dataId,changedAlpha);
+        require(refreshed!=modern && refreshed->image.pixels[3]==255 && modern->image.pixels[3]==0,
+            "new source alpha replaces cached derivative without mutating retired artwork");
+        require(hash(modern->image.pixels)==retiredHash && skin.substitute(normal->dataId,normal)==modern,
+            "same-ID immutable assets retain separate cached artwork and unchanged old pixel hash");
+        const auto rasterCalls=labels.size();
+        require(skin.substitute(normal->dataId,changedAlpha)==refreshed && labels.size()==rasterCalls,
+            "same immutable source returns directly without rerasterizing captions");
+        std::weak_ptr<const data::BitmapRuntimeAsset> retainedSource=changedAlpha;
+        changedAlpha.reset();
+        require(!retainedSource.expired(),"miniature cache retains source identity against allocator pointer reuse");
+        for(const auto pair:{std::pair{0x000305E6U,0U},std::pair{0x00030601U,27U},
+            std::pair{0x000305CAU,0U},std::pair{0x000305E5U,27U}})
+        {
+            const auto edge=bitmap(pair.first,36,42);
+            require(skin.substitute(pair.first,edge)!=edge && requested==pair.second,
+                "both exact miniature ranges retain first and final property indices");
+        }
+        auto wrong=bitmap(normal->dataId,35,42);require(skin.substitute(normal->dataId,wrong)==wrong,"unmeasured raster size rejected");
+        wrong=bitmap(normal->dataId,36,42);wrong->image.pixels.pop_back();
+        require(skin.substitute(normal->dataId,wrong)==wrong,"malformed raster rejected");
+        wrong=bitmap(normal->dataId,36,42);wrong->sourceType=data::LegacyDataType::Bitmap;
+        require(skin.substitute(normal->dataId,wrong)==wrong,"wrong resource type rejected");
+        for(const auto root:{0x000305C9U,0x00030602U,0x00050600U})
+            require(!skin.supports(root),"neighboring tags and wrong bank remain unqualified");
+        const auto railroad=bitmap(0x000305E8,36,42);
+        require(skin.substitute(railroad->dataId,railroad)!=railroad && requested==2,
+            "miniature index remains board-order property identity rather than player ownership order");
+        failFont=true;
+        const auto uncached=bitmap(0x000305E9,36,42);
+        require(skin.substitute(uncached->dataId,uncached)==uncached,"font failure publishes complete retail fallback");
+        failFont=false;
+        skin.configurePropertyDescriptors([](unsigned)->std::optional<ibar::ModernIBarSkin::PropertyDescriptor>{return {};},raster);
+        require(retainedSource.expired(),"clearing derivative cache releases retained miniature sources");
+        require(skin.substitute(normal->dataId,normal)==normal,"missing canonical property descriptor retains retail");
+        ibar::ModernIBarSkin french(data::LanguageId::French,raster);
+        require(!french.supports(normal->dataId),"miniature qualification remains USA English only");
+    }
     void testMeasuredDeedArtwork()
     {
         using Kind=ibar::ModernIBarSkin::DeedArtwork;
@@ -255,6 +340,6 @@ namespace
 }
 int main()
 {
-    try{testMeasuredDeedArtwork();testMeasuredRetailTrade();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{testPortfolioMiniatures();testMeasuredDeedArtwork();testMeasuredRetailTrade();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

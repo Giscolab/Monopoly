@@ -148,6 +148,12 @@ namespace
         require(sync(true).has_value() && playback.commands().pendingCount()==0 && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,"unchanged modern deed values reuse cached immutable pixels");
         require(font.setSize(19).has_value(),"change caller font setting for deed-value cache");
         require(sync(true).has_value() && playback.commands().pendingCount()==0 && font.settings().size==19 && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,"unrelated caller size leaves authoritative slot0 glyph cache unchanged and restores caller");
+        const auto warmCaller=font.settings();
+        const auto warmSaved=*font.savedSettings(0);
+        for(unsigned frame=0;frame<100;++frame)
+            require(sync(true).has_value() && playback.commands().pendingCount()==0 && font.settings()==warmCaller &&
+                *font.savedSettings(0)==warmSaved && playback.runtimeBitmaps().asset(modern.contentsDataId)==modern.asset,
+                "100 warm deed-value probes preserve caller/saved font and immutable raster without redraw");
         font.setItalic(true);
         require(font.saveSettings(0).has_value() && sync(true).has_value() && playback.update(60).has_value() && font.settings().size==19 && font.settings().italic,"effective saved font style refreshes modern values without resetting clocks");
         const auto changed=playback.runtimeBitmaps().asset(modern.contentsDataId);
