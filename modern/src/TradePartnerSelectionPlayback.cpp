@@ -3,9 +3,47 @@
 #include "LanguageResources.hpp"
 #include <algorithm>
 #include <iomanip>
+#include <cmath>
 #include <sstream>
 namespace monopoly::tradeui
 {
+    namespace
+    {
+        std::optional<data::LegacyBitmapRGBA8> thumbnailWell(const data::LegacyBitmapRGBA8& source)
+        {
+            if(source.width!=768 || source.height!=640 || source.pixels.size()!=std::size_t(768)*640*4)
+                return std::nullopt;
+            unsigned left=768,top=640,right=0,bottom=0;bool transparent=false,visible=false;
+            for(unsigned y=0;y<640;++y)for(unsigned x=0;x<768;++x)
+            {
+                const auto alpha=source.pixels[(std::size_t(y)*768+x)*4+3];
+                transparent|=alpha==0;
+                if(!alpha)continue;
+                visible=true;left=std::min(left,x);top=std::min(top,y);
+                right=std::max(right,x+1);bottom=std::max(bottom,y+1);
+            }
+            if(!visible || !transparent)return std::nullopt;
+            constexpr unsigned width=44*3,height=28*3;
+            data::LegacyBitmapRGBA8 result{width,height,std::vector<std::uint8_t>(width*height*4,0)};
+            const unsigned cropWidth=right-left,cropHeight=bottom-top;
+            const double scale=std::min(double(width)/cropWidth,double(height)/cropHeight);
+            const unsigned drawWidth=std::clamp(unsigned(std::lround(cropWidth*scale)),1u,width);
+            const unsigned drawHeight=std::clamp(unsigned(std::lround(cropHeight*scale)),1u,height);
+            const unsigned offsetX=(width-drawWidth)/2,offsetY=(height-drawHeight)/2;
+            for(unsigned y=0;y<drawHeight;++y)for(unsigned x=0;x<drawWidth;++x)
+            {
+                const unsigned sx=left+std::min(cropWidth-1,unsigned((std::uint64_t(x)*cropWidth)/drawWidth));
+                const unsigned sy=top+std::min(cropHeight-1,unsigned((std::uint64_t(y)*cropHeight)/drawHeight));
+                std::copy_n(source.pixels.data()+(std::size_t(sy)*768+sx)*4,4,
+                    result.pixels.data()+(std::size_t(y+offsetY)*width+x+offsetX)*4);
+            }
+            return result;
+        }
+    }
+    void PartnerSelectionPlayback::configureTokenImages(TokenImageProvider provider)
+    {
+        tokenImages_=std::move(provider);key_.clear();
+    }
     std::expected<void,std::string> PartnerSelectionPlayback::reset(engine::SequencePlayback& playback)
     {
         if(visible_)
@@ -103,6 +141,20 @@ namespace monopoly::tradeui
                 const auto& source=(*token)->image;
                 if(!source.width || !source.height || source.width>128 || source.height>128)
                     return std::unexpected("Trade partner token dimensions invalid");
+                if(modern && tokenImages_)
+                {
+                    std::shared_ptr<const data::LegacyBitmapRGBA8> thumbnail;
+                    try { thumbnail=tokenImages_(static_cast<std::uint8_t>(row.token)); }
+                    catch (...) { thumbnail.reset(); }
+                    if(thumbnail)
+                        if(const auto well=thumbnailWell(*thumbnail))
+                        {
+                            const auto blit=data::blitStraightRGBA8(image,*well,126*scale,localTop*scale,
+                                data::BitmapBlitMode::SourceOver);
+                            if(!blit)return std::unexpected(blit.error());
+                            continue;
+                        }
+                }
                 data::LegacyBitmapRGBA8 enlarged{source.width*scale,source.height*scale,
                     std::vector<std::uint8_t>(source.pixels.size()*scale*scale)};
                 for(unsigned y=0;y<enlarged.height;++y)for(unsigned x=0;x<enlarged.width;++x)

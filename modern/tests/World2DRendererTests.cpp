@@ -7,6 +7,9 @@
 #include "MousePointerPlayback.hpp"
 #include "FontRuntime.hpp"
 #include "TradeCashDialogPlayback.hpp"
+#include "BoardBackdropPlayback.hpp"
+#include "AuctionPennyBagsPlayback.hpp"
+#include "IBarCardPlayback.hpp"
 #include <fstream>
 #include <set>
 #include <cstdlib>
@@ -689,6 +692,276 @@ namespace
             std::cout<<"Menu GPU capture="<<prefix<<" changed="<<changed<<" output="<<output.string()<<'\n';
         }
     }
+    void captureRetailCardOut(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual resources open for production Services25 card-out renderer fixture");
+        engine::SequencePlayback playback(resources.snapshot());ibar::CardPlayback card;
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
+        skin->configureDrawCardDescriptors({{0x50067,{"Community Chest","Receive for services $25.",400,240}}},
+            [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{throw std::runtime_error("native outgoing art must not rasterize text");});
+        bool qualified=true;skin->configurePresentationContext([&]{return qualified;});playback.world2D().configureModernIBarSkin(skin);
+        std::uint64_t tick=0;
+        for(unsigned step=0;step<5 && card.visualState()!=ibar::CardVisualState::Idle;++step)
+        {
+            require(card.sync(30,true,display::Screen2D::Main,pieces::BoardCameraView::TopDownSoccer,playback) && playback.update(tick),
+                "actual CardPlayback advances production Main deck/card/face/idle owners");
+            if(card.visualState()==ibar::CardVisualState::Idle)break;
+            const auto info=playback.runtime().info(card.currentSequence(),ibar::CardPriority,false);
+            require(info.has_value(),"actual active card consumer exposes authored sequence ending clock");
+            tick+=std::uint64_t(std::max(1,info->endTime-info->sequenceClock+1));
+            require(playback.update(tick).has_value(),"actual card animation reaches its authored end without manual transforms");
+        }
+        require(card.visualState()==ibar::CardVisualState::Idle && card.currentSequence()==0x50067,"Services25 reaches its actual Main idle owner");
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"card-out-polish-20261001").lexically_normal();
+        std::filesystem::create_directories(output);
+        writeBmp(output/"services25-main-modern.bmp",capture(device,renderer,playback.world2D()),800,600);
+        qualified=false;
+        require(card.sync(30,false,display::Screen2D::Options,pieces::BoardCameraView::TopDownSoccer,playback) && playback.update(tick) && playback.update(++tick),
+            "actual Main-to-Options consumer starts and advances authored outgoing clock1");
+        require(card.visualState()==ibar::CardVisualState::Out && card.currentSequence()==0x50087,"actual Options outgoing Services25 root is50087");
+        const auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+        require(leaves && !leaves->empty(),"actual outgoing card and companion leaves exist");
+        data::BitmapRuntimeCache cache;
+        require(playback.world2D().sync(*leaves,cache).has_value(),"native outgoing baseline uses the same retained decode cache");
+        std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> native;
+        for(const auto node:playback.world2D().order())native.emplace(node,*playback.world2D().find(node));
+        const auto order=playback.world2D().order();const auto before=capture(device,renderer,playback.world2D());
+        writeBmp(output/"services25-options-out-before.bmp",before,800,600);
+        qualified=true;
+        require(playback.world2D().sync(*leaves,cache).has_value(),"same actual outgoing pose receives qualified native-art tint");
+        unsigned changed=0;
+        for(const auto& leaf:*leaves)
+        {
+            const auto* current=playback.world2D().find(leaf.node);const auto& old=native.at(leaf.node);
+            require(current && current->clock==old.clock && current->priority==old.priority && current->contentsDataId==old.contentsDataId &&
+                current->worldTransform.values==old.worldTransform.values,"outgoing tint keeps every authored clock/priority/identity/full matrix");
+            if(leaf.contentsDataId==0x508F9)
+            {
+                require(current->asset!=old.asset && current->asset->image.width==400 && current->asset->image.height==240,
+                    "actual moving outgoing face retains native400x240 artwork extent");++changed;
+                bool ink=true,alpha=true;
+                for(std::size_t at=0;at<old.asset->image.pixels.size();at+=4)
+                {
+                    alpha &= current->asset->image.pixels[at+3]==old.asset->image.pixels[at+3];
+                    const auto r=old.asset->image.pixels[at],g=old.asset->image.pixels[at+1],b=old.asset->image.pixels[at+2];
+                    if(std::max({r,g,b})<=40 || std::max({r,g,b})-std::min({r,g,b})<=8)
+                        for(unsigned c=0;c<3;++c)ink &= current->asset->image.pixels[at+c]==old.asset->image.pixels[at+c];
+                }
+                require(ink && alpha,"every authentic caption/illustration ink pixel and source alpha survives outgoing tint");
+            }
+            else require(current->asset==old.asset,"actual outgoing companion remains exact retail pointer");
+        }
+        const auto after=capture(device,renderer,playback.world2D());
+        require(changed==1 && before!=after && playback.world2D().order()==order,"actual GPU recolours one outgoing face at unchanged authored Options placement");
+        writeBmp(output/"services25-options-out-after.bmp",after,800,600);
+        qualified=false;require(playback.world2D().sync(*leaves,cache).has_value(),"outgoing unsupported context republishes retail pixels");
+        for(const auto& [node,old]:native)require(playback.world2D().find(node)->asset==old.asset,"outgoing fallback restores every retail pointer");
+        require(capture(device,renderer,playback.world2D())==before,"actual GPU outgoing fallback is pixel-exact");
+        std::cout<<"Card-out GPU qualification output="<<output.string()<<" (isolated actual consumer renderer fixture, not live gameplay)\n";
+    }
+    void captureRetailAuctionBackdrop(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual auction DAT opens for renderer qualification");
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"auction-backdrop-polish-20261001").lexically_normal();
+        std::filesystem::create_directories(output);std::ofstream manifest(output/"actual-auction-gpu.tsv");
+        manifest<<"scope\tGPU renderer qualification, actual BoardBackdropPlayback/PennyBagsPlayback plus real DAT; fixed game-state fixture, not live gameplay\n";
+        constexpr std::array states{auctionui::PennyBagsState::Intro,auctionui::PennyBagsState::GoingOnce,auctionui::PennyBagsState::Sold};
+        constexpr std::array names{"intro","going-once","sold"};
+        for(unsigned index=0;index<states.size();++index)
+        {
+            engine::SequencePlayback playback(resources.snapshot());
+            boarddisplay::BoardBackdropPlayback backdrop;
+            boarddisplay::BoardBackdropInputs input;input.view=display::Screen2D::Auction;
+            require(backdrop.sync(input,playback) && backdrop.activeBackdrop()==0x30000,"production auction backdrop selects true Patterns BMP30000");
+            rules::GameState game;game.numberOfPlayers=2;game.players[0].token=0;game.players[1].token=1;
+            auctionui::State state;state.highestBid=50;state.highestBidder=0;state.propertyForSale=27;
+            state.nextPennyBags=states[index];state.pennyBagsSwitch=true;
+            // Seed only this isolated fixture's authentic production variant selection.
+            std::srand(1901);auctionui::PennyBagsPlayback penny;
+            const auto animation=penny.sync(state,game,display::Screen2D::Auction,playback,{});
+            require(animation && penny.currentSequence()!=data::EmptyDataId,"actual auction consumer starts its native animation root");
+            const auto animationRoot=penny.currentSequence();
+            if(index==0)require(animationRoot==0x3000E || animationRoot==0x30017 || animationRoot==0x30018,"intro uses actual production variant roots");
+            else require(animationRoot==(index==1?0x30012U:0x30014U),"going-once/sold use exact production animation roots");
+            bool qualified=false;
+            auto skin=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+                [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{throw std::runtime_error("static stage must not invoke fonts");});
+            skin->configureTradeCashPresentation([&]{return qualified;});playback.world2D().configureModernMenuSkin(skin);
+            require(playback.update(0) && playback.update(8),"actual auction roots advance to the same authored clock8 pose");
+            auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(leaves && !leaves->empty(),"actual stage/animation leaf composition is present");
+            std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> native;
+            for(const auto node:playback.world2D().order())native.emplace(node,*playback.world2D().find(node));
+            for(auto& leaf:*leaves)leaf.runtimeAsset=native.at(leaf.node).asset;
+            const auto order=playback.world2D().order();const auto before=capture(device,renderer,playback.world2D());
+            writeBmp(output/(std::string(names[index])+"-before.bmp"),before,800,600);
+            qualified=true;data::BitmapRuntimeCache cache;
+            require(playback.world2D().sync(*leaves,cache).has_value(),"same actual auction pose republishes qualified upper-stage tint");
+            unsigned stage=0,animated=0;
+            for(const auto& leaf:*leaves)
+            {
+                const auto* current=playback.world2D().find(leaf.node);const auto& old=native.at(leaf.node);
+                require(current && current->clock==old.clock && current->priority==old.priority &&
+                    current->contentsDataId==old.contentsDataId && current->worldTransform.values==old.worldTransform.values,
+                    "auction tint preserves every stage/animation clock, priority, identity and full matrix");
+                if(leaf.rootSequenceDataId==0x30000)
+                {
+                    require(current->asset!=old.asset && old.asset->image.width==800 && old.asset->image.height==450 &&
+                        current->asset->image.width==800 && current->asset->image.height==450 &&
+                        current->asset->preferLinearFiltering==old.asset->preferLinearFiltering,
+                        "true opaque stage remains native800x450 with original filtering");
+                    const auto floorStart=std::size_t(280)*800*4;
+                    require(std::equal(old.asset->image.pixels.begin()+floorStart,old.asset->image.pixels.end(),
+                        current->asset->image.pixels.begin()+floorStart),"actual stage floor and lamps retain all544000 source RGBA bytes");
+                    bool sameAlpha=true;for(std::size_t at=3;at<old.asset->image.pixels.size();at+=4)
+                        sameAlpha &= current->asset->image.pixels[at]==old.asset->image.pixels[at];
+                    require(sameAlpha,"actual stage alpha remains opaque and exact");++stage;
+                }
+                else
+                {
+                    require(current->asset==old.asset,"all actual auctioneer/podium/other animated leaf pointers remain exact retail");
+                    require(leaf.rootSequenceDataId==animationRoot,"fixture's independent animated leaves come from the production auction root");++animated;
+                }
+                manifest<<names[index]<<'\t'<<animationRoot<<'\t'<<leaf.rootSequenceDataId<<'\t'<<leaf.contentsDataId
+                    <<'\t'<<current->priority<<'\t'<<current->clock<<'\n';
+            }
+            const auto after=capture(device,renderer,playback.world2D());
+            require(stage==1 && animated>0 && playback.world2D().order()==order,"actual stage plus complete native animation composition survives tint");
+            require(before!=after,"actual GPU upper stage changes colour with authored texture still present");
+            const auto floorStart=std::size_t(280)*800*4;
+            require(std::equal(before.begin()+floorStart,before.end(),after.begin()+floorStart),
+                "actual GPU all floor/lamp/animated lower pixels remain byte-exact before/after");
+            writeBmp(output/(std::string(names[index])+"-after.bmp"),after,800,600);
+            qualified=false;require(playback.world2D().sync(*leaves,cache).has_value(),"auction live guard fallback republishes retail composition");
+            for(const auto& [node,old]:native)require(playback.world2D().find(node)->asset==old.asset,"auction guard fallback restores every exact retail pointer");
+            require(capture(device,renderer,playback.world2D())==before,"actual GPU unqualified auction fallback is pixel-exact");
+        }
+        std::cout<<"Auction GPU qualification output="<<output.string()<<" (renderer fixture, not live gameplay)\n";
+    }
+    void captureRetailNativeActions(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual action DAT opens for native transition GPU proof");
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"native-action-polish-20261001").lexically_normal();
+        std::filesystem::create_directories(output);std::ofstream manifest(output/"actual-native-actions.tsv");
+        manifest<<"scope\tactual CNK authored transition poses; native chrome tint; firstaccepted actualGPU tinted footprint>=40x8; no synthetic placement or captions\n";
+        constexpr unsigned sw=4800,sh=1800;
+        std::vector<std::uint8_t> beforeSheet(std::size_t(sw)*sh*4,0),afterSheet=beforeSheet;
+        struct Family {unsigned index;const char* name;};
+        const std::array families{Family{1,"buy"},Family{3,"done"},Family{5,"tax"},Family{6,"percentage"},Family{12,"mortgage"},Family{17,"roll"}};
+        const std::array<unsigned,3> states{0,2,3};const std::array<const char*,3> poses{"in","out","pressed"};
+        for(unsigned column=0;column<families.size();++column)for(unsigned row=0;row<states.size();++row)
+        {
+            const auto family=families[column];const auto id=data::packDataId(data::LegacyGroupId::LanguageGraphics,
+                data::DataTag(0x008A+family.index*4+states[row]));
+            const auto program=sequence::SequenceProgram::load(resources.snapshot(),id);
+            require(program.has_value(),"actual native action program decodes");
+            const int end=(*program)->descriptions().front().record.header.endTime;
+            const int limit=end>0 && end<=512 ? std::max(12,end)+1 : 33;
+            auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("native printed caption retained");});
+            bool qualified=true;skin->configurePresentationContext([&]{return qualified;});
+            skin->configureActionText([](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {return std::unexpected("native transition proof must retain printed caption");});
+            skin->configureLayoutProvider([=]{return family.index==1 ? ibar::layout::ActionButtonLayout::BuyAuction : ibar::layout::ActionButtonLayout::General;});
+            sequence::SequenceRuntime runtime;require(runtime.start(*program,999).has_value(),"actual action starts with original program transform");
+            engine::SequenceWorld2DSlot native,modern;modern.configureModernIBarSkin(skin);data::BitmapRuntimeCache cache;
+            std::vector<sequence::SequenceBitmapRenderItem> selected;int tick=0;bool found=false;int selectedWidth=0,selectedHeight=0;
+            for(;tick<=limit;++tick)
+            {
+                require(runtime.update(tick).has_value(),"native action advances every authored frame");
+                auto items=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());
+                require(items && native.sync(*items,cache).has_value(),"actual native action leaves reach production slot");
+                for(auto& item:*items)item.runtimeAsset=native.find(item.node)->asset;
+                require(modern.sync(*items,cache).has_value(),"same actual native action leaves reach qualified slot");
+                for(const auto node:native.order())
+                {
+                    const auto* old=native.find(node);const auto* painted=modern.find(node);
+                    if(painted->asset==old->asset || painted->asset->image.width!=old->asset->image.width ||
+                        painted->asset->image.height!=old->asset->image.height)continue;
+                    const auto a=engine::SequenceWorld2DSlot::transformPoint(old->worldTransform,0,0);
+                    const auto b=engine::SequenceWorld2DSlot::transformPoint(old->worldTransform,old->asset->image.width,old->asset->image.height);
+                    const auto c=engine::SequenceWorld2DSlot::transformPoint(old->worldTransform,old->asset->image.width,0);
+                    const auto d=engine::SequenceWorld2DSlot::transformPoint(old->worldTransform,0,old->asset->image.height);
+                    bool visible=false;const auto& image=old->asset->image;
+                    for(std::size_t i=3;i<image.pixels.size();i+=4)visible|=image.pixels[i]!=0;
+                    // Earliest accepted slivers establish CPU routing but do not
+                    // provide useful visual evidence. Select the first actual
+                    // authored pose with a substantial visible native footprint.
+                    const int visibleWidth=std::min(800,std::max({a[0],b[0],c[0],d[0]}))-std::max(0,std::min({a[0],b[0],c[0],d[0]}));
+                    const int visibleHeight=std::min(600,std::max({a[1],b[1],c[1],d[1]}))-std::max(0,std::min({a[1],b[1],c[1],d[1]}));
+                    if(visible && visibleWidth>=40 && visibleHeight>=8)
+                    {found=true;selectedWidth=visibleWidth;selectedHeight=visibleHeight;}
+                }
+                if(found)
+                {
+                    // Transparent padding can make the raster AABB look large
+                    // while only a sliver reaches the framebuffer. Require the
+                    // actual GPU chrome difference itself to span40x8 pixels.
+                    const auto nativePixels=capture(device,renderer,native),modernPixels=capture(device,renderer,modern);
+                    int left=800,top=600,right=-1,bottom=-1;
+                    for(unsigned y=0;y<600;++y)for(unsigned x=0;x<800;++x)
+                    {
+                        const auto at=(std::size_t(y)*800+x)*4;
+                        if(std::equal(nativePixels.begin()+at,nativePixels.begin()+at+4,modernPixels.begin()+at))continue;
+                        left=std::min(left,int(x));right=std::max(right,int(x));top=std::min(top,int(y));bottom=std::max(bottom,int(y));
+                    }
+                    selectedWidth=right-left+1;selectedHeight=bottom-top+1;
+                    found=selectedWidth>=40 && selectedHeight>=8;
+                    if(found){selected=std::move(*items);break;}
+                }
+            }
+            require(found,"each real action family/pose has a visible accepted native tint frame");
+            const auto order=native.order();unsigned changed=0;
+            for(const auto& item:selected)
+            {
+                const auto* old=native.find(item.node);const auto* painted=modern.find(item.node);
+                require(old && painted && old->clock==painted->clock && old->priority==painted->priority &&
+                    old->contentsDataId==painted->contentsDataId && old->worldTransform.values==painted->worldTransform.values,
+                    "native action keeps exact full raster matrix contents clocks priorities");
+                manifest<<"root\t"<<id<<"\tfamily\t"<<family.name<<"\tpose\t"<<poses[row]<<"\ttick\t"<<tick
+                    <<"\tleaf\t"<<item.contentsDataId<<"\tclock\t"<<old->clock<<"\tpriority\t"<<old->priority
+                    <<"\torigin\t"<<item.metadata.originX<<','<<item.metadata.originY<<"\tmatrix";
+                for(const auto value:old->worldTransform.values)manifest<<'\t'<<value;
+                manifest<<'\n';
+                if(painted->asset==old->asset)continue;++changed;
+                require(painted->asset->image.width==old->asset->image.width && painted->asset->image.height==old->asset->image.height &&
+                    painted->asset->source==old->asset->source && painted->asset->dataId==old->asset->dataId &&
+                    painted->asset->presentationRect==old->asset->presentationRect,"native action tint retains immutable source extent and presentation metadata");
+                const auto& before=old->asset->image.pixels;const auto& after=painted->asset->image.pixels;
+                bool retained=true;
+                for(std::size_t i=0;i<before.size();i+=4)
+                {
+                    retained &= before[i+3]==after[i+3];
+                    const auto low=std::min({before[i],before[i+1],before[i+2]}),high=std::max({before[i],before[i+1],before[i+2]});
+                    if(!before[i+3] || high<=48 || low>=240)
+                        for(unsigned c=0;c<3;++c)retained &= before[i+c]==after[i+c];
+                }
+                require(retained,"every native action alpha dark printed ink transparent colour and highlight retained");
+                auto unknown=std::make_shared<data::BitmapRuntimeAsset>(*old->asset);unknown->dataId=0x5FFFF;
+                require(skin->substitute(id,unknown,true,old->worldTransform)==unknown,"unlisted action source fails closed");
+            }
+            require(changed>0 && modern.order()==order,"native tint changes real chrome without reordering authored layers");
+            const auto before=capture(device,renderer,native),after=capture(device,renderer,modern);
+            require(before!=after,"native chrome tint produces actual same-clock GPU difference");
+            const std::string prefix=std::string(family.name)+"-"+poses[row]+"-t"+std::to_string(tick);
+            writeBmp(output/(prefix+"-before.bmp"),before,800,600);writeBmp(output/(prefix+"-after.bmp"),after,800,600);
+            for(unsigned y=0;y<600;++y)
+            {
+                const auto destination=(std::size_t(row*600+y)*sw+column*800)*4;
+                std::memcpy(beforeSheet.data()+destination,before.data()+std::size_t(y)*800*4,800*4);
+                std::memcpy(afterSheet.data()+destination,after.data()+std::size_t(y)*800*4,800*4);
+            }
+            qualified=false;require(modern.sync(selected,cache).has_value(),"native action cached context guard rejects palette");
+            for(const auto node:order)require(modern.find(node)->asset==native.find(node)->asset,"native action unqualified cache returns exact original pointers");
+            require(capture(device,renderer,modern)==before,"native action cached fallback wholeRGBA GPU frame matches native exactly");
+            std::cout<<"NativeAction actualGPU root="<<id<<" family="<<family.name<<" pose="<<poses[row]<<" tick="<<tick<<" visible="<<selectedWidth<<'x'<<selectedHeight<<" changed="<<changed<<'\n';
+        }
+        writeBmp(output/"native-actions18-before.bmp",beforeSheet,sw,sh);writeBmp(output/"native-actions18-after.bmp",afterSheet,sw,sh);
+        require(bool(manifest),"native action production pose manifest writes");
+    }
     void captureRetailTradeCash(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1196,6 +1469,21 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==3 && std::string_view(argv[1])=="--native-action-qualify")
+        {
+            captureRetailNativeActions(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
+        if(argc==3 && std::string_view(argv[1])=="--card-out-qualify")
+        {
+            captureRetailCardOut(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
+        if(argc==3 && std::string_view(argv[1])=="--auction-backdrop-qualify")
+        {
+            captureRetailAuctionBackdrop(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==3 && std::string_view(argv[1])=="--trade-cash-qualify")
         {
             captureRetailTradeCash(device,*renderer,std::filesystem::path(argv[2]));

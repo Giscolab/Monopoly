@@ -1428,6 +1428,106 @@ namespace
         std::cout<<"[PASS] actual Trade cash52 qualified/15 retail glow CPU images (not GPU proof)\n";
     }
 
+    data::SharedDataBytes auctionBmpPayload()
+    {
+        auto bytes=std::make_shared<data::DataBytes>(54+800*450*3,std::byte{0});
+        const auto put=[&](unsigned at,unsigned value,unsigned count)
+        { for(unsigned i=0;i<count;++i)(*bytes)[at+i]=std::byte((value>>(8*i))&255); };
+        put(0,0x4D42,2);put(2,unsigned(bytes->size()),4);put(10,54,4);put(14,40,4);
+        put(18,800,4);put(22,450,4);put(26,1,2);put(28,24,2);put(34,800*450*3,4);
+        return bytes;
+    }
+
+    void verifyAuctionBackdrop(const data::BitmapRuntimeAsset& native,const data::BitmapRuntimeAsset& painted)
+    {
+        require(painted.image.width==800 && painted.image.height==450 && painted.dataId==native.dataId &&
+            painted.preferLinearFiltering==native.preferLinearFiltering && painted.presentationRect==native.presentationRect,
+            "Auction backdrop keeps native raster extent, identity, filtering and geometry");
+        const auto floorStart=std::size_t(280)*800*4;
+        require(std::equal(native.image.pixels.begin()+floorStart,native.image.pixels.end(),
+            painted.image.pixels.begin()+floorStart),"Every floor/lamp RGBA byte from native row280 downward remains retail");
+        for(std::size_t i=3;i<painted.image.pixels.size();i+=4)
+            require(painted.image.pixels[i]==native.image.pixels[i],"Auction backdrop retains all opaque alpha");
+        require(!std::equal(native.image.pixels.begin(),native.image.pixels.begin()+floorStart,painted.image.pixels.begin()),
+            "Authentic upper backdrop receives a visible tint rather than no-op fallback");
+    }
+
+    void testAuctionBackdropArt()
+    {
+        unsigned fontCalls=0;bool context=true;
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [&](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{++fontCalls;return label();});
+        auto source=std::make_shared<data::BitmapRuntimeAsset>(*original(800,450));
+        source->dataId=0x30000;source->sourceType=data::LegacyDataType::Bitmap;source->source=auctionBmpPayload();
+        for(unsigned y=0;y<450;++y)for(unsigned x=0;x<800;++x)
+        {
+            const auto at=(std::size_t(y)*800+x)*4;
+            source->image.pixels[at]=std::uint8_t(70+x%90);
+            source->image.pixels[at+1]=std::uint8_t(30+y%80);
+            source->image.pixels[at+2]=20;source->image.pixels[at+3]=255;
+        }
+        const auto before=source->image.pixels;
+        require(skin.substitute(0x30000,source)==source,"Missing auction board guard keeps original stage");
+        skin.configureTradeCashPresentation([&]{return context;});
+        const auto painted=skin.substitute(0x30000,source);require(painted!=source,"Exact opaque source stage qualifies");
+        verifyAuctionBackdrop(*source,*painted);
+        require(fontCalls==0 && source->image.pixels==before && skin.substitute(0x30000,source)==painted,
+            "Auction tint neither invokes font state nor mutates source, and hits bounded identity cache");
+        // Two different authored luminances remain distinct; this is no flat shell.
+        require(painted->image.pixels[0]!=painted->image.pixels[80*4],"Tint preserves real source detail");
+        context=false;require(skin.substitute(0x30000,source)==source,"Context loss restores exact stage despite warm cache");context=true;
+        require(skin.substitute(0x30000,source,false)==source,"Auction secondary leaves remain retail");
+        for(const auto type:{data::LegacyDataType::Uap,data::LegacyDataType::Native,data::LegacyDataType::Unknown})
+        { auto bad=std::make_shared<data::BitmapRuntimeAsset>(*source);bad->sourceType=type;
+          require(skin.substitute(0x30000,bad)==bad,"Unexpected auction source type rejects complete replacement"); }
+        for(const auto id:{0x30001U,0x50000U,0x3000EU})
+        { auto bad=std::make_shared<data::BitmapRuntimeAsset>(*source);bad->dataId=id;
+          require(skin.substitute(0x30000,bad)==bad,"Wrong backdrop leaf or animated auctioneer cannot qualify"); }
+        auto bad=std::make_shared<data::BitmapRuntimeAsset>(*source);bad->image.pixels[3]=254;
+        require(skin.substitute(0x30000,bad)==bad,"Unexpected nonopaque alpha retains complete source");
+        bad=std::make_shared<data::BitmapRuntimeAsset>(*source);bad->image.width=799;
+        require(skin.substitute(0x30000,bad)==bad,"Unexpected stage native extent remains retail");
+        bad=std::make_shared<data::BitmapRuntimeAsset>(*source);bad->source.reset();
+        require(skin.substitute(0x30000,bad)==bad,"Unproven raw bitmap source remains retail");
+        auto corrupt=std::make_shared<data::DataBytes>(*source->source);(*corrupt)[28]=std::byte{8};
+        bad->source=corrupt;require(skin.substitute(0x30000,bad)==bad,"Unmeasured eight-bit bitmap cannot qualify as the true24-bit stage");
+        for(const auto language:{data::LanguageId::EnglishUk,data::LanguageId::French})
+        { menu::ModernMenuSkin other(data::BoardEdition::Usa,language,[](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+          other.configureTradeCashPresentation([]{return true;});require(other.substitute(0x30000,source)==source,"Unqualified language keeps stage art"); }
+        menu::ModernMenuSkin europe(data::BoardEdition::Europe,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        europe.configureTradeCashPresentation([]{return true;});require(europe.substitute(0x30000,source)==source,"Europe stage is unqualified");
+    }
+
+    void qualifyActualAuctionBackdrop(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"Actual auction DAT opens");
+        const auto snapshot=resources.snapshot();const auto meta=snapshot->data().metadata(0x30000);
+        const auto bytes=snapshot->data().load(0x30000);data::BitmapRuntimeCache cache;
+        require(meta && bytes && meta->type==data::LegacyDataType::Bitmap,"Actual stage source is a direct BMP");
+        const auto source=cache.resolve(0x30000,meta->type,*bytes);require(source.has_value(),"Actual stage pixels decode");
+        auto skin=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{throw std::runtime_error("Backdrop must not rasterize text");});
+        bool context=true;skin->configureTradeCashPresentation([&]{return context;});
+        const auto painted=skin->substitute(0x30000,*source);require(painted!=*source,"Real BMP stage is qualified");
+        verifyAuctionBackdrop(**source,*painted);
+        const auto program=sequence::SequenceProgram::load(snapshot,0x30000);sequence::SequenceRuntime runtime;
+        require(program && runtime.start(*program,10) && runtime.update(7),"Actual direct stage root runs at priority10");
+        const auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);
+        engine::SequenceWorld2DSlot native,modern;modern.configureModernMenuSkin(skin);
+        require(items && native.sync(*items,cache) && modern.sync(*items,cache) && native.order()==modern.order(),
+            "Actual native and modern stages publish identical production node ordering");
+        require(native.size()==1,"Actual direct BMP stage owns exactly one render object");
+        const auto node=native.order().front();const auto* a=native.find(node);const auto* m=modern.find(node);
+        require(a && m && a->asset!=m->asset && a->clock==m->clock && a->priority==m->priority &&
+            a->contentsDataId==m->contentsDataId && a->worldTransform.values==m->worldTransform.values,
+            "Real stage tint preserves full native matrix, root clock, priority and contents identity");
+        context=false;require(modern.sync(*items,cache) && modern.find(node)->asset==a->asset,
+            "Real stage context loss restores exact retail pointer");
+        std::cout<<"[PASS] actual auction30000 opaque800x450, lower544000 RGBA bytes/native slot unchanged (not GPU proof)\n";
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -1462,11 +1562,13 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify" || std::string_view(argv[1])=="--trade-cash-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify|--trade-cash-qualify ABSOLUTE_DATA_ROOT]");
+    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify" || std::string_view(argv[1])=="--trade-cash-qualify" || std::string_view(argv[1])=="--auction-backdrop-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify|--trade-cash-qualify|--auction-backdrop-qualify ABSOLUTE_DATA_ROOT]");
         if(argc==3) { if(std::string_view(argv[1])=="--city-qualify") qualifyActualCitySelector(std::filesystem::path(argv[2]));
             else if(std::string_view(argv[1])=="--trade-cash-qualify")qualifyActualTradeCash(std::filesystem::path(argv[2]));
+            else if(std::string_view(argv[1])=="--auction-backdrop-qualify")qualifyActualAuctionBackdrop(std::filesystem::path(argv[2]));
             else qualifyActualPlayerCards(std::filesystem::path(argv[2])); }
         testTradeCashPopup();
+        testAuctionBackdropArt();
         testMeasuredPlayerCardTransitions(); testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention(); testOptionsHeaderAndHelpChrome(); testMeasuredCitySelector();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }

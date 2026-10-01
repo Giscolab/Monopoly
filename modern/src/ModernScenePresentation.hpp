@@ -26,6 +26,36 @@ namespace monopoly::engine
         }
         return result;
     }
+    // Unit preset directions are linearly blended by the retail controller.
+    // Opposing directions shorten that blend; normalization at projection time
+    // otherwise turns a low lateral travel into an extreme overhead closeup.
+    // Retreat only the rendered eye along its original ground-target ray.
+    inline World3DCamera preserveModernTravelFraming(const World3DCamera& original,
+        float groundY) noexcept
+    {
+        if(!std::isfinite(groundY) || !std::isfinite(original.fieldOfView) ||
+            original.fieldOfView<=0 || original.fieldOfView>=3.14159265F ||
+            !std::isfinite(original.nearPlane) || original.nearPlane<=0 ||
+            !std::isfinite(original.farPlane) || original.farPlane<=original.nearPlane)return original;
+        for(unsigned axis=0;axis<3;++axis)
+            if(!std::isfinite(original.location[axis]) || !std::isfinite(original.forward[axis]) ||
+                !std::isfinite(original.up[axis]))return original;
+        if(original.forward[1]>=-0.00001F)return original;
+        const float magnitude=std::hypot(original.forward[0],original.forward[1],original.forward[2]);
+        // Float-encoded unit presets retain their exact original bytes.
+        if(!std::isfinite(magnitude) || magnitude<=0.000001F || magnitude>=1-0.00001F)return original;
+        const float parameter=(groundY-original.location[1])/original.forward[1];
+        if(!std::isfinite(parameter) || parameter<=0)return original;
+        const float retreat=parameter*(1/magnitude-1);
+        if(!std::isfinite(retreat))return original;
+        auto adjusted=original;
+        for(unsigned axis=0;axis<3;++axis)
+        {
+            adjusted.location[axis]-=original.forward[axis]*retreat;
+            if(!std::isfinite(adjusted.location[axis]))return original;
+        }
+        return adjusted;
+    }
     // Caller supplies only loaded building bounds, in the camera's world frame.
     // This value-only adjustment never feeds back into the retail camera controller.
     inline World3DCamera avoidModernPresentationBuildings(const World3DCamera& original,

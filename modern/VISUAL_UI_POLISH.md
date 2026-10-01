@@ -626,3 +626,107 @@ MeshGPUResources defaults to8x for linear-filtered, mipmapped modern textures.
 sampler behavior. Actual Release process3264 was built and launched at1080p
 after this default changed. No new five-minute live FPS sample has been captured;
 the visual comparison does not establish a game performance gain.
+
+## Auction backdrop, cash readout and Trade thumbnails (passes41-43)
+
+Pass41's six matched consumer GPU captures were inspected and accepted: intro,
+going-once and sold each have before/after views under
+`build/auction-backdrop-polish-20261001/`. The upper stage is now teal; the floor,
+lamps and animated elements remain unchanged. These production consumer fixtures
+qualify presentation, not a live-game auction or its bidding outcome.
+
+Pass42's actual left/right cash dialogs were inspected at$0 and$50. In fresh
+Release process9104, right-side50 followed by Cancel remained in Trade after25
+seconds without input; opening the left cash dialog then worked. Captures are
+`build/polish-continuation-20261001/pass42-cancel-traced-immediate.png` and
+`pass42-cancel-traced-after25s.png`. This qualifies the visible readout and that
+cancel/return path, not proposal acceptance or a cash gift transaction.
+
+Pass43's actual modern Trade thumbnails were compared with the earlier chooser
+capture. `build/polish-continuation-20261001/pass43-trade-modern-thumbnails-real-after.png`
+records the inspected result; clicking Horse selected the correct partner.
+This is live chooser presentation/input proof, not a completed trade.
+The separate pass39 HUD is accepted from the fresh GPU rerun documented below.
+
+## Native HUD action chrome (pass39 accepted rerun)
+
+The fresh matched `build/native-action-polish-20261001/native-actions18-before.png`
+and `native-actions18-after.png` were inspected and accepted. The selected-pose
+manifest `selected-pose-images.json` records all18 changed actual GPU footprints,
+each at least40x8 pixels; this rerun replaces the earlier narrow-sliver proof.
+Exact route poses and clocks are retained. The430-entry table passes1056-frame
+CPU checks. All18 selected native GPU poses have coherent teal chrome while
+retaining dark ink, white and colored artwork; settled captions are unchanged.
+This is complete selected-fixture coverage, not live observation of every phase.
+Earlier actual Release transitions were observed separately.
+
+## Camera travel row40722 (pass45)
+
+The accepted matched1080p GPU pair is
+`build/polish-continuation-20261001/camera-travel-row40722/camera-travel-before.png`
+and `camera-travel-after.png`. Camera eye height changes from78.209 to217.9125,
+with the same ground aim, forward direction, FOV and20 assets;8x anisotropy and
+4x MSAA remain fixed. The inspected after view shows a wider overhead plaza.
+Later live camera samples qualify corrected sample203 and excluded sample212.
+The exact row40722 fixture has not been replicated in real gameplay; these
+samples do not establish exhaustive camera-path coverage.
+
+## Card Out fixture and completed live trade (pass44 continuation)
+
+The accepted matched GPU pair is
+`build/card-out-polish-20261001/services25-options-out-before.png` and
+`services25-options-out-after.png`. Ink, alpha, clock and placement remain the
+same. Thirty-one actual Out payloads are byte-identical to their idle payloads;
+the different Chance12 payload remains native. The actual Options capture
+`build/polish-continuation-20261001/pass44-card-on-options-real-after.png`
+contains no visible card because it had already ended. It is not matched live
+Out proof.
+
+Actual Release process17604 completed an authentic trade: the human offered$300
+for Horse's Tennessee Avenue and the offer was accepted. The inspected
+`trade-tennessee300-ready-real.png` shows both offers and native bottom balances
+535/618; `trade-tennessee300-accepted-real.png` shows Main balances235/918 and
+Tennessee added to the human hand. Both are in
+`build/polish-continuation-20261001/`. This qualifies that real accepted trade,
+beyond the earlier edit/cancel checks; it does not establish every negotiation
+path.
+
+The completed ten-minute session in process17604 includes default8x anisotropy,
+UI themes39–45 and the camera correction, with no concurrent build or other GPU
+work. Its1181 window-title FPS samples have median60, p5 59.1, minimum57.1,
+82.4725% at least60 and93.3954% at least59.5. Evidence is
+`build/polish-continuation-20261001/passes39-45-game-fps.csv` and
+`passes39-45-game-fps-summary.txt`. This is session telemetry, not individual
+frame-time proof, a continuous60 FPS minimum or a matched performance comparison;
+it contains no evidence for future passes46–47.
+
+Actual events included acknowledging Chest25, the accepted Tennessee trade,
+two AI rounds, human rent14 received(balance249) then B&O rent100 paid(balance149).
+The private game5/t save was updated on October2 at00:12:20; original slots1/p,
+2/blank and3/r were unchanged, while4/s retained its pending card for diagnosis.
+Actual F11 fullscreen was captured as `pass45-f11-fullscreen-real.png` in that
+qualification directory, then returned to the1920x1080 window. Live camera proof
+qualifies samples203(corrected) and212(excluded), without an exact real-game
+replay of row40722.
+
+## Trade instructions and active-token thumbnail (passes46-47)
+
+Actual Release process15896 loaded the private game5/t save with the human at
+B&O and149 funds. The inspected
+`build/polish-continuation-20261001/pass46-trade-instructions-real-after.png`
+retains the authentic LANG body, now clear regular cream text with no underlined
+heading and the full body visible. Compare the earlier panel in
+`pass42-cancel-traced-after25s.png`. Actual LANG/Arial CPU checks fit eight lines
+with bottom438/675; `pass46-panel-real-tests.log` and general IBar/text tests pass.
+
+The central Moneybag thumbnail is now black and matches the actual GLB. Inspected
+captures are `pass47-active-token-modern-real-after.png` and
+`pass47-active-token-fullscreen-real-after.png` in that qualification directory.
+The earlier same-B&O/amount fullscreen view `pass45-f11-fullscreen-real.png` shows
+the old gray central icon. This deliberately replaces the central icon's visual
+spin with the existing static thumbnail at255; authored CNK clocks and transforms
+remain unchanged, and the3D token animation still runs. CPU qualification covers
+all11 roots and328 UAP frames in `pass47-current-token-real-tests.log`.
+
+These are accepted actual UI renders. The completed passes39–45 ten-minute FPS
+sample predates both changes; no new ten-minute FPS result is claimed for46–47.

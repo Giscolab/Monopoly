@@ -431,6 +431,7 @@ int main(int argc, char** argv)
         bool benchmarkToken = false;
         bool houseCloseup = false;
         bool buildingCameraProof = false;
+        bool cameraTravelProof = false;
         unsigned polishLevel = 0;
         std::optional<unsigned> textureAnisotropy;
         unsigned cameraYaw = 28, cameraElevation = 55, uiSafePercent = 0;
@@ -459,6 +460,8 @@ int main(int argc, char** argv)
             { if (++i >= argc) throw std::runtime_error("--ui-safe-percent requires 0..40"); uiSafePercent = number(argv[i],40); }
             else if (std::string{argv[i]} == "--tabletop-samples")
             { if (++i >= argc) throw std::runtime_error("--tabletop-samples requires runtime-root"); tabletopSamples = argv[i]; }
+            else if (std::string{argv[i]} == "--camera-travel-proof")
+            { if(cameraTravelProof)throw std::runtime_error("Duplicate --camera-travel-proof");cameraTravelProof=true; }
             else if (std::string{argv[i]} == "--building-camera-proof")
             { if(buildingCameraProof)throw std::runtime_error("Duplicate --building-camera-proof");buildingCameraProof=true; }
             else if (std::string{argv[i]} == "--house-closeup")
@@ -488,7 +491,7 @@ int main(int argc, char** argv)
                 *textureAnisotropy ? "8" : "0",true),"Process-local texture anisotropy qualification override");
             std::cout<<"texture_anisotropy_requested\t"<<*textureAnisotropy<<'\n';
         }
-        if(buildingCameraProof)
+        if(buildingCameraProof || cameraTravelProof)
         {
             require(!turntable && !tokenFrame && !tabletopSamples && !houseCloseup && !benchmarkToken && !animationTick,
                 "Building-camera proof cannot mix token/tabletop/animation modes");
@@ -710,7 +713,7 @@ int main(int argc, char** argv)
         lighting.sun.direction = {.3F, -1, .4F};
         if (polishLevel >= 3) lighting = engine::modernBoardPresentationLighting();
         renderer->setLighting(lighting);
-        if(buildingCameraProof)
+        if(buildingCameraProof || cameraTravelProof)
         {
             // Match Engine's qualified building identities and transformed bounds.
             // Furniture, vegetation, people, table and plinth never influence this helper.
@@ -746,10 +749,20 @@ int main(int argc, char** argv)
             aimLength=std::sqrt(aimLength);
             require(aimLength>0,"Measured hotel-to-board aim");
             for(auto& value:raw.forward)value/=aimLength;
+            if(cameraTravelProof)
+            {
+                // Fresh real-game CameraTraceCSV tick40722: automatic travel,
+                // no CNK/dice/floating/manual owner. Preserve exact sampled pose.
+                raw.location={250.416F,78.209F,300.542F};
+                raw.forward={-.0195513F,-.358368F,0};raw.up={0,1,0};
+                raw.fieldOfView=.785398F;raw.nearPlane=10;raw.farPlane=1540;
+            }
             const float clearance=std::max(raw.nearPlane*2,1.0F), influence=std::max(raw.nearPlane*8,1.0F);
-            const auto adjusted=engine::avoidModernPresentationBuildings(raw,buildings,ground,clearance,influence);
-            require(adjusted.location[1]>raw.location[1] && adjusted.location[0]==raw.location[0] &&
-                adjusted.location[2]==raw.location[2],"Actual building avoidance must lift this camera only");
+            const auto framing=cameraTravelProof ? engine::preserveModernTravelFraming(raw,ground) : raw;
+            const auto adjusted=engine::avoidModernPresentationBuildings(framing,buildings,ground,clearance,influence);
+            require(adjusted.location[1]>raw.location[1],"Actual camera correction must clear this view");
+            if(!cameraTravelProof)require(adjusted.location[0]==raw.location[0] &&
+                adjusted.location[2]==raw.location[2],"Building-only correction remains vertical");
             const auto planeAim=[ground](const auto& view)
             {
                 const float t=(ground-view.location[1])/view.forward[1];
@@ -760,7 +773,8 @@ int main(int argc, char** argv)
             const auto rawAim=planeAim(raw), adjustedAim=planeAim(adjusted);
             for(unsigned axis=0;axis<3;++axis)
                 require(std::abs(rawAim[axis]-adjustedAim[axis])<.01F,"Original board-plane aim preserved");
-            std::ofstream manifest(outputDir/"building-camera-proof.tsv");
+            const std::string proofStem=cameraTravelProof ? "camera-travel" : "building-camera";
+            std::ofstream manifest(outputDir/(proofStem+"-proof.tsv"));
             manifest<<std::setprecision(9)<<"scope\tactual production city geometry; camera-only A/B; not gameplay\n"
                 <<"asset_root\t"<<assetRoot.string()<<"\nboard_asset\t"<<relativeBoard.generic_string()
                 <<"\nloaded_scene_items\t"<<items.size()<<"\nsize\t"<<Width<<'x'<<Height<<"\nselected_node\t"<<(engine::ModernEnvironmentNodeBase|20U)
@@ -782,7 +796,7 @@ int main(int argc, char** argv)
                 require(mapped!=nullptr,"Proof readback");
                 std::vector<unsigned char> pixels(Width*Height*4);
                 std::memcpy(pixels.data(),mapped,pixels.size()); SDL_UnmapGPUTransferBuffer(gpu.device,gpu.transfer);
-                const std::string stem=frame ? "building-camera-after" : "building-camera-before";
+                const std::string stem=proofStem+(frame ? "-after" : "-before");
                 std::ofstream image(outputDir/(stem+".ppm"),std::ios::binary);
                 image<<"P6\n"<<Width<<' '<<Height<<"\n255\n";
                 for(std::size_t i=0;i<pixels.size();i+=4)image.write(reinterpret_cast<const char*>(pixels.data()+i),3);
@@ -808,7 +822,7 @@ int main(int argc, char** argv)
                 }
             }
             manifest.close();require(manifest.good(),"Proof manifest write");
-            std::cout<<"building_camera_proof\t"<<(outputDir/"building-camera-proof.tsv").string()<<'\n';
+            std::cout<<"building_camera_proof\t"<<(outputDir/(proofStem+"-proof.tsv")).string()<<'\n';
             return 0;
         }
         const unsigned measuredFrames = tokenFrame && !benchmarkToken ? 0 : Frames;

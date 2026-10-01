@@ -1,6 +1,8 @@
 #include "TradePartnerSelectionPlayback.hpp"
 #include "SyntheticTextResources.hpp"
+#include "ModernTokenPreview.hpp"
 #include <iostream>
+#include <algorithm>
 #include <stdexcept>
 namespace
 {
@@ -42,6 +44,20 @@ namespace
         require(paths && resources.initialize(*paths).has_value(),"Actual chooser DAT loads");
         fonts::Runtime font;loadRealTestArial(font);engine::SequencePlayback playback(resources.snapshot());
         auto players=game();players.players[1].currentSquare=1;
+        data::BitmapRuntimeCache decoded;
+        for(unsigned token=0;token<11;++token)
+        {
+            const auto id=0x000201C0+token;
+            const auto metadata=resources.snapshot()->data().metadata(id);
+            const auto bytes=resources.snapshot()->data().load(id);
+            require(metadata && bytes,"Actual token mini metadata and bytes");
+            const auto asset=decoded.resolve(id,metadata->type,*bytes);require(asset.has_value(),"Actual token mini decodes");
+            int originX=0,originY=0;
+            if(metadata->type==data::LegacyDataType::Uap)
+            {const auto uap=data::inspectLegacyUap(**bytes);require(uap.has_value(),"Actual mini UAP metadata");originX=uap->originX;originY=uap->originY;}
+            std::cout<<"[retail-mini] token="<<token<<" id="<<std::hex<<id<<std::dec<<" width="<<(*asset)->image.width
+                <<" height="<<(*asset)->image.height<<" origin="<<originX<<','<<originY<<" type="<<int(metadata->type)<<'\n';
+        }
         tradeui::PartnerSelectionPlayback panel;unsigned count=0;
         for(unsigned first=0;first<15;first+=5)
         {
@@ -56,6 +72,72 @@ namespace
         }
         require(count==6 && panel.reset(playback).has_value(),"Six actual native/modern raster sets acrossall11 retail tokens");
         std::cout<<"[PASS] actual localized chooser template/title/all11 token CPU decode (not live gameplay/GPU)\n";
+    }
+    void qualifyThumbnails(const std::filesystem::path& root,const std::filesystem::path& thumbnails)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"Actual thumbnail qualification DAT");
+        fonts::Runtime font;loadRealTestArial(font);engine::SequencePlayback playback(resources.snapshot());
+        menu::ModernTokenPreview loader(thumbnails);auto players=game();players.players[1].currentSquare=1;
+        tradeui::State state;require(tradeui::beginLocalTrade(state,players,5),"Actual thumbnail chooser state");
+        tradeui::PartnerSelectionPlayback panel;
+        for(unsigned token=0;token<11;++token)
+        {
+            players.players[0].token=token;
+            require(panel.sync(state,players,display::Screen2D::Trade,&font,playback,true).has_value(),"Actual retail mini fallback");
+            const auto retail=playback.runtimeBitmaps().asset(panel.surface());
+            const auto thumbnail=loader.image(static_cast<std::uint8_t>(token),255);
+            require(thumbnail && thumbnail->width==768 && thumbnail->height==640,"Actual shared GPU thumbnail decoded");
+            panel.configureTokenImages([&loader](std::uint8_t id){return loader.image(id,255);});
+            require(panel.sync(state,players,display::Screen2D::Trade,&font,playback,true).has_value() && playback.update(0).has_value(),
+                "Actual thumbnail composite retains original chooser sequence");
+            const auto modern=playback.runtimeBitmaps().asset(panel.surface());
+            require(modern && modern->image.width==564 && modern->image.height==627 && modern->image.pixels!=retail->image.pixels,
+                "Actual shared token artwork differs from retail mini and fits owned chooser raster");
+            std::cout<<"[thumbnail] token="<<token<<" source=768x640 composite=564x627 well=132x84\n";
+            panel.configureTokenImages({});
+        }
+        require(panel.reset(playback).has_value(),"Actual thumbnail qualification releases owned chooser");
+        std::cout<<"[PASS] all11 actual shared thumbnails in localized Trade chooser (CPU only)\n";
+    }
+    void testThumbnails()
+    {
+        Fixture fixture;engine::SequencePlayback playback(fixture.resources.service.snapshot());
+        auto players=game();tradeui::State state;require(tradeui::beginLocalTrade(state,players,5),"Thumbnail chooser state");
+        tradeui::PartnerSelectionPlayback panel;
+        const auto sync=[&](bool modern){return panel.sync(state,players,display::Screen2D::Trade,&fixture.font,playback,modern);};
+        require(sync(false).has_value(),"Native thumbnail baseline");const auto native=playback.runtimeBitmaps().asset(panel.surface());
+        require(sync(true).has_value() && playback.update(60).has_value(),"Modern retail mini baseline");
+        const auto fallback=playback.runtimeBitmaps().asset(panel.surface());const auto nodes=playback.world2D().order();
+        const auto before=*playback.world2D().find(nodes[0]);
+        auto image=std::make_shared<data::LegacyBitmapRGBA8>(data::LegacyBitmapRGBA8{768,640,std::vector<std::uint8_t>(768*640*4,0)});
+        for(unsigned y=20;y<40;++y)for(unsigned x=10;x<50;++x)
+        {const auto p=(std::size_t(y)*768+x)*4;image->pixels[p]=200;image->pixels[p+1]=20;image->pixels[p+2]=10;image->pixels[p+3]=128;}
+        unsigned calls=0;panel.configureTokenImages([&](std::uint8_t){++calls;return image;});
+        require(sync(true).has_value() && playback.update(60).has_value(),"Valid transparent thumbnail replaces retail mini");
+        const auto modern=playback.runtimeBitmaps().asset(panel.surface());
+        const auto pixel=[&](unsigned x,unsigned y,unsigned c){return modern->image.pixels[(std::size_t(y)*564+x)*4+c];};
+        const unsigned firstTop=(261-234)*3;
+        require(pixel(378,firstTop+8,0)==22 && pixel(378,firstTop+9,0)==std::uint8_t((200*128+22*127+127)/255) &&
+            pixel(509,firstTop+74,0)==pixel(378,firstTop+9,0) && pixel(378,firstTop+75,0)==22,
+            "Visible alpha crop keeps2:1aspect in132x84well, centered and source-over blended without stretching");
+        const auto after=*playback.world2D().find(nodes[0]);
+        require(after.clock==before.clock && after.priority==before.priority && after.worldTransform.values==before.worldTransform.values,
+            "Modern thumbnail refresh retains chooser geometry priority and clock");
+        const auto once=calls;require(sync(true).has_value() && calls==once && playback.runtimeBitmaps().asset(panel.surface())==modern,
+            "Unchanged chooser does not request thumbnail or rerasterize");
+        require(sync(false).has_value() && calls==once && playback.runtimeBitmaps().asset(panel.surface())->image.pixels==native->image.pixels,
+            "Native mode never requests provider and restores exact original panel RGBA");
+        const auto checkFallback=[&](tradeui::PartnerSelectionPlayback::TokenImageProvider provider)
+        {panel.configureTokenImages(std::move(provider));require(sync(true).has_value() &&
+            playback.runtimeBitmaps().asset(panel.surface())->image.pixels==fallback->image.pixels,"Malformed/missing thumbnail keeps exact decoded retail mini fallback");};
+        checkFallback({});checkFallback([](std::uint8_t){return std::shared_ptr<const data::LegacyBitmapRGBA8>{};});
+        auto bad=std::make_shared<data::LegacyBitmapRGBA8>(*image);bad->width=767;checkFallback([bad](std::uint8_t){return bad;});
+        bad=std::make_shared<data::LegacyBitmapRGBA8>(*image);bad->pixels.pop_back();checkFallback([bad](std::uint8_t){return bad;});
+        bad=std::make_shared<data::LegacyBitmapRGBA8>(*image);std::fill(bad->pixels.begin(),bad->pixels.end(),0);checkFallback([bad](std::uint8_t){return bad;});
+        bad=std::make_shared<data::LegacyBitmapRGBA8>(*image);for(std::size_t p=3;p<bad->pixels.size();p+=4)bad->pixels[p]=255;checkFallback([bad](std::uint8_t){return bad;});
+        checkFallback([](std::uint8_t)->std::shared_ptr<const data::LegacyBitmapRGBA8>{throw std::runtime_error("Optional provider failure");});
+        require(playback.runtimeBitmaps().size()==1 && panel.reset(playback).has_value(),"Thumbnail provider never allocates additional runtime surfaces");
     }
     void testMissingResources()
     {
@@ -123,6 +205,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==3 && std::string_view(argv[1])=="--retail-qualify"){qualifyRetail(argv[2]);return 0;}testMissingResources();testChooser();std::cout<<"[PASS] localized Trade partner consumer and authentic input/font/lifetime (CPU)\n";return 0;}
+    try{if(argc==4 && std::string_view(argv[1])=="--thumbnail-qualify"){qualifyThumbnails(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--retail-qualify"){qualifyRetail(argv[2]);return 0;}testMissingResources();testChooser();testThumbnails();std::cout<<"[PASS] localized Trade partner consumer and authentic input/font/lifetime (CPU)\n";return 0;}
     catch(const std::exception& error){std::cerr<<"[FAIL] "<<error.what()<<'\n';return 1;}
 }

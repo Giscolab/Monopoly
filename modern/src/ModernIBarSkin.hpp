@@ -83,6 +83,8 @@ namespace monopoly::ibar
         [[nodiscard]] bool supports(data::DataId root) const noexcept;
         // Only the measured background leaves change; animated siblings remain retail.
         [[nodiscard]] bool supportsCardFaceIn(data::DataId root) const noexcept;
+        // Exact USA action transition UAPs may retain native geometry/printed
+        // captions with a chrome tint when the settled band path cannot apply.
         [[nodiscard]] std::shared_ptr<const data::BitmapRuntimeAsset> substitute(
             data::DataId root, std::shared_ptr<const data::BitmapRuntimeAsset> original,
             bool principal = true,

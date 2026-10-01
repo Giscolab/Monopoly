@@ -2,6 +2,7 @@
 #include "TradeUI.hpp"
 #include "SequencePlayback.hpp"
 #include <string>
+#include <functional>
 namespace monopoly::fonts { class Runtime; }
 namespace monopoly::tradeui
 {
@@ -9,6 +10,8 @@ namespace monopoly::tradeui
     class PartnerSelectionPlayback final
     {
     public:
+        using TokenImageProvider = std::function<std::shared_ptr<const data::LegacyBitmapRGBA8>(std::uint8_t)>;
+        void configureTokenImages(TokenImageProvider provider);
         [[nodiscard]] std::expected<void,std::string> sync(const State& state,
             const rules::GameState& game, display::Screen2D view, fonts::Runtime* font,
             engine::SequencePlayback& playback, bool modernPresentation=false);
@@ -21,5 +24,6 @@ namespace monopoly::tradeui
         std::string key_;
         std::shared_ptr<const data::ResourceSnapshot> resources_;
         data::BitmapRuntimeCache bitmaps_;
+        TokenImageProvider tokenImages_;
     };
 }

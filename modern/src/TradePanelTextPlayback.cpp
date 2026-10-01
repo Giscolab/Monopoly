@@ -45,7 +45,7 @@ namespace monopoly::tradeui
             data::LegacyBitmapRGBA8& image,
             fonts::Runtime& font,
             const std::vector<std::string>& lines,
-            int& y, bool modernAA)
+            int& y)
         {
             int height{};
             if (!lines.empty())
@@ -61,27 +61,53 @@ namespace monopoly::tradeui
                     const auto metrics = font.measure(line);
                     if (!metrics) return std::unexpected(metrics.error().detail);
                     const int x = (static_cast<int>(PanelWidth) - metrics->width) / 2;
-                    if (!modernAA)
-                    {
-                        const auto blitted = font.blitText(image, line, x, y, PanelTextColour);
-                        if (!blitted) return std::unexpected(blitted.error().detail);
-                    }
-                    else
-                    {
-                        const int nativeSize = font.settings().size;
-                        const auto enlarged = font.setSize(nativeSize * 3);
-                        if (!enlarged) return std::unexpected(enlarged.error().detail);
-                        const auto raster = font.render(line, PanelTextColour, true);
-                        const auto native = font.setSize(nativeSize);
-                        if (!native) return std::unexpected(native.error().detail);
-                        if (!raster) return std::unexpected(raster.error().detail);
-                        const auto blitted = data::blitStraightRGBA8(image, *raster, x * 3, y * 3, data::BitmapBlitMode::SourceOver);
-                        if (!blitted) return std::unexpected(blitted.error());
-                    }
+                    const auto blitted = font.blitText(image, line, x, y, PanelTextColour);
+                    if (!blitted) return std::unexpected(blitted.error().detail);
                 }
                 y += height;
             }
             return {};
+        }
+
+        // Measure/wrap at the authored logical width; rasterize accepted lines
+        // with private font faces so high resolution never mutates the shared font.
+        // A fit failure leaves the complete native panel available, rather than
+        // publishing a modern bitmap with silently clipped instructions.
+        [[nodiscard]] std::expected<bool, std::string> printModernParagraph(
+            data::LegacyBitmapRGBA8& image, fonts::Runtime& font,
+            std::string_view text, int size, int weight, int& y)
+        {
+            const auto sized = font.setSize(size);
+            if (!sized) return std::unexpected(sized.error().detail);
+            font.setWeight(weight); font.setUnderline(false);
+            font.setItalic(false); font.setStrikeOut(false);
+            const auto lines = font.wrap(text, WrapWidth);
+            if (!lines) return std::unexpected(lines.error().detail);
+            int height{};
+            if (!lines->empty())
+            {
+                const auto metrics = font.measure(lines->front());
+                if (!metrics) return std::unexpected(metrics.error().detail);
+                height = metrics->height;
+            }
+            for (const auto& line : *lines)
+            {
+                if (!line.empty())
+                {
+                    const auto raster = font.renderPresentation(
+                        line, 0x00D3EBF5U, size * 3, weight, false, false, false, true);
+                    if (!raster) return std::unexpected(raster.error().detail);
+                    if (raster->width > image.width || y < 0 ||
+                        std::uint64_t(y) * 3 + raster->height > image.height)
+                        return false;
+                    const int x = (static_cast<int>(image.width) - static_cast<int>(raster->width)) / 2;
+                    const auto blitted = data::blitStraightRGBA8(
+                        image, *raster, x, y * 3, data::BitmapBlitMode::SourceOver);
+                    if (!blitted) return std::unexpected(blitted.error());
+                }
+                y += height;
+            }
+            return true;
         }
 
         struct RestoreDefaultFont final
@@ -135,6 +161,10 @@ namespace monopoly::tradeui
         if (!trading) return std::unexpected(trading.error());
         const auto trading2 = languageText(playback, Trading2MessageId);
         if (!trading2) return std::unexpected(trading2.error());
+        const auto resources = playback.resources();
+        modernAA = modernAA && resources &&
+            resources->context().board == data::BoardEdition::Usa &&
+            resources->context().language == data::LanguageId::EnglishUs;
         const std::string key = *trading + '\n' + *trading2;
         const auto callerSettings = fontRuntime->settings();
 
@@ -143,32 +173,52 @@ namespace monopoly::tradeui
             !fontSettings_ || *fontSettings_ != callerSettings;
         if (contentChanged)
         {
-            auto image = blankPanel(modernAA ? 3 : 1);
             RestoreDefaultFont restore{fontRuntime, modernAA ? std::optional{callerSettings} : std::nullopt};
-            auto sized = fontRuntime->setSize(12);
-            if (!sized) return std::unexpected(sized.error().detail);
-            fontRuntime->setWeight(700);
-            fontRuntime->setUnderline(true);
-            const auto firstLines = fontRuntime->wrap(*trading, WrapWidth);
-            if (!firstLines) return std::unexpected(firstLines.error().detail);
-            int y = 14;
-            if (auto printed = printCenteredLines(
-                    image, *fontRuntime, *firstLines, y, modernAA); !printed)
-                return printed;
-            y += 3;
+            bool modernFits = modernAA;
+            auto image = blankPanel(modernAA ? 3 : 1);
+            if (modernAA)
+            {
+                int y = 14;
+                const auto title = printModernParagraph(image, *fontRuntime, *trading, 12, 600, y);
+                if (!title) return std::unexpected(title.error());
+                y += 3;
+                const auto body = *title ? printModernParagraph(image, *fontRuntime, *trading2, 10, 400, y)
+                                        : std::expected<bool, std::string>{false};
+                if (!body) return std::unexpected(body.error());
+                modernFits = *title && *body;
+            }
+            if (!modernFits)
+            {
+                image = blankPanel(1);
+                // Match the original renderer's inherited italic/strike settings
+                // even after a rejected modern layout has measured its fonts.
+                fontRuntime->setItalic(callerSettings.italic);
+                fontRuntime->setStrikeOut(callerSettings.strikeOut);
+                auto sized = fontRuntime->setSize(12);
+                if (!sized) return std::unexpected(sized.error().detail);
+                fontRuntime->setWeight(700);
+                fontRuntime->setUnderline(true);
+                const auto firstLines = fontRuntime->wrap(*trading, WrapWidth);
+                if (!firstLines) return std::unexpected(firstLines.error().detail);
+                int y = 14;
+                if (auto printed = printCenteredLines(
+                        image, *fontRuntime, *firstLines, y); !printed)
+                    return printed;
+                y += 3;
 
-            sized = fontRuntime->setSize(9);
-            if (!sized) return std::unexpected(sized.error().detail);
-            fontRuntime->setWeight(700);
-            fontRuntime->setUnderline(false);
-            const auto secondLines = fontRuntime->wrap(*trading2, WrapWidth);
-            if (!secondLines) return std::unexpected(secondLines.error().detail);
-            if (auto printed = printCenteredLines(
-                    image, *fontRuntime, *secondLines, y, modernAA); !printed)
-                return printed;
+                sized = fontRuntime->setSize(9);
+                if (!sized) return std::unexpected(sized.error().detail);
+                fontRuntime->setWeight(700);
+                fontRuntime->setUnderline(false);
+                const auto secondLines = fontRuntime->wrap(*trading2, WrapWidth);
+                if (!secondLines) return std::unexpected(secondLines.error().detail);
+                if (auto printed = printCenteredLines(
+                        image, *fontRuntime, *secondLines, y); !printed)
+                    return printed;
+            }
 
             const auto updated = playback.runtimeBitmaps().update(
-                *surface_, std::move(image), modernAA ? std::optional<std::array<float,4>>{{0,0,float(PanelWidth),float(PanelHeight)}} : std::nullopt, modernAA);
+                *surface_, std::move(image), modernFits ? std::optional<std::array<float,4>>{{0,0,float(PanelWidth),float(PanelHeight)}} : std::nullopt, modernFits);
             if (!updated) return std::unexpected(updated.error());
             contentKey_ = key;
             modernAA_ = modernAA;

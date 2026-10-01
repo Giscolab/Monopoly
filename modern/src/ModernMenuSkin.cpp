@@ -112,9 +112,8 @@ namespace monopoly::menu
             if (root == 0x0002006A) return Descriptor{Kind::CalculatorPanel, {}};
             if (root == 0x00020091) return Descriptor{Kind::CalculatorDescription, {}};
             if (root == 0x00050089) return Descriptor{Kind::StatsBackground, {}};
-            // Keep the authored auction stage until a complete modern stage replaces it.
-            // A flat shell removes the floor beneath the animated auctioneer.
-            if (root == 0x00030000) return {};
+            // Only the measured static background qualifies; its real floor survives.
+            if (root == 0x00030000) return Descriptor{Kind::AuctionBackground,{}};
             if (root == 0x0003036F) return Descriptor{Kind::AuctionBottom, {}};
             if (root >= 0x00030370 && root <= 0x0003037B)
                 return Descriptor{Kind::AuctionPlayer, {}, int((root - 0x00030370) % 6)};
@@ -330,6 +329,16 @@ namespace monopoly::menu
     {
         if (!original || !supports(root)) return original;
         const auto descriptor = *describe(root);
+        const bool auctionBackdrop = descriptor.kind == Kind::AuctionBackground;
+        if (auctionBackdrop)
+        {
+            if (!principal || !tradeCashPresentation_ || !tradeCashPresentation_() ||
+                original->dataId != root || original->sourceType != data::LegacyDataType::Bitmap ||
+                !original->source || original->image.width != 800 || original->image.height != 450) return original;
+            const auto metadata=data::inspectLegacyBitmap(*original->source);
+            if (!metadata || metadata->width != 800 || metadata->height != 450 ||
+                metadata->bitsPerPixel != 24 || metadata->compression != 0) return original;
+        }
         const bool tradeCash = descriptor.kind == Kind::TradeCashPanel ||
             descriptor.kind == Kind::TradeCashButton || descriptor.kind == Kind::TradeCashPressed;
         if (tradeCash)
@@ -574,7 +583,36 @@ namespace monopoly::menu
         replacement->sourceType = data::LegacyDataType::Native;
         replacement->preferLinearFiltering = true;
         auto& image = replacement->image;
-        if (descriptor.kind == Kind::TokenPreview)
+        if (auctionBackdrop)
+        {
+            // Raw BMP_auctiona is opaque. Check once per immutable source, not
+            // on cache hits. No native alpha or geometry may be reconstructed.
+            for(std::size_t at=3;at<source.pixels.size();at+=4)
+                if(source.pixels[at]!=255)return original;
+            *replacement=*original;
+            replacement->sourceType=data::LegacyDataType::Native;
+            constexpr std::array<unsigned,3> teal{80,133,136};
+            for(unsigned y=0;y<280;++y)
+            {
+                // Source-derived detail remains; no synthetic gradient or flat fill.
+                const unsigned weight=y<240 ? 255U : (280-y)*255U/40U;
+                for(unsigned x=0;x<800;++x)
+                {
+                    const auto at=(std::size_t(y)*800+x)*4;
+                    const unsigned luminance=(54U*source.pixels[at]+183U*source.pixels[at+1]+
+                        19U*source.pixels[at+2]+128U)/256U;
+                    for(unsigned c=0;c<3;++c)
+                    {
+                        const unsigned tinted=std::min(255U,(luminance*teal[c]+64U)/128U);
+                        image.pixels[at+c]=std::uint8_t((tinted*weight+
+                            source.pixels[at+c]*(255U-weight)+127U)/255U);
+                    }
+                }
+            }
+            // Every RGBA byte in rows280..449 remains copied from retail:
+            // perspective runway, bright lamps and auctioneer ground contact.
+        }
+        else if (descriptor.kind == Kind::TokenPreview)
         {
             image = *tokenImage;
             replacement->presentationRect = std::array<float,4>{527.0F,275.5F,747.0F,458.5F};

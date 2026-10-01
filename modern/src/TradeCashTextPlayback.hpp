@@ -30,6 +30,10 @@ namespace monopoly::tradeui
     inline constexpr std::array<std::int32_t, 4> TradeCashIconY{{
         395, 395, 358, 358}};
 
+    inline constexpr std::uint16_t TradeCashReadoutPriority = 1978;
+    inline constexpr std::uint32_t TradeCashReadoutWidth = 172;
+    inline constexpr std::uint32_t TradeCashReadoutHeight = 14;
+
     class CashTextPlayback final
     {
     public:
@@ -39,9 +43,12 @@ namespace monopoly::tradeui
             display::Screen2D desiredView,
             int monetarySystem,
             fonts::Runtime* fontRuntime,
-            engine::SequencePlayback& playback, bool modernAA = false);
+            engine::SequencePlayback& playback, bool modernAA = false,
+            bool modernCashReadout = false);
 
         void reset() noexcept;
+        [[nodiscard]] std::optional<data::DataId> readoutSurface() const noexcept
+        { return readoutSurface_; }
 
     private:
         struct Published
@@ -59,6 +66,9 @@ namespace monopoly::tradeui
         std::array<std::optional<data::DataId>, 4> textSurfaces_{};
         std::array<std::optional<std::string>, 4> textCache_{};
         std::vector<Published> current_;
+        std::optional<data::DataId> readoutSurface_;
+        std::optional<std::string> readoutText_;
+        std::optional<fonts::Settings> readoutFont_;
         std::array<bool, 4> modernAA_{};
         std::array<std::optional<fonts::Settings>, 4> fontSettings_{};
     };

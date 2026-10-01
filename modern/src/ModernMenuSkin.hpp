@@ -19,7 +19,8 @@ namespace monopoly::menu
         using TokenImageProvider = std::function<std::shared_ptr<const data::LegacyBitmapRGBA8>(
             std::uint8_t token, std::uint8_t frame)>;
         void configureTokenImages(TokenImageProvider provider);
-        // Live original USA/city0/system13 qualification; absent means retail cash art.
+        // Live original USA/city0/system13 qualification for cash/stage art;
+        // absent means retail. Re-evaluated before cached derivatives are used.
         void configureTradeCashPresentation(std::function<bool()> qualified);
         ModernMenuSkin(data::BoardEdition edition, data::LanguageId language,
             TextRasterizer text) : edition_(edition), language_(language), text_(std::move(text)) {}

@@ -411,6 +411,71 @@ namespace
         std::cout<<"[PASS] licensed native idle artwork qualification count="<<(chanceOnly?1:32)<<'\n';
     }
 
+    void testActualNativeOutCards(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual resources open for outgoing art qualification");
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
+        std::map<data::DataId,ibar::ModernIBarSkin::DrawCardDescriptor> descriptors;
+        for(unsigned index=0;index<32;++index)descriptors.emplace(index<16?0x50028+index:0x50059+index-16,
+            ibar::ModernIBarSkin::DrawCardDescriptor{"Actual title","Actual ink",400,index==1?239U:240U});
+        bool context=true;unsigned textCalls=0;skin->configurePresentationContext([&]{return context;});
+        skin->configureDrawCardDescriptors(std::move(descriptors),
+            [&](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{++textCalls;return std::unexpected("no duplicate native caption");});
+        const auto snapshot=resources.snapshot();data::BitmapRuntimeCache cache;unsigned identical=0;
+        for(unsigned index=0;index<32;++index)
+        {
+            const auto owner=index<16?0x50048+index:0x50079+index-16;
+            const auto outgoingLeaf=index<16?0x50839+index:0x508EB+index-16;
+            const auto idleLeaf=index<16?0x50982+index:0x50972+index-16;
+            const auto outBytes=snapshot->data().load(outgoingLeaf),idleBytes=snapshot->data().load(idleLeaf);
+            require(outBytes && idleBytes,"both exact actual outgoing/idle sources exist");
+            const auto source=cache.resolve(outgoingLeaf,data::LegacyDataType::Uap,*outBytes);
+            require(source.has_value(),"actual outgoing source decodes");
+            if(index==12)
+            {
+                require(**outBytes!=**idleBytes && !skin->supports(owner) && skin->substitute(owner,*source)==*source,
+                    "differing Poor Tax outgoing art remains complete retail fallback");continue;
+            }
+            require(**outBytes==**idleBytes,"qualified outgoing payload is byte-identical to actual idle artwork");++identical;
+            const auto result=skin->substitute(owner,*source);require(result!=*source,"exact outgoing illustrated pair qualifies");
+            verifyFacePixels(**source,*result);
+            require(skin->substitute(owner,*source)==result && skin->substitute(owner,*source,false)==*source,
+                "outgoing artwork cache reuses exact owner while secondary leaves remain native");
+            auto bad=std::make_shared<data::BitmapRuntimeAsset>(**source);bad->source.reset();
+            require(skin->substitute(owner,bad)==bad,"outgoing art requires immutable raw UAP provenance");
+            bad=std::make_shared<data::BitmapRuntimeAsset>(**source);bad->dataId=idleLeaf;
+            require(skin->substitute(owner,bad)==bad,"idle leaf cannot masquerade as outgoing owner artwork");
+            bad=std::make_shared<data::BitmapRuntimeAsset>(**source);bad->image.height=index==1?240:239;
+            require(skin->substitute(owner,bad)==bad,"each outgoing pair requires exact239/240 authored height");
+            const auto program=sequence::SequenceProgram::load(snapshot,owner);sequence::SequenceRuntime runtime;
+            require(program && runtime.start(*program,1005),"production outgoing root starts at CardPriority");
+            engine::SequenceWorld2DSlot native,modern;modern.configureModernIBarSkin(skin);
+            for(const auto tick:{0,4,8})
+            {
+                require(runtime.update(tick).has_value(),"actual outgoing clock advances");
+                const auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);
+                require(items && native.sync(*items,cache) && modern.sync(*items,cache) && native.order()==modern.order(),
+                    "actual outgoing leaves publish unchanged production ordering");
+                unsigned replaced=0;
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    require(a && m && a->clock==m->clock && a->priority==m->priority && a->contentsDataId==m->contentsDataId &&
+                        a->worldTransform.values==m->worldTransform.values,"outgoing tint retains every authored clock, priority, contents and full matrix");
+                    if(a->contentsDataId==outgoingLeaf){require(a->asset!=m->asset,"moving outgoing face is tinted");verifyFacePixels(*a->asset,*m->asset);++replaced;}
+                    else require(a->asset==m->asset,"outgoing1x1 companion retains exact retail pointer");
+                }
+                require(replaced==1,"exactly one authored outgoing face is recoloured per pose");
+                context=false;require(modern.sync(*items,cache).has_value(),"outgoing context fallback publishes");
+                for(const auto node:native.order())require(modern.find(node)->asset==native.find(node)->asset,"outgoing context loss returns every retail pointer");
+                context=true;
+            }
+            std::cout<<"[PASS] actual identical Out pair root="<<std::hex<<owner<<" leaf="<<outgoingLeaf<<" idle="<<idleLeaf<<std::dec<<'\n';
+        }
+        require(identical==31 && textCalls==0,"31 byte-identical outgoing faces preserve authentic ink without any font rasterization");
+    }
+
     void testMeasuredStCharlesIdleCard()
     {
         const auto raster=[](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
@@ -586,25 +651,83 @@ namespace
         }
     }
 
-    void inspectActionButtons(const std::filesystem::path& root)
+    void inspectActionButtons(const std::filesystem::path& root,bool qualify=false)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
         require(paths && resources.initialize(*paths).has_value(),"real USA DAT action-button resources open");
-        const auto snapshot=resources.snapshot();
-        for(const unsigned index:{0U,1U,3U,12U,13U,14U,17U,18U,19U})for(const unsigned base:{0x008AU,0x0106U})for(unsigned state=0;state<4;++state)
+        const auto snapshot=resources.snapshot();unsigned nativeFrames=0;
+        for(const unsigned index:{1U,3U,5U,6U,12U,17U})for(const unsigned base:{0x008AU,0x0106U})for(unsigned state=0;state<4;++state)
         {
             const auto id=data::packDataId(data::LegacyGroupId::LanguageGraphics,data::DataTag(base+index*4+state));
             auto program=sequence::SequenceProgram::load(snapshot,id,0);require(program.has_value(),"actual action CNK decodes");
+            const int rootEnd=(*program)->descriptions().front().record.header.endTime;
+            const int lastTick=rootEnd>0 && rootEnd<=512 ? rootEnd : 32;
+            for(const auto& description:(*program)->descriptions())
+            {
+                if(!description.contentsDataId)continue;
+                const auto leaf=*description.contentsDataId;
+                const auto bytes=snapshot->data().load(leaf);
+                if(!bytes)continue;
+                const auto metadata=data::inspectLegacyUap(**bytes);
+                if(!metadata)continue;
+                std::cout<<"action_shape root="<<std::hex<<id<<" payload="<<leaf<<std::dec
+                    <<" size="<<metadata->width<<'x'<<metadata->height
+                    <<" origin="<<metadata->originX<<','<<metadata->originY<<'\n';
+            }
+            require(lastTick>=0 && lastTick<=512,"bounded actual action descriptions");
             sequence::SequenceRuntime runtime;require(runtime.start(*program,999).has_value(),"actual action CNK starts");
+            bool context=true;unsigned nativeForRoot=0;
+            auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("unused");});
+            skin->configurePresentationContext([&]{return context;});
+            skin->configureActionText([](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+                {return data::LegacyBitmapRGBA8{30,12,std::vector<std::uint8_t>(30*12*4,128)};});
+            skin->configureLayoutProvider([=]{return index==1?ibar::layout::ActionButtonLayout::BuyAuction:ibar::layout::ActionButtonLayout::General;});
+            engine::SequenceWorld2DSlot modern;modern.configureModernIBarSkin(skin);
             engine::SequenceWorld2DSlot slot;data::BitmapRuntimeCache cache;
-            for(int tick=0;tick<=12;++tick)
+            for(int tick=0;tick<=std::max(12,lastTick)+1;++tick)
             {
                 require(runtime.update(tick).has_value(),"actual action clock advances");
-                if(tick!=0 && tick!=4 && tick!=12)continue;
                 auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);require(items && slot.sync(*items,cache),"actual action leaves decode into production slot");
                 for(const auto& item:*items)
                 {
                     const auto* object=slot.find(item.node);
+                    if(qualify)
+                    {
+                        require(modern.sync(*items,cache).has_value(),"all authored ticks reach modern slot");
+                        const auto* changed=modern.find(item.node);
+                        require(changed && changed->clock==object->clock && changed->priority==object->priority &&
+                            changed->contentsDataId==object->contentsDataId,"native action clock priority identity untouched");
+                        if(changed->asset!=object->asset && changed->asset->image.width==object->asset->image.width)
+                        {
+                            ++nativeFrames;++nativeForRoot;
+                            require(changed->worldTransform.values==object->worldTransform.values &&
+                                changed->asset->image.height==object->asset->image.height && !changed->asset->presentationRect,
+                                "native action retains full original raster pose and geometry");
+                            const auto& before=object->asset->image.pixels;const auto& after=changed->asset->image.pixels;
+                            for(std::size_t pixel=0;pixel<before.size();pixel+=4)
+                            {
+                                require(before[pixel+3]==after[pixel+3],"every native action alpha byte retained");
+                                const auto low=std::min({before[pixel],before[pixel+1],before[pixel+2]});
+                                const auto high=std::max({before[pixel],before[pixel+1],before[pixel+2]});
+                                if(!before[pixel+3] || high<=48 || low>=240 || high-low>24)
+                                    for(unsigned channel=0;channel<3;++channel) require(before[pixel+channel]==after[pixel+channel],
+                                        "original transparent key printed dark ink and highlights retained");
+                            }
+                            require(skin->substitute(id,object->asset,true,object->worldTransform)==changed->asset,
+                                "native transition caches exact source identity");
+                            auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*object->asset);wrong->dataId=0x5FFFF;
+                            require(skin->substitute(id,wrong,true,object->worldTransform)==wrong,"unknown leaf fails closed");
+                            wrong=std::make_shared<data::BitmapRuntimeAsset>(*object->asset);wrong->source.reset();
+                            require(skin->substitute(id,wrong,true,object->worldTransform)==wrong,"absent original UAP metadata fails closed");
+                            auto singular=object->worldTransform;singular.values[0]=0;singular.values[3]=0;
+                            require(skin->substitute(id,object->asset,true,singular)==object->asset,"singular native pose fails closed");
+
+                        }
+                        context=false;require(modern.sync(*items,cache).has_value(),"native context fallback sync");
+                        for(const auto node:slot.order())require(modern.find(node)->asset==slot.find(node)->asset,
+                            "context rejection restores all original source pointers");context=true;
+                    }
                     std::cout<<"action_leaf root="<<std::hex<<id<<" payload="<<item.contentsDataId<<std::dec
                         <<" tick="<<tick<<" size="<<object->asset->image.width<<'x'<<object->asset->image.height
                         <<" origin="<<item.metadata.originX<<','<<item.metadata.originY<<" matrix=";
@@ -612,7 +735,10 @@ namespace
                     std::cout<<'\n';
                 }
             }
+            if(qualify && state!=1)require(nativeForRoot>0,"all36 authored enter out pressed roots have native tinted frames");
+            if(qualify)std::cout<<"native_root root="<<std::hex<<id<<std::dec<<" tinted_frames="<<nativeForRoot<<'\n';
         }
+        if(qualify)require(nativeFrames>0,"production moving native action frames qualified");
     }
     void testActualActionButtons(const std::filesystem::path& root)
     {
@@ -647,6 +773,14 @@ namespace
                     require(m && m->clock==a->clock && m->priority==a->priority && m->contentsDataId==a->contentsDataId,"actual CNK state clock/priority/content IDs unchanged");
                     if(m->asset==a->asset)continue;
                     replaced=true;
+                    if(m->asset->image.width==a->asset->image.width)
+                    {
+                        require(m->asset->image.height==a->asset->image.height && m->worldTransform.values==a->worldTransform.values,
+                            "new native fallback does not resize or move source");
+                        for(std::size_t p=3;p<a->asset->image.pixels.size();p+=4)
+                            require(m->asset->image.pixels[p]==a->asset->image.pixels[p],"native fallback preserves full alpha");
+                        continue;
+                    }
                     require(m->asset->image.width==a->asset->image.width*3 && m->asset->image.height==a->asset->image.height*3 &&
                         !m->asset->presentationRect,"actual action bitmap has3x pixels and original intrinsic rectangle");
                     require(engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,m->asset->image.width,m->asset->image.height)==
@@ -769,6 +903,163 @@ namespace
         require(skin.substitute(0x00050CE3,ventnor)==ventnor,
             "Ventnor CE3 never accepts Water Works CE4 artwork");
     }
+
+    auto currentPlayerPhoto()
+    {
+        auto photo=std::make_shared<data::LegacyBitmapRGBA8>();
+        *photo={768,640,std::vector<std::uint8_t>(768*640*4,0)};
+        for(unsigned y=200;y<300;++y)for(unsigned x=100;x<300;++x)
+        {const auto i=(std::size_t(y)*768+x)*4;photo->pixels[i]=20;photo->pixels[i+1]=40;
+            photo->pixels[i+2]=60;photo->pixels[i+3]=128;}
+        return photo;
+    }
+    void testCurrentPlayerTokenImages()
+    {
+        // First actual leaf of all eleven CNK_indstra..k, including root StartXY(0,-4).
+        constexpr std::array<std::array<unsigned,5>,11> first{{
+            {0x1d7,43,23,351,501},{0x1f5,39,17,350,506},{0x302,40,29,352,497},
+            {0x213,34,19,350,505},{0x231,37,22,349,501},{0x250,36,44,349,483},
+            {0x26d,49,27,347,497},{0x28b,41,25,351,499},{0x2a9,28,31,359,496},
+            {0x2c7,49,20,345,500},{0x2e5,39,45,356,484}}};
+        bool context=true;unsigned calls=0,last=99;
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});
+        skin.configurePresentationContext([&]{return context;});
+        const auto photo=currentPlayerPhoto();
+        skin.configureTokenImages([&](std::uint8_t token){++calls;last=token;return photo;});
+        for(unsigned token=0;token<11;++token)
+        {
+            const auto& f=first[token];const auto root=0x2005f+token;
+            auto source=bitmap(0x20000+f[0],f[1],f[2]);
+            for(std::size_t i=0;i<source->image.pixels.size();++i)source->image.pixels[i]=std::uint8_t(i%251);
+            const auto before=source->image.pixels;
+            auto matrix=sequence::identity2D();matrix.values[6]=float(f[3]);matrix.values[7]=float(f[4]);
+            const auto result=skin.substitute(root,source,true,matrix,258);
+            require(result!=source && last==token && result->dataId==source->dataId &&
+                result->source==source->source && result->preferLinearFiltering &&
+                result->image.width==f[1]*3 && result->image.height==f[2]*3 &&
+                result->presentationRect==std::optional{std::array<float,4>{float(f[3]),float(f[4]+4),float(f[3]+f[1]),float(f[4]+4+f[2])}},
+                "eleven authentic central token owners reuse static thumbnail without changing logical geometry or identity");
+            unsigned visible=0,transparent=0;
+            for(std::size_t i=0;i<result->image.pixels.size();i+=4)
+                if(result->image.pixels[i+3])
+                {++visible;require(result->image.pixels[i]==20 && result->image.pixels[i+1]==40 &&
+                    result->image.pixels[i+2]==60 && result->image.pixels[i+3]==128,
+                    "central preview retains all four RGBA channels including partial alpha");}
+                else ++transparent;
+            require(visible && transparent && source->image.pixels==before,
+                "central preview remains transparent and original complete RGBA immutable");
+            const auto previousCalls=calls;
+            require(skin.substitute(root,source,true,matrix,258)==result && calls==previousCalls,
+                "same authentic central phase reuses bounded derivative cache");
+            context=false;require(skin.substitute(root,source,true,matrix,258)==source,
+                "central live eligibility is checked before cached artwork");context=true;
+            require(skin.substitute(root,source,false,matrix,258)==source &&
+                skin.substitute(root,source,true,matrix,257)==source && skin.substitute(root,source)==source,
+                "secondary leaf wrong priority and missing placement retain complete native fallback");
+            auto wrongMatrix=matrix;wrongMatrix.values[7]+=4;
+            require(skin.substitute(root,source,true,wrongMatrix,258)==source,
+                "central owner without authentic minusfour root placement remains native");
+            wrongMatrix=matrix;wrongMatrix.values[0]=2;
+            require(skin.substitute(root,source,true,wrongMatrix,258)==source,
+                "unqualified central scale retains native artwork");
+            wrongMatrix=matrix;wrongMatrix.values[6]=std::numeric_limits<float>::quiet_NaN();
+            require(skin.substitute(root,source,true,wrongMatrix,258)==source,"nonfinite placement fails closed");
+            auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*source);wrong->dataId+=0x10000;
+            require(skin.substitute(root,wrong,true,matrix,258)==wrong,"wrongbank central leaf cannot share a cached derivative");
+            wrong=std::make_shared<data::BitmapRuntimeAsset>(*source);wrong->sourceType=data::LegacyDataType::Bitmap;
+            require(skin.substitute(root,wrong,true,matrix,258)==wrong,"central requires actual UAP source type");
+            wrong=std::make_shared<data::BitmapRuntimeAsset>(*source);wrong->image.pixels.pop_back();
+            require(skin.substitute(root,wrong,true,matrix,258)==wrong,"malformed native RGBA remains native");
+            wrong=bitmap(source->dataId,f[1]+1,f[2]);
+            require(skin.substitute(root,wrong,true,matrix,258)==wrong,"unmeasured extent rejected before central cache");
+            const auto neighbor=token==10?root-1:root+1;
+            require(skin.substitute(neighbor,source,true,matrix,258)==source,"leaf belongs only to its exact central root");
+        }
+        const auto source=bitmap(0x202e5,39,45);auto matrix=sequence::identity2D();matrix.values[6]=356;matrix.values[7]=484;
+        skin.configureTokenImages([](std::uint8_t)->std::shared_ptr<const data::LegacyBitmapRGBA8>{return {};});
+        require(skin.substitute(0x20069,source,true,matrix,258)==source,"missing central thumbnail preserves complete native asset");
+        for(unsigned kind=0;kind<4;++kind)
+        {
+            auto bad=std::make_shared<data::LegacyBitmapRGBA8>(*photo);
+            if(kind==0)bad->width=767;
+            if(kind==1)bad->pixels.pop_back();
+            if(kind==2)std::fill(bad->pixels.begin(),bad->pixels.end(),0);
+            if(kind==3)for(std::size_t i=3;i<bad->pixels.size();i+=4)bad->pixels[i]=255;
+            skin.configureTokenImages([bad](std::uint8_t){return bad;});
+            require(skin.substitute(0x20069,source,true,matrix,258)==source,
+                "wrongsize malformed empty and fullyopaque central preview retains full native RGBA");
+        }
+        ibar::ModernIBarSkin uk(data::LanguageId::EnglishUk,{}),unqualified(data::LanguageId::EnglishUs,{});
+        uk.configurePresentationContext([]{return true;});uk.configureTokenImages([photo](std::uint8_t){return photo;});
+        unqualified.configureTokenImages([photo](std::uint8_t){return photo;});
+        require(uk.substitute(0x20069,source,true,matrix,258)==source &&
+            unqualified.substitute(0x20069,source,true,matrix,258)==source,
+            "central thumbnails require EnglishUS and explicit live qualification");
+        require(!skin.supports(0x10069) && !skin.supports(0x2005e) && !skin.supports(0x2006a),
+            "wrongbank and adjacent roots are not central owners");
+    }
+    void testActualCurrentPlayerTokens(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"actual central token DAT opens");
+        const auto snapshot=resources.snapshot();std::set<data::DataId> observed;unsigned loops=0;
+        for(unsigned token=0;token<11;++token)
+        {
+            const auto owner=data::packDataId(data::LegacyGroupId::Main,data::DataTag(0x5f+token));
+            const auto program=sequence::SequenceProgram::load(snapshot,owner);
+            sequence::SequenceRuntime runtime;require(program.has_value(),"actual central CNK loads");
+            const auto started=runtime.start(*program,258);require(started.has_value(),"actual central CNK starts");
+            require(runtime.moveMatching(owner,258,sequence::moveXYTransform(0,-4))==1 &&
+                runtime.setEndingAction(*started,3).has_value(),"authentic central priority placement and loop applied");
+            bool context=true;auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                ibar::ModernIBarSkin::TextRasterizer{});
+            const auto photo=currentPlayerPhoto();skin->configurePresentationContext([&]{return context;});
+            skin->configureTokenImages([&](std::uint8_t selected){require(selected==token,"actual central root selects its exact player token");return photo;});
+            engine::SequenceWorld2DSlot native,modern;data::BitmapRuntimeCache cache;
+            modern.configureModernIBarSkin(skin);
+            std::optional<std::int32_t> previousRootClock;
+            for(int tick=0;tick<=240;tick+=4)
+            {
+                require(runtime.update(tick).has_value(),"actual central authored loop advances");
+                const auto rootState=runtime.inspect(*started);require(rootState.has_value(),"looping central root remains active");
+                if(previousRootClock && rootState->clock<*previousRootClock)++loops;
+                previousRootClock=rootState->clock;
+                const auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);
+                require(items && !items->empty() && native.sync(*items,cache) && modern.sync(*items,cache),
+                    "actual central phase reaches existing bitmap skin seam");
+                require(native.order()==modern.order(),"central skin preserves exact native node order");
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    require(m && m->asset!=a->asset && m->contentsDataId==a->contentsDataId &&
+                        m->clock==a->clock && m->priority==a->priority,"every actual central leaf replaced without changing clock priority identity");
+                    for(const auto corner:std::array<std::array<int,2>,2>{{{0,0},{1,1}}})
+                        require(engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,
+                            corner[0]*int(m->asset->image.width),corner[1]*int(m->asset->image.height))==
+                            engine::SequenceWorld2DSlot::transformPoint(a->worldTransform,
+                            corner[0]*int(a->asset->image.width),corner[1]*int(a->asset->image.height)),
+                            "actual central supersampling preserves both authored logical rectangle corners");
+                    observed.insert(a->contentsDataId);
+                }
+                context=false;require(modern.sync(*items,cache).has_value(),"live central context fallback publishes");
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    require(m && m->asset==a->asset && m->worldTransform.values==a->worldTransform.values &&
+                        m->clock==a->clock && m->priority==a->priority,"context fallback restores complete actual native RGBA and matrix without restarting");
+                }
+                context=true;
+                const auto after=runtime.inspect(*started);
+                require(after && after->clock==rootState->clock && after->priority==rootState->priority &&
+                    std::get<sequence::Matrix2D>(after->worldTransform).values==
+                        std::get<sequence::Matrix2D>(rootState->worldTransform).values,
+                    "pixel refresh leaves authentic root clock priority and full matrix unchanged");
+            }
+        }
+        require(observed.size()==328 && loops>=11,"all328 actual central bitmap phases and eleven authentic loops qualified");
+        std::cout<<"[PASS] all11 central owners /328 actual UAP phases; static thumbnail pixels only; authored loops and logical geometry retained\n";
+    }
+
     void testScoreTokenImages()
     {
         const auto raster=[](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
@@ -942,6 +1233,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

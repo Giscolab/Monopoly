@@ -1280,6 +1280,8 @@ namespace monopoly::engine
                         std::filesystem::path(SDL_GetBasePath()) / "assets/modern/presentation/tokens");
                     menuSkin->configureTokenImages([tokenPreviews](std::uint8_t token, std::uint8_t frame)
                         { return tokenPreviews->image(token, frame); });
+                    tradePartnerSelectionPlayback.configureTokenImages([tokenPreviews](std::uint8_t token)
+                        { return tokenPreviews->image(token,255); });
                     playback->world2D().configureModernMenuSkin(std::move(menuSkin));
                     auto skin = std::make_shared<ibar::ModernIBarSkin>(
                         startup::resources()->context().language,
@@ -2512,7 +2514,7 @@ namespace monopoly::engine
             const auto tradeCashTextSync = tradeCashTextPlayback.sync(
                 userinterface::tradeStateReadOnly(), ruleState,
                 displayState.desired2DView, displayState.system,
-                fontPlayback(), *session, modernTradeText);
+                fontPlayback(), *session, modernTradeText, modernTradeText);
             if (!tradeCashTextSync)
                 return SDL_SetError("Trade cash-text playback: %s",
                     tradeCashTextSync.error().c_str());
@@ -3088,6 +3090,15 @@ namespace monopoly::engine
                     displayState.city == 0 && displayState.system == 13 && displayState.customBoardPath.empty() &&
                     displayState.desired2DView == display::Screen2D::Main &&
                     displayState.viewportInUse == display::Viewport3D::Main && modernBoardBounds && modernBoardGroundY;
+                // Render-only travel correction; labelled CNK, dice, BSSM,
+                // floating and locked manual orbit views retain their composition.
+                // A manually requested preset may interpolate after its transient
+                // request flag clears; it is not guaranteed to remain excluded.
+                if(avoidModernBuildings && displayState.bssmCameraState==0 && !displayState.diceCameraControlActive &&
+                    !displayState.floatingCameraActive && !displayState.manualCameraRequested &&
+                    !displayState.manualMouseCamLock && !session->commands().cameraState(
+                        static_cast<std::uint8_t>(RenderSlot::World3D)))
+                    camera=preserveModernTravelFraming(camera,*modernBoardGroundY);
                 if (avoidModernBuildings)
                     camera = avoidModernPresentationBuildings(camera, modernBuildingBounds, *modernBoardGroundY,
                         std::max(camera.nearPlane * 2, 1.0F), std::max(camera.nearPlane * 8, 1.0F));
