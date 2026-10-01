@@ -1010,9 +1010,16 @@ namespace monopoly::ibar
             (property(root).has_value() && properties_ && propertyText_));
     }
 
+    bool ModernIBarSkin::supportsIdleCardPresentation(data::DataId root) const noexcept
+    {
+        return language_==data::LanguageId::EnglishUs && drawCards_.contains(root) &&
+            ((root>=0x50028 && root<=0x50037) || (root>=0x50059 && root<=0x50068));
+    }
+
     std::shared_ptr<const data::BitmapRuntimeAsset> ModernIBarSkin::substitute(
         data::DataId root, std::shared_ptr<const data::BitmapRuntimeAsset> original, bool principal,
-        std::optional<sequence::Matrix2D> rasterToWorld, std::optional<std::uint16_t> priority)
+        std::optional<sequence::Matrix2D> rasterToWorld, std::optional<std::uint16_t> priority,
+        std::optional<sequence::Matrix2D> sequenceToWorld)
     {
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
@@ -1137,7 +1144,25 @@ namespace monopoly::ibar
                 if(!metadata || metadata->width!=400 || metadata->height!=native->height ||
                     metadata->originX!=0 || metadata->originY!=0 || metadata->flags!=5) return original;
             }
-            const Key key{root,w,h,true,std::array<float,9>{},0,{},original.get()};
+            std::optional<IdleCardPresentation> presentation;
+            if(supportsIdleCardPresentation(root) && priority==1005 && sequenceToWorld && idleCardPresentation_)
+            {
+                const auto& m=sequenceToWorld->values;
+                // Only the two native root placements qualify, without rotations/scales.
+                if(m[0]!=1 || m[1]!=0 || m[2]!=0 || m[3]!=0 || m[4]!=1 || m[5]!=0 ||
+                    m[6]!=0 || (m[7]!=0 && m[7]!=136) || m[8]!=1)return original;
+                presentation=idleCardPresentation_(root,*priority,*sequenceToWorld);
+                if(presentation)
+                {
+                    const auto& box=presentation->localRect;
+                    if(!std::ranges::all_of(box,[](float value){return std::isfinite(value);}) ||
+                        box[0]!=600 || box[2]!=800 || box[1]+m[7]!=(225-h/2.0F)/2.0F ||
+                        box[3]+m[7]!=(225+h/2.0F)/2.0F)return original;
+                }
+            }
+            const auto placement=presentation ? std::optional{presentation->localRect} : std::nullopt;
+            const int occlusionMode=presentation && presentation->occluded ? 1 : 0;
+            const Key key{root,w,h,true,std::array<float,9>{},occlusionMode,placement,original.get()};
             if(const auto found=cache_.find(key);found!=cache_.end()) return found->second.replacement;
             bool warm=false,ink=false;
             const auto& pixels=original->image.pixels;
@@ -1160,6 +1185,13 @@ namespace monopoly::ibar
                 if(pixels[i+3]==0 || std::max({r,g,b})<=40 ||
                     std::max({r,g,b})-std::min({r,g,b})<=8) continue;
                 for(unsigned c=0;c<3;++c) result->image.pixels[i+c]=std::uint8_t((r*cream[c]+127)/255);
+            }
+            if(presentation)
+            {
+                result->presentationRect=presentation->localRect;
+                result->preferLinearFiltering=true;
+                if(presentation->occluded)
+                    for(std::size_t i=3;i<result->image.pixels.size();i+=4)result->image.pixels[i]=0;
             }
             if(cache_.size()>=128) cache_.clear();
             cache_.emplace(key,CachedArtwork{result,original});return result;

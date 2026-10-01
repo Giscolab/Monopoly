@@ -38,7 +38,7 @@ namespace monopoly::sequence
                         instance.priority, instance.clock, instance.worldTransform,
                         {data::LegacyDataType::Native, image.width, image.height, 0, 0, 32},
                         {}, std::move(runtimeAsset), instance.bounds,
-                        instance.rootSequenceDataId, instance.rootSequenceNode});
+                        instance.rootSequenceDataId, instance.rootSequenceNode, instance.rootSequencePriority});
                     continue;
                 }
             }
@@ -92,7 +92,7 @@ namespace monopoly::sequence
             result.push_back({instance.node, instance.contentsDataId,
                 instance.priority, instance.clock, instance.worldTransform,
                 renderMetadata, *bytes, {}, instance.bounds,
-                instance.rootSequenceDataId, instance.rootSequenceNode});
+                instance.rootSequenceDataId, instance.rootSequenceNode, instance.rootSequencePriority});
         }
         return result;
     }

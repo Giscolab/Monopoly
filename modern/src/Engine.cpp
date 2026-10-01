@@ -1314,6 +1314,31 @@ namespace monopoly::engine
                         return std::array<float, 4>{panelLeft+1.37665F-m[6], -m[7],
                             panelLeft+198.62335F-m[6], 225.0F-m[7]};
                     });
+                    skin->configureIdleCardPresentation([](data::DataId root, std::uint16_t priority,
+                        const sequence::Matrix2D& sequenceToWorld)
+                        -> std::optional<ibar::ModernIBarSkin::IdleCardPresentation>
+                    {
+                        const auto snapshot = startup::resources();
+                        const auto& state = display::stateReadOnly();
+                        if (!snapshot || snapshot->context().board != data::BoardEdition::Usa ||
+                            snapshot->context().language != data::LanguageId::EnglishUs ||
+                            state.city != 0 || state.system != 13 || !state.customBoardPath.empty() ||
+                            state.current2DView != display::Screen2D::Trade ||
+                            state.desired2DView != display::Screen2D::Trade || priority != 1005) return {};
+                        const auto& m = sequenceToWorld.values;
+                        if (m[0] != 1 || m[1] != 0 || m[2] != 0 || m[3] != 0 ||
+                            m[4] != 1 || m[5] != 0 || m[8] != 1) return {};
+                        // Keep the pending card visible without covering the partner chooser.
+                        // St. Charles has an authored 400x239 image; other idle cards are 400x240.
+                        const float halfHeight = root == data::packDataId(
+                            data::LegacyGroupId::LanguageGraphics, 0x29) ? 59.75F : 60.0F;
+                        const bool occluded = tradePropertyPlayback.hoverDeedOccupiesRightPanel() ||
+                            iBarBackdropPlayback.propertyHoverDeed() != data::EmptyDataId ||
+                            iBarBackdropPlayback.buyAuctionPopupDeed() != data::EmptyDataId;
+                        return ibar::ModernIBarSkin::IdleCardPresentation{
+                            {600.0F-m[6], 112.5F-halfHeight-m[7],
+                             800.0F-m[6], 112.5F+halfHeight-m[7]}, occluded};
+                    });
                     skin->configurePropertyDescriptors(
                         [](unsigned propertyIndex) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
                         {

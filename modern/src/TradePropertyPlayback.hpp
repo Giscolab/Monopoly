@@ -49,6 +49,9 @@ namespace monopoly::tradeui
             int city = 0);
 
         void reset() noexcept;
+        [[nodiscard]] data::DataId hoverDeed() const noexcept { return hoverDeed_; }
+        [[nodiscard]] bool hoverDeedOccupiesRightPanel() const noexcept
+        { return hoverDeed_ != data::EmptyDataId && hoverDeedRightPanel_; }
 
         struct ObjectState
         {
@@ -78,6 +81,7 @@ namespace monopoly::tradeui
         std::optional<MovingState> moving_;
         int checkedHover_{-1};
         std::uint64_t hoverStartTick_{};
+        bool hoverDeedRightPanel_{};
         data::DataId hoverDeed_{data::EmptyDataId};
     };
 }

@@ -67,6 +67,16 @@ namespace monopoly::ibar
             std::string title, body;
             std::uint32_t nativeWidth{400}, nativeHeight{240};
         };
+        struct IdleCardPresentation
+        {
+            std::array<float,4> localRect;
+            bool occluded{}; // Only while an actual deed consumer occupies this panel.
+        };
+        using IdleCardPresentationProvider = std::function<std::optional<IdleCardPresentation>(
+            data::DataId,std::uint16_t,const sequence::Matrix2D& sequenceToWorld)>;
+        void configureIdleCardPresentation(IdleCardPresentationProvider provider)
+        { idleCardPresentation_=std::move(provider);cache_.clear(); }
+        [[nodiscard]] bool supportsIdleCardPresentation(data::DataId root) const noexcept;
         void configureDrawCardDescriptors(std::map<data::DataId,DrawCardDescriptor> descriptors,
             DeedTextRasterizer rasterizer)
         { drawCards_ = std::move(descriptors); drawText_ = std::move(rasterizer); cache_.clear(); }
@@ -89,7 +99,8 @@ namespace monopoly::ibar
             data::DataId root, std::shared_ptr<const data::BitmapRuntimeAsset> original,
             bool principal = true,
             std::optional<sequence::Matrix2D> rasterToWorld = {},
-            std::optional<std::uint16_t> priority = {});
+            std::optional<std::uint16_t> priority = {},
+            std::optional<sequence::Matrix2D> sequenceToWorld = {});
     private:
         data::LanguageId language_;
         TextRasterizer text_;
@@ -102,6 +113,7 @@ namespace monopoly::ibar
         DeedPlacementProvider deedPlacement_;
         std::map<data::DataId,DrawCardDescriptor> drawCards_;
         DeedTextRasterizer drawText_;
+        IdleCardPresentationProvider idleCardPresentation_;
         DescriptorProvider properties_;
         TextRasterizer propertyText_;
         using Key = std::tuple<data::DataId, std::uint32_t, std::uint32_t, bool, std::array<float,9>, int,

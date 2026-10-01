@@ -57,6 +57,8 @@ namespace monopoly::sequence
         std::optional<data::Sequence2DBoundingBoxAttribute> bounds;
         data::DataId rootSequenceDataId{};
         SequenceNodeId rootSequenceNode{};
+        // Provenance for presentation qualification; leaf draw priority stays authored.
+        std::uint16_t rootSequencePriority{};
     };
 
     [[nodiscard]] std::expected<std::vector<SequenceBitmapRenderItem>,

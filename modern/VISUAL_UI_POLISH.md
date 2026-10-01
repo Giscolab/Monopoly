@@ -730,3 +730,48 @@ all11 roots and328 UAP frames in `pass47-current-token-real-tests.log`.
 
 These are accepted actual UI renders. The completed passes39–45 ten-minute FPS
 sample predates both changes; no new ten-minute FPS result is claimed for46–47.
+
+A separate completed60-second warm sample for passes46–47 has118 window-title
+FPS values: median60, p5 59.8, minimum57.9,81.3559% at least60 and96.6102% at
+least59.5. It includes approximately15 seconds in the chooser, followed by Main
+and AI turns, with no concurrent build or other GPU work. Evidence is
+`build/polish-continuation-20261001/passes46-47-warm-fps.csv` and
+`passes46-47-warm-fps-summary.txt`. This short session sample does not measure
+every frame, establish a continuous60 FPS minimum or replace a ten-minute test.
+
+## Idle card in Trade (pass48 fixture qualification)
+
+Focused CPU qualification covers32 cards in both entry cases. Actual root1005
+and leaf1 provenance remain separate from draw order; left contract hover never
+hides the right-panel card. The isolated800x600 production-consumer GPU fixture
+passes for Main→Trade at y0 and Trade-start at y136. All six captures were
+inspected under `build/card-trade-polish-20261002/`: each entry has before,
+after and hover views. The card moves into a200-wide upper-right panel, exposing
+the full chooser; right deed hover makes the card yield, then it restores.
+Returning to Main restores the native400x240 extent without inventing a reward
+or changing the card clock transition.
+
+Evidence is `build/pass48-idle-trade-cpu.log`, `pass48-ibar-regular.log`,
+`pass48-card-trade-gpu.log` and `pass48-world2d-regular.log`. These focused
+CPU/GPU checks pass. They are isolated production fixtures; the separate actual
+1080p qualification follows below.
+
+Actual Release process2712 at1920x1080 loaded private game4/s with510 cash and a
+pending Services25 card. Inspected captures under
+`build/polish-continuation-20261001/` qualify the live path:
+`pass48-main-pending-card-real.png`, `pass48-trade-card-clear-real-after.png`
+(clear chooser, compared with `pass44-trade-card-overlap-real.png`), and
+`pass48-horse-selected-pending-card-real.png` (Horse selected while staying in
+Trade). `pass48-pending-card-deed-hover-real.png` shows readable B&O;
+`pass48-pending-card-restored-real.png` shows the card restored on pointer exit.
+Cancel returns to Main with the native card and510 cash in
+`pass48-main-card-restored-real.png`. Actual Space acknowledgement awards exactly
+25, reaching535 in `pass48-card-acknowledged535-real.png`. An automatic Main
+return was not reproduced; no independent routing-bug fix is claimed.
+
+`pass48-real-profile.log` records startup CPU phases: idle-token warming20.8806ms,
+environment136.505ms, total assets189.133ms, upload preparation150.307ms and first
+presentation32.3654ms. These are CPU elapsed measurements without GPU-completion
+proof. The approximately44.7 seconds since session start includes intro, menus
+and user-input delay; it is not loading time. This evidence does not demonstrate
+a clear avoidable startup bottleneck.

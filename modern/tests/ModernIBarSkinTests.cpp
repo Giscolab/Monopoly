@@ -411,6 +411,69 @@ namespace
         std::cout<<"[PASS] licensed native idle artwork qualification count="<<(chanceOnly?1:32)<<'\n';
     }
 
+
+    void testActualIdleCardTrade(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual idle reflow DAT opens");
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
+        std::map<data::DataId,ibar::ModernIBarSkin::DrawCardDescriptor> descriptors;
+        for(unsigned i=0;i<32;++i)descriptors.emplace(i<16?0x50028+i:0x50059+i-16,
+            ibar::ModernIBarSkin::DrawCardDescriptor{"","",400,i==1?239U:240U});
+        skin->configureDrawCardDescriptors(std::move(descriptors),[](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{throw std::runtime_error("native art must not render captions");});
+        bool context=true,trade=false,hover=false;skin->configurePresentationContext([&]{return context;});
+        skin->configureIdleCardPresentation([&](data::DataId owner,std::uint16_t priority,const sequence::Matrix2D& world)
+            ->std::optional<ibar::ModernIBarSkin::IdleCardPresentation>
+        {
+            require(priority==1005,"provider receives actual card priority");if(!trade)return {};
+            const float height=owner==0x50029?239.0F:240.0F;
+            return ibar::ModernIBarSkin::IdleCardPresentation{{600,(225-height/2)/2-world.values[7],
+                800,(225+height/2)/2-world.values[7]},hover};
+        });
+        data::BitmapRuntimeCache cache;
+        for(unsigned i=0;i<32;++i)for(const int y:{0,136})
+        {
+            const auto owner=i<16?0x50028+i:0x50059+i-16;
+            sequence::SequenceRuntime runtime;const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+            require(program && runtime.start(*program,1005,{},sequence::SequenceTransform(sequence::translate2D(0,float(y)))) && runtime.update(0),
+                "actual idle program starts at native Main or Trade origin");
+            const auto leaves=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());
+            require(leaves && leaves->size()==1,"actual single idle artwork leaf collected");
+            engine::SequenceWorld2DSlot slot;slot.configureModernIBarSkin(skin);
+            trade=false;require(slot.sync(*leaves,cache).has_value(),"native Main cream card publishes");
+            require(leaves->front().rootSequencePriority==1005 && leaves->front().priority==1,"actual root1005 and leaf1 remain distinct");
+            const auto node=leaves->front().node;const auto main=*slot.find(node);const auto pixels=main.asset->image.pixels;
+            trade=true;require(slot.sync(*leaves,cache).has_value(),"Trade card reflows through actual Slot");
+            const auto fitted=*slot.find(node);const float h=i==1?239.0F:240.0F;
+            const auto a=engine::SequenceWorld2DSlot::transformPoint(fitted.worldTransform,0,0);
+            const auto b=engine::SequenceWorld2DSlot::transformPoint(fitted.worldTransform,400,int(h));
+            require(a[0]==600 && a[1]==int(std::nearbyint((225-h/2)/2)) && b[0]==800 && b[1]==int(std::nearbyint((225+h/2)/2)),
+                "both native origins land in the same right-top200-wide panel");
+            require(fitted.asset->image.pixels==pixels && fitted.clock==main.clock && fitted.priority==main.priority &&
+                fitted.contentsDataId==main.contentsDataId && fitted.asset->source==main.asset->source,
+                "reflow retains full native RGBA provenance clock priority and leaf identity");
+            require(slot.sync(*leaves,cache) && slot.find(node)->asset==fitted.asset,"warm reflow reuses immutable derivative");
+            hover=true;require(slot.sync(*leaves,cache).has_value(),"actual hover presentation proxy publishes");
+            const auto hidden=slot.find(node)->asset;bool retained=true;
+            for(std::size_t at=0;at<pixels.size();at+=4)
+                retained &= hidden->image.pixels[at]==pixels[at] && hidden->image.pixels[at+1]==pixels[at+1] &&
+                    hidden->image.pixels[at+2]==pixels[at+2] && hidden->image.pixels[at+3]==0;
+            require(retained && fitted.asset->image.pixels==pixels,"only proxy alpha changes and retired artwork is immutable");
+            hover=false;require(slot.sync(*leaves,cache) && slot.find(node)->asset==fitted.asset,"hover end restores cached artwork");
+            trade=false;require(slot.sync(*leaves,cache) && slot.find(node)->asset->image.pixels==main.asset->image.pixels &&
+                slot.find(node)->worldTransform.values==main.worldTransform.values,"Main restores exact native presentation");
+            context=false;require(slot.sync(*leaves,cache) && !slot.find(node)->asset->presentationRect,"unqualified context restores retail geometry");context=true;
+            auto source=cache.resolve(leaves->front().contentsDataId,leaves->front().metadata.type,leaves->front().bytes);
+            trade=true;auto wrong=sequence::translate2D(1,float(y));
+            require(skin->substitute(owner,*source,true,{},1005,wrong)==*source,"unqualified sequence placement fails closed");
+            const auto ignored=skin->substitute(owner,*source,true,{},1004,leaves->front().worldTransform);
+            require(!ignored->presentationRect,"wrong priority cannot reflow");
+        }
+        require(!skin->supportsIdleCardPresentation(0x50087) && !skin->supportsIdleCardPresentation(0x50047),
+            "Out and FaceIn animation owners never reflow");
+        std::cout<<"[PASS] actual32 idle cards two native origins, hover proxy, restore and fallback\n";
+    }
+
     void testActualNativeOutCards(const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1233,6 +1296,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

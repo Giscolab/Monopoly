@@ -353,6 +353,10 @@ namespace monopoly::tradeui
 
         checkedHover_ = nextCheckedHover;
         hoverStartTick_ = nextHoverStartTick;
+        // Update only from the successfully queued placement transition, never
+        // from a newer pointer/dialog state while the old deed remains active.
+        if(nextHoverDeed != hoverDeed_)
+            hoverDeedRightPanel_ = nextHoverDeed != data::EmptyDataId && hover >= 1000;
         hoverDeed_ = nextHoverDeed;
         current_ = *desired;
         moving_ = std::move(nextMoving);
@@ -368,5 +372,6 @@ namespace monopoly::tradeui
         checkedHover_ = -1;
         hoverStartTick_ = 0;
         hoverDeed_ = data::EmptyDataId;
+        hoverDeedRightPanel_ = false;
     }
 }

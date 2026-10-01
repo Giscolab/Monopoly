@@ -1684,7 +1684,7 @@ namespace monopoly::sequence
                         node->priority, node->clock.clock(),
                         std::get<Matrix2D>(node->worldTransform),
                         boundingBox2D(definition.attributes), definition.zeroBitmapOffset,
-                        root->definition().dataId, root->id});
+                        root->definition().dataId, root->id, root->priority});
                 }
                 self(self, node->children);
             }

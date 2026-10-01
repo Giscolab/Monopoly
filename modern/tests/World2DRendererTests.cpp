@@ -10,7 +10,10 @@
 #include "BoardBackdropPlayback.hpp"
 #include "AuctionPennyBagsPlayback.hpp"
 #include "IBarCardPlayback.hpp"
+#include "TradePartnerSelectionPlayback.hpp"
+#include "TradePropertyPlayback.hpp"
 #include <fstream>
+#include <ranges>
 #include <set>
 #include <cstdlib>
 #include "SyntheticSequenceResources.hpp"
@@ -692,6 +695,110 @@ namespace
             std::cout<<"Menu GPU capture="<<prefix<<" changed="<<changed<<" output="<<output.string()<<'\n';
         }
     }
+
+    void captureRetailCardTrade(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual card Trade resources open");
+        fonts::Runtime font;std::vector<std::filesystem::path> roots{root,std::filesystem::path(SDL_GetBasePath())};
+#ifdef _WIN32
+        if(const auto* windows=std::getenv("WINDIR"))roots.emplace_back(std::filesystem::path(windows)/"Fonts");
+#endif
+        const auto arial=fonts::resolveRetailArial(roots);require(arial && font.setFont(*arial),"production chooser Arial loads");
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"card-trade-polish-20261002").lexically_normal();
+        std::filesystem::create_directories(output);
+        for(const bool startsTrade:{false,true})
+        {
+            engine::SequencePlayback playback(resources.snapshot());ibar::CardPlayback card;
+            tradeui::PartnerSelectionPlayback chooser;tradeui::PropertyPlayback deeds;
+            auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,ibar::ModernIBarSkin::TextRasterizer{});
+            skin->configureDrawCardDescriptors({{0x50067,{"Community Chest","Receive for services $25.",400,240}}},[](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{throw std::runtime_error("native art must not render captions");});
+            bool trade=startsTrade,enabled=false;skin->configurePresentationContext([]{return true;});
+            skin->configureIdleCardPresentation([&](data::DataId,std::uint16_t,const sequence::Matrix2D& world)
+                ->std::optional<ibar::ModernIBarSkin::IdleCardPresentation>
+            {if(!enabled || !trade)return {};return ibar::ModernIBarSkin::IdleCardPresentation{{600,52.5F-world.values[7],800,172.5F-world.values[7]},deeds.hoverDeedOccupiesRightPanel()};});
+            playback.world2D().configureModernIBarSkin(skin);std::uint64_t tick=0;
+            for(unsigned step=0;step<5 && card.visualState()!=ibar::CardVisualState::Idle;++step)
+            {
+                require(card.sync(30,true,startsTrade?display::Screen2D::Trade:display::Screen2D::Main,pieces::BoardCameraView::TopDownSoccer,playback) && playback.update(int(tick)),"actual card startup advances without manual transforms");
+                if(card.visualState()==ibar::CardVisualState::Idle)break;
+                const auto info=playback.runtime().info(card.currentSequence(),1005,false);require(bool(info),"actual card ending clock available");
+                tick+=std::uint64_t(std::max(1,info->endTime-info->sequenceClock+1));require(playback.update(int(tick)).has_value(),"actual card root reaches authored ending");
+            }
+            require(card.visualState()==ibar::CardVisualState::Idle,"Services25 actual consumer reaches Idle");
+            rules::GameState game{};game.numberOfPlayers=3;
+            for(unsigned i=0;i<3;++i){game.players[i].token=std::uint8_t(i);game.players[i].cash=1500;}
+            game.squares[5].owner=0;tradeui::State state{};
+            require(tradeui::beginLocalTrade(state,game,0),"actual Trade chooser state begins");trade=true;
+            require(card.sync(30,true,display::Screen2D::Trade,pieces::BoardCameraView::TopDownSoccer,playback) &&
+                chooser.sync(state,game,display::Screen2D::Trade,&font,playback) && playback.update(int(tick)),"actual idle Main-to-Trade and native chooser publish");
+            auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());require(bool(leaves),"actual card/chooser leaves collect");
+            data::BitmapRuntimeCache cache;require(playback.world2D().sync(*leaves,cache).has_value(),"baseline uses retained production decode cache");
+            const auto prefix=startsTrade?"trade-start-y136":"main-to-trade-y0";
+            const auto before=capture(device,renderer,playback.world2D());writeBmp(output/(std::string(prefix)+"-before.bmp"),before,800,600);
+            std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> original;
+            for(const auto node:playback.world2D().order())original.emplace(node,*playback.world2D().find(node));
+            enabled=true;require(playback.world2D().sync(*leaves,cache).has_value(),"same live Trade pose receives idle-card presentation");
+            unsigned fitted=0;
+            for(const auto& leaf:*leaves)
+            {
+                const auto* now=playback.world2D().find(leaf.node);const auto& old=original.at(leaf.node);
+                require(now->clock==old.clock && now->priority==old.priority && now->contentsDataId==old.contentsDataId,"same node clock priority source identity retained");
+                if(leaf.rootSequenceDataId==0x50067)
+                {
+                    require(leaf.rootSequencePriority==1005 && leaf.priority==1,"actual card root1005 provenance preserves leaf1 draw priority");
+                    ++fitted;require(now->asset->image.pixels==old.asset->image.pixels,"Trade fit retains every native cream RGBA byte");
+                    const auto a=engine::SequenceWorld2DSlot::transformPoint(now->worldTransform,0,0);
+                    const auto b=engine::SequenceWorld2DSlot::transformPoint(now->worldTransform,400,240);
+                    require(a==std::array<int,2>{600,52} && b==std::array<int,2>{800,172},"both authored origins fit the right panel");
+                }
+                else require(now->asset==old.asset && now->worldTransform.values==old.worldTransform.values,"all real chooser layers remain intact");
+            }
+            const auto after=capture(device,renderer,playback.world2D());require(fitted==1 && before!=after,"actual GPU card reflow differs at fixed pose");
+            writeBmp(output/(std::string(prefix)+"-after.bmp"),after,800,600);
+            auto chooserLeaves=*leaves;
+            std::erase_if(chooserLeaves,[](const auto& leaf){return leaf.rootSequenceDataId==0x50067;});
+            engine::SequenceWorld2DSlot chooserOnly;
+            require(chooserOnly.sync(chooserLeaves,cache).has_value(),"same production chooser-only reference publishes");
+            const auto chooserFrame=capture(device,renderer,chooserOnly);
+            bool rowsClear=true;
+            for(unsigned y=234;y<443;++y)for(unsigned x=306;x<494;++x)
+            {const auto at=(std::size_t(y)*800+x)*4;rowsClear &= std::equal(after.begin()+at,after.begin()+at+4,chooserFrame.begin()+at);}
+            require(rowsClear,"all actual chooser rows equal the no-card GPU reference without obscured controls");
+            require(tradeui::selectPartner(state,game,1),"actual chooser selects partner before property hover");require(chooser.sync(state,game,display::Screen2D::Trade,&font,playback).has_value(),"actual chooser closes before actual property hover");
+            const auto projection=tradeui::projectProperties(state,game);mouse::State pointer{};pointer.inside=true;
+            pointer.x=projection.hitRects[0][5].left+1;pointer.y=projection.hitRects[0][5].top+1;
+            require(deeds.sync(state,game,display::Screen2D::Trade,tick*1000/60,playback,pointer,tick) && playback.update(int(tick)),"actual deed hover begins delay");
+            tick+=37;require(deeds.sync(state,game,display::Screen2D::Trade,tick*1000/60,playback,pointer,tick) && playback.update(int(tick)),"actual deed hover reaches native37-tick threshold");
+            require(deeds.hoverDeed()!=data::EmptyDataId,"actual consumer getter confirms visible deed");
+            const auto hovered=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());require(bool(hovered),"hover leaves collect");
+            std::shared_ptr<const data::BitmapRuntimeAsset> proxy;
+            for(const auto& leaf:*hovered)if(leaf.rootSequenceDataId==0x50067)proxy=playback.world2D().find(leaf.node)->asset;
+            require(proxy && std::ranges::all_of(std::views::iota(std::size_t(0),proxy->image.pixels.size()/4),[&](std::size_t i){return proxy->image.pixels[i*4+3]==0;}),"card yields only through transparent proxy while actual hover owns panel");
+            const auto hoverFrame=capture(device,renderer,playback.world2D());writeBmp(output/(std::string(prefix)+"-hover.bmp"),hoverFrame,800,600);
+            enabled=false;require(playback.world2D().sync(*hovered,cache).has_value(),"disabled provider republishes native large card");
+            require(capture(device,renderer,playback.world2D())!=hoverFrame,"actual GPU hover deed was covered without proxy");enabled=true;
+            pointer.inside=false;++tick;require(deeds.sync(state,game,display::Screen2D::Trade,tick*1000/60,playback,pointer,tick) && playback.update(int(tick)),"actual hover end removes deed");
+            require(deeds.hoverDeed()==data::EmptyDataId,"actual hover getter clears");
+            auto restored=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());require(bool(restored),"restored card leaves collect");
+            for(const auto& leaf:*restored)if(leaf.rootSequenceDataId==0x50067)
+                require(playback.world2D().find(leaf.node)->asset->image.pixels==original.at(leaf.node).asset->image.pixels,"actual hover end restores full idle artwork");
+            state.contractDialogVisible=true;pointer.inside=true;
+            // A new native37-tick hover delay follows pointer re-entry.
+            ++tick;require(deeds.sync(state,game,display::Screen2D::Trade,tick*1000/60,playback,pointer,tick) && playback.update(int(tick)),"actual left-panel hover delay starts");
+            tick+=37;require(deeds.sync(state,game,display::Screen2D::Trade,tick*1000/60,playback,pointer,tick) && playback.update(int(tick)),"actual contract deed hover publishes");
+            require(deeds.hoverDeed()!=data::EmptyDataId && !deeds.hoverDeedOccupiesRightPanel(),"committed left-panel hover never claims right card panel");
+            restored=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());require(bool(restored),"left hover leaves collect");
+            for(const auto& leaf:*restored)if(leaf.rootSequenceDataId==0x50067)
+                require(playback.world2D().find(leaf.node)->asset->image.pixels==original.at(leaf.node).asset->image.pixels,"left contract hover keeps right-panel card fully visible");
+            trade=false;require(card.sync(30,true,display::Screen2D::Main,pieces::BoardCameraView::TopDownSoccer,playback) && playback.update(int(tick)),"actual return to Main retains card consumer");
+            require(card.visualState()==ibar::CardVisualState::Idle && card.currentSequence()==0x50067,"no reward/card clock transition invented");
+            for(const auto& leaf:*restored)if(leaf.rootSequenceDataId==0x50067)
+                require(!playback.world2D().find(leaf.node)->asset->presentationRect,"Main restores native400x240 extent");
+        }
+        std::cout<<"Card Trade GPU qualification output="<<output.string()<<" (actual consumers, isolated renderer fixture, not live gameplay)\n";
+    }
+
     void captureRetailCardOut(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1472,6 +1579,11 @@ int main(int argc, char** argv)
         if(argc==3 && std::string_view(argv[1])=="--native-action-qualify")
         {
             captureRetailNativeActions(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
+        if(argc==3 && std::string_view(argv[1])=="--card-trade-qualify")
+        {
+            captureRetailCardTrade(device,*renderer,std::filesystem::path(argv[2]));
             renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
         }
         if(argc==3 && std::string_view(argv[1])=="--card-out-qualify")

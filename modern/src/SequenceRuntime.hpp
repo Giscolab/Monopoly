@@ -183,6 +183,7 @@ namespace monopoly::sequence
         // Presentation provenance; leaf placement and ordering stay authored.
         data::DataId rootSequenceDataId{};
         SequenceNodeId rootSequenceNode{};
+        std::uint16_t rootSequencePriority{};
     };
     struct SequenceSoundInstanceView
     {
