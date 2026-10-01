@@ -9,6 +9,7 @@
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
+#include <chrono>
 
 namespace
 {
@@ -223,6 +224,34 @@ namespace
         auto changed=playback.runtimeBitmaps().asset(old->dataId);
         require(changed!=old && changed->image.pixels!=old->image.pixels,"name edit retains ID and replaces pixels");
         require(font.settings()==settings,"setup rendering restores caller font settings");
+        if(std::getenv("MONOPOLY_SETUP_BENCHMARK"))
+        {
+            for(const auto phase:{P::EnterName,P::SelectPlayer})
+            {
+                playerselection::PlayerSelectionPlayback measuredOwner;
+                engine::SequencePlayback measuredPlayback(fixture.service.snapshot());
+                auto measuredState=state; measuredState.setup.phase=phase;
+                measuredState.setup.playerLogCount=2;
+                measuredState.setup.playerLog[0]=L"Alice"; measuredState.setup.playerLog[1]=L"Bob";
+                for(int tick=0;tick<100;++tick)
+                {
+                    checked(measuredOwner.sync(measuredState,&font,measuredPlayback),"settle measured setup");
+                    checked(measuredPlayback.update(tick),"advance measured setup clocks");
+                }
+                const auto begin=std::chrono::steady_clock::now();
+                const auto rasterizations=measuredOwner.playerNameRasterizations();
+                for(int repeat=0;repeat<60;++repeat)
+                {
+                    const auto result=measuredOwner.sync(measuredState,&font,measuredPlayback);
+                    if(!result)throw std::runtime_error(result.error());
+                }
+                const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
+                std::cout<<"[SETUP_BENCHMARK] phase="<<(phase==P::EnterName?"EnterName":"SelectPlayer")
+                    <<" calls=60 total_cpu_ms="<<elapsed<<" mean_cpu_ms="<<elapsed/60
+                    <<" player_name_rasterizations="<<measuredOwner.playerNameRasterizations()-rasterizations
+                    <<" font="<<font.settings().fontPath.string()<<'\n';
+            }
+        }
 
         playerselection::PlayerSelectionPlayback rulesOwner;
         engine::SequencePlayback rulesPlayback(fixture.service.snapshot());
@@ -273,6 +302,86 @@ namespace
         require(info && info->sequenceClock<info->endTime,"token uses LoopToBeginning rather than stopping or holding its last frame");
     }
 
+    void playerNameCache()
+    {
+        Fixture fixture;
+        fonts::Runtime font;
+        std::vector<std::filesystem::path> roots{std::filesystem::current_path()};
+        if(const char* windows=std::getenv("WINDIR"))roots.emplace_back(std::filesystem::path(windows)/"Fonts");
+        const auto arial=fonts::resolveRetailArial(roots);
+        checked(arial,"cache test has real Arial");
+        checked(font.setFont(*arial,"Arial"),"cache test opens real font");
+        engine::SequencePlayback playback(fixture.service.snapshot());
+        playerselection::PlayerSelectionPlayback owner;
+        playerselection::RenderState state;
+        state.view=display::Screen2D::PlayerSelect; state.setup.phase=P::SelectPlayer;
+        state.setup.playerLogCount=2; state.setup.playerLog[0]=L"Alice"; state.setup.playerLog[1]=L"Bob";
+        auto sync=[&](int tick) {
+            const auto result=owner.sync(state,&font,playback);
+            if(!result)throw std::runtime_error(result.error());
+            const auto updated=playback.update(tick);
+            if(!updated)throw std::runtime_error(updated.error());
+        };
+        for(int tick=0;tick<100;++tick)sync(tick);
+        require(owner.ready(),"profile clocks settle before warm cache qualification");
+        auto firstName=[&] {
+            for(const auto& item:playback.runtime().bitmapInstances())
+                if(data::isRuntimeBitmapDataId(item.contentsDataId) && item.priority==1501)
+                    return playback.runtimeBitmaps().asset(item.contentsDataId);
+            return std::shared_ptr<const data::BitmapRuntimeAsset>{};
+        };
+        const auto first=firstName();
+        require(first && first->image.width==67 && first->image.height==14,"cache retains exact native profile name footprint");
+        const auto firstPixels=first->image.pixels;
+        const auto firstNodes=playback.runtime().matching(first->dataId,1501);
+        const auto clockBefore=playback.runtime().info(first->dataId,1501)->sequenceClock;
+        const auto rasterizations=owner.playerNameRasterizations();
+        const auto settings=font.settings();
+        checked(font.setSize(31),"prepare independent shared-font slot sentinel");
+        checked(font.saveSettings(9),"save sentinel outside profile renderer");
+        checked(font.setSize(settings.size),"restore cache-matching active font size");
+        for(int tick=100;tick<160;++tick)sync(tick);
+        require(owner.playerNameRasterizations()==rasterizations && firstName()==first,
+            "sixty unchanged warm frames perform no profile rasterization or asset replacement");
+        require(font.savedSettings(9)->size==31 && font.settings()==settings,
+            "warm profile cache does not save, restore or mutate shared font settings");
+        require(playback.runtime().matching(first->dataId,1501)==firstNodes &&
+            playback.runtime().info(first->dataId,1501)->sequenceClock>clockBefore,
+            "cached names preserve sequence nodes while authored clocks continue");
+        state.setup.playerLog[0]=L"Caroline";sync(160);
+        require(owner.playerNameRasterizations()==rasterizations+2 && firstName()!=first &&
+            firstName()->image.pixels!=firstPixels && first->image.pixels==firstPixels,
+            "editing a profile invalidates names and preserves prior immutable glyph pixels");
+        auto count=owner.playerNameRasterizations();
+        font.setItalic(true);sync(161);
+        require(owner.playerNameRasterizations()==count+2 && font.settings().italic,
+            "complete caller font style changes invalidate profile cache and are restored");
+        count=owner.playerNameRasterizations();
+        checked(font.setSize(12),"change external caller font size");sync(162);
+        require(owner.playerNameRasterizations()==count+2 && font.settings().size==12,
+            "external font size change invalidates cached profiles");
+        count=owner.playerNameRasterizations();
+        const auto alternateFont=fixture.directory/"profile-cache-arial.ttf";
+        std::filesystem::copy_file(*arial,alternateFont,std::filesystem::copy_options::overwrite_existing);
+        checked(font.setFont(alternateFont,"Arial"),"open actual font under another external path");sync(163);
+        require(owner.playerNameRasterizations()==count+2 && font.settings().fontPath==alternateFont,
+            "external font path changes invalidate profile cache even when glyph bytes agree");
+        count=owner.playerNameRasterizations();
+        state.setup.boardEdition=data::BoardEdition::Europe;sync(164);
+        require(owner.playerNameRasterizations()==count+2,"board/locale presentation context change invalidates profile cache");
+        count=owner.playerNameRasterizations();
+        state.setup.playerLog[2]=L"Dora";state.setup.playerLogCount=3;state.setup.playerLogPageStart=1;sync(165);
+        require(owner.playerNameRasterizations()==count+2,"profile page and count changes invalidate exact visible widget names");
+        auto overwritten=std::make_shared<data::BitmapRuntimeAsset>(*firstName());
+        std::fill(overwritten->image.pixels.begin(),overwritten->image.pixels.end(),0);
+        checked(playback.runtimeBitmaps().update(overwritten->dataId,overwritten->image),"replace name surface outside cache owner");
+        count=owner.playerNameRasterizations();sync(166);
+        require(owner.playerNameRasterizations()==count+2 && firstName()->image.pixels!=overwritten->image.pixels,
+            "externally replaced immutable bitmap invalidates profile cache");
+        owner.reset();
+        require(owner.playerNameRasterizations()==0,"reset clears bounded name cache and qualification counter");
+    }
+
     void persistedHistory()
     {
         Fixture fixture;
@@ -302,7 +411,7 @@ namespace
 
 int main()
 {
-    try { phases();phaseSounds();failures();textAndRules();persistedHistory(); }
+    try { phases();phaseSounds();failures();textAndRules();playerNameCache();persistedHistory(); }
     catch(const std::exception& error){std::cerr<<"[FAIL] "<<error.what()<<'\n';return 1;}
     return 0;
 }

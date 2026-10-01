@@ -397,3 +397,14 @@ Focused Windows tests pass for exact HTML preservation and single bounded
 asynchronous browser dispatch, including cancellation, timeout and errors.
 Actual launch through the in-game Full Help button remains to be qualified after
 rebuilding Release. No new global gameplay pause is introduced.
+
+## Warm player-profile text cost
+
+A focused60-frame CPU benchmark with real Arial reduced SelectPlayer sync mean
+from1.71205ms to0.011325ms after caching unchanged profile name bitmaps. The warm
+path produces zero name rasterizations and preserves shared font slots, immutable
+asset ownership and advancing sequence clocks. EnterName remains unchanged
+(0.03416ms baseline). This is CPU sync time, not loading time or a measured game
+FPS gain. Logs: `pass28-setup-baseline-cpu.log`, `pass28-setup-cache-tests.log` in
+`build/polish-continuation-20261001/`. Focused regression tests and independent
+cache-invalidation review pass; fresh in-game qualification remains pending.

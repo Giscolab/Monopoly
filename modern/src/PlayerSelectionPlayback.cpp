@@ -230,6 +230,8 @@ namespace monopoly::playerselection
         }
 
         std::map<int,Spec> desired;
+        std::optional<fonts::Settings> generatedPlayerFont;
+        std::map<int,CachedPlayerName> generatedPlayerNames;
         auto nextHits=ruleHits_;
         auto nextRestore=restoreRect_, nextShort=shortRect_;
         if(target!=P::None && (!phaseChange || next.empty()))
@@ -249,8 +251,40 @@ namespace monopoly::playerselection
                 target==P::RemovePlayer || target==P::SelectCity || target==P::CustomizeRules;
             if(textNeeded && (!font || !font->ready()))
                 return std::unexpected("Player selection font runtime unavailable");
-            if(textNeeded)
+            bool cachedPlayerText=target==P::SelectPlayer && !phaseChange && textCacheFont_ &&
+                *textCacheFont_==font->settings() && textCacheResources_==playback.resources() &&
+                textCacheBoard_==s.setup.boardEdition && textCachePage_==s.setup.playerLogPageStart &&
+                textCacheCount_==s.setup.playerLogCount;
+            if(target==P::SelectPlayer)
             {
+                std::size_t visibleNames{};
+                for(std::size_t i=0;i<8 && s.setup.playerLogPageStart+i<s.setup.playerLogCount;++i)
+                {
+                    ++visibleNames;
+                    const int key=220+static_cast<int>(i);
+                    const auto cached=textCache_.find(key);
+                    const auto surface=surfaces_.find(key);
+                    const auto live=next.find(key);
+                    cachedPlayerText=cachedPlayerText && cached!=textCache_.end() &&
+                        cached->second.text==s.setup.playerLog[s.setup.playerLogPageStart+i] &&
+                        surface!=surfaces_.end() && live!=next.end() && !live->second.leaving &&
+                        live->second.id==surface->second &&
+                        playback.runtimeBitmaps().asset(surface->second)==cached->second.asset;
+                    const auto priority=static_cast<std::uint16_t>(1500+i);
+                    desired.emplace(210+static_cast<int>(i),Spec{O{},target,0x00030026U,0x00030025U,0x00030027U,CardX[i]-358,CardY[i]-255,priority});
+                }
+                cachedPlayerText=cachedPlayerText && textCache_.size()==visibleNames;
+                if(cachedPlayerText)
+                    for(std::size_t i=0;i<visibleNames;++i)
+                    {
+                        const int key=220+static_cast<int>(i);
+                        desired.emplace(key,Spec{O{},target,surfaces_.at(key),0,0,CardX[i]+13,CardY[i]+16,
+                            static_cast<std::uint16_t>(1501+i)});
+                    }
+            }
+            if(textNeeded && !cachedPlayerText)
+            {
+                if(target==P::SelectPlayer) generatedPlayerFont=font->settings();
                 if(auto r=font->saveSettings(9);!r) return std::unexpected(r.error().detail);
                 RestoreFont restore{*font};
                 auto setFont=[&](int size,int weight)->std::expected<void,std::string>
@@ -340,6 +374,7 @@ namespace monopoly::playerselection
                     for(std::size_t i=0;i<8 && s.setup.playerLogPageStart+i<s.setup.playerLogCount;++i)
                     {
                         auto value=utf8<wchar_t>(s.setup.playerLog[s.setup.playerLogPageStart+i]);
+                        ++playerNameRasterizations_;
                         if(auto r=setFont(8,700);!r)return r;
                         for(int size=8;size>1;--size)
                         {
@@ -350,9 +385,14 @@ namespace monopoly::playerselection
                         auto image=blank(67,14);
                         if(auto r=draw(image,value,33,7,true,0);!r)return r;
                         const auto priority=static_cast<std::uint16_t>(1500+i);
-                        desired.emplace(210+static_cast<int>(i),Spec{O{},target,0x00030026U,0x00030025U,0x00030027U,CardX[i]-358,CardY[i]-255,priority});
                         if(incomingSettled || next.contains(220+static_cast<int>(i)))
+                        {
                             if(auto r=surface(220+static_cast<int>(i),std::move(image),CardX[i]+13,CardY[i]+16,priority+1);!r)return r;
+                            const int key=220+static_cast<int>(i);
+                            generatedPlayerNames.emplace(key,CachedPlayerName{
+                                s.setup.playerLog[s.setup.playerLogPageStart+i],
+                                playback.runtimeBitmaps().asset(surfaces_.at(key))});
+                        }
                     }
                 }
                 if(target==P::SelectCity)
@@ -466,6 +506,15 @@ namespace monopoly::playerselection
             if(!std::visit([&](auto item){return playback.commands().enqueue(std::move(item));},std::move(command)))
                 return std::unexpected("Validated player selection command rejected");
         live_=std::move(next);
+        if(generatedPlayerFont)
+        {
+            textCacheFont_=std::move(generatedPlayerFont);
+            textCache_=std::move(generatedPlayerNames);
+            textCacheResources_=playback.resources();
+            textCacheBoard_=s.setup.boardEdition;
+            textCachePage_=s.setup.playerLogPageStart;
+            textCacheCount_=s.setup.playerLogCount;
+        }
         pressSerial_=s.pressSerial;
         if(!phaseChange || !desired.empty() || live_.empty())
         {
@@ -482,6 +531,8 @@ namespace monopoly::playerselection
     void PlayerSelectionPlayback::reset() noexcept
     {
         live_.clear();surfaces_.clear();textCache_.clear();ruleHits_.clear();
+        textCacheFont_.reset();textCacheResources_.reset();
+        textCachePage_=textCacheCount_=0;playerNameRasterizations_=0;
         restoreRect_={};shortRect_={};phase_=P::None;ready_=false;
         pressSerial_=0;interactable_=false;startedPhase_.reset();
     }

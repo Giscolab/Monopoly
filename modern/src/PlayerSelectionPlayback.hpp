@@ -4,6 +4,7 @@
 #include "Display.hpp"
 #include "SequencePlayback.hpp"
 #include "PlayerSelectionHistory.hpp"
+#include "FontRuntime.hpp"
 
 #include <expected>
 #include <map>
@@ -52,6 +53,8 @@ namespace monopoly::playerselection
             const RenderState&, fonts::Runtime*, engine::SequencePlayback&);
         void reset() noexcept;
         [[nodiscard]] bool ready() const noexcept { return ready_; }
+        [[nodiscard]] std::uint64_t playerNameRasterizations() const noexcept
+        { return playerNameRasterizations_; }
         // Retail hotspots become active when incoming objects start, not when
         // their clocks settle. Outgoing objects never remain interactive.
         [[nodiscard]] bool interactable() const noexcept { return interactable_; }
@@ -75,7 +78,19 @@ namespace monopoly::playerselection
         };
         std::map<int, Live> live_;
         std::map<int, data::DataId> surfaces_;
-        std::map<int, std::string> textCache_;
+        struct CachedPlayerName
+        {
+            std::wstring text;
+            std::shared_ptr<const data::BitmapRuntimeAsset> asset;
+        };
+        // At most the eight visible profile names; retain immutable owners so
+        // externally replaced surfaces cannot masquerade as a cache hit.
+        std::map<int, CachedPlayerName> textCache_;
+        std::optional<fonts::Settings> textCacheFont_;
+        std::shared_ptr<const data::ResourceSnapshot> textCacheResources_;
+        data::BoardEdition textCacheBoard_{};
+        std::size_t textCachePage_{}, textCacheCount_{};
+        std::uint64_t playerNameRasterizations_{};
         std::vector<RuleHit> ruleHits_;
         ui::playersetup::Rect restoreRect_{}, shortRect_{};
         ui::playersetup::Phase phase_{ui::playersetup::Phase::None};
