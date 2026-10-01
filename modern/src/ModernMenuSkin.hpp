@@ -8,13 +8,17 @@
 
 namespace monopoly::menu
 {
-    // Substitutes immutable pixels only. The CNK owner retains placement,
-    // bounds, clock, animation and input handling. Initial contract: USA/en-US.
+    // Immutable USA/en-US presentation. CNK clocks and input remain authored;
+    // qualified token previews alone carry an explicit presentation rectangle.
     class ModernMenuSkin final
     {
     public:
         using TextRasterizer = std::function<std::expected<data::LegacyBitmapRGBA8,
             std::string>(std::string_view)>;
+        // Authored preview frame0..27, or frame255 for the thumbnail.
+        using TokenImageProvider = std::function<std::shared_ptr<const data::LegacyBitmapRGBA8>(
+            std::uint8_t token, std::uint8_t frame)>;
+        void configureTokenImages(TokenImageProvider provider);
         ModernMenuSkin(data::BoardEdition edition, data::LanguageId language,
             TextRasterizer text) : edition_(edition), language_(language), text_(std::move(text)) {}
         void configureBackground(std::shared_ptr<const data::LegacyBitmapRGBA8> image);
@@ -26,13 +30,16 @@ namespace monopoly::menu
         data::BoardEdition edition_;
         data::LanguageId language_;
         TextRasterizer text_;
+        TokenImageProvider tokenImages_;
         std::shared_ptr<const data::LegacyBitmapRGBA8> background_;
         using Key = std::tuple<data::DataId, const data::BitmapRuntimeAsset*, bool>;
         struct Entry
         {
             std::shared_ptr<const data::BitmapRuntimeAsset> original, replacement;
+            std::uint64_t lastUsed{};
         };
         std::map<Key, Entry> cache_;
         std::size_t cachedBytes_{};
+        std::uint64_t cacheClock_{};
     };
 }

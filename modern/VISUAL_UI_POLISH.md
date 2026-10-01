@@ -32,7 +32,8 @@ All screenshots and runtime logs below are generated under
   words are corroborated by associated read-only narration comments. Only idle
   face owners are replaced; transitions retain original artwork and clocks.
   Cached deeds, cards and property tiles check context before substitution.
-- Static GPU retention is bounded to board plus 22 actual decoration assets.
+- Static GPU retention is bounded to board plus up to 22 decoration assets.
+  The real restored scene reports 20 retained identities.
   Options may hide them without destroying their GPU buffers/textures; dynamic
   and unpinned resources still retire. New game, invalid context, GPU rejection
   and clear release the retained set. Focused GPU lifecycle tests pass.
@@ -75,3 +76,53 @@ keeps the exact retail assets. French Paris DAT banks remain absent.
 Focused qualification uses MenuSkin, World2D GPU, FontRuntime, EuropeanDeed,
 MeshGPUResources and ModernGltfMesh targets, without repeated full suites.
 The locked Source tree remains `dc0b23ed3aed178721143760e68da91d87a3884d`.
+
+
+## Subsequent qualified presentation work
+
+- Token picker: actual production GPU turntables of all eleven GLBs replace
+  the 28 authored bitmap frames without changing their CNK clocks. The fixed
+  220x183 presentation rectangle avoids per-frame size/origin wobble; original
+  input rectangles and secondary leaves remain unchanged. Compare
+  `token-picker-pass03.jpg` against `token-picker-pass06.jpg` and
+  `token-picker-hat-pass06.jpg`. F11 was exercised on the real picker at desktop
+  4096x2160, then returned to 1920x1080. Settled title samples were 59.6-60.0 FPS.
+- Packaging is lossless RGBA-to-PNG, including actual transparent pixels, with
+  per-frame/GLB/capture-log hashes. `pack_token_turntables.py` accepts only
+  complete eleven-token/28-frame captures and publishes transactionally.
+  Runtime PNG loading accepts only bounded 768x640 images. One frame pack now
+  decodes asynchronously; original retail frames remain visible while pending.
+  A bounded LRU keeps the live backdrop when old animated derivatives retire.
+  Cold selection still has upload/artwork costs; no continuous minimum-FPS
+  guarantee is claimed. `token-picker-pass07-async.jpg` records the real result.
+- Board textures: the explicit `--dump-textured-board-256` path reads all eight
+  actual licensed USA bitmap files and preserves the old 128 export path.
+  The procedural board was regenerated from the recovered authoring model,
+  whose SHA256 remained unchanged. Vertex/triangle counts and bounds match;
+  material deduplication gives 21 rather than 22 batches. Compare real 1920x1080
+  GPU images `../board-256-gpu-20261001/before/modern-scene-probe.png` and
+  `../board-256-gpu-20261001/after/modern-scene-probe.png`: corner/icon text is
+  sharper, with the same city framing and geometry. Fenced 100-frame probe
+  measurements were 114.50 versus 114.96 FPS; these are probe, not full-game FPS.
+
+Recreate a token capture with `MonopolyModernSceneRenderProbe <asset-root>
+<shader-root> <existing-output-directory> --token-turntable <slug>`, then package
+all eleven capture directories using `pack_token_turntables.py --capture-root
+<all-captures> --output modern/build/modern-assets/presentation/tokens --asset-root
+modern/build/modern-assets`. The normal app build stages optional presentation
+files. Missing or malformed packs keep the exact original preview/thumbnail.
+
+Focused MenuSkin, TokenPreview and World2D GPU tests cover strict frame IDs,
+whole-pack failure, asynchronous selection changes, cache retention, explicit
+CNK-bound override, nonidentity transforms, invalid-rectangle atomic rejection,
+and complete retail framebuffer restoration. No full suite was repeated.
+
+
+`board256-trade-pass08.jpg` is the real restored game at exactly the previous
+Tennessee Avenue state: Dog $222, human $683,1920x1080,60.0 FPS. Compare the
+previous `resumed-ui-milestone.jpg`: the licensed Community Chest graphic is
+crisper and Trade now matches the modern HUD. Its strict settled-only exception
+clips artwork at x130 while preserving the actual x132 input boundary; moving
+press frames retain retail artwork. Measured real DAT dimensions and context
+cache fallback have focused tests. The next AI turn visibly constructed houses
+on the orange group; no rule or timing change was made.

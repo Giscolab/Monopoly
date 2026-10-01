@@ -2,6 +2,8 @@
 #include "LegacyBitmap.hpp"
 #include "LegacyDataArchive.hpp"
 #include <memory>
+#include <array>
+#include <optional>
 #include <unordered_map>
 
 namespace monopoly::data
@@ -14,6 +16,8 @@ namespace monopoly::data
         LegacyBitmapRGBA8 image;
         // Opt-in presentation artwork. Retail and runtime text retain nearest sampling.
         bool preferLinearFiltering{};
+        // Qualified presentation-only rectangle; original CNK bounds remain untouched.
+        std::optional<std::array<float, 4>> presentationRect;
     };
     // Immutable payload identity prevents DataId reuse across snapshots from
     // returning stale pixels. Consumers retain their old asset after replacement.

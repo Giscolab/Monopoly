@@ -1,5 +1,6 @@
 #include "MeshRuntime.hpp"
 #include "BoardRules.hpp"
+#include "BoardTextureRuntime.hpp"
 #include "FontRuntime.hpp"
 #include "MoneyFormat.hpp"
 #include "ModernGltfMesh.hpp"
@@ -10,6 +11,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -268,7 +270,7 @@ namespace
     }
 
     bool exportTexturedBoard(const std::filesystem::path& directory,
-        DataId id, const MeshRenderData& mesh)
+        DataId id, const MeshRenderData& mesh, const BoardTextureRecipe* recipe = nullptr)
     {
         // Refuse existing links before any write, including per-batch image outputs.
         for (const auto& entry : std::filesystem::directory_iterator(directory))
@@ -352,7 +354,27 @@ namespace
         proof << "],\"maximum\":[";
         for (std::size_t axis=0; axis<3; ++axis)
             proof << (axis ? "," : "") << mesh.bounds.maximum[axis];
-        proof << "]}\n";
+        proof << "]";
+        if (recipe)
+        {
+            proof << ",\"texture_resolution\":256,\"geometry_uv_verified_unchanged\":true,\"source_textures\":[";
+            bool first = true;
+            for (std::size_t index = 0; index < mesh.batches.size(); ++index)
+            {
+                const auto& texture = mesh.batches[index].texture;
+                if (!texture) continue;
+                const auto& image = *texture->sourceImage;
+                const auto reference = std::find_if(recipe->textures.begin(), recipe->textures.end(),
+                    [&](const auto& item) { return item.coordinate.x == image.rawX && item.coordinate.y == image.rawY; });
+                if (reference == recipe->textures.end()) return false;
+                proof << (first ? "" : ",") << "{\"batch\":" << index << ",\"file\":" << jsonString(reference->fileName)
+                    << ",\"raw_x\":" << image.rawX << ",\"raw_y\":" << image.rawY
+                    << ",\"width\":" << image.width << ",\"height\":" << image.height << '}';
+                first = false;
+            }
+            proof << ']';
+        }
+        proof << "}\n";
         proof.close();
         return static_cast<bool>(proof);
     }
@@ -366,14 +388,15 @@ int main(int argc, char** argv)
     if (argc >= 2 && std::string_view(argv[1]) == "--gltf")
         return probeGltf(argc, argv);
 
-    const bool texturedBoard = argc == 5 && std::string_view(argv[3]) == "--dump-textured-board";
+    const bool boardTextures256 = argc == 5 && std::string_view(argv[3]) == "--dump-textured-board-256";
+    const bool texturedBoard = boardTextures256 || (argc == 5 && std::string_view(argv[3]) == "--dump-textured-board");
     const bool boardOnly = texturedBoard || (argc == 5 && std::string_view(argv[3]) == "--dump-board");
     if (argc != 3 && !(argc == 5 &&
             (std::string_view(argv[3]) == "--dump-retail" || boardOnly)))
     {
         std::cerr
             << "usage: MonopolyModernAssetProbe <retail-root> <modern-assets-root> "
-               "[--dump-retail|--dump-board|--dump-textured-board <existing-cmake-build-dir>]\n";
+               "[--dump-retail|--dump-board|--dump-textured-board|--dump-textured-board-256 <existing-cmake-build-dir>]\n";
         return 2;
     }
 
@@ -395,7 +418,8 @@ int main(int argc, char** argv)
         }
         if (error || underSource || !std::filesystem::is_regular_file(build / "CMakeCache.txt", error))
         { std::cerr << "OBJ output requires an existing CMake build outside Source\n"; return 2; }
-        const auto destination = build / (texturedBoard ? "retail-textured-board" : "retail-reference-obj");
+        const auto destination = build / (boardTextures256 ? "retail-textured-board-256" :
+            texturedBoard ? "retail-textured-board" : "retail-reference-obj");
         std::filesystem::create_directories(destination, error);
         if (error) { std::cerr << "OBJ directory: " << error.message() << '\n'; return 1; }
         dumpRoot = std::filesystem::canonical(destination, error);
@@ -422,6 +446,46 @@ int main(int argc, char** argv)
 
     auto resources = runtime.snapshot();
     MeshRuntimeCache legacy(resources);
+    std::optional<BoardTextureRecipe> boardRecipe;
+    if (boardTextures256)
+    {
+        auto recipe = buildUsaTextureRecipe(BoardMeshKind::ClassicMedium, TextureResolution::Pixels256);
+        if (!recipe) { std::cerr << recipe.error().detail << '\n'; return 1; }
+        auto images = loadBoardTextureImages(*paths, *recipe, BoardTextureContext{});
+        if (!images) { std::cerr << "USA256 texture recipe unavailable: " << images.error() << '\n'; return 1; }
+        const auto original = legacy.resolve(recipe->meshDataId);
+        if (!original || !(*original)->renderData) { std::cerr << "USA256 original board unavailable\n"; return 1; }
+        const auto replaced = legacy.replaceTextureImages(recipe->meshDataId, *images);
+        if (!replaced) { std::cerr << replaced.error().detail << '\n'; return 1; }
+        const auto replacement = legacy.resolve(recipe->meshDataId);
+        if (!replacement || !(*replacement)->renderData) return 1;
+        const auto& before = *(*original)->renderData;
+        const auto& after = *(*replacement)->renderData;
+        bool identical = before.indices == after.indices && before.vertices.size() == after.vertices.size() &&
+            before.batches.size() == after.batches.size() && before.bounds.minimum == after.bounds.minimum &&
+            before.bounds.maximum == after.bounds.maximum;
+        for (std::size_t index = 0; identical && index < before.vertices.size(); ++index)
+        {
+            const auto& a = before.vertices[index]; const auto& b = after.vertices[index];
+            identical = a.position == b.position && a.normal == b.normal && a.uv == b.uv && a.tangent == b.tangent;
+        }
+        for (std::size_t index = 0; identical && index < before.batches.size(); ++index)
+        {
+            const auto& a = before.batches[index]; const auto& b = after.batches[index];
+            identical = a.firstIndex == b.firstIndex && a.indexCount == b.indexCount &&
+                a.material.rawDiffuse == b.material.rawDiffuse && a.material.diffuse == b.material.diffuse;
+            if (b.texture)
+            {
+                const auto& image = b.texture->sourceImage;
+                if (!image || image->width != 256 || image->height != 256) { identical = false; break; }
+                const auto matched = std::find_if(images->begin(), images->end(), [&](const auto& item)
+                { return item->texturePage == image->texturePage && item->rawX == image->rawX && item->rawY == image->rawY; });
+                identical = matched != images->end() && (*matched)->rgba == image->rgba;
+            }
+        }
+        if (!identical) { std::cerr << "USA256 substitution changed board geometry/UVs or image mapping\n"; return 1; }
+        boardRecipe = std::move(*recipe);
+    }
     bool failed = false;
     std::cout.imbue(std::locale::classic());
 
@@ -480,7 +544,7 @@ int main(int argc, char** argv)
         printVector(measured.center); std::cout << '\n';
         if (texturedBoard)
         {
-            if (!exportTexturedBoard(*dumpRoot, id, *(*asset)->renderData)) failed = true;
+            if (!exportTexturedBoard(*dumpRoot, id, *(*asset)->renderData, boardRecipe ? &*boardRecipe : nullptr)) failed = true;
             if (!exportSquareLabels(*dumpRoot, *resources)) failed = true;
         }
         else if (dumpRoot && !exportObj(*dumpRoot / (std::string(name) + ".obj"),

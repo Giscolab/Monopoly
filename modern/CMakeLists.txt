@@ -300,6 +300,7 @@ add_library(
     src/ModernEnvironment.cpp
     src/ModernIBarSkin.cpp
     src/ModernMenuSkin.cpp
+    src/ModernTokenPreview.cpp
     src/IBarLayout.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
@@ -454,6 +455,18 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyModernMenuSkinTests PRIVATE /W4 /permissive- /utf-8)
     endif()
     add_test(NAME Monopoly.ModernMenuSkin COMMAND MonopolyModernMenuSkinTests)
+    add_executable(MonopolyModernIBarSkinTests tests/ModernIBarSkinTests.cpp)
+    target_link_libraries(MonopolyModernIBarSkinTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyModernIBarSkinTests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME Monopoly.ModernIBarSkin COMMAND MonopolyModernIBarSkinTests)
+    add_executable(MonopolyModernTokenPreviewTests tests/ModernTokenPreviewTests.cpp)
+    target_link_libraries(MonopolyModernTokenPreviewTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyModernTokenPreviewTests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME Monopoly.ModernTokenPreview COMMAND MonopolyModernTokenPreviewTests)
 endif()
 
 if(BUILD_TESTING)
@@ -946,12 +959,12 @@ if(MONOPOLY_BLENDER_EXECUTABLE
     add_custom_target(MonopolyExportProceduralGameplayScene
         COMMAND "$<TARGET_FILE:MonopolyModernAssetProbe>"
             "${MONOPOLY_RETAIL_ASSET_ROOT}" "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
-            --dump-textured-board "${CMAKE_CURRENT_BINARY_DIR}"
+            --dump-textured-board-256 "${CMAKE_CURRENT_BINARY_DIR}"
         COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b --factory-startup --disable-autoexec
             --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_procedural_gameplay_scene.py"
             -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
             --baked-board-cache "${CMAKE_CURRENT_BINARY_DIR}/procedural-assets/board/paris_board_runtime.glb"
-            --retail-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-textured-board/boardmed.obj"
+            --retail-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-textured-board-256/boardmed.obj"
             --probe "$<TARGET_FILE:MonopolyModernAssetProbe>"
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         DEPENDS MonopolyModernAssetProbe

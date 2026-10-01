@@ -28,6 +28,7 @@
 #include <memory>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -53,6 +54,8 @@ namespace
 
     struct GPUResources
     {
+        Uint32 width{Width}, height{Height};
+        bool transparent{};
         SDL_GPUDevice* device{};
         SDL_GPUTexture* target{};
         SDL_GPUTransferBuffer* transfer{};
@@ -86,6 +89,7 @@ namespace
         color.texture = gpu.target;
         color.clear_color = {Background[0] / 255.0F, Background[1] / 255.0F,
             Background[2] / 255.0F, 1.0F};
+        if (gpu.transparent) color.clear_color = {0,0,0,0};
         color.load_op = SDL_GPU_LOADOP_CLEAR;
         color.store_op = SDL_GPU_STOREOP_STORE;
         color.cycle = true;
@@ -96,9 +100,9 @@ namespace
             require(false, "GPU clear pass");
         }
         SDL_EndGPURenderPass(pass);
-        const SDL_GPUViewport viewport{0, 0, static_cast<float>(Width),
-            static_cast<float>(Height), 0, 1};
-        auto stats = renderer.render(command, gpu.target, Width, Height, viewport, slot);
+        const SDL_GPUViewport viewport{0, 0, static_cast<float>(gpu.width),
+            static_cast<float>(gpu.height), 0, 1};
+        auto stats = renderer.render(command, gpu.target, gpu.width, gpu.height, viewport, slot);
         if (!stats)
         {
             SDL_CancelGPUCommandBuffer(command);
@@ -114,11 +118,11 @@ namespace
             }
             SDL_GPUTextureRegion source{};
             source.texture = gpu.target;
-            source.w = Width; source.h = Height; source.d = 1;
+            source.w = gpu.width; source.h = gpu.height; source.d = 1;
             SDL_GPUTextureTransferInfo destination{};
             destination.transfer_buffer = gpu.transfer;
-            destination.pixels_per_row = Width;
-            destination.rows_per_layer = Height;
+            destination.pixels_per_row = gpu.width;
+            destination.rows_per_layer = gpu.height;
             SDL_DownloadFromGPUTexture(copy, &source, &destination);
             SDL_EndGPUCopyPass(copy);
         }
@@ -279,6 +283,125 @@ namespace
         }
         return result;
     }
+
+    void tokenTurntable(const std::filesystem::path& assetRoot,
+        const std::filesystem::path& shaders, const std::filesystem::path& output,
+        const std::string& requested)
+    {
+        const data::ModernTokenDefinition* definition=nullptr;
+        for(const auto& entry:data::modernTokenDefinitions())
+            if(entry.slug==requested || std::to_string(entry.token)==requested) definition=&entry;
+        if(!definition) throw std::runtime_error("Unknown token catalog slug/index: "+requested);
+        data::ModernGltfLoadOptions options;
+        options.unitsPerMeter=definition->unitsPerMeter; options.yawDegrees=definition->yawDegrees;
+        options.localOffset=definition->localOffset; options.groundToZero=true;
+        auto loaded=data::loadModernGltfMesh(assetRoot/std::filesystem::path{definition->relativeGlbPath}.lexically_relative("assets/modern"),options);
+        if(!loaded) throw std::runtime_error(loaded.error().detail);
+        reportMaterials(**loaded,std::string{definition->slug});
+        auto asset=std::make_shared<data::MeshRuntimeAsset>();
+        asset->dataId=data::representativeLegacyMesh(definition->token);
+        asset->origin=data::MeshAssetOrigin::ModernGltf; asset->renderData=*loaded;
+        const auto& native=(*loaded)->bounds;
+        const float cx=(native.minimum[0]+native.maximum[0])*.5F;
+        const float cz=(native.minimum[2]+native.maximum[2])*.5F;
+        std::vector<sequence::SequenceMeshRenderItem> poses;
+        for(unsigned frame=0;frame<28;++frame)
+        {
+            sequence::SequenceMeshRenderItem item;
+            item.node=frame+1;item.asset=asset;item.renderData=*loaded;item.contentsDataId=asset->dataId;
+            item.worldTransform=sequence::multiply(sequence::translate3D(-cx,0,-cz),
+                sequence::moveRySTxzTransform(6.283185307179586F*frame/28,1,cx,cz));
+            poses.push_back(item);
+        }
+        const auto bounds=sceneBounds(poses);
+        std::array<float,3> center{};float r2=0;
+        for(unsigned axis=0;axis<3;++axis)
+        {center[axis]=(bounds.minimum[axis]+bounds.maximum[axis])*.5F;r2+=std::pow((bounds.maximum[axis]-bounds.minimum[axis])*.5F,2);}
+        const float radius=std::max(.01F,std::sqrt(r2));
+        engine::World3DCamera camera;
+        camera.location={center[0]+radius*2.1F,center[1]+radius*.9F,center[2]-radius*2.1F};
+        camera.up={0,1,0};camera.nearPlane=radius*.01F;camera.farPlane=radius*8;
+        std::array<float,3> forward{};float distance2=0;
+        for(unsigned axis=0;axis<3;++axis) {camera.forward[axis]=center[axis]-camera.location[axis];distance2+=camera.forward[axis]*camera.forward[axis];}
+        for(unsigned axis=0;axis<3;++axis) forward[axis]=camera.forward[axis]/std::sqrt(distance2);
+        std::array<float,3> right{forward[2],0,-forward[0]};
+        const float rl=std::sqrt(right[0]*right[0]+right[2]*right[2]);for(auto& value:right)value/=rl;
+        const std::array<float,3> up{forward[1]*right[2],forward[2]*right[0]-forward[0]*right[2],-forward[1]*right[0]};
+        auto dot=[](const auto& x,const auto& y){return x[0]*y[0]+x[1]*y[1]+x[2]*y[2];};
+        // Fit actual vertices over every yaw, not empty corners of the union
+        // AABB. One FOV/camera for all frames prevents scale breathing.
+        float fit=0;
+        for(const auto& pose:poses)
+            for(const auto& vertex:(*loaded)->vertices)
+            {
+                const auto& m=pose.worldTransform.values;
+                const auto& p=vertex.position;
+                std::array<float,3> relative{};
+                for(unsigned axis=0;axis<3;++axis)
+                    relative[axis]=p[0]*m[axis]+p[1]*m[4+axis]+p[2]*m[8+axis]+m[12+axis]-camera.location[axis];
+                const float depth=dot(relative,forward);
+                require(std::isfinite(depth) && depth>camera.nearPlane && depth<camera.farPlane,"Turntable vertex fit depth");
+                fit=std::max(fit,std::max(std::abs(dot(relative,right)),std::abs(dot(relative,up))*768/640)/depth);
+            }
+        require(std::isfinite(fit) && fit>0,"Turntable nonempty projected vertices");
+        camera.fieldOfView=2*std::atan(fit*1.12F);
+        SDLSession session;GPUResources gpu;gpu.width=768;gpu.height=640;gpu.transparent=true;
+        gpu.device=SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL|SDL_GPU_SHADERFORMAT_SPIRV|SDL_GPU_SHADERFORMAT_MSL|SDL_GPU_SHADERFORMAT_METALLIB,false,nullptr);
+        require(gpu.device!=nullptr,"Turntable real GPU device");
+        SDL_GPUTextureCreateInfo target{};target.type=SDL_GPU_TEXTURETYPE_2D;target.format=SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        target.usage=SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;target.width=gpu.width;target.height=gpu.height;
+        target.layer_count_or_depth=1;target.num_levels=1;target.sample_count=SDL_GPU_SAMPLECOUNT_1;
+        gpu.target=SDL_CreateGPUTexture(gpu.device,&target);require(gpu.target!=nullptr,"Turntable target");
+        SDL_GPUTransferBufferCreateInfo transfer{};transfer.usage=SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;transfer.size=gpu.width*gpu.height*4;
+        gpu.transfer=SDL_CreateGPUTransferBuffer(gpu.device,&transfer);require(gpu.transfer!=nullptr,"Turntable readback");
+        auto renderer=engine::World3DRenderer::load(gpu.device,shaders,target.format,assetRoot/"lighting/studio_environment.mstudio");
+        if(!renderer)throw std::runtime_error(renderer.error().detail);
+        // Current production MSAA target clears alpha to1; preserve genuine alpha
+        // with the single-sample production path rather than inventing a matte.
+        renderer->setModernPresentation(true);renderer->setPresentationShadows(false);renderer->setPresentationAntialiasing(false);
+        renderer->setBilinearFiltering(true);renderer->setLighting(engine::modernBoardPresentationLighting());
+        engine::SequenceWorld3DSlot slot;
+        require(slot.configureView({0,0,int(gpu.width),int(gpu.height)},camera).has_value(),"Turntable fixed camera");
+        const auto prefix="token-turntable-"+std::string{definition->slug};
+        std::ofstream manifest(output/(prefix+".tsv"));
+        manifest<<std::setprecision(std::numeric_limits<float>::max_digits10)
+            <<"scope\tpresentation-only calibrated base GLB; no CNK/gameplay\nsize\t768\t640\nframes\t28\n"
+            <<"token\t"<<unsigned(definition->token)<<"\tslug\t"<<definition->slug<<"\nunits_per_meter\t"<<definition->unitsPerMeter
+            <<"\ncatalog_yaw\t"<<definition->yawDegrees<<"\nfit\tall actual vertices across28yaw poses; fixed camera;12percent margin\ncamera\t";
+        for(auto value:camera.location)manifest<<value<<'\t';manifest<<"\nfov\t"<<camera.fieldOfView<<"\nbounds\t";
+        for(auto value:bounds.minimum)manifest<<value<<'\t';for(auto value:bounds.maximum)manifest<<value<<'\t';manifest<<'\n';
+        for(unsigned frame=0;frame<28;++frame)
+        {
+            require(slot.sync({poses[frame]}).has_value(),"Turntable production slot");
+            const auto stats=draw(gpu,*renderer,slot,true);
+            if(!renderer->modernPipeline()) throw std::runtime_error("Turntable actual PBR pipeline unavailable after production render");
+            if(frame==0)
+                manifest<<"backend\t"<<SDL_GetGPUDeviceDriver(gpu.device)
+                    <<"\nstudio_enabled\t"<<renderer->studioEnvironmentEnabled()
+                    <<"\nmsaa_samples\t"<<unsigned(renderer->presentationSampleCount())<<'\n';
+            auto* mapped=SDL_MapGPUTransferBuffer(gpu.device,gpu.transfer,false);require(mapped!=nullptr,"Turntable map");
+            std::vector<unsigned char> pixels(gpu.width*gpu.height*4);std::memcpy(pixels.data(),mapped,pixels.size());SDL_UnmapGPUTransferBuffer(gpu.device,gpu.transfer);
+            std::size_t opaque=0,clear=0;
+            for(std::size_t i=3;i<pixels.size();i+=4){opaque+=pixels[i]!=0;clear+=pixels[i]==0;}
+            require(opaque>0 && clear>0 && stats.triangles>0,"Turntable actual alpha foreground/background");
+            std::ostringstream suffix;suffix<<'-'<<std::setw(2)<<std::setfill('0')<<frame;
+            const auto stem=prefix+suffix.str();
+            auto write=[&](const std::string& name)
+            {
+                std::ofstream rgba(output/(name+".rgba"),std::ios::binary);
+                rgba.write(reinterpret_cast<const char*>(pixels.data()),pixels.size());rgba.close();require(rgba.good(),"Turntable RGBA write");
+                std::ofstream ppm(output/(name+".ppm"),std::ios::binary);ppm<<"P6\n768 640\n255\n";
+                for(std::size_t i=0;i<pixels.size();i+=4)ppm.write(reinterpret_cast<const char*>(pixels.data()+i),3);
+                ppm.close();require(ppm.good(),"Turntable PPM write");
+            };
+            write(stem);if(frame==0)write(prefix+"-thumbnail");
+            manifest<<"frame\t"<<frame<<"\tyaw\t"<<360.0F*frame/28<<"\talpha_nonzero\t"<<opaque<<"\talpha_zero\t"<<clear
+                <<"\ttriangles\t"<<stats.triangles<<"\tfile\t"<<stem<<'\n';
+        }
+        manifest.close();require(manifest.good(),"Turntable manifest write");
+        std::cout<<"turntable\t"<<prefix<<"\tframes\t28\tsize\t768x640\tbackend\t"<<SDL_GetGPUDeviceDriver(gpu.device)
+            <<"\tstudio_enabled\t"<<renderer->studioEnvironmentEnabled()<<"\tmsaa_samples\t"<<unsigned(renderer->presentationSampleCount())<<'\n';
+    }
 }
 
 int main(int argc, char** argv)
@@ -290,7 +413,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Usage: ModernSceneRenderProbe <modern-assets-root> "
                 "<shader-directory> <existing-build-output-directory> "
                 "[board/paris_board_runtime.glb] [--environment] OR "
-                "--token-frame <runtime-root> <sequence-id> <tick:0..36000> <root-priority> [--benchmark]");
+                "--token-frame <runtime-root> <sequence-id> <tick:0..36000> <root-priority> [--benchmark] OR --token-turntable <slug-or-index>");
         const std::filesystem::path assetRoot{argv[1]}, shaders{argv[2]};
         const auto outputDir = std::filesystem::canonical(argv[3]);
         require(std::filesystem::is_directory(outputDir), "Output directory must exist");
@@ -310,6 +433,7 @@ int main(int argc, char** argv)
         std::optional<std::filesystem::path> tabletopSamples;
         unsigned animationTick = 0;
         std::optional<TokenFrame> tokenFrame;
+        std::optional<std::string> turntable;
         for (int i = 4; i < argc; ++i)
         {
             if (std::string{argv[i]} == "--environment") includeEnvironment = true;
@@ -328,6 +452,8 @@ int main(int argc, char** argv)
             else if (std::string{argv[i]} == "--animation-tick")
             { if (++i >= argc) throw std::runtime_error("--animation-tick requires 0..600"); animationTick = number(argv[i],600); }
             else if (std::string{argv[i]} == "--benchmark") benchmarkToken = true;
+            else if (std::string{argv[i]} == "--token-turntable")
+            { if (++i >= argc || turntable) throw std::runtime_error("--token-turntable requires one slug/index"); turntable=argv[i]; }
             else if (std::string{argv[i]} == "--token-frame")
             {
                 if (tokenFrame || i + 4 >= argc) throw std::runtime_error("--token-frame requires four arguments");
@@ -340,6 +466,12 @@ int main(int argc, char** argv)
             }
             else if (!boardArgument) { relativeBoard = argv[i]; boardArgument = true; }
             else throw std::runtime_error("Unexpected argument");
+        }
+        if(turntable)
+        {
+            if(tokenFrame || includeEnvironment || boardArgument || tabletopSamples || benchmarkToken || polishLevel || animationTick)
+                throw std::runtime_error("Turntable cannot be combined with board/CNK/polish modes");
+            tokenTurntable(assetRoot,shaders,outputDir,*turntable);return 0;
         }
         if (tokenFrame && (includeEnvironment || boardArgument))
             throw std::runtime_error("Token-frame and board presentation modes cannot be combined");

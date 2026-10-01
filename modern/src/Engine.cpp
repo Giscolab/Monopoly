@@ -24,6 +24,7 @@
 #include "ModernScenePresentation.hpp"
 #include "ModernIBarSkin.hpp"
 #include "ModernMenuSkin.hpp"
+#include "ModernTokenPreview.hpp"
 #include "ModernImageDecoder.hpp"
 #include "IBarLayout.hpp"
 #include "MoneyFormat.hpp"
@@ -1241,6 +1242,10 @@ namespace monopoly::engine
                                 menuSkin->configureBackground(std::move(image));
                             }
                     }
+                    auto tokenPreviews = std::make_shared<menu::ModernTokenPreview>(
+                        std::filesystem::path(SDL_GetBasePath()) / "assets/modern/presentation/tokens");
+                    menuSkin->configureTokenImages([tokenPreviews](std::uint8_t token, std::uint8_t frame)
+                        { return tokenPreviews->image(token, frame); });
                     playback->world2D().configureModernMenuSkin(std::move(menuSkin));
                     auto skin = std::make_shared<ibar::ModernIBarSkin>(
                         startup::resources()->context().language,
@@ -2990,7 +2995,8 @@ namespace monopoly::engine
             presentationState.customBoardPath.empty() &&
             (presentationState.current2DView == display::Screen2D::Options ||
              presentationState.current2DView == display::Screen2D::PlayerSelect ||
-             presentationState.current2DView == display::Screen2D::PlayerSelectRules);
+             presentationState.current2DView == display::Screen2D::PlayerSelectRules ||
+             presentationState.current2DView == display::Screen2D::Auction);
         const SDL_FColor backdrop = modernMenuBackdrop ?
             SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
         const auto presented=gpuframe::present(gpuDevice, gameWindow,

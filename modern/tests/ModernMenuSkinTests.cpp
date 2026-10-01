@@ -1,5 +1,6 @@
 #include "ModernMenuSkin.hpp"
 #include <algorithm>
+#include <array>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -170,6 +171,148 @@ namespace
             "escape neighboring and European owners retain exact fallback");
     }
 
+    void testAuctionShells()
+    {
+        unsigned captions=0;
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [&](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{++captions;return label();});
+        const std::array<std::array<unsigned,3>,6> colours{{{255,0,0},{0,0,255},{60,150,60},
+            {255,255,0},{255,0,255},{255,128,0}}};
+        for (unsigned size=0;size<2;++size)
+            for (unsigned colour=0;colour<6;++colour)
+            {
+                const auto root=0x00030370+size*6+colour;
+                const auto source=original(size?134:200,90);
+                const auto panel=skin.substitute(root,source);
+                require(panel!=source && panel->image.width==source->image.width*3 && panel->image.height==270,
+                    "exact six-color auction big/small shells keep intrinsic footprints");
+                const auto stripe=(std::size_t(6)*panel->image.width+6)*4;
+                for(unsigned c=0;c<3;++c) require(panel->image.pixels[stripe+c]==colours[colour][c],
+                    "auction top stripe retains canonical player colour identity");
+                for(unsigned y:{45U,180U})
+                {
+                    const auto band=(std::size_t(y)*panel->image.width+panel->image.width/2)*4;
+                    require(panel->image.pixels[band]==245 && panel->image.pixels[band+1]==235,
+                        "auction names and cash keep cream backing beneath unchanged black dynamic glyphs");
+                }
+                require(skin.substitute(root,source,false)==source,
+                    "auction secondary leaves preserve original immutable data");
+                const auto wrong=original(source->image.width,89);
+                require(skin.substitute(root,wrong)==wrong,"auction player wrong extent retains exact fallback");
+            }
+        for (const auto spec : {std::array<unsigned,3>{0x00030000,800,600},
+            std::array<unsigned,3>{0x0003036F,800,150},std::array<unsigned,3>{0x00030384,110,27}})
+        {
+            const auto source=original(spec[1],spec[2]);
+            const auto native=skin.substitute(spec[0],source);
+            require(native!=source && native->image.width==spec[1]*3 && native->image.height==spec[2]*3 &&
+                skin.substitute(spec[0],source,false)==source,
+                "auction backdrop bottom and bidplate are exact shell-only substitutions");
+            const auto wrong=original(spec[1],spec[2]-1);
+            require(skin.substitute(spec[0],wrong)==wrong,"auction shell rejects unexpected geometry");
+        }
+        require(captions==0,"auction values and heading remain in separate authored text surfaces");
+        const auto tray=original(131,37);
+        for(const auto root:{0x00030383U,0x0003037CU,0x0003036EU,0xFFFE0010U})
+            require(skin.substitute(root,tray)==tray,"bill trays token-adjacent and native text remain untouched");
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        const auto qualifiedExtent=original(200,90);
+        require(french.substitute(0x00030370,qualifiedExtent)==qualifiedExtent,
+            "unqualified auction locale retains retail fallback with otherwise qualified extent");
+    }
+
+    void testTokenImageProvider()
+    {
+        const auto raster=[](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();};
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        auto authored=std::make_shared<data::BitmapRuntimeAsset>(*original(180,150));
+        authored->dataId=0x00030450;
+        require(!skin.supports(0x0003002D) && skin.substitute(0x0003002D,authored)==authored,
+            "unconfigured token provider keeps complete retail preview fallback");
+        auto image=std::make_shared<data::LegacyBitmapRGBA8>();
+        *image={768,640,std::vector<std::uint8_t>(768*640*4,255)};
+        std::uint8_t lastToken=255,lastFrame=254;
+        skin.configureTokenImages([&](std::uint8_t token,std::uint8_t frame){lastToken=token;lastFrame=frame;return image;});
+        for(unsigned token=0;token<11;++token)
+            for(unsigned frame:{0U,27U})
+            {
+                auto source=std::make_shared<data::BitmapRuntimeAsset>(*authored);
+                source->dataId=0x00030450+29*token+frame;
+                const auto result=skin.substitute(0x0003002D+token,source);
+                require(result!=source && lastToken==token && lastFrame==frame && result->dataId==source->dataId &&
+                    result->image.width==768 && result->image.height==640 && result->preferLinearFiltering,
+                    "each exact token root and immutable authored frame selects corresponding real GPU image");
+                require(result->presentationRect && *result->presentationRect==std::array<float,4>{527,275.5F,747,458.5F},
+                    "token preview carries precise presentation rectangle independently of legacy frame geometry");
+                require(skin.substitute(0x0003002D+token,source,false)==source,
+                    "token preview secondary leaves remain original");
+            }
+        auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*authored);
+        wrong->dataId=0x00030450+28;
+        require(skin.substitute(0x0003002D,wrong)==wrong && skin.substitute(0x0003002E,authored)==authored,
+            "unused authored frame and another token frame cannot qualify preview");
+        wrong->dataId=0x00050450;
+        require(skin.substitute(0x0003002D,wrong)==wrong,"same tag from wrong data group retains fallback");
+        constexpr std::array<unsigned,11> tags{0x4A,0x59,0x3B,0x3E,0x56,0x53,0x4D,0x41,0x47,0x50,0x44};
+        const auto thumbnail=original(100,41);
+        for(unsigned token=0;token<11;++token)
+            for(unsigned state=0;state<3;++state)
+            {
+                const auto root=0x00030000+tags[token]+state;
+                const auto result=skin.substitute(root,thumbnail);
+                require(result!=thumbnail && lastToken==token && lastFrame==255 && result->image.width==300 &&
+                    result->image.height==123 && !result->presentationRect && skin.substitute(root,thumbnail,false)==thumbnail,
+                    "all exact token thumbnail states aspect-fit actual image into unchanged100x41 shell");
+            }
+        const auto in=skin.substitute(0x0003004A,thumbnail);
+        const auto idle=skin.substitute(0x0003004B,thumbnail);
+        const auto center=(std::size_t(61)*300+150)*4, margin=(std::size_t(61)*300+20)*4;
+        require(in->image.pixels[center]==255 && in->image.pixels[margin]!=255 && in->image.pixels!=idle->image.pixels,
+            "thumbnail aspect fit leaves padded shell visible and in-state fill differs subtly");
+        const auto wrongSize=original(100,40);
+        require(skin.substitute(0x0003004A,wrongSize)==wrongSize,"thumbnail wrong footprint retains fallback");
+        const auto frame=original(254,194);
+        for(unsigned root=0x00030038;root<=0x0003003A;++root)
+        {
+            const auto result=skin.substitute(root,frame);
+            require(result!=frame && result->image.width==762 && result->image.height==582 &&
+                skin.substitute(root,frame,false)==frame,"actual preview frame shell stays254x194 with secondary leaves retained");
+        }
+        const auto wrongFrame=original(254,193);
+        require(skin.substitute(0x00030038,wrongFrame)==wrongFrame,"preview shell strict extent fallback");
+        skin.configureTokenImages([](std::uint8_t,std::uint8_t)->std::shared_ptr<const data::LegacyBitmapRGBA8>{return {};});
+        require(skin.substitute(0x0003002D,authored)==authored && skin.substitute(0x0003004A,thumbnail)==thumbnail,
+            "missing provider image invalidates previous replacement and keeps exact preview/thumbnail fallback");
+        auto bad=std::make_shared<data::LegacyBitmapRGBA8>(*image);bad->pixels.pop_back();
+        skin.configureTokenImages([bad](std::uint8_t,std::uint8_t){return bad;});
+        require(skin.substitute(0x0003002D,authored)==authored,"malformed real image keeps immutable retail fallback");
+        bad=std::make_shared<data::LegacyBitmapRGBA8>(*image);bad->width=767;
+        skin.configureTokenImages([bad](std::uint8_t,std::uint8_t){return bad;});
+        require(skin.substitute(0x0003004A,thumbnail)==thumbnail,"unexpected GPU image dimensions retain exact fallback");
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        french.configureTokenImages([image](std::uint8_t,std::uint8_t){return image;});
+        require(french.substitute(0x0003002D,authored)==authored,"token provider cannot bypass regional fallback");
+    }
+
+    void testActiveCacheRetention()
+    {
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        const auto backdrop=original(800,600);
+        const auto active=skin.substitute(0x00050003,backdrop);
+        const auto oldOwner=original();
+        const auto old=skin.substitute(0x00050279,oldOwner);
+        for(unsigned index=0;index<70;++index)
+        {
+            (void)skin.substitute(0x00050279,original());
+            require(skin.substitute(0x00050003,backdrop)==active,
+                "live backdrop survives bounded animation cache eviction");
+        }
+        require(skin.substitute(0x00050279,oldOwner)!=old,
+            "least recently used owner retires while current backdrop stays pinned by use");
+    }
+
     void testFallbackAndIdentity()
     {
         const auto asset = original();
@@ -204,7 +347,7 @@ namespace
 }
 int main()
 {
-    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation();
+    try { testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testActiveCacheRetention();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

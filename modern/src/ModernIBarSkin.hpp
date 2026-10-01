@@ -56,7 +56,7 @@ namespace monopoly::ibar
         void configureDrawCardDescriptors(std::map<data::DataId,DrawCardDescriptor> descriptors,
             DeedTextRasterizer rasterizer)
         { drawCards_ = std::move(descriptors); drawText_ = std::move(rasterizer); cache_.clear(); }
-        // Re-evaluated for every deed/draw/property substitution, including cache hits.
+        // Re-evaluated for every button/deed/draw/property substitution, including cache hits.
         // An absent predicate preserves the existing caller-qualified behavior.
         void configurePresentationContext(std::function<bool()> predicate)
         { presentationContext_ = std::move(predicate); }

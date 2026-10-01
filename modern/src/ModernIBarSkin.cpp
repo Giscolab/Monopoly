@@ -135,6 +135,7 @@ namespace monopoly::ibar
             (w != draw->second.nativeWidth || h != draw->second.nativeHeight || w < 199 || h < 150 || w > 600 || h > 400 ||
              draw->second.title.empty() || draw->second.title.size()>128 || draw->second.body.empty())) return original;
         const auto b = !fullCard ? button(root) : std::optional<Button>{};
+        if (b && presentationContext_ && !presentationContext_()) return original;
         layout::Rect band{0,0,int(w),int(h)};
         std::optional<layout::Rect> hit;
         const int activeLayout = b && layout_ ? int(layout_()) : 0;
@@ -161,7 +162,16 @@ namespace monopoly::ibar
             { left=std::min(left,c[0]); top=std::min(top,c[1]); right=std::max(right,c[0]); bottom=std::max(bottom,c[1]); }
             // A moving CNK that cannot carry its whole interactive band retains
             // its actual retail transition; idle artwork never centres in a glow.
-            if (left < -.01F || top < -.01F || right > w+.01F || bottom > h+.01F) return original;
+            // Actual USA Trade idle UAP is60x32 at70,454, while its legacy
+            // interactive rectangle ends at132: two clickable pixels are outside
+            // the authored bitmap ending at130. Clip only this proven settled
+            // payload; moving/pressed frames keep their original transition.
+            const bool settledTrade = b->index == 19 && b->state < 3 && w == 60 && h == 32 &&
+                original->dataId == data::packDataId(data::LegacyGroupId::LanguageGraphics,
+                    b->grey ? 0x1628 : 0x140E) &&
+                m == std::array<float,9>{1,0,0,0,1,0,70,454,1} &&
+                left == 0 && top == 1 && right == 62 && bottom == 29;
+            if (!settledTrade && (left < -.01F || top < -.01F || right > w+.01F || bottom > h+.01F)) return original;
             band = {std::clamp(int(std::floor(left)),0,int(w)),std::clamp(int(std::floor(top)),0,int(h)),
                 std::clamp(int(std::ceil(right)),0,int(w)),std::clamp(int(std::ceil(bottom)),0,int(h))};
             if (band.right-band.left < 8 || band.bottom-band.top < 8) return original;

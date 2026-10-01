@@ -152,7 +152,18 @@ namespace monopoly::engine
             if (!asset->image.width || !asset->image.height)
                 return std::unexpected("zero-sized 2D bitmap asset");
             auto rasterToSequence = sequence::identity2D();
-            if (item.bounds)
+            if (asset->presentationRect)
+            {
+                const auto& box = *asset->presentationRect;
+                if (!std::ranges::all_of(box, [](float v) { return std::isfinite(v); }) ||
+                    box[2] <= box[0] || box[3] <= box[1])
+                    return std::unexpected("invalid 2D presentation rectangle");
+                rasterToSequence.values[0] = (box[2] - box[0]) / asset->image.width;
+                rasterToSequence.values[4] = (box[3] - box[1]) / asset->image.height;
+                rasterToSequence.values[6] = box[0];
+                rasterToSequence.values[7] = box[1];
+            }
+            else if (item.bounds)
             {
                 const auto& box = *item.bounds;
                 const auto width = static_cast<std::int64_t>(box.right) - box.left;

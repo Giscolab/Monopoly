@@ -14,6 +14,8 @@
 #include <array>
 #include <cstring>
 #include <stdexcept>
+#include <limits>
+#include <cmath>
 
 namespace
 {
@@ -58,6 +60,65 @@ namespace
     }
     std::array<std::uint8_t,4> pixel(const std::vector<std::uint8_t>& p,unsigned x,unsigned y,unsigned width=800)
     { const auto i=(y*width+x)*4;return {p.at(i),p.at(i+1),p.at(i+2),p.at(i+3)}; }
+
+    void testPresentationRect(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
+    {
+        auto retail=std::make_shared<data::BitmapRuntimeAsset>();
+        retail->dataId=data::packDataId(data::LegacyGroupId::Main,0x97);
+        retail->image={4,2,std::vector<std::uint8_t>(32,255)};
+        sequence::SequenceBitmapRenderItem item;
+        item.node=701; item.contentsDataId=retail->dataId; item.runtimeAsset=retail;
+        item.metadata={data::LegacyDataType::Native,4,2,-7,-9,32};
+        item.bounds.emplace(); item.bounds->left=1; item.bounds->top=2;
+        item.bounds->right=5; item.bounds->bottom=6;
+        item.worldTransform=sequence::identity2D();
+        item.worldTransform.values[0]=2; item.worldTransform.values[4]=3;
+        item.worldTransform.values[6]=100; item.worldTransform.values[7]=80;
+        item.priority=77; item.clock=123;
+        item.rootSequenceDataId=0x00050279; item.rootSequenceNode=91;
+        data::BitmapRuntimeCache cache; engine::SequenceWorld2DSlot slot;
+        require(slot.sync({item},cache).has_value(),"retail CNK bounds establish transformed baseline");
+        const auto baseline=capture(device,renderer,slot);
+        const std::array<std::uint8_t,4> white{255,255,255,255},black{0,0,0,255};
+        require(pixel(baseline,105,90)==white && pixel(baseline,140,170)==black,
+            "GPU retail rectangle follows CNK bounds before nonidentity world transform");
+        auto modern=std::make_shared<data::BitmapRuntimeAsset>(*retail);
+        modern->image={12,6,std::vector<std::uint8_t>(288,255)};
+        modern->preferLinearFiltering=true;
+        modern->presentationRect=std::array<float,4>{10,20,30,40}; item.runtimeAsset=modern;
+        require(slot.sync({item},cache).has_value(),"visual rectangle overrides differing explicit CNK bounds");
+        const auto* object=slot.find(item.node);
+        require(object && object->clock==123 && object->priority==77 &&
+            object->contentsDataId==retail->dataId && object->asset==modern,
+            "visual placement preserves live node, contents identity, clock and priority");
+        const auto matrix=object->worldTransform.values;
+        require(std::abs(matrix[0]-40.0F/12)<.0001F && matrix[4]==10 && matrix[6]==120 && matrix[7]==140,
+            "presentation-local rectangle composes with authored world scale and translation");
+        const auto presented=capture(device,renderer,slot);
+        require(pixel(presented,140,170)==white && pixel(presented,105,90)==black &&
+            pixel(presented,119,170)==black && pixel(presented,160,170)==black &&
+            pixel(presented,140,139)==black && pixel(presented,140,200)==black,
+            "GPU paints only transformed presentation footprint and erases old CNK footprint");
+        auto other=item; other.node=702;
+        for(const auto rect:{std::array<float,4>{30,20,10,40},
+                std::array<float,4>{10,20,std::numeric_limits<float>::quiet_NaN(),40}})
+        {
+            auto bad=std::make_shared<data::BitmapRuntimeAsset>(*modern);
+            bad->presentationRect=rect; item.runtimeAsset=bad;
+            require(!slot.sync({other,item},cache),"reversed or nonfinite rectangle rejects complete incoming slot");
+            const auto* old=slot.find(701);
+            require(slot.size()==1 && !slot.find(702) && old && old->asset==modern &&
+                old->clock==123 && old->worldTransform.values==matrix && capture(device,renderer,slot)==presented,
+                "bad visual rectangle atomically preserves previous nodes, clock, placement and GPU pixels");
+        }
+        auto noOverride=std::make_shared<data::BitmapRuntimeAsset>(*modern);
+        noOverride->presentationRect.reset(); item.runtimeAsset=noOverride;
+        require(slot.sync({item},cache).has_value() && capture(device,renderer,slot)==baseline,
+            "empty visual override restores exact CNK framebuffer despite threefold raster pixels");
+        item.runtimeAsset=retail;
+        require(slot.sync({item},cache).has_value() && capture(device,renderer,slot)==baseline,
+            "original owner fallback restores complete retail GPU framebuffer");
+    }
 
     void testOptInLinearSampling(SDL_GPUDevice* device, engine::World2DRenderer& renderer)
     {
@@ -715,6 +776,7 @@ int main(int argc, char** argv)
         testLabeledCamera(device, *renderer);
         testModernIBarSkin(device, *renderer);
         testOptInLinearSampling(device, *renderer);
+        testPresentationRect(device, *renderer);
         testModernPropertyThumbnails(device, *renderer);
         testModernDeeds(device,*renderer);
         if (argc == 2) testRetailIBarBands(device, *renderer, std::filesystem::path(argv[1]));
