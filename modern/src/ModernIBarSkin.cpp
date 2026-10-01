@@ -10,12 +10,12 @@ namespace monopoly::ibar
     namespace
     {
         constexpr std::array<std::string_view, 28> French{
-            "Enchères", "Acheter", "Vue", "Terminer", "Vendre", "Taxe fixe",
+            "EnchÃ¨res", "Acheter", "Vue", "Terminer", "Vendre", "Taxe fixe",
             "Pourcentage", "Construire", "Accepter", "Contre-offre", "Faillite",
-            "Refuser", "Hypothéquer", "Plateau", "Options", "Payer",
-            "Nouvelle partie", "Lancer", "Bilan", "Échanger", "Lever hyp.",
-            "Quitter", "Rejouer", "Utiliser carte", "Enchère maison",
-            "Enchère hôtel", "Placer maison", "Placer hôtel"};
+            "Refuser", "HypothÃ©quer", "Plateau", "Options", "Payer",
+            "Nouvelle partie", "Lancer", "Bilan", "Ã‰changer", "Lever hyp.",
+            "Quitter", "Rejouer", "Utiliser carte", "EnchÃ¨re maison",
+            "EnchÃ¨re hÃ´tel", "Placer maison", "Placer hÃ´tel"};
         constexpr std::array<std::string_view, 28> English{
             "Auction", "Buy", "View", "Done", "Sell", "Flat tax", "Percentage",
             "Build", "Accept", "Counteroffer", "Bankrupt", "Reject", "Mortgage",
@@ -281,6 +281,43 @@ namespace monopoly::ibar
         }
         const auto deed = deeds_.find(root);
         const auto draw = drawCards_.find(root);
+        if(root==0x00050037 && draw!=drawCards_.end())
+        {
+            // Production Chance15 is one400x240 UAP containing both the
+            // backward-walking Morris illustration and its printed caption.
+            // Preserve that authored ink rather than covering it with a new
+            // title/body; the caption overlaps the hat and cannot be cropped.
+            if(!principal || original->dataId!=0x00050991 || w!=400 || h!=240 ||
+                original->sourceType!=data::LegacyDataType::Uap || !valid(original->image) ||
+                language_!=data::LanguageId::EnglishUs || !presentationContext_ ||
+                !presentationContext_()) return original;
+            const Key key{root,w,h,true,std::array<float,9>{},0,{},original.get()};
+            if(const auto found=cache_.find(key);found!=cache_.end()) return found->second.replacement;
+            bool warm=false,ink=false;
+            const auto& pixels=original->image.pixels;
+            for(std::size_t i=0;i<pixels.size();i+=4)
+            {
+                if(pixels[i+3]==0) continue;
+                const unsigned r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+                const auto low=std::min({r,g,b}),high=std::max({r,g,b});
+                if(high<=40 || high-low<=8) { ink|=high<64; continue; }
+                if(r+8<g || g+8<b) return original;
+                warm=true;
+            }
+            if(!warm || !ink) return original;
+            auto result=std::make_shared<data::BitmapRuntimeAsset>(*original);
+            result->sourceType=data::LegacyDataType::Native;
+            constexpr std::array<unsigned,3> cream{237,232,215};
+            for(std::size_t i=0;i<pixels.size();i+=4)
+            {
+                const unsigned r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+                if(pixels[i+3]==0 || std::max({r,g,b})<=40 ||
+                    std::max({r,g,b})-std::min({r,g,b})<=8) continue;
+                for(unsigned c=0;c<3;++c) result->image.pixels[i+c]=std::uint8_t((r*cream[c]+127)/255);
+            }
+            if(cache_.size()>=128) cache_.clear();
+            cache_.emplace(key,CachedArtwork{result,original});return result;
+        }
         const bool fullCard = deed != deeds_.end() || draw != drawCards_.end();
         if ((fullCard || property(root).has_value()) && presentationContext_ && !presentationContext_()) return original;
         if (fullCard && presentationContext_ && !presentationContext_()) return original;
@@ -504,6 +541,7 @@ namespace monopoly::ibar
                         std::vector<data::LegacyBitmapRGBA8> lines;
                         std::istringstream words(region.text);
                         std::string word,line;
+                        std::optional<data::LegacyBitmapRGBA8> accepted;
                         bool tooWide=false;
                         while (words>>word)
                         {
@@ -513,20 +551,19 @@ namespace monopoly::ibar
                             if (measure->width>(w-textInset*2)*3)
                             {
                                 if (line.empty()) { tooWide=true; break; }
-                                auto previous=rasterizer(line,size*3,region.bold,region.italic);
-                                if (!previous || !valid(*previous)) return original;
-                                lines.push_back(std::move(*previous)); line=word;
+                                // The last fitting candidate already contains this exact line.
+                                // Reusing it avoids another font resize/render/restore cycle.
+                                lines.push_back(std::move(*accepted)); line=word;
                                 auto one=rasterizer(word,size*3,region.bold,region.italic);
                                 if (!one || !valid(*one)) return original;
                                 if (one->width>(w-textInset*2)*3) { tooWide=true; break; }
+                                accepted=std::move(*one);
                             }
-                            else line=candidate;
+                            else { line=candidate; accepted=std::move(*measure); }
                         }
                         if (tooWide) continue;
                         if (line.empty()) return original;
-                        auto last=rasterizer(line,size*3,region.bold,region.italic);
-                        if (!last || !valid(*last)) return original;
-                        lines.push_back(std::move(*last));
+                        lines.push_back(std::move(*accepted));
                         unsigned total=0;
                         for (const auto& rendered:lines) total+=rendered.height;
                         if (total>unsigned(region.height+region.verticalLeeway)*3) continue;

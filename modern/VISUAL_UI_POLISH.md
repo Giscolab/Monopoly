@@ -408,3 +408,39 @@ asset ownership and advancing sequence clocks. EnterName remains unchanged
 FPS gain. Logs: `pass28-setup-baseline-cpu.log`, `pass28-setup-cache-tests.log` in
 `build/polish-continuation-20261001/`. Focused regression tests and independent
 cache-invalidation review pass; fresh in-game qualification remains pending.
+
+## Native menu panels and recovered Chance artwork (passes28-30)
+
+The13 measured profile owner/leaf pairs retain source alpha and fixed native
+logical corners. Five incoming/outgoing96x110 UAP poses previously remained
+metal; exact leaf IDs and immutable origin26,25 now qualify. The97x110 idle
+path remains unchanged. Unknown provenance/shape/origin keeps retail.
+
+The actual seven SelectCity owner/leaf pairs now use the modern teal/brass
+palette and supersampled caption. Native city-name field, independent arrows,
+fade alpha, hitboxes and sequence clocks remain unchanged. Matched production
+GPU images (800x600 isolated UI fixtures, not whole-game1080p qualification)
+are `build/menu-panel-polish-20261001/{profile-in-t1,profile-out-t4,
+city-idle-t0,city-in-t1,city-out-t1}-{before,after}.png`.
+
+The real six-player game exposed lost idle-card illustrations. Chance15's exact
+native Morris illustration and printed caption are recovered together on cream,
+with original ink/alpha/placement intact. GPU proof is `chance15-native-before.png`
+versus `chance15-ink-after.png` in that directory; the earlier actual text-only
+in-game image is `build/polish-continuation-20261001/six-player-chance-real.jpg`.
+The32-card native audit sheet shows this artwork-loss issue affects other cards
+as well; extending recovery remains follow-up work. No new artwork was invented.
+Focused menu/IBar CPU tests and full actual-resource World2D GPU tests pass.
+
+## Cold deed wrapping cost
+
+All28 actual USA front deeds retain identical output/native extent and FNV pixel
+hashes after reusing accepted line rasters during wrapping. Font callbacks fall
+20127→15280 (-24.08%); aggregate Debug cold CPU11804.7→8962.4ms (-24.08%).
+This is CPU raster time, not a measured game FPS gain. Logs are
+`build/ibar-deed-wrap-{before,after}.log`; font state restoration still qualifies.
+
+The isolated six-player first10-minute window-title sample has1180 FPS values,
+median60.0, p559.0,94.237% at least59.5; brief first-generation dips reach25.7.
+This does not establish a continuous60FPS minimum. No GPU/build work overlapped
+that sample. Later qualification builds/GPU work are outside its scope.

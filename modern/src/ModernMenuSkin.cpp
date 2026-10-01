@@ -8,7 +8,7 @@ namespace monopoly::menu
 {
     namespace
     {
-        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction, PortfolioFrame, PortfolioAmount };
+        enum class Kind { Background, Pattern, Button, Title, Slot, SelectedSlot, Tab, SelectedTab, Toggle, SelectedToggle, PlayerCard, Confirmation, AuctionBackground, AuctionBottom, AuctionPlayer, AuctionBid, TokenPreview, TokenThumbnail, TokenFrame, TradeBackground, TradePanel, TradeOffer, TradeRail, TradeTitle, TradeButton, StatsPanel, CalculatorPanel, CalculatorDescription, StatsBackground, StatsBar, StatsBarHeading, StatsTab, StatsSelectedTab, CalculatorKey, CalculatorSelectedKey, BankSummary, DeedsFrame, CalculatorFunction, CalculatorSelectedFunction, PortfolioFrame, PortfolioAmount, CitySelector };
         struct Descriptor { Kind kind; std::string_view label; int colour{-1}; int token{-1}; };
         // StatsCalculatorLogic function order; exact Main DAT idle leaves, pressed leaf+1.
         constexpr std::array<data::DataTag,8> CalculatorFunctionLeaves{
@@ -179,6 +179,7 @@ namespace monopoly::menu
             for (const auto& button : buttons)
                 if (tag >= button.first && tag <= button.first + 2)
                     return Descriptor{Kind::Button, button.label};
+            if (tag >= 0x0214 && tag <= 0x0216) return Descriptor{Kind::CitySelector, "Select city"};
             // Name entry is a shell; typed text belongs to a separate native surface.
             if (tag >= 0x022E && tag <= 0x0230) return Descriptor{Kind::Slot, {}};
             if (tag == 0x026B || tag == 0x026C)
@@ -315,9 +316,36 @@ namespace monopoly::menu
     {
         if (!original || !supports(root)) return original;
         const auto descriptor = *describe(root);
+        // Retail card hit width is97, but incoming/outgoing UAP poses426..42A
+        // are96x110. Qualify only those measured leaves; idle425 stays unchanged.
+        bool playerCardTransition = false;
         if (descriptor.kind == Kind::PlayerCard &&
-            (!principal || original->image.width != 97 || original->image.height != 110)) return original;
+            (root == 0x00030025 || root == 0x00030027) &&
+            original->dataId >= 0x00030426 && original->dataId <= 0x0003042A &&
+            original->sourceType == data::LegacyDataType::Uap && original->source &&
+            original->image.width == 96 && original->image.height == 110)
+        {
+            const auto metadata = data::inspectLegacyUap(*original->source);
+            playerCardTransition = metadata && metadata->width == 96 && metadata->height == 110 &&
+                metadata->originX == 26 && metadata->originY == 25;
+        }
+        if (descriptor.kind == Kind::PlayerCard &&
+            (!principal || (!playerCardTransition &&
+                (original->image.width != 97 || original->image.height != 110)))) return original;
         const auto& source = original->image;
+        const bool citySelector = descriptor.kind == Kind::CitySelector;
+        if (citySelector)
+        {
+            // Production USA CITY_STATIC: in/out F03..F05; settled idle F03 only.
+            // Dynamic city text and both arrow owners are separate runtime surfaces.
+            const bool leaf = original->dataId >= 0x00050F03 && original->dataId <= 0x00050F05 &&
+                (root != 0x00050215 || original->dataId == 0x00050F03);
+            if (!principal || !leaf || original->sourceType != data::LegacyDataType::Uap ||
+                !original->source || source.width != 210 || source.height != 133) return original;
+            const auto metadata = data::inspectLegacyUap(*original->source);
+            if (!metadata || metadata->width != 210 || metadata->height != 133 ||
+                metadata->originX != 0 || metadata->originY != 0) return original;
+        }
         // Options authored box y30..108 overlaps subtitles starting y83/85.
         // Keep its full footprint, but restrict the opaque panel to y30..75.
         const bool optionsHeader = root == 0x00050277;
@@ -534,7 +562,8 @@ namespace monopoly::menu
                 const bool auctionPlayer = descriptor.kind == Kind::AuctionPlayer;
                 const bool playerPanel = descriptor.kind == Kind::StatsPanel;
                 const bool tradeRail = descriptor.kind == Kind::TradeRail;
-                const bool sourceAlpha = descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey;
+                const bool sourceAlpha = descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey ||
+                    playerCardTransition || citySelector;
                 const unsigned auctionBandX = root < 0x00030376 ? 99 : 0;
                 const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
                     selected ? std::array<unsigned, 3>{42, 85, 82} : std::array<unsigned, 3>{22, 60, 61};
@@ -561,6 +590,13 @@ namespace monopoly::menu
                         {
                             image.pixels[offset] = 245; image.pixels[offset+1] = 235;
                             image.pixels[offset+2] = 211;
+                        }
+                        // Native white city name remains at local40,114,130x13.
+                        // Keep its well dark without painting either independent arrow.
+                        if (citySelector && x >= 120 && x < 510 && y >= 336 && y < 387)
+                        {
+                            image.pixels[offset] = 13; image.pixels[offset+1] = 35;
+                            image.pixels[offset+2] = 38;
                         }
                         if (auctionPlayer)
                         {
@@ -632,7 +668,7 @@ namespace monopoly::menu
                         descriptor.kind == Kind::StatsBarHeading;
                     const bool painted = statsLabel || calculatorKey ? compactCaption(image, *text,
                         descriptor.kind == Kind::StatsBarHeading, calculatorKey) :
-                        caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation, optionsHeader ? 135U : 0U);
+                        caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation, optionsHeader ? 135U : citySelector ? 270U : 0U);
                     if (!painted) return original;
 
                 }

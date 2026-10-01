@@ -2,6 +2,7 @@
 #include "SequencePlayback.hpp"
 #include "DiceDisplay.hpp"
 #include "ModernIBarSkin.hpp"
+#include "ModernMenuSkin.hpp"
 #include "IBarCameraButtonPlayback.hpp"
 #include "MousePointerPlayback.hpp"
 #include "FontRuntime.hpp"
@@ -343,24 +344,36 @@ namespace
             return std::move(*result);
         };
         auto skin = std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::French, raster);
+        bool compatibleContext=true;
+        skin->configurePresentationContext([&]{return compatibleContext;});
         std::vector<unsigned> requested;
         skin->configurePropertyDescriptors([&](unsigned index) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
         {
             requested.push_back(index);
             // Actual name used to qualify wrapping; production supplies LANG values.
-            return ibar::ModernIBarSkin::PropertyDescriptor{"Boulevard de Belleville", 0, "ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬60"};
+            return ibar::ModernIBarSkin::PropertyDescriptor{"Boulevard de Belleville", 0, "\xE2\x82\xAC" "60"};
         }, raster);
         auto original = std::make_shared<data::BitmapRuntimeAsset>();
-        original->image = {34,42,std::vector<std::uint8_t>(34*42*4,255)};
+        original->dataId=0x00030163U;original->sourceType=data::LegacyDataType::Uap;
+        original->image = {36,42,std::vector<std::uint8_t>(36*42*4,255)};
         for (unsigned state = 0; state < 3; ++state)
             for (unsigned index = 0; index < 28; ++index)
             {
                 const auto root = data::packDataId(data::LegacyGroupId::Main, data::DataTag(0x0163 + state*28 + index));
-                const auto face = skin->substitute(root, original);
-                require(face != original && face->image.width == 102 && face->image.height == 126 &&
+                auto styleAsset=std::make_shared<data::BitmapRuntimeAsset>(*original);styleAsset->dataId=root;
+                const auto face = skin->substitute(root, styleAsset);
+                require(face != styleAsset && face->image.width == 108 && face->image.height == 126 &&
                     face->preferLinearFiltering && requested.back() == index,
                     "all84 authored style IDs use exact board-order descriptor and3x pixels");
             }
+        original->dataId=0x00030163U;
+        auto badExtent=std::make_shared<data::BitmapRuntimeAsset>(*original);
+        badExtent->image={34,42,std::vector<std::uint8_t>(34*42*4,255)};
+        require(skin->substitute(original->dataId,badExtent)==badExtent,"unmeasured34x42 property extent remains exact retail fallback");
+        auto badIdentity=std::make_shared<data::BitmapRuntimeAsset>(*original);badIdentity->dataId++;
+        require(skin->substitute(original->dataId,badIdentity)==badIdentity,"property leaf identity must match its qualified root");
+        auto badType=std::make_shared<data::BitmapRuntimeAsset>(*original);badType->sourceType=data::LegacyDataType::Native;
+        require(skin->substitute(original->dataId,badType)==badType,"property derivative requires declared UAP source provenance");
         engine::SequenceWorld2DSlot slot;
         data::BitmapRuntimeCache cache;
         slot.configureModernIBarSkin(skin);
@@ -370,19 +383,19 @@ namespace
             sequence::SequenceBitmapRenderItem item;
             item.node = state + 1; item.rootSequenceNode = state + 10;
             item.rootSequenceDataId = data::packDataId(data::LegacyGroupId::Main, data::DataTag(0x0163 + state*28));
-            item.runtimeAsset = original;
-            item.metadata = {data::LegacyDataType::Native, 34,42,-2,-3,32};
+            if(state==0)item.runtimeAsset=original;
+            else {auto stateAsset=std::make_shared<data::BitmapRuntimeAsset>(*original);stateAsset->dataId=item.rootSequenceDataId;item.runtimeAsset=stateAsset;}
+            item.contentsDataId=item.rootSequenceDataId;
+            item.metadata = {data::LegacyDataType::Uap, 36,42,-2,-3,32};
             item.worldTransform = sequence::translate2D(102 + 50*state, 498);
             item.priority = 256+state; item.clock = 17;
             items.push_back(item);
         }
         require(slot.sync(items, cache).has_value(), "all three thumbnail states reach production2D slot");
         const auto cachedProperty=slot.find(1)->asset;
-        bool compatibleContext=true;
-        skin->configurePresentationContext([&]{return compatibleContext;});
         compatibleContext=false;
         require(slot.sync(items,cache).has_value() && slot.find(1)->asset==original &&
-            slot.find(2)->asset==original && slot.find(3)->asset==original,
+            slot.find(2)->asset==items[1].runtimeAsset && slot.find(3)->asset==items[2].runtimeAsset,
             "changed display context rejects cached full/low/mortgaged names and purchase amounts");
         require(skin->substitute(items.front().rootSequenceDataId,original,false)==original,
             "incompatible property context also preserves secondary retail assets");
@@ -395,25 +408,25 @@ namespace
             require(object && object->priority == 256+state && object->clock == 17 &&
                 engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,0,0) ==
                     std::array<std::int32_t,2>{100+int(50*state),495} &&
-                engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,102,126) ==
-                    std::array<std::int32_t,2>{134+int(50*state),537},
-                "supersampling preserves exact34x42 footprint, UAP origin, leaf priority and clock");
+                engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,108,126) ==
+                    std::array<std::int32_t,2>{136+int(50*state),537},
+                "supersampling preserves exact36x42 footprint, UAP origin, leaf priority and clock");
         }
         const auto pixels = capture(device, renderer, slot);
         require(pixel(pixels,105,497) != pixel(pixels,155,497) && pixel(pixels,105,535) != pixel(pixels,205,535),
             "real GPU full/low/mortgaged faces remain visibly distinct at authored placements");
         const std::array<std::uint8_t,4> black{0,0,0,255};
-        require(pixel(pixels,99,510) == black && pixel(pixels,134,510) == black && pixel(pixels,110,537) == black,
+        require(pixel(pixels,99,510) == black && pixel(pixels,136,510) == black && pixel(pixels,110,537) == black,
             "GPU supersampled card never spills beyond original hit rectangle");
         unsigned captionInk = 0;
         for (unsigned y = 505; y < 530; ++y)
             for (unsigned x = 103; x < 131; ++x)
                 if (pixel(pixels,x,y)[0] < 140) ++captionInk;
         require(captionInk > 15, "actual wrapped property-name glyphs reach GPU pixels");
-        items.front().bounds = data::Sequence2DBoundingBoxAttribute{{},0,0,34,42};
+        items.front().bounds = data::Sequence2DBoundingBoxAttribute{{},0,0,36,42};
         require(slot.sync(items,cache).has_value() &&
-            engine::SequenceWorld2DSlot::transformPoint(slot.find(1)->worldTransform,102,126) ==
-                std::array<std::int32_t,2>{136,540},
+            engine::SequenceWorld2DSlot::transformPoint(slot.find(1)->worldTransform,108,126) ==
+                std::array<std::int32_t,2>{138,540},
             "explicit CNK bounds still win over intrinsic origin with3x artwork");
         items.front().bounds.reset();
         skin->configurePropertyDescriptors([](unsigned) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
@@ -596,6 +609,123 @@ namespace
             writeBmp(output/(prefix+"-after.bmp"),after,800,600);
             std::cout<<"FaceIn actual GPU tick="<<tick<<" changed="<<changed<<" retained="<<retained<<" files="<<output.string()<<'\n';
         }
+    }
+    void captureRetailMenuPanels(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual DAT opens for profile/city GPU captures");
+        fonts::Runtime font;std::vector<std::filesystem::path> fontRoots{root,std::filesystem::path(SDL_GetBasePath())};
+#ifdef _WIN32
+        if(const auto* windows=std::getenv("WINDIR"))fontRoots.emplace_back(std::filesystem::path(windows)/"Fonts");
+#endif
+        const auto arial=fonts::resolveRetailArial(fontRoots);
+        require(arial && font.setFont(*arial) && font.setSize(54),"actual menu proof uses production54px Arial caption raster");
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { auto image=font.render(text,0xFFFFFF,true);if(!image)return std::unexpected(image.error().detail);return std::move(*image); };
+        auto skin=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        auto fallback=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::French,raster);
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"menu-panel-polish-20261001").lexically_normal();
+        std::filesystem::create_directories(output);
+        struct Case {data::DataId root;const char* name;bool city,idle;};
+        for(const auto fixture:{Case{0x00050215U,"city-idle",true,true},Case{0x00050214U,"city-in",true,false},
+            Case{0x00050216U,"city-out",true,false},Case{0x00030025U,"profile-in",false,false},Case{0x00030027U,"profile-out",false,false}})
+        {
+            engine::SequencePlayback playback(resources.snapshot());
+            require(playback.start(fixture.root,1005) && playback.update(0),"actual menu CNK starts at authored tick zero");
+            int tick=0;bool visible=false;
+            // Select the first real nonempty transition pose, never substitute a
+            // fabricated descriptor or capture an entirely transparent frame.
+            for(;tick<=12;++tick)
+            {
+                if(tick && !playback.update(tick))throw std::runtime_error("actual menu transition update failed");
+                if(!fixture.idle && tick==0)continue;
+                for(const auto node:playback.world2D().order())
+                {
+                    const auto& asset=playback.world2D().find(node)->asset;
+                    const bool measured=fixture.city ? asset->dataId>=0x00050F03U && asset->dataId<=0x00050F05U :
+                        asset->dataId>=0x00030426U && asset->dataId<=0x0003042AU && asset->image.width==96;
+                    unsigned alpha=0;for(std::size_t p=3;p<asset->image.pixels.size();p+=4)alpha+=asset->image.pixels[p]!=0;
+                    visible |= measured && alpha>asset->image.width*asset->image.height/10;
+                }
+                if(visible)break;
+            }
+            require(visible,"actual profile/city transition selects measured visible bitmap pose");
+            auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(leaves && !leaves->empty(),"actual menu CNK exposes source bitmap provenance");
+            std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> native;
+            for(auto& leaf:*leaves){const auto* object=playback.world2D().find(leaf.node);native.emplace(leaf.node,*object);leaf.runtimeAsset=object->asset;}
+            const auto order=playback.world2D().order();const auto before=capture(device,renderer,playback.world2D());
+            const auto prefix=std::string(fixture.name)+"-t"+std::to_string(tick);
+            writeBmp(output/(prefix+"-before.bmp"),before,800,600);
+            playback.world2D().configureModernMenuSkin(skin);data::BitmapRuntimeCache cache;
+            require(playback.world2D().sync(*leaves,cache).has_value(),"same actual menu pose publishes qualified skin");
+            unsigned changed=0;
+            for(const auto& leaf:*leaves)
+            {
+                const auto* object=playback.world2D().find(leaf.node);const auto& old=native.at(leaf.node);
+                require(object && object->clock==old.clock && object->priority==old.priority &&
+                    engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,0,0)==engine::SequenceWorld2DSlot::transformPoint(old.worldTransform,0,0) &&
+                    engine::SequenceWorld2DSlot::transformPoint(object->worldTransform,object->asset->image.width,object->asset->image.height)==
+                    engine::SequenceWorld2DSlot::transformPoint(old.worldTransform,old.asset->image.width,old.asset->image.height),
+                    "actual menu skin preserves clocks priorities and both logical footprint corners");
+                if(object->asset==old.asset)continue;++changed;
+                const auto& image=object->asset->image;const auto& original=old.asset->image;
+                require(image.width==original.width*3 && image.height==original.height*3,"actual menu replacement uses3x same logical footprint");
+                bool sameAlpha=true;
+                for(unsigned y=0;y<image.height;++y)for(unsigned x=0;x<image.width;++x)
+                    sameAlpha &= image.pixels[(std::size_t(y)*image.width+x)*4+3]==original.pixels[(std::size_t(y/3)*original.width+x/3)*4+3];
+                require(sameAlpha,"actual profile/city transition preserves each source alpha at3x");
+                std::cout<<"Menu GPU owner="<<fixture.root<<" tick="<<tick<<" leaf="<<leaf.contentsDataId<<" clock="<<leaf.clock
+                    <<" origin="<<leaf.metadata.originX<<','<<leaf.metadata.originY<<" dimensions="<<original.width<<'x'<<original.height<<'\n';
+            }
+            const auto after=capture(device,renderer,playback.world2D());
+            require(changed>0 && before!=after && playback.world2D().order()==order,"actual menu GPU changes artwork with unchanged leaf order");
+            writeBmp(output/(prefix+"-after.bmp"),after,800,600);
+            playback.world2D().configureModernMenuSkin(fallback);
+            require(playback.world2D().sync(*leaves,cache).has_value(),"unsupported locale republishes actual retail menu pose");
+            for(const auto& [node,old]:native)require(playback.world2D().find(node)->asset==old.asset,"unsupported menu locale returns exact retail asset pointer");
+            require(capture(device,renderer,playback.world2D())==before,"actual GPU unsupported locale is pixel-exact retail fallback");
+            std::cout<<"Menu GPU capture="<<prefix<<" changed="<<changed<<" output="<<output.string()<<'\n';
+        }
+    }
+    void captureRetailChance15(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual DAT opens for Chance15 ink recovery GPU proof");
+        auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("native caption retained");});
+        skin->configureDrawCardDescriptors({{0x00050037U,{"Chance","Go back 3 spaces.",400,240}}},
+            [](std::string_view,int,bool,bool)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("must not duplicate native caption");});
+        bool qualified=false;skin->configurePresentationContext([&]{return qualified;});
+        engine::SequencePlayback playback(resources.snapshot());playback.world2D().configureModernIBarSkin(skin);
+        require(playback.start(0x00050037U,1005) && playback.update(0),"actual Chance15 idle starts at authored tick zero");
+        auto leaves=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+        require(leaves && leaves->size()==1 && leaves->front().contentsDataId==0x00050991U,
+            "actual Chance15 owns measured single50991 printed-illustration UAP");
+        auto& leaf=leaves->front();const auto native=*playback.world2D().find(leaf.node);leaf.runtimeAsset=native.asset;
+        const auto before=capture(device,renderer,playback.world2D());
+        qualified=true;data::BitmapRuntimeCache cache;
+        require(playback.world2D().sync(*leaves,cache).has_value(),"same actual Chance15 pose publishes recovered native ink");
+        const auto* modern=playback.world2D().find(leaf.node);
+        require(modern && modern->asset!=native.asset && modern->clock==native.clock && modern->priority==native.priority &&
+            modern->worldTransform.values==native.worldTransform.values && modern->asset->image.width==400 && modern->asset->image.height==240,
+            "actual Chance15 retains complete retail slot matrix clock priority and400x240 extent");
+        const auto& old=native.asset->image.pixels;const auto& painted=modern->asset->image.pixels;bool sameInk=true;
+        for(std::size_t i=0;i<old.size();i+=4)
+        {
+            const auto high=std::max({old[i],old[i+1],old[i+2]}),low=std::min({old[i],old[i+1],old[i+2]});
+            sameInk &= old[i+3]==painted[i+3];
+            if(old[i+3]==0 || high<=40 || high-low<=8)
+                for(unsigned c=0;c<3;++c)sameInk &= old[i+c]==painted[i+c];
+        }
+        require(sameInk,"actual Chance15 preserves every alpha and original dark/grayscale/transparent ink pixel");
+        const auto after=capture(device,renderer,playback.world2D());require(before!=after,"actual GPU Chance15 changes warm paper while retaining printed backward-walking artwork");
+        const auto output=(std::filesystem::path(SDL_GetBasePath())/".."/"menu-panel-polish-20261001").lexically_normal();std::filesystem::create_directories(output);
+        writeBmp(output/"chance15-native-before.bmp",before,800,600);writeBmp(output/"chance15-ink-after.bmp",after,800,600);
+        qualified=false;
+        require(playback.world2D().sync(*leaves,cache).has_value() && playback.world2D().find(leaf.node)->asset==native.asset &&
+            capture(device,renderer,playback.world2D())==before,"actual GPU Chance15 context fallback is exact retail pointer and pixels");
+        std::cout<<"Chance15 actual GPU native-before/ink-after output="<<output.string()<<'\n';
     }
     void extractRetailCardSheet(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
@@ -947,6 +1077,12 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==3 && std::string_view(argv[1])=="--menu-panels")
+        {
+            captureRetailMenuPanels(device,*renderer,std::filesystem::path(argv[2]));
+            captureRetailChance15(device,*renderer,std::filesystem::path(argv[2]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==3 && std::string_view(argv[1])=="--cards")
         {
             extractRetailCardSheet(device,*renderer,std::filesystem::path(argv[2]));
@@ -997,7 +1133,9 @@ int main(int argc, char** argv)
         testModernCardFaceInLeaves(device,*renderer);
         testModernDeeds(device,*renderer);
         if (argc == 2) { testRetailIBarBands(device, *renderer, std::filesystem::path(argv[1]));
-            captureRetailFaceIn(device,*renderer,std::filesystem::path(argv[1])); }
+            captureRetailFaceIn(device,*renderer,std::filesystem::path(argv[1]));
+            captureRetailMenuPanels(device,*renderer,std::filesystem::path(argv[1]));
+            captureRetailChance15(device,*renderer,std::filesystem::path(argv[1])); }
         else require(argc == 1, "optional argument is an explicit actual retail resource root");
         renderer.reset();
         SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;

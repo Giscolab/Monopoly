@@ -1,5 +1,8 @@
 #include "ModernMenuSkin.hpp"
 #include "ModernMenuRaster.hpp"
+#include "ResourceRuntime.hpp"
+#include "SequenceRuntime.hpp"
+#include <set>
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -57,6 +60,91 @@ namespace
     }
     data::LegacyBitmapRGBA8 label()
     { return {72, 36, std::vector<std::uint8_t>(72 * 36 * 4, 255)}; }
+
+    data::SharedDataBytes playerCardUapPayload(unsigned originX=26,unsigned originY=25)
+    {
+        auto payload=std::make_shared<data::DataBytes>(32+96*110,std::byte{0});
+        const auto put=[&](std::size_t offset,unsigned value,unsigned bytes)
+        { for(unsigned i=0;i<bytes;++i)(*payload)[offset+i]=std::byte((value>>(i*8))&255); };
+        put(0,96,2);put(2,110,2);put(4,originX,2);put(6,originY,2);
+        put(8,2,4);put(12,2,2);put(14,2,2);put(28,255,4);
+        return payload;
+    }
+
+    void testMeasuredPlayerCardTransitions()
+    {
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        for(const auto owner:{0x00030025U,0x00030027U})
+            for(data::DataId leaf=0x00030426;leaf<=0x0003042A;++leaf)
+            {
+                auto card=std::make_shared<data::BitmapRuntimeAsset>(*original(96,110));
+                card->dataId=leaf;card->sourceType=data::LegacyDataType::Uap;card->source=playerCardUapPayload();
+                for(unsigned y=0;y<110;++y)for(unsigned x=0;x<96;++x)
+                    card->image.pixels[(std::size_t(y)*96+x)*4+3]=std::uint8_t((x*17+y*29)%256);
+                const auto before=card->image.pixels;
+                const auto painted=skin.substitute(owner,card);
+                require(painted!=card && painted->image.width==288 && painted->image.height==330,
+                    "Measured incoming/outgoing96x110 poses receive exact3x presentation");
+                for(unsigned y=0;y<330;++y)for(unsigned x=0;x<288;++x)
+                    require(painted->image.pixels[(std::size_t(y)*288+x)*4+3]==
+                        card->image.pixels[(std::size_t(y/3)*96+x/3)*4+3],
+                        "Transition presentation preserves every native alpha sample");
+                require(skin.substitute(owner,card)==painted && card->image.pixels==before,
+                    "Transition cache reuses immutable owner without changing retail pixels");
+                require(skin.substitute(owner,card,false)==card && skin.substitute(0x00030026,card)==card,
+                    "96-wide transition is neither a secondary decoration nor an idle card");
+            }
+        auto unknown=std::make_shared<data::BitmapRuntimeAsset>(*original(96,110));
+        for(const auto leaf:{0x00030425U,0x0003042BU,0x00050426U})
+        { unknown->dataId=leaf;require(skin.substitute(0x00030025,unknown)==unknown,
+            "Unknown neighbor, wrong extent for425 and wrong namespace retain retail"); }
+        unknown->dataId=0x00030426;
+        require(skin.substitute(0x00030025,unknown)==unknown,"Measured transition requires actual UAP type");
+        unknown->sourceType=data::LegacyDataType::Uap;
+        for(const auto origin:std::array{std::array{0U,0U},std::array{27U,25U},std::array{26U,24U}})
+        { unknown->source=playerCardUapPayload(origin[0],origin[1]);
+          require(skin.substitute(0x00030025,unknown)==unknown,"Same-ID UAP with incorrect intrinsic origin remains retail"); }
+        unknown->source.reset();
+        require(skin.substitute(0x00030025,unknown)==unknown,"Transition without immutable UAP provenance remains retail");
+        auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*original(96,109));wrong->dataId=0x00030426;
+        require(skin.substitute(0x00030025,wrong)==wrong,"Measured identity requires exact height");
+    }
+
+    void qualifyActualPlayerCards(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"Actual profile DAT opens");
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        data::BitmapRuntimeCache bitmaps;unsigned count=0;
+        for(const auto owner:{0x00030025U,0x00030026U,0x00030027U})
+        {
+            const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+            require(program.has_value(),"Actual card CNK decodes");std::set<data::DataId> seen;
+            for(const auto& description:(*program)->descriptions())
+            {
+                if(!description.contentsDataId || !seen.insert(*description.contentsDataId).second)continue;
+                const auto id=*description.contentsDataId;
+                const auto meta=resources.snapshot()->data().metadata(id);const auto bytes=resources.snapshot()->data().load(id);
+                require(meta && bytes,"Actual card contents load");
+                if(meta->type!=data::LegacyDataType::Uap)continue;
+                require(id>=0x30425 && id<=0x3042A,"Actual CNK references only qualified card poses");
+                const auto asset=bitmaps.resolve(id,meta->type,*bytes);require(asset.has_value(),"Actual card pixels decode");
+                const auto painted=skin.substitute(owner,*asset);
+                require(painted!=*asset && painted->image.width==(*asset)->image.width*3 &&
+                    painted->image.height==(*asset)->image.height*3,"Every actual card leaf receives modern CPU raster");
+                if(id!=0x30425)
+                    for(unsigned y=0;y<painted->image.height;++y)for(unsigned x=0;x<painted->image.width;++x)
+                        require(painted->image.pixels[(std::size_t(y)*painted->image.width+x)*4+3]==
+                            (*asset)->image.pixels[(std::size_t(y/3)*(*asset)->image.width+x/3)*4+3],
+                            "Actual transition alpha is retained exactly");
+                ++count;
+            }
+        }
+        require(count==13,"Actual incoming6 +idle1 +outgoing6 card leaves qualified");
+        std::cout<<"[PASS] actual13 profile card owner/leaf CPU raster pairs (not GPU proof)\n";
+    }
 
     void testExactOwnersAndCaptions()
     {
@@ -966,6 +1054,101 @@ namespace
         require(european.substitute(0x0002000C,bank)==bank,"Bank/Deeds cannot bypass USA/en-US skin qualification");
     }
 
+    data::SharedDataBytes citySelectorUapPayload(unsigned x = 0, unsigned y = 0)
+    {
+        auto bytes = std::make_shared<data::DataBytes>(32 + 212 * 133, std::byte{0});
+        const auto put = [&](unsigned offset, unsigned value, unsigned count)
+        { for (unsigned i=0;i<count;++i) (*bytes)[offset+i]=std::byte((value>>(8*i))&255); };
+        put(0,210,2); put(2,133,2); put(4,x,2); put(6,y,2);
+        put(8,2,4); put(12,2,2); put(14,2,2); put(28,255,4);
+        return bytes;
+    }
+
+    void qualifyActualCitySelector(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root}); data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"Actual City DAT opens");
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return label();});
+        data::BitmapRuntimeCache bitmaps; unsigned count=0;
+        for(const auto owner:{0x00050214U,0x00050215U,0x00050216U})
+        {
+            const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+            require(program.has_value(),"Actual City CNK decodes"); std::set<data::DataId> seen;
+            for(const auto& description:(*program)->descriptions())
+            {
+                if(!description.contentsDataId || !seen.insert(*description.contentsDataId).second)continue;
+                const auto id=*description.contentsDataId;
+                const auto meta=resources.snapshot()->data().metadata(id); const auto bytes=resources.snapshot()->data().load(id);
+                require(meta && bytes && meta->type==data::LegacyDataType::Uap,"Actual City leaf is UAP");
+                const auto asset=bitmaps.resolve(id,meta->type,*bytes);
+                require(asset.has_value(),"Actual City pixels decode");
+                const auto painted=skin.substitute(owner,*asset);
+                require(painted!=*asset && painted->image.width==630 && painted->image.height==399,
+                    "Actual City owner/leaf has exact modern footprint");
+                for(unsigned y=0;y<399;++y)for(unsigned x=0;x<630;++x)
+                    require(painted->image.pixels[(std::size_t(y)*630+x)*4+3]==
+                        (*asset)->image.pixels[(std::size_t(y/3)*210+x/3)*4+3],
+                        "Actual City alpha clips and transition alpha preserved");
+                ++count;
+            }
+        }
+        require(count==7,"Actual City incoming3/idle1/outgoing3 leaves qualified");
+        std::cout<<"[PASS] actual7 City owner/leaf CPU raster pairs (not GPU proof)\n";
+    }
+
+    void testMeasuredCitySelector()
+    {
+        std::string captionText;
+        const auto raster = [&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { captionText=text; return label(); };
+        menu::ModernMenuSkin skin(data::BoardEdition::Usa,data::LanguageId::EnglishUs,raster);
+        const auto measured = [](data::DataId id) {
+            auto asset=std::make_shared<data::BitmapRuntimeAsset>(*original(210,133));
+            asset->dataId=id; asset->sourceType=data::LegacyDataType::Uap;
+            asset->source=citySelectorUapPayload();
+            for(unsigned y=0;y<133;++y)for(unsigned x=0;x<210;++x)
+                asset->image.pixels[(std::size_t(y)*210+x)*4+3]=std::uint8_t((x*17+y*29)%256);
+            return asset;
+        };
+        for(const auto root:{0x00050214U,0x00050215U,0x00050216U})
+            for(const auto leaf:{0x00050F03U,0x00050F04U,0x00050F05U})
+            {
+                const auto source=measured(leaf); const auto before=source->image.pixels;
+                const auto painted=skin.substitute(root,source);
+                if(root==0x00050215 && leaf!=0x00050F03)
+                { require(painted==source,"Idle City owner rejects transition-only leaves"); continue; }
+                require(painted!=source && painted->image.width==630 && painted->image.height==399 &&
+                    painted->dataId==leaf && painted->preferLinearFiltering && captionText=="Select city",
+                    "Exact City leaves retain footprint and readable caption");
+                for(unsigned y=0;y<399;++y)for(unsigned x=0;x<630;++x)
+                    require(painted->image.pixels[(std::size_t(y)*630+x)*4+3]==
+                        source->image.pixels[(std::size_t(y/3)*210+x/3)*4+3],
+                        "City skin retains every native clip/fade alpha including caption pixels");
+                const auto name=(std::size_t(360)*630+300)*4;
+                require(painted->image.pixels[name]==13 && painted->image.pixels[name+1]==35 &&
+                    painted->image.pixels[name+2]==38,"Separate white city name has a dark readable well");
+                require(skin.substitute(root,source)==painted && source->image.pixels==before &&
+                    skin.substitute(root,source,false)==source,"City cache preserves source and unknown secondary leaves");
+            }
+        const auto source=measured(0x00050F03);
+        for(const auto id:{0x00050F02U,0x00050F06U,0x00030F03U})
+        { const auto wrong=measured(id); require(skin.substitute(0x00050214,wrong)==wrong,"City rejects unknown leaf/group"); }
+        for(const auto origin:std::array{std::array{1U,0U},std::array{0U,1U}})
+        { auto wrong=measured(0x00050F03); wrong->source=citySelectorUapPayload(origin[0],origin[1]);
+          require(skin.substitute(0x00050214,wrong)==wrong,"City rejects different authored origin"); }
+        auto wrong=measured(0x00050F03); wrong->source.reset();
+        require(skin.substitute(0x00050214,wrong)==wrong,"City requires immutable UAP provenance");
+        wrong=measured(0x00050F03); wrong->image.width=209;
+        require(skin.substitute(0x00050214,wrong)==wrong,"City rejects different raster dimensions");
+        wrong=measured(0x00050F03); wrong->sourceType=data::LegacyDataType::Bitmap;
+        require(skin.substitute(0x00050214,wrong)==wrong,"City rejects different resource type");
+        menu::ModernMenuSkin french(data::BoardEdition::Europe,data::LanguageId::French,raster);
+        require(french.substitute(0x00050214,source)==source &&
+            skin.substitute(0x0005039F,source)==source && skin.substitute(0x00030077,source)==source &&
+            skin.substitute(0xFFFE0001,source)==source,"Regional city roots, arrows and runtime city text remain native");
+    }
+
     void testOptionsHeaderAndHelpChrome()
     {
         std::vector<std::string> captions;
@@ -1045,9 +1228,12 @@ namespace
         require(skin.substitute(0x00050279, malformed) == malformed, "malformed raster retains original identity");
     }
 }
-int main()
+int main(int argc,char** argv)
 {
-    try { testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention(); testOptionsHeaderAndHelpChrome();
+    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify ABSOLUTE_DATA_ROOT]");
+        if(argc==3) { if(std::string_view(argv[1])=="--city-qualify") qualifyActualCitySelector(std::filesystem::path(argv[2]));
+            else qualifyActualPlayerCards(std::filesystem::path(argv[2])); }
+        testMeasuredPlayerCardTransitions(); testExactHorizontalRaster(); testExactOwnersAndCaptions(); testFallbackAndIdentity(); testBackgroundAndNavigation(); testWizardShellAndToggleStates(); testEscapeConfirmation(); testAuctionShells(); testTokenImageProvider(); testMeasuredTradePanels(); testMeasuredStatsAndCalculatorPanels(); testMeasuredStatsBarsAndTabs(); testStatsCaptionBoxesAndMeasuredAnimation(); testMeasuredCalculatorDigitsAndClear(); testMeasuredCalculatorFunctions(); testMeasuredPortfolioFrames(); testMeasuredBankAndDeedsViews(); testActiveCacheRetention(); testOptionsHeaderAndHelpChrome(); testMeasuredCitySelector();
         std::cout << "[PASS] exact menu owners, captions, pixel dimensions and fallback\n"; return 0; }
     catch(const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

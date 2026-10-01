@@ -107,7 +107,7 @@ namespace monopoly::ibar
         struct CachedArtwork
         {
             std::shared_ptr<const data::BitmapRuntimeAsset> replacement;
-            // Keeps miniature identity alive so allocator address reuse cannot
+            // Keeps native artwork identity alive so allocator address reuse cannot
             // produce a stale derivative. Bounded together with the128 entries.
             std::shared_ptr<const data::BitmapRuntimeAsset> original;
         };
