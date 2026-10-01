@@ -1,6 +1,7 @@
 #include "ModernGltfMesh.hpp"
 #include "ModernImageDecoder.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <chrono>
 #include <cstdint>
@@ -132,8 +133,78 @@ namespace
     }
 }
 
-int main()
+namespace
 {
+    // Optional qualification of the actual factor-only city corpus. Hash every
+    // decoded scalar explicitly; no struct padding or pointer values participate.
+    int citySignatures(const std::filesystem::path& directory)
+    {
+        using namespace monopoly::data;
+        std::vector<std::filesystem::path> paths;
+        for (const auto& entry : std::filesystem::directory_iterator(directory))
+            if (entry.is_regular_file() && entry.path().extension() == ".glb" &&
+                entry.path().filename().string().starts_with("procedural_city_"))
+                paths.push_back(entry.path());
+        std::sort(paths.begin(), paths.end());
+        if (paths.size() != 17) throw std::runtime_error("expected seventeen real city groups");
+        constexpr std::uint64_t Basis = 14695981039346656037ULL;
+        const auto mix = [](std::uint64_t& hash, std::uint64_t word)
+        { hash = (hash ^ word) * 1099511628211ULL; };
+        const auto scalar = [&](std::uint64_t& hash, float value)
+        { mix(hash, std::bit_cast<std::uint32_t>(value)); };
+        for (const auto& path : paths)
+        {
+            ModernGltfLoadOptions options;
+            options.unitsPerMeter = 200.F;
+            options.groundToZero = false;
+            const auto begin = std::chrono::steady_clock::now();
+            auto loaded = loadModernGltfMesh(path, options);
+            const auto seconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - begin).count();
+            if (!loaded) throw std::runtime_error(loaded.error().detail);
+            const auto& mesh = **loaded;
+            auto vertices = Basis, indices = Basis, materials = Basis, bounds = Basis;
+            mix(vertices, mesh.vertices.size());
+            for (const auto& vertex : mesh.vertices)
+            {
+                for (float value : vertex.position) scalar(vertices, value);
+                for (float value : vertex.normal) scalar(vertices, value);
+                for (float value : vertex.uv) scalar(vertices, value);
+                for (float value : vertex.tangent) scalar(vertices, value);
+            }
+            mix(indices, mesh.indices.size());
+            for (auto value : mesh.indices) mix(indices, value);
+            mix(materials, mesh.batches.size());
+            for (const auto& batch : mesh.batches)
+            {
+                const auto& material = batch.material;
+                if (batch.texture || material.baseColorTexture || material.metallicRoughnessTexture ||
+                    material.normalTexture || material.emissiveTexture || material.occlusionTexture)
+                    throw std::runtime_error("city signature mode requires factor-only assets");
+                mix(materials, batch.firstIndex); mix(materials, batch.indexCount);
+                mix(materials, static_cast<unsigned>(material.model)); mix(materials, material.rawDiffuse);
+                for (float value : material.diffuse) scalar(materials, value);
+                scalar(materials, material.metallic); scalar(materials, material.roughness);
+                for (float value : material.emissive) scalar(materials, value);
+                scalar(materials, material.emissiveStrength); mix(materials, material.doubleSided);
+                mix(materials, static_cast<unsigned>(material.alphaMode)); scalar(materials, material.alphaCutoff);
+            }
+            for (float value : mesh.bounds.minimum) scalar(bounds, value);
+            for (float value : mesh.bounds.maximum) scalar(bounds, value);
+            std::cout.precision(9);
+            std::cout << path.filename().string() << '\t' << seconds << '\t' << mesh.vertices.size()
+                << '\t' << std::hex << vertices << '\t' << indices << '\t' << materials
+                << '\t' << bounds << std::dec << '\n';
+        }
+        return 0;
+    }
+}
+
+int main(int argc, char** argv)
+{
+    if (argc == 3 && std::string_view(argv[1]) == "--city-signatures")
+        return citySignatures(argv[2]);
+    if (argc != 1) return 2;
     Fixture fixture;
     fixture.write(triangleJson());
     auto result = loadModernGltfMesh(fixture.path);

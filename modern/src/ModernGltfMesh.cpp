@@ -72,19 +72,28 @@ namespace monopoly::data
         }
 
 
-        [[nodiscard]] fastgltf::math::fvec3 rotateAroundY(
-            fastgltf::math::fvec3 value,
-            float yawDegrees) noexcept
+        struct YawRotation
+        {
+            float sine;
+            float cosine;
+        };
+
+        [[nodiscard]] YawRotation yawRotation(float yawDegrees) noexcept
         {
             constexpr float DegreesToRadians =
                 3.14159265358979323846F / 180.0F;
             const float angle = yawDegrees * DegreesToRadians;
-            const float sine = std::sin(angle);
-            const float cosine = std::cos(angle);
+            return {std::sin(angle), std::cos(angle)};
+        }
+
+        [[nodiscard]] fastgltf::math::fvec3 rotateAroundY(
+            fastgltf::math::fvec3 value,
+            const YawRotation& rotation) noexcept
+        {
             return fastgltf::math::fvec3(
-                cosine * value[0] + sine * value[2],
+                rotation.cosine * value[0] + rotation.sine * value[2],
                 value[1],
-                -sine * value[0] + cosine * value[2]);
+                -rotation.sine * value[0] + rotation.cosine * value[2]);
         }
 
 
@@ -92,7 +101,7 @@ namespace monopoly::data
             const fastgltf::math::fmat4x4& world,
             fastgltf::math::fvec3 position,
             float unitsPerMeter,
-            float yawDegrees) noexcept
+            const YawRotation& rotation) noexcept
         {
             const auto transformed = world * fastgltf::math::fvec4(
                 position[0], position[1], position[2], 1.0F);
@@ -101,21 +110,18 @@ namespace monopoly::data
                     transformed[0],
                     transformed[1],
                     transformed[2]),
-                yawDegrees);
+                rotation);
             return rotated * unitsPerMeter;
         }
 
 
         [[nodiscard]] fastgltf::math::fvec3 transformNormal(
-            const fastgltf::math::fmat4x4& world,
+            const fastgltf::math::fmat3x3& normalMatrix,
             fastgltf::math::fvec3 normal,
-            float yawDegrees) noexcept
+            const YawRotation& rotation) noexcept
         {
-            const auto normalMatrix = fastgltf::math::transpose(
-                fastgltf::math::inverse(
-                    fastgltf::math::fmat3x3(world)));
             return fastgltf::math::normalize(
-                rotateAroundY(normalMatrix * normal, yawDegrees));
+                rotateAroundY(normalMatrix * normal, rotation));
         }
 
 
@@ -468,6 +474,7 @@ namespace monopoly::data
                 MeshRuntimeErrorCode::ModernAssetInvalid,
                 "modern GLB default scene is out of range"));
 
+        const auto rotation = yawRotation(options.yawDegrees);
         fastgltf::iterateSceneNodes(
             asset,
             sceneIndex,
@@ -494,6 +501,12 @@ namespace monopoly::data
                 }
 
                 const auto& mesh = asset.meshes[*node.meshIndex];
+                // Constant for this node: retain the original vertex arithmetic
+                // and singular/nonfinite guards, but avoid millions of inverses.
+                const auto linear = fastgltf::math::fmat3x3(world);
+                const auto normalMatrix = fastgltf::math::transpose(
+                    fastgltf::math::inverse(linear));
+                const auto determinant = fastgltf::math::determinant(linear);
                 for (const auto& primitive : mesh.primitives)
                 {
                     if (failed) return;
@@ -618,11 +631,11 @@ namespace monopoly::data
                             world,
                             sourcePosition,
                             options.unitsPerMeter,
-                            options.yawDegrees);
+                            rotation);
                         const auto worldNormal = transformNormal(
-                            world,
+                            normalMatrix,
                             sourceNormal,
-                            options.yawDegrees);
+                            rotation);
                         for (std::size_t axis = 0; axis < 3; ++axis)
                         {
                             if (!std::isfinite(worldPosition[axis]) ||
@@ -649,12 +662,10 @@ namespace monopoly::data
                         {
                             const auto sourceTangent = fastgltf::getAccessorElement<fastgltf::math::fvec4>(
                                 asset, asset.accessors[tangent->accessorIndex], index);
-                            const auto linear = fastgltf::math::fmat3x3(world);
                             auto direction = rotateAroundY(linear * fastgltf::math::fvec3(
-                                sourceTangent[0], sourceTangent[1], sourceTangent[2]), options.yawDegrees);
+                                sourceTangent[0], sourceTangent[1], sourceTangent[2]), rotation);
                             direction -= worldNormal * fastgltf::math::dot(worldNormal, direction);
                             const auto length = fastgltf::math::length(direction);
-                            const auto determinant = fastgltf::math::determinant(linear);
                             if (!std::isfinite(length) || length <= 0.0F ||
                                 !std::isfinite(determinant) || determinant == 0.0F ||
                                 (sourceTangent[3] != -1.0F && sourceTangent[3] != 1.0F))
