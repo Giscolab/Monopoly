@@ -1,4 +1,7 @@
 #include "MeshRuntime.hpp"
+#include "BoardRules.hpp"
+#include "FontRuntime.hpp"
+#include "MoneyFormat.hpp"
 #include "ModernGltfMesh.hpp"
 #include "ModernTokenCatalog.hpp"
 #include "ResourcePaths.hpp"
@@ -19,6 +22,7 @@
 #include <locale>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -205,6 +209,64 @@ namespace
         if (!file) { std::cerr << "cannot write diagnostic OBJ: " << output << '\n'; return false; }
         return true;
     }
+    std::string jsonString(std::string_view text)
+    {
+        std::ostringstream result;
+        result << '"';
+        for (const unsigned char value : text)
+        {
+            if (value == '"' || value == '\\') result << '\\' << static_cast<char>(value);
+            else if (value < 0x20U)
+                result << "\\u00" << std::hex << std::setw(2) << std::setfill('0')
+                    << static_cast<unsigned>(value) << std::dec;
+            else result << static_cast<char>(value);
+        }
+        result << '"';
+        return result.str();
+    }
+
+    bool exportSquareLabels(const std::filesystem::path& directory,
+        const ResourceSnapshot& resources)
+    {
+        const auto language = resources.language();
+        if (resources.context().board != BoardEdition::Usa || !language ||
+            language->language != LanguageId::EnglishUs || !language->catalog)
+        { std::cerr << "USA print labels require classic USA English resources\n"; return false; }
+        std::ostringstream json;
+        json.imbue(std::locale::classic());
+        json << "{\"label_contract_version\":1,\"edition\":\"USA\",\"language_id\":1,"
+                "\"city\":0,\"immutable_rules\":true,\"name_source\":\"LanguageCatalog::lookup\","
+                "\"price_source\":\"BoardRules::originalDefinition + money::format\",\"squares\":[";
+        for (std::uint32_t index = 0; index < 40; ++index)
+        {
+            const auto messageId = 1001U + index;
+            const auto text = language->catalog->lookup(messageId);
+            if (!text || !*text || (***text).empty() || (***text).front() == u'*')
+            { std::cerr << "missing canonical USA square name: " << messageId << '\n'; return false; }
+            const auto name = monopoly::fonts::transcodeUtf8(std::u16string_view(***text));
+            if (!name) { std::cerr << "invalid USA square UTF16\n"; return false; }
+            const auto square = static_cast<monopoly::rules::board::SquareType>(index);
+            const auto& original = monopoly::rules::board::originalDefinition(square);
+            const bool ownable = monopoly::rules::board::isOwnable(square);
+            const auto price = monopoly::money::format(original.purchaseCost,13,true,BoardEdition::Usa);
+            if (!price) { std::cerr << price.error() << '\n'; return false; }
+            json << (index ? "," : "") << "{\"index\":" << index << ",\"type\":" << index
+                << ",\"name_message_id\":" << messageId << ",\"name_utf8\":" << jsonString(*name)
+                << ",\"purchase_cost\":" << original.purchaseCost
+                << ",\"price_text_usd\":" << jsonString(ownable ? *price : std::string{})
+                << ",\"group\":" << static_cast<unsigned>(original.group)
+                << ",\"ownable\":" << (ownable ? "true" : "false") << '}';
+        }
+        json << "]}\n";
+        const auto output = directory / "boardmed_labels.json";
+        std::error_code error;
+        if (std::filesystem::is_symlink(std::filesystem::symlink_status(output,error)))
+        { std::cerr << "refusing symlink USA labels output\n"; return false; }
+        std::ofstream file(output,std::ios::trunc);
+        file << json.str(); file.close();
+        return static_cast<bool>(file);
+    }
+
     bool exportTexturedBoard(const std::filesystem::path& directory,
         DataId id, const MeshRenderData& mesh)
     {
@@ -419,6 +481,7 @@ int main(int argc, char** argv)
         if (texturedBoard)
         {
             if (!exportTexturedBoard(*dumpRoot, id, *(*asset)->renderData)) failed = true;
+            if (!exportSquareLabels(*dumpRoot, *resources)) failed = true;
         }
         else if (dumpRoot && !exportObj(*dumpRoot / (std::string(name) + ".obj"),
             name, id, *(*asset)->renderData)) failed = true;

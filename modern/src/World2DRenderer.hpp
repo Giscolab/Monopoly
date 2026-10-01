@@ -32,6 +32,7 @@ namespace monopoly::engine
         SDL_GPUGraphicsPipeline* pipeline_{};
         SDL_GPUBuffer* quad_{};
         SDL_GPUSampler* sampler_{};
+        SDL_GPUSampler* linearSampler_{};
         std::map<const data::BitmapRuntimeAsset*, Texture> textures_;
     };
 }

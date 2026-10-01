@@ -13,6 +13,7 @@
 namespace monopoly::engine
 {
     inline constexpr std::size_t ModernEnvironmentCount = 3;
+    inline constexpr std::size_t ModernCityCount = 17;
     // Logical identities belong only to the optional native modern scene.
     // They are not retail bank/sequence IDs and never enter retail resolution.
     inline constexpr std::uint16_t ModernEnvironmentLogicalGroup = 0xFFFB;
@@ -51,7 +52,8 @@ namespace monopoly::engine
         // scale. Geometry remains immutable; only these scene instances move.
         [[nodiscard]] std::vector<sequence::SequenceMeshRenderItem> items(
             const sequence::Matrix3D& boardMatrix, std::uint32_t tick,
-            bool includePresentation = false, bool includeLandmarks = true);
+            bool includePresentation = false, bool includeLandmarks = true,
+            bool includeCity = false);
 
     private:
         void loadOnce(std::size_t index);
@@ -61,7 +63,7 @@ namespace monopoly::engine
         bool invalidMatrixReported_{};
         Diagnostic diagnostic_;
         Loader loader_;
-        std::array<bool, ModernEnvironmentCount + 2> attempted_{};
-        std::array<std::shared_ptr<const data::MeshRuntimeAsset>, ModernEnvironmentCount + 2> assets_{};
+        std::array<bool, ModernEnvironmentCount + 2 + ModernCityCount> attempted_{};
+        std::array<std::shared_ptr<const data::MeshRuntimeAsset>, ModernEnvironmentCount + 2 + ModernCityCount> assets_{};
     };
 }

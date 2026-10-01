@@ -18,6 +18,9 @@ namespace monopoly::data
         constexpr ModernSceneDefinition UsaBoard{
             ModernSceneKind::UsaBoard, boardMeshDataId(BoardMeshKind::ClassicMedium),
             "board/usa_board_runtime.glb"};
+        constexpr ModernSceneDefinition ProceduralUsaBoard{
+            ModernSceneKind::ProceduralUsaBoard, boardMeshDataId(BoardMeshKind::ClassicMedium),
+            "board/usa_procedural_runtime.glb"};
         constexpr ModernSceneDefinition House{
             ModernSceneKind::House,
             packDataId(LegacyGroupId::ThreeD, pieces::HouseMeshTag),
@@ -49,8 +52,9 @@ namespace monopoly::data
                 boardSeen = true;
                 if (argument == "--modern-board=paris") parsed.options.parisBoard = true;
                 else if (argument == "--modern-board=usa") parsed.options.usaBoard = true;
+                else if (argument == "--modern-board=procedural") parsed.options.proceduralBoard = true;
                 else if (argument == "--modern-board=retail") parsed.options.parisBoard = false;
-                else return std::unexpected("--modern-board requires paris, usa or retail");
+                else return std::unexpected("--modern-board requires paris, usa, procedural or retail");
             }
             else if (argument == "--modern-buildings" || argument.starts_with("--modern-buildings="))
             {
@@ -65,8 +69,10 @@ namespace monopoly::data
                 if (environmentSeen) return std::unexpected("duplicate --modern-environment option");
                 environmentSeen = true;
                 if (argument == "--modern-environment=paris") parsed.options.environment = true;
+                else if (argument == "--modern-environment=procedural")
+                { parsed.options.environment = true; parsed.options.proceduralEnvironment = true; }
                 else if (argument == "--modern-environment=retail") parsed.options.environment = false;
-                else return std::unexpected("--modern-environment requires paris or retail");
+                else return std::unexpected("--modern-environment requires paris, procedural or retail");
             }
             else parsed.remaining.push_back(argument);
         }
@@ -79,6 +85,7 @@ namespace monopoly::data
         {
         case ModernSceneKind::ParisBoard: return ParisBoard;
         case ModernSceneKind::UsaBoard: return UsaBoard;
+        case ModernSceneKind::ProceduralUsaBoard: return ProceduralUsaBoard;
         case ModernSceneKind::House: return House;
         case ModernSceneKind::Hotel: return Hotel;
         }
@@ -90,7 +97,8 @@ namespace monopoly::data
         const ModernSceneOptions& options, const ModernSceneContext& context) noexcept
     {
         if (kind != ModernSceneKind::ParisBoard && kind != ModernSceneKind::House &&
-            kind != ModernSceneKind::Hotel && kind != ModernSceneKind::UsaBoard)
+            kind != ModernSceneKind::Hotel && kind != ModernSceneKind::UsaBoard &&
+            kind != ModernSceneKind::ProceduralUsaBoard)
             return false;
         const auto& definition = modernSceneDefinition(kind);
         if (meshId != definition.legacyMeshId || !rootSequenceDataId ||
@@ -101,8 +109,9 @@ namespace monopoly::data
                 context.edition == BoardEdition::Europe && context.city == ParisCity &&
                 context.language == LanguageId::French && context.currency == EuroCurrency &&
                 context.customBoardPath.empty();
-        if (kind == ModernSceneKind::UsaBoard)
-            return options.usaBoard && priority == display::Board3DPriority &&
+        if (kind == ModernSceneKind::UsaBoard || kind == ModernSceneKind::ProceduralUsaBoard)
+            return (kind == ModernSceneKind::UsaBoard ? options.usaBoard : options.proceduralBoard) &&
+                priority == display::Board3DPriority &&
                 context.edition == BoardEdition::Usa && context.city == 0 &&
                 context.language == LanguageId::EnglishUs && context.currency == 13 &&
                 context.customBoardPath.empty();
@@ -115,7 +124,7 @@ namespace monopoly::data
 
     std::optional<ModernGltfLoadOptions> modernSceneLoadOptions(ModernSceneKind kind) noexcept
     {
-        if (kind == ModernSceneKind::ParisBoard)
+        if (kind == ModernSceneKind::ParisBoard || kind == ModernSceneKind::ProceduralUsaBoard)
         {
             ModernGltfLoadOptions options;
             options.unitsPerMeter = 200.0F;
@@ -153,12 +162,15 @@ namespace monopoly::data
     bool qualifiedModernSceneGeometry(ModernSceneKind kind, const MeshRenderData& mesh) noexcept
     {
         if (kind == ModernSceneKind::ParisBoard || kind == ModernSceneKind::House) return true;
-        if ((kind != ModernSceneKind::Hotel && kind != ModernSceneKind::UsaBoard) ||
+        if ((kind != ModernSceneKind::Hotel && kind != ModernSceneKind::UsaBoard &&
+            kind != ModernSceneKind::ProceduralUsaBoard) ||
             mesh.vertices.empty() || mesh.indices.empty()) return false;
         // Immutable production HMD bounds, in raw retail units.
-        const std::array<float,3> minimum = kind == ModernSceneKind::UsaBoard
+        const std::array<float,3> minimum = kind == ModernSceneKind::ProceduralUsaBoard
+            ? std::array<float,3>{-84,-69.2000046F,-84} : kind == ModernSceneKind::UsaBoard
             ? std::array<float,3>{-84,-64,-84} : std::array<float,3>{-65,0,-90};
-        const std::array<float,3> maximum = kind == ModernSceneKind::UsaBoard
+        const std::array<float,3> maximum = kind == ModernSceneKind::ProceduralUsaBoard
+            ? std::array<float,3>{4944,23,4944} : kind == ModernSceneKind::UsaBoard
             ? std::array<float,3>{4944,50,4944} : std::array<float,3>{65,155,90};
         constexpr float tolerance = 0.001F;
         for (std::size_t axis = 0; axis < 3; ++axis)

@@ -2,6 +2,7 @@
 #include "SequenceTransforms.hpp"
 
 #include <bit>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -201,5 +202,32 @@ int main()
     dressing.rejectGeometry(dressed[4].renderData.get());
     expect(dressing.items(board,2,true).size()==4 && dressing.items(board,3).size()==3 && presentationAttempts==5,
         "failed support drops independently without retiring existing landmarks or retrying");
+    std::size_t cityAttempts{};
+    engine::ModernEnvironment city(fixture.root,true,diagnostic,
+        [&](const std::filesystem::path&,data::ModernGltfLoadOptions options)->LoadResult
+        {
+            ++cityAttempts;
+            expect(options.unitsPerMeter==200 && options.yawDegrees==0 &&
+                !options.groundToZero,"global procedural city preserves authored Y and proper orientation");
+            return std::make_shared<const data::MeshRenderData>(*original[0].renderData);
+        });
+    const auto completeCity=city.items(board,0,true,true,true);
+    expect(completeCity.size()==engine::ModernCityCount+2 && cityAttempts==engine::ModernCityCount+2,
+        "complete procedural city includes independent groups and support without duplicate local landmarks");
+    std::vector<sequence::SequenceNodeId> cityNodes;
+    for(const auto& item:completeCity)
+    {
+        const auto origin=point({0,0,0},item.worldTransform);
+        expect(close(origin[0],243) && close(origin[1],0) && close(origin[2],243) &&
+            item.rootSequenceDataId==data::EmptyDataId && item.asset->origin==data::MeshAssetOrigin::ModernGltf,
+            "native city groups inherit actual board origin without a fabricated retail sequence");
+        cityNodes.push_back(item.node);
+    }
+    std::sort(cityNodes.begin(),cityNodes.end());
+    expect(std::adjacent_find(cityNodes.begin(),cityNodes.end())==cityNodes.end(),
+        "all procedural city and support identities remain distinct");
+    city.rejectGeometry(completeCity.back().renderData.get());
+    expect(city.items(board,1,true,true,true).size()==completeCity.size()-1 &&
+        cityAttempts==completeCity.size(),"rejected city group falls back independently and is never retried");
     return failures ? 1 : 0;
 }

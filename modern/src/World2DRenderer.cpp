@@ -19,6 +19,7 @@ namespace monopoly::engine
         { (void)key; SDL_ReleaseGPUTexture(device_, value.gpu); }
         if (quad_) SDL_ReleaseGPUBuffer(device_, quad_);
         if (sampler_) SDL_ReleaseGPUSampler(device_, sampler_);
+        if (linearSampler_) SDL_ReleaseGPUSampler(device_, linearSampler_);
         if (pipeline_) SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
     }
 
@@ -67,6 +68,9 @@ namespace monopoly::engine
         sampler.address_mode_u = sampler.address_mode_v = sampler.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         result->sampler_ = SDL_CreateGPUSampler(device, &sampler);
         if (!result->sampler_) return std::unexpected(std::string(SDL_GetError()));
+        sampler.min_filter = sampler.mag_filter = SDL_GPU_FILTER_LINEAR;
+        result->linearSampler_ = SDL_CreateGPUSampler(device, &sampler);
+        if (!result->linearSampler_) return std::unexpected(std::string(SDL_GetError()));
         const std::array<MeshGPUVertex,6> vertices{{
             {{0,0,0},{0,0,1},{0,0}}, {{1,0,0},{0,0,1},{1,0}}, {{0,1,0},{0,0,1},{0,1}},
             {{0,1,0},{0,0,1},{0,1}}, {{1,0,0},{0,0,1},{1,0}}, {{1,1,0},{0,0,1},{1,1}}}};
@@ -209,7 +213,8 @@ namespace monopoly::engine
             // DataBMP origin is (0,0); no dice-specific anchor is inserted.
             vertexUniforms.worldViewProjection = matrixFor(object);
             SDL_PushGPUVertexUniformData(command, 0, &vertexUniforms, sizeof(vertexUniforms));
-            SDL_GPUTextureSamplerBinding sample{textures_.at(object.asset.get()).gpu,sampler_};
+            SDL_GPUTextureSamplerBinding sample{textures_.at(object.asset.get()).gpu,
+                object.asset->preferLinearFiltering ? linearSampler_ : sampler_};
             SDL_BindGPUFragmentSamplers(pass,0,&sample,1);
             SDL_DrawGPUPrimitives(pass,6,1,0,0);
         }

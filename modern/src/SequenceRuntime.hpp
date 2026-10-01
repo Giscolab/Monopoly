@@ -180,6 +180,9 @@ namespace monopoly::sequence
         Matrix2D worldTransform{};
         std::optional<data::Sequence2DBoundingBoxAttribute> bounds;
         bool zeroBitmapOffset{};
+        // Presentation provenance; leaf placement and ordering stay authored.
+        data::DataId rootSequenceDataId{};
+        SequenceNodeId rootSequenceNode{};
     };
     struct SequenceSoundInstanceView
     {

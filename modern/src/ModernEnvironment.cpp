@@ -32,8 +32,34 @@ namespace monopoly::engine
             {"plinth", "presentation/plinth.glb", data::packDataId(ModernEnvironmentLogicalGroup, 4),
                 ModernEnvironmentNodeBase | 5U, {0,0,0}, 0.0F}
         }};
+        // Global centred runtime coordinates, exported in independent groups
+        // from the recovered authoring scene. No retail root or rule owns them.
+        constexpr std::array<ModernEnvironmentDefinition, ModernCityCount> CityDefinitions{{
+            {"city front a", "environment/procedural_city_buildings_front_a.glb", data::packDataId(ModernEnvironmentLogicalGroup,5), ModernEnvironmentNodeBase|6U, {0,0,0},0},
+            {"city front b", "environment/procedural_city_buildings_front_b.glb", data::packDataId(ModernEnvironmentLogicalGroup,6), ModernEnvironmentNodeBase|7U, {0,0,0},0},
+            {"city back", "environment/procedural_city_buildings_back.glb", data::packDataId(ModernEnvironmentLogicalGroup,7), ModernEnvironmentNodeBase|8U, {0,0,0},0},
+            {"city east", "environment/procedural_city_buildings_east.glb", data::packDataId(ModernEnvironmentLogicalGroup,8), ModernEnvironmentNodeBase|9U, {0,0,0},0},
+            {"city west a", "environment/procedural_city_buildings_west_a.glb", data::packDataId(ModernEnvironmentLogicalGroup,9), ModernEnvironmentNodeBase|10U, {0,0,0},0},
+            {"city west b", "environment/procedural_city_buildings_west_b.glb", data::packDataId(ModernEnvironmentLogicalGroup,10), ModernEnvironmentNodeBase|11U, {0,0,0},0},
+            {"city skyline", "environment/procedural_city_skyline.glb", data::packDataId(ModernEnvironmentLogicalGroup,11), ModernEnvironmentNodeBase|12U, {0,0,0},0},
+            {"city street furniture", "environment/procedural_city_street_furniture.glb", data::packDataId(ModernEnvironmentLogicalGroup,12), ModernEnvironmentNodeBase|13U, {0,0,0},0},
+            {"city trees a", "environment/procedural_city_trees_a.glb", data::packDataId(ModernEnvironmentLogicalGroup,13), ModernEnvironmentNodeBase|14U, {0,0,0},0},
+            {"city trees b", "environment/procedural_city_trees_b.glb", data::packDataId(ModernEnvironmentLogicalGroup,14), ModernEnvironmentNodeBase|15U, {0,0,0},0},
+            {"city trees c", "environment/procedural_city_trees_c.glb", data::packDataId(ModernEnvironmentLogicalGroup,15), ModernEnvironmentNodeBase|16U, {0,0,0},0},
+            {"city trees d", "environment/procedural_city_trees_d.glb", data::packDataId(ModernEnvironmentLogicalGroup,16), ModernEnvironmentNodeBase|17U, {0,0,0},0},
+            {"city people and vehicles", "environment/procedural_city_people_vehicles.glb", data::packDataId(ModernEnvironmentLogicalGroup,17), ModernEnvironmentNodeBase|18U, {0,0,0},0},
+            {"city prison", "environment/procedural_city_prison.glb", data::packDataId(ModernEnvironmentLogicalGroup,18), ModernEnvironmentNodeBase|19U, {0,0,0},0},
+            {"city grand hotel", "environment/procedural_city_grand_hotel.glb", data::packDataId(ModernEnvironmentLogicalGroup,19), ModernEnvironmentNodeBase|20U, {0,0,0},0},
+            {"city landmarks", "environment/procedural_city_landmarks.glb", data::packDataId(ModernEnvironmentLogicalGroup,20), ModernEnvironmentNodeBase|21U, {0,0,0},0},
+            {"city red hotel", "environment/procedural_city_red_hotel.glb", data::packDataId(ModernEnvironmentLogicalGroup,21), ModernEnvironmentNodeBase|22U, {0,0,0},0}
+        }};
         const ModernEnvironmentDefinition& definitionAt(std::size_t index)
-        { return index < Definitions.size() ? Definitions[index] : PresentationDefinitions[index-Definitions.size()]; }
+        {
+            if(index < Definitions.size()) return Definitions[index];
+            index -= Definitions.size();
+            return index < PresentationDefinitions.size() ? PresentationDefinitions[index] :
+                CityDefinitions[index-PresentationDefinitions.size()];
+        }
         constexpr float SourceUnitsPerMetre = 200.0F;
         constexpr float BoardOrigin = 2430.0F;
 
@@ -124,7 +150,8 @@ namespace monopoly::engine
     }
 
     std::vector<sequence::SequenceMeshRenderItem> ModernEnvironment::items(
-        const sequence::Matrix3D& boardMatrix, std::uint32_t tick, bool includePresentation, bool includeLandmarks)
+        const sequence::Matrix3D& boardMatrix, std::uint32_t tick, bool includePresentation,
+        bool includeLandmarks, bool includeCity)
     {
         std::vector<sequence::SequenceMeshRenderItem> result;
         if (!enabled_) return result;
@@ -138,10 +165,16 @@ namespace monopoly::engine
             }
             return result;
         }
-        const auto count = Definitions.size() + (includePresentation ? PresentationDefinitions.size() : 0);
+        const auto count = Definitions.size() + PresentationDefinitions.size() +
+            (includeCity ? CityDefinitions.size() : 0);
         result.reserve(count);
         for (std::size_t index = includeLandmarks ? 0 : Definitions.size(); index < count; ++index)
         {
+            // Complete city groups include these three source landmarks in
+            // their global placement, so never duplicate the local prototypes.
+            if(includeCity && index < Definitions.size()) continue;
+            if(index >= Definitions.size() && index < Definitions.size()+PresentationDefinitions.size() &&
+                !includePresentation) continue;
             loadOnce(index);
             if (!assets_[index]) continue;
             const auto& definition = definitionAt(index);

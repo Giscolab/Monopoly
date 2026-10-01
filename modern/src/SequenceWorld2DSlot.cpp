@@ -1,4 +1,5 @@
 #include "SequenceWorld2DSlot.hpp"
+#include "ModernIBarSkin.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -87,9 +88,11 @@ namespace monopoly::engine
                     [](float value) { return std::isfinite(value); }))
                 return std::unexpected("non-finite 2D sequence matrix");
         }
-        std::map<sequence::SequenceNodeId, SequenceWorld2DObject> next;
-        std::vector<sequence::SequenceNodeId> order;
-        SequenceWorld2DSyncStats stats;
+        // Decode first, then select one shell per actual owning CNK. Decorative
+        // child leaves become transparent only after that shell succeeds.
+        std::map<sequence::SequenceNodeId, std::shared_ptr<const data::BitmapRuntimeAsset>> assets;
+        using Owner = std::pair<data::DataId, sequence::SequenceNodeId>;
+        std::map<Owner, sequence::SequenceNodeId> shells;
         for (const auto& item : items)
         {
             auto asset = item.runtimeAsset;
@@ -99,6 +102,43 @@ namespace monopoly::engine
                 if (!decoded) return std::unexpected(decoded.error().detail);
                 asset = *decoded;
             }
+            assets.emplace(item.node, asset);
+            if (modernSkin_ && modernSkin_->supports(item.rootSequenceDataId))
+            {
+                const Owner owner{item.rootSequenceDataId, item.rootSequenceNode};
+                const auto it = shells.find(owner);
+                const auto area = std::uint64_t(asset->image.width) * asset->image.height;
+                if (it == shells.end() || area > std::uint64_t(assets.at(it->second)->image.width) *
+                    assets.at(it->second)->image.height)
+                    shells[owner] = item.node;
+            }
+        }
+        for (const auto& [owner, node] : shells)
+        {
+            const auto& item = *std::ranges::find_if(items, [node](const auto& item) { return item.node == node; });
+            auto raster = sequence::identity2D();
+            if (item.bounds)
+            {
+                raster.values[0] = float(item.bounds->right-item.bounds->left) / assets.at(node)->image.width;
+                raster.values[4] = float(item.bounds->bottom-item.bounds->top) / assets.at(node)->image.height;
+                raster.values[6] = float(item.bounds->left); raster.values[7] = float(item.bounds->top);
+            }
+            else
+            { raster.values[6] = float(item.metadata.originX); raster.values[7] = float(item.metadata.originY); }
+            const auto rasterWorld = sequence::multiply(raster,item.worldTransform);
+            auto replacement = modernSkin_->substitute(owner.first, assets.at(node), true, rasterWorld);
+            if (replacement == assets.at(node)) continue;
+            assets[node] = std::move(replacement);
+            for (const auto& item : items)
+                if (item.node != node && Owner{item.rootSequenceDataId, item.rootSequenceNode} == owner)
+                    assets[item.node] = modernSkin_->substitute(owner.first, assets.at(item.node), false);
+        }
+        std::map<sequence::SequenceNodeId, SequenceWorld2DObject> next;
+        std::vector<sequence::SequenceNodeId> order;
+        SequenceWorld2DSyncStats stats;
+        for (const auto& item : items)
+        {
+            auto asset = assets.at(item.node);
             // L_Seqncr.cpp:4318-4427 keeps an explicit CNK bounding rectangle;
             // otherwise it uses the bitmap's origin and dimensions. L_Rend2D
             // transforms those four corners, not an image anchored at (0,0).
@@ -120,6 +160,13 @@ namespace monopoly::engine
             }
             else
             {
+                // Supersampled presentation derivatives retain the exact intrinsic
+                // authored footprint and origin, including UAP offsets.
+                if (asset->preferLinearFiltering && item.metadata.width && item.metadata.height)
+                {
+                    rasterToSequence.values[0] = static_cast<float>(item.metadata.width) / asset->image.width;
+                    rasterToSequence.values[4] = static_cast<float>(item.metadata.height) / asset->image.height;
+                }
                 rasterToSequence.values[6] = static_cast<float>(item.metadata.originX);
                 rasterToSequence.values[7] = static_cast<float>(item.metadata.originY);
             }

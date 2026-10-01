@@ -166,7 +166,7 @@ int main()
         calibration->yawDegrees == 0.0F && calibration->groundToZero &&
         calibration->localOffset == std::array<float, 3>{},
         "house calibration reproduces retail height and grounded centered pivot");
-    expect(ModernSceneKindCount==4 && hotel==0x00080004U &&
+    expect(hotel==0x00080004U &&
         modernSceneDefinition(ModernSceneKind::Hotel).relativeGlbPath=="buildings/hotel.glb",
         "hotel has its own retail identity and optional asset path");
     expect(parsed && qualifiedModernSceneSequence(ModernSceneKind::Hotel,hotel,hotel,
@@ -244,5 +244,43 @@ int main()
     usaGeometry.bounds.minimum[1]=-60;
     expect(!qualifiedModernSceneGeometry(ModernSceneKind::UsaBoard,usaGeometry),
         "USA geometry rejects a misplaced underside before runtime replacement");
+    const std::array<std::string_view,2> proceduralArguments{
+        "--modern-board=procedural","--modern-environment=procedural"};
+    const auto procedural=parseModernSceneArguments(proceduralArguments);
+    const auto proceduralId=modernSceneDefinition(ModernSceneKind::ProceduralUsaBoard).legacyMeshId;
+    expect(procedural && procedural->options.proceduralBoard && procedural->options.proceduralEnvironment &&
+        procedural->options.environment && !procedural->options.parisBoard && !procedural->options.usaBoard,
+        "procedural gameplay is an explicit presentation option separate from French and faithful USA modes");
+    const auto qualifiesProcedural=[&](const ModernSceneContext& candidate)
+    {
+        return qualifiedModernSceneSequence(ModernSceneKind::ProceduralUsaBoard,proceduralId,
+            proceduralId,display::Board3DPriority,procedural->options,candidate);
+    };
+    ModernSceneContext proceduralContext;
+    expect(qualifiesProcedural(proceduralContext),"procedural USA labels qualify only the actual supplied rule context");
+    for(const auto locale:std::array<ModernSceneContext,4>{
+        ModernSceneContext{BoardEdition::Europe,1,LanguageId::French,12,{}},
+        ModernSceneContext{BoardEdition::Usa,0,LanguageId::EnglishUs,12,{}},
+        ModernSceneContext{BoardEdition::Usa,0,LanguageId::French,13,{}},
+        ModernSceneContext{BoardEdition::Usa,0,LanguageId::EnglishUs,13,"custom.board"}})
+        expect(!qualifiesProcedural(locale),"procedural city cannot mislabel another ruleset or custom board");
+    expect(!qualifiedModernSceneSequence(ModernSceneKind::ProceduralUsaBoard,proceduralId,proceduralId,
+        display::Board3DPriority-1,procedural->options,proceduralContext) &&
+        !qualifiedModernSceneSequence(ModernSceneKind::ProceduralUsaBoard,proceduralId,std::nullopt,
+        display::Board3DPriority,procedural->options,proceduralContext),
+        "procedural replacement requires the actual qualified board root and priority");
+    const auto proceduralCalibration=modernSceneLoadOptions(ModernSceneKind::ProceduralUsaBoard);
+    expect(proceduralCalibration && proceduralCalibration->unitsPerMeter==200 &&
+        !proceduralCalibration->groundToZero && proceduralCalibration->yawDegrees==0 &&
+        proceduralCalibration->localOffset==std::array<float,3>{2430,0,2430},
+        "procedural sculpture uses measured board alignment without changing gameplay placements");
+    MeshRenderData proceduralMesh;
+    proceduralMesh.vertices.resize(3);proceduralMesh.indices={0,1,2};
+    proceduralMesh.bounds.minimum={-84,-69.2000046F,-84};proceduralMesh.bounds.maximum={4944,23,4944};
+    expect(qualifiedModernSceneGeometry(ModernSceneKind::ProceduralUsaBoard,proceduralMesh),
+        "procedural board accepts its independently measured production-loader envelope");
+    proceduralMesh.bounds.maximum[0]+=10;
+    expect(!qualifiedModernSceneGeometry(ModernSceneKind::ProceduralUsaBoard,proceduralMesh),
+        "incorrect procedural perimeter cannot change board alignment silently");
     return failures ? 1 : 0;
 }

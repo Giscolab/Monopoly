@@ -303,7 +303,7 @@ int main(int argc, char** argv)
             require(text != "source", "Output directory must be outside Source");
         }
         std::filesystem::path relativeBoard{"board/paris_board_runtime.glb"};
-        bool includeEnvironment = false, boardArgument = false;
+        bool includeEnvironment = false, boardArgument = false, includeCity = false;
         bool benchmarkToken = false;
         unsigned polishLevel = 0;
         unsigned cameraYaw = 28, cameraElevation = 55, uiSafePercent = 0;
@@ -313,6 +313,8 @@ int main(int argc, char** argv)
         for (int i = 4; i < argc; ++i)
         {
             if (std::string{argv[i]} == "--environment") includeEnvironment = true;
+            else if (std::string{argv[i]} == "--procedural-city")
+            { includeEnvironment = true; includeCity = true; }
             else if (std::string{argv[i]} == "--polish")
             { if (++i >= argc) throw std::runtime_error("--polish requires 0..6"); polishLevel = number(argv[i], 6); }
             else if (std::string{argv[i]} == "--camera-yaw")
@@ -366,12 +368,13 @@ int main(int argc, char** argv)
         board.worldTransform = boardMatrix; board.asset = asset; board.renderData = *loaded;
         items.push_back(board);
         engine::ModernEnvironment environment(assetRoot, includeEnvironment);
-        auto decorations = environment.items(boardMatrix, 0, polishLevel >= 2);
+        auto decorations = environment.items(boardMatrix, 0, polishLevel >= 2, !includeCity, includeCity);
         items.insert(items.end(), decorations.begin(), decorations.end());
         std::cout << "scope\tpresentation-only offscreen production renderer; no retail DAT or gameplay\n"
             << "environment_requested\t" << includeEnvironment
             << "\tenvironment_loaded\t" << decorations.size() << '\n';
-        if (includeEnvironment && decorations.size() != engine::ModernEnvironmentCount + (polishLevel >= 2 ? 2U : 0U))
+        if (includeEnvironment && decorations.size() !=
+            (includeCity ? engine::ModernCityCount : engine::ModernEnvironmentCount) + (polishLevel >= 2 ? 2U : 0U))
             throw std::runtime_error("Requested environment is incomplete; see loader diagnostics");
         }
         if (tokenFrame && tabletopSamples) throw std::runtime_error("tabletop samples require board mode");
@@ -422,8 +425,18 @@ int main(int argc, char** argv)
 
         engine::SequenceWorld3DSlot slot;
         require(slot.sync(items).has_value(), "Production scene slot sync");
-        const auto bounds = sceneBounds((!tokenFrame && polishLevel >= 2)
-            ? std::vector<sequence::SequenceMeshRenderItem>{items.begin(), items.begin() + (includeEnvironment ? 4 : 1)} : items);
+        std::vector<sequence::SequenceMeshRenderItem> framingItems=items;
+        if(!tokenFrame && polishLevel >= 2)
+        {
+            std::erase_if(framingItems,[](const auto& item)
+            {
+                const auto node=item.node;
+                return node == (engine::ModernEnvironmentNodeBase|4U) ||
+                    node == (engine::ModernEnvironmentNodeBase|5U) ||
+                    (node & 0xFFFFFFFF00000000ULL) == 0x8000FFF800000000ULL;
+            });
+        }
+        const auto bounds = sceneBounds(framingItems);
         const std::array<float, 3> center{
             (bounds.minimum[0] + bounds.maximum[0]) * .5F,
             (bounds.minimum[1] + bounds.maximum[1]) * .5F,

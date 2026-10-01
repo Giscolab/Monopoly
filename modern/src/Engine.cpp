@@ -22,6 +22,10 @@
 #include "ModernTokenVariants.hpp"
 #include "ModernEnvironment.hpp"
 #include "ModernScenePresentation.hpp"
+#include "ModernIBarSkin.hpp"
+#include "IBarLayout.hpp"
+#include "MoneyFormat.hpp"
+#include "StatsAccountRuntime.hpp"
 #include "Timers.hpp"
 #include "UIMessages.hpp"
 #include "ExtendedInitialization.hpp"
@@ -1003,7 +1007,8 @@ namespace monopoly::engine
                 state.city, resources->context().language, state.system,
                 state.customBoardPath};
             for (const auto kind : {data::ModernSceneKind::ParisBoard, data::ModernSceneKind::House,
-                    data::ModernSceneKind::Hotel, data::ModernSceneKind::UsaBoard})
+                    data::ModernSceneKind::Hotel, data::ModernSceneKind::UsaBoard,
+                    data::ModernSceneKind::ProceduralUsaBoard})
             {
                 if (!data::qualifiedModernSceneSequence(kind, id, root, priority,
                         modernSceneOptions, context)) continue;
@@ -1186,6 +1191,61 @@ namespace monopoly::engine
                 playback = std::make_unique<SequencePlayback>(
                     std::move(resources),
                     std::move(modernResolver));
+                if (modernSceneOptions.proceduralBoard)
+                {
+                    const auto rasterText = [](std::string_view text, int size)
+                        -> std::expected<data::LegacyBitmapRGBA8, std::string>
+                        {
+                            auto* font=fontPlayback();
+                            if(!font || !font->ready()) return std::unexpected("HUD font unavailable");
+                            struct Guard
+                            {
+                                fonts::Runtime& font;
+                                fonts::Settings old;
+                                ~Guard()
+                                {
+                                    (void)font.setSize(old.size);font.setWeight(old.weight);
+                                    font.setItalic(old.italic);font.setUnderline(old.underline);
+                                    font.setStrikeOut(old.strikeOut);
+                                }
+                            } guard{*font,font->settings()};
+                            if(const auto sized=font->setSize(size);!sized) return std::unexpected(sized.error().detail);
+                            font->setWeight(700);font->setItalic(false);font->setUnderline(false);font->setStrikeOut(false);
+                            auto rendered=font->render(text,0xFFFFFF);
+                            if(!rendered) return std::unexpected(rendered.error().detail);
+                            return std::move(*rendered);
+                        };
+                    auto skin = std::make_shared<ibar::ModernIBarSkin>(
+                        startup::resources()->context().language,
+                        [rasterText](std::string_view text) { return rasterText(text, 12); });
+                    skin->configureLayoutProvider([] { return ibar::stateReadOnly().actionButtonLayout; });
+                    skin->configurePropertyDescriptors(
+                        [](unsigned propertyIndex) -> std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
+                        {
+                            const auto snapshot = startup::resources();
+                            if (!snapshot || snapshot->context().board != data::BoardEdition::Usa ||
+                                !snapshot->language() || !snapshot->language()->catalog) return {};
+                            const auto& state = display::stateReadOnly();
+                            if (state.city != 0 || state.system != 13 || !state.customBoardPath.empty()) return {};
+                            for (int square = 0; square < 40; ++square)
+                            {
+                                if (ibar::layout::propertyIndex(square) != static_cast<int>(propertyIndex)) continue;
+                                const auto name16 = statsui::statsPropertyName(*snapshot->language()->catalog,
+                                    data::BoardEdition::Usa, 0, square);
+                                if (!name16) return {};
+                                const auto name = fonts::transcodeUtf8(std::u16string_view(*name16));
+                                const auto& definition = rules::board::originalDefinition(
+                                    static_cast<rules::board::SquareType>(square));
+                                const auto price = money::format(definition.purchaseCost, 13, true,
+                                    data::BoardEdition::Usa);
+                                if (!name || !price) return {};
+                                return ibar::ModernIBarSkin::PropertyDescriptor{*name,
+                                    static_cast<std::uint8_t>(definition.group), *price};
+                            }
+                            return {};
+                        }, [rasterText](std::string_view text) { return rasterText(text, 18); });
+                    playback->world2D().configureModernIBarSkin(std::move(skin));
+                }
                 europeanDeedSelection.reset();
             }
         return playback.get();
@@ -2642,7 +2702,7 @@ namespace monopoly::engine
             if (!updated) return SDL_SetError("Sequence playback: %s", updated.error().c_str());
             std::vector<sequence::SequenceMeshRenderItem> decorations;
             std::optional<data::MeshBounds> modernBoardBounds;
-            if (modernSceneOptions.parisBoard || modernSceneOptions.usaBoard)
+            if (modernSceneOptions.parisBoard || modernSceneOptions.usaBoard || modernSceneOptions.proceduralBoard)
             {
                 const auto boardInstances = session->runtime().meshInstances();
                 for (const auto node : session->world().order())
@@ -2661,13 +2721,32 @@ namespace monopoly::engine
                     if (!boardRootPriority) continue;
                     const auto geometry = board->renderData ? board->renderData : board->asset->renderData;
                     modernBoardBounds = presentationWorldBounds(geometry->bounds, board->worldTransform);
-                    if (!modernSceneOptions.environment && !modernSceneOptions.usaBoard) break;
+                    if (!modernSceneOptions.environment && !modernSceneOptions.usaBoard &&
+                        !modernSceneOptions.proceduralBoard) break;
                     if (!modernEnvironment)
+                    {
+                        if (modernSceneOptions.proceduralEnvironment)
+                            SDL_SetWindowTitle(gameWindow, "Monopoly Modern - Loading game...");
                         modernEnvironment = std::make_unique<ModernEnvironment>(
                             std::filesystem::path(SDL_GetBasePath()) / "assets/modern", true);
+                    }
                     decorations = modernEnvironment->items(board->worldTransform,
                         static_cast<std::uint32_t>(tick), true,
-                        modernSceneOptions.environment && !modernSceneOptions.usaBoard);
+                        modernSceneOptions.environment && !modernSceneOptions.usaBoard,
+                        modernSceneOptions.proceduralEnvironment);
+                    if(modernSceneOptions.proceduralEnvironment)
+                        for(const auto& decoration:decorations)
+                        {
+                            if(decoration.node == (ModernEnvironmentNodeBase|4U) ||
+                                decoration.node == (ModernEnvironmentNodeBase|5U)) continue;
+                            const auto bounds=presentationWorldBounds(decoration.renderData->bounds,
+                                decoration.worldTransform);
+                            for(std::size_t axis=0;axis<3;++axis)
+                            {
+                                modernBoardBounds->minimum[axis]=std::min(modernBoardBounds->minimum[axis],bounds.minimum[axis]);
+                                modernBoardBounds->maximum[axis]=std::max(modernBoardBounds->maximum[axis],bounds.maximum[axis]);
+                            }
+                        }
                     break;
                 }
             }
@@ -2710,7 +2789,8 @@ namespace monopoly::engine
                     if (modernBoardBounds && boardcamera::isPresentationDefault(displayState))
                         camera = modernBoardPresentationCamera(*modernBoardBounds,
                         static_cast<float>(viewport.right-viewport.left)/(viewport.bottom-viewport.top),
-                        48.0F, 8.0F, 0.23F);
+                        modernSceneOptions.proceduralEnvironment ? 42.0F : 48.0F,
+                        modernSceneOptions.proceduralEnvironment ? 28.0F : 8.0F, 0.23F);
                     activeWorldCamera = camera;
                 }
                 const auto configured = session->world().configureView(viewport, camera);
@@ -2757,7 +2837,9 @@ namespace monopoly::engine
                     {
                         const auto paris = static_cast<std::size_t>(data::ModernSceneKind::ParisBoard);
                         const auto usa = static_cast<std::size_t>(data::ModernSceneKind::UsaBoard);
-                        if (modernSceneMeshes[paris].get() == failed || modernSceneMeshes[usa].get() == failed)
+                        const auto procedural = static_cast<std::size_t>(data::ModernSceneKind::ProceduralUsaBoard);
+                        if (modernSceneMeshes[paris].get() == failed || modernSceneMeshes[usa].get() == failed ||
+                            modernSceneMeshes[procedural].get() == failed)
                             modernBoardRejected = true;
                         if (modernTokenVariants) (void)modernTokenVariants->rejectPack(failed);
                         if (modernEnvironment) (void)modernEnvironment->rejectGeometry(failed);

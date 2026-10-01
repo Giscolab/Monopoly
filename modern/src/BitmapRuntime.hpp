@@ -12,6 +12,8 @@ namespace monopoly::data
         LegacyDataType sourceType{LegacyDataType::Unknown};
         SharedDataBytes source;
         LegacyBitmapRGBA8 image;
+        // Opt-in presentation artwork. Retail and runtime text retain nearest sampling.
+        bool preferLinearFiltering{};
     };
     // Immutable payload identity prevents DataId reuse across snapshots from
     // returning stale pixels. Consumers retain their old asset after replacement.

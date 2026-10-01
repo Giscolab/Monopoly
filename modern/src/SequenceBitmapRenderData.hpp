@@ -55,6 +55,8 @@ namespace monopoly::sequence
         std::shared_ptr<const data::BitmapRuntimeAsset> runtimeAsset;
         // Explicit CNK rectangle overrides the intrinsic bitmap size and offset.
         std::optional<data::Sequence2DBoundingBoxAttribute> bounds;
+        data::DataId rootSequenceDataId{};
+        SequenceNodeId rootSequenceNode{};
     };
 
     [[nodiscard]] std::expected<std::vector<SequenceBitmapRenderItem>,

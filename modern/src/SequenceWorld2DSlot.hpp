@@ -4,6 +4,8 @@
 #include "SequenceBitmapRenderData.hpp"
 #include <map>
 
+namespace monopoly::ibar { class ModernIBarSkin; }
+
 namespace monopoly::engine
 {
     struct SequenceWorld2DObject
@@ -27,6 +29,9 @@ namespace monopoly::engine
         [[nodiscard]] std::expected<SequenceWorld2DSyncStats, std::string> sync(
             const std::vector<sequence::SequenceBitmapRenderItem>& items,
             data::BitmapRuntimeCache& cache);
+        // nullptr preserves the complete legacy bitmap path. The skin changes pixels only.
+        void configureModernIBarSkin(std::shared_ptr<ibar::ModernIBarSkin> skin) noexcept
+        { modernSkin_ = std::move(skin); }
         // Removing sequence objects does not uninstall the legacy render slot:
         // its last camera remains until another label owner supplies a view.
         void clear() noexcept { objects_.clear(); order_.clear(); }
@@ -52,6 +57,7 @@ namespace monopoly::engine
         float cameraScale_{1.0F};
         sequence::Matrix2D worldToScreen_{sequence::identity2D()};
         sequence::Matrix2D screenToWorld_{sequence::identity2D()};
+        std::shared_ptr<ibar::ModernIBarSkin> modernSkin_;
         std::map<sequence::SequenceNodeId, SequenceWorld2DObject> objects_;
         std::vector<sequence::SequenceNodeId> order_;
     };

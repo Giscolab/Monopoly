@@ -1677,10 +1677,15 @@ namespace monopoly::sequence
                 if (definition.contentsDataId && node->dimensionality == 2 &&
                     std::holds_alternative<data::SequenceBitmapData>(definition.record.data) &&
                     std::holds_alternative<Matrix2D>(node->worldTransform))
+                {
+                    const Node* root = node.get();
+                    while (root->parent) root = root->parent;
                     result.push_back({node->id, *definition.contentsDataId,
                         node->priority, node->clock.clock(),
                         std::get<Matrix2D>(node->worldTransform),
-                        boundingBox2D(definition.attributes), definition.zeroBitmapOffset});
+                        boundingBox2D(definition.attributes), definition.zeroBitmapOffset,
+                        root->definition().dataId, root->id});
+                }
                 self(self, node->children);
             }
         };

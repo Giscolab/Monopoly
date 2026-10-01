@@ -298,6 +298,8 @@ add_library(
     src/ModernSceneCatalog.cpp
     src/ModernTokenVariants.cpp
     src/ModernEnvironment.cpp
+    src/ModernIBarSkin.cpp
+    src/IBarLayout.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
     src/BitmapRuntime.cpp
@@ -330,6 +332,7 @@ target_link_libraries(
 )
 
 if(MSVC)
+    set_source_files_properties(src/ModernIBarSkin.cpp PROPERTIES COMPILE_OPTIONS "/utf-8")
     target_compile_options(
         MonopolyDataCore
         PRIVATE
@@ -395,12 +398,16 @@ endif()
 add_executable(
     MonopolyModernAssetProbe
     src/ModernAssetProbe.cpp
+    src/FontRuntime.cpp
+    src/BoardRules.cpp
+    src/MoneyFormat.cpp
 )
 target_link_libraries(
     MonopolyModernAssetProbe
     PRIVATE
     MonopolyDataCore
     SDL3::SDL3
+    SDL3_ttf::SDL3_ttf
 )
 if(MSVC)
     target_compile_options(
@@ -743,10 +750,10 @@ add_custom_target(MonopolyRuntimeModernAssets
         "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
+    ${MONOPOLY_PROCEDURAL_STAGING_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         "$<TARGET_FILE_DIR:MonopolyModern>/assets/modern"
-    ${MONOPOLY_PROCEDURAL_STAGING_COMMANDS}
     COMMENT "Staging optional modern GLB assets beside MonopolyModern"
     VERBATIM
 )
@@ -916,6 +923,21 @@ if(MONOPOLY_BLENDER_EXECUTABLE
             -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
             --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
         COMMENT "Exporting separate optional Paris decorations"
+        VERBATIM
+    )
+    add_custom_target(MonopolyExportProceduralGameplayScene
+        COMMAND "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            "${MONOPOLY_RETAIL_ASSET_ROOT}" "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+            --dump-textured-board "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND "${MONOPOLY_BLENDER_EXECUTABLE}" -b --factory-startup --disable-autoexec
+            --python-exit-code 1 --python "${CMAKE_CURRENT_SOURCE_DIR}/tools/blender/export_procedural_gameplay_scene.py"
+            -- --source "${MONOPOLY_BLENDER_AUTHORING_FILE}"
+            --baked-board-cache "${CMAKE_CURRENT_BINARY_DIR}/procedural-assets/board/paris_board_runtime.glb"
+            --retail-obj "${CMAKE_CURRENT_BINARY_DIR}/retail-textured-board/boardmed.obj"
+            --probe "$<TARGET_FILE:MonopolyModernAssetProbe>"
+            --output "${MONOPOLY_GENERATED_MODERN_ASSET_ROOT}"
+        DEPENDS MonopolyModernAssetProbe
+        COMMENT "Exporting actual recovered city groups and a procedurally sculpted USA-labelled board"
         VERBATIM
     )
 endif()
@@ -2150,6 +2172,20 @@ if(BUILD_TESTING)
         src/VoiceChatAudioRuntime.cpp
         src/Gsm610Codec.cpp
         src/Messaging.cpp)
+    add_executable(MonopolyAudioWaveDecoderTests
+        tests/AudioWaveDecoderTests.cpp src/AudioWaveDecoder.cpp src/Gsm610Codec.cpp)
+    target_include_directories(MonopolyAudioWaveDecoderTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(MonopolyAudioWaveDecoderTests PRIVATE SDL3::SDL3 MonopolyGsm610)
+    if(MSVC)
+        target_compile_options(MonopolyAudioWaveDecoderTests PRIVATE /W4 /permissive-)
+    endif()
+    if(WIN32 AND SDL_SHARED)
+        add_custom_command(TARGET MonopolyAudioWaveDecoderTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:MonopolyAudioWaveDecoderTests>
+            VERBATIM)
+    endif()
+    add_test(NAME Monopoly.AudioWaveDecoder COMMAND MonopolyAudioWaveDecoderTests)
     target_link_libraries(MonopolyVoiceChatAudioRuntimeTests PRIVATE
         MonopolyDataCore SDL3::SDL3 MonopolyGsm610)
     if(MSVC)
@@ -2876,7 +2912,6 @@ target_sources(
     MonopolyModern
     PRIVATE
     src/IBar.cpp
-    src/IBarLayout.cpp
     src/IBarBackdropPlayback.cpp
     src/EscapeConfirmationPlayback.cpp
     src/IBarCardPlayback.cpp
@@ -3793,9 +3828,9 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
-    add_executable(MonopolyWorld2DRendererTests tests/World2DRendererTests.cpp src/DiceDisplay.cpp)
+    add_executable(MonopolyWorld2DRendererTests tests/World2DRendererTests.cpp src/DiceDisplay.cpp src/FontRuntime.cpp)
     target_include_directories(MonopolyWorld2DRendererTests PRIVATE src tests)
-    target_link_libraries(MonopolyWorld2DRendererTests PRIVATE MonopolyGPU3DCore)
+    target_link_libraries(MonopolyWorld2DRendererTests PRIVATE MonopolyGPU3DCore SDL3_ttf::SDL3_ttf)
     target_compile_definitions(MonopolyWorld2DRendererTests PRIVATE
         MONOPOLY_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
     add_test(NAME Monopoly.World2DRenderer COMMAND MonopolyWorld2DRendererTests)

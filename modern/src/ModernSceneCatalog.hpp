@@ -14,8 +14,8 @@
 
 namespace monopoly::data
 {
-    enum class ModernSceneKind : std::uint8_t { ParisBoard, House, Hotel, UsaBoard };
-    inline constexpr std::size_t ModernSceneKindCount = 4;
+    enum class ModernSceneKind : std::uint8_t { ParisBoard, House, Hotel, UsaBoard, ProceduralUsaBoard };
+    inline constexpr std::size_t ModernSceneKindCount = 5;
 
     // Optional replacements remain off for ordinary retail play.
     struct ModernSceneOptions
@@ -26,6 +26,10 @@ namespace monopoly::data
         bool house{};
         bool environment{};
         bool usaBoard{};
+        // Recovered procedural sculpture with the available USA rule labels.
+        // This does not claim a French resource/rules qualification.
+        bool proceduralBoard{};
+        bool proceduralEnvironment{};
     };
 
     struct ParsedModernSceneOptions

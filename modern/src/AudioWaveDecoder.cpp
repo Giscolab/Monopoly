@@ -97,11 +97,21 @@ namespace monopoly::audio
 
                 const auto next64 = payloadEnd64 + (size & 1U);
                 if (next64 > end)
-                    return std::nullopt;
+                {
+                    // Retail dialog WAV49 files omit the final data padding
+                    // byte. Their complete encoded payload is still bounded
+                    // by RIFF; L_Sound accepts this terminal chunk as well.
+                    // Do not tolerate missing samples or interior padding.
+                    if (payloadEnd64 != end ||
+                        !fourCC(bytes, cursor, 'd', 'a', 't', 'a'))
+                        return std::nullopt;
+                    cursor = end;
+                    continue;
+                }
                 cursor = static_cast<std::size_t>(next64);
             }
 
-            if (result.formatSize == 0 || result.dataSize == 0)
+            if (cursor != end || result.formatSize == 0 || result.dataSize == 0)
                 return std::nullopt;
             return result;
         }
