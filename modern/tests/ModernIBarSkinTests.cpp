@@ -1298,6 +1298,133 @@ namespace
         std::cout<<"[PASS] all11 central owners /328 actual UAP phases; fixed static owner pixels/rectangles; authored loops/native fallback retained\n";
     }
 
+
+    constexpr std::array<unsigned,11> AuctionRoots{4,5,6,10,8,7,3,12,9,13,11};
+    void testAuctionTokenImages()
+    {
+        constexpr std::array<std::array<int,5>,11> shapes{{
+            {0xb0,42,22,-19,-19},{0xc8,38,15,-18,-13},{0xda,29,21,-13,-18},
+            {0x12c,31,13,-15,-11},{0xfa,28,14,-13,-11},{0xe9,20,24,-9,-23},
+            {0xa0,34,19,-16,-18},{0x14c,27,16,-13,-15},{0x113,17,19,-8,-18},
+            {0x15d,41,15,-24,-12},{0x13d,20,19,-9,-17}}};
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});
+        bool context=true;skin.configurePresentationContext([&]{return context;});
+        auto photo=currentPlayerPhoto();unsigned selected=99;
+        skin.configureTokenImages([&](std::uint8_t token){selected=token;return photo;});
+        for(unsigned token=0;token<11;++token)for(unsigned count=1;count<=6;++count)
+            for(unsigned player=0;player<count;++player)
+        {
+            const auto& shape=shapes[token];const auto owner=0x30000+AuctionRoots[token];
+            const auto source=bitmap(0x30000+shape[0],shape[1],shape[2]);
+            const int width=count>4?134:201,spacing=(800-int(count)*width)/int(count+1);
+            const int center=spacing+int(player)*(width+spacing)+width/2;
+            const auto world=sequence::translate2D(center,560);
+            const auto raster=sequence::translate2D(center+shape[3],560+shape[4]);
+            const auto modern=skin.substitute(owner,source,true,raster,316+player,world);
+            require(modern!=source && selected==token && modern->dataId==source->dataId &&
+                modern->preferLinearFiltering && modern->image.width==162 && modern->image.height==45 &&
+                modern->presentationRect==std::optional{std::array<float,4>{-27,-10,27,5}},
+                "all eleven auction owners and every native1..6 player column use fixed54x15 canvas");
+            for(unsigned y=0;y<45;++y)for(unsigned x=0;x<162;++x)
+            {
+                const auto at=(std::size_t(y)*162+x)*4;
+                if(modern->image.pixels[at+3])require(x>=3 && x<159 && y>=3 && y<42 &&
+                    modern->image.pixels[at]==20 && modern->image.pixels[at+1]==40 &&
+                    modern->image.pixels[at+2]==60 && modern->image.pixels[at+3]==128,
+                    "auction photo preserves RGB partial alpha and one logical pixel transparent padding");
+            }
+            require(skin.substitute(owner,source,true,raster,316+player,world)==modern,
+                "qualified auction placement reuses immutable pixels");
+            context=false;require(skin.substitute(owner,source,true,raster,316+player,world)==source,
+                "live auction context loss restores full native asset before cached hit");context=true;
+            require(skin.substitute(owner,source,true,raster,{},world)==source &&
+                skin.substitute(owner,source,true,raster,315,world)==source &&
+                skin.substitute(owner,source,true,raster,316+player,{})==source &&
+                skin.substitute(owner,source,false,raster,316+player,world)==source,
+                "auction needs authentic root priority transform and principal leaf");
+            auto shifted=raster;shifted.values[6]+=1;
+            require(skin.substitute(owner,source,true,shifted,316+player,world)==source,
+                "unmeasured auction leaf bbox fails completely");
+            auto badWorld=world;badWorld.values[7]+=1;
+            require(skin.substitute(owner,source,true,raster,316+player,badWorld)==source,
+                "unmeasured auction root placement fails completely");
+            const auto wrong=bitmap(source->dataId,shape[1]+1,shape[2]);
+            require(skin.substitute(owner,wrong,true,raster,316+player,world)==wrong,
+                "auction extent mismatch retains native full RGBA");
+        }
+        const auto source=bitmap(0x300b0,42,22);const auto world=sequence::translate2D(67,560);
+        const auto raster=sequence::translate2D(48,541);
+        require(skin.substitute(0x30004,source,true,raster,317,world)==source,
+            "auction column must match priority player rather than merely any column");
+        for(unsigned mode=0;mode<4;++mode)
+        {
+            auto bad=std::make_shared<data::LegacyBitmapRGBA8>(*photo);
+            if(mode==0)bad->pixels.pop_back();if(mode==1)bad->width=767;
+            if(mode==2)std::fill(bad->pixels.begin(),bad->pixels.end(),0);
+            if(mode==3)for(std::size_t at=3;at<bad->pixels.size();at+=4)bad->pixels[at]=255;
+            skin.configureTokenImages([bad](std::uint8_t){return bad;});
+            require(skin.substitute(0x30004,source,true,raster,316,world)==source,
+                "missing invalid or alpha-incompatible auction PNG preserves entire native bitmap");
+        }
+    }
+
+    void testActualAuctionTokens(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"actual auction DAT opens");
+        const auto snapshot=resources.snapshot();std::set<std::pair<data::DataId,std::size_t>> phases;
+        unsigned leavesObserved=0;
+        for(unsigned token=0;token<11;++token)
+        {
+            const auto owner=0x30000+AuctionRoots[token];
+            const auto program=sequence::SequenceProgram::load(snapshot,owner);
+            require(program.has_value(),"actual auction CNK loads");sequence::SequenceRuntime runtime;
+            const auto started=runtime.start(*program,316);require(started.has_value(),"actual auction root starts");
+            require(runtime.moveMatching(owner,316,sequence::moveXYTransform(67,560))==1,
+                "authentic six-player auction placement applied without ending-action override");
+            bool context=true;auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                ibar::ModernIBarSkin::TextRasterizer{});auto photo=currentPlayerPhoto();
+            skin->configurePresentationContext([&]{return context;});
+            skin->configureTokenImages([&](std::uint8_t selected){require(selected==token,
+                "actual auction root selects exact token");return photo;});
+            engine::SequenceWorld2DSlot native,modern;modern.configureModernIBarSkin(skin);
+            data::BitmapRuntimeCache cache;std::vector<std::uint8_t> fixedPixels;
+            for(int tick=0;tick<=120;++tick)
+            {
+                require(runtime.update(tick).has_value(),"actual auction native clock advances");
+                const auto items=sequence::collectSequenceBitmapRenderData(runtime,snapshot);
+                require(items && native.sync(*items,cache) && modern.sync(*items,cache),
+                    "auction authentic phases pass production bitmap seam");
+                require(native.order()==modern.order(),"auction node traversal unchanged");
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    const auto state=runtime.inspect(node);require(state.has_value(),"actual auction leaf exists");
+                    phases.emplace(owner,state->offset);++leavesObserved;
+                    require(m && m->asset!=a->asset && m->clock==a->clock && m->priority==a->priority &&
+                        m->contentsDataId==a->contentsDataId && m->asset->image.width==162 && m->asset->image.height==45,
+                        "actual auction phase pixels modernize with unchanged clock priority identity");
+                    require(engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,0,0)==
+                        std::array<std::int32_t,2>{40,550} &&
+                        engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,162,45)==
+                        std::array<std::int32_t,2>{94,565},"every auction phase clears name and cash surfaces");
+                    if(fixedPixels.empty())fixedPixels=m->asset->image.pixels;
+                    require(m->asset->image.pixels==fixedPixels,"all authored auction phases keep static photo size");
+                }
+                context=false;require(modern.sync(*items,cache).has_value(),"auction live fallback sync succeeds");
+                for(const auto node:native.order())
+                {
+                    const auto* a=native.find(node);const auto* m=modern.find(node);
+                    require(m && m->asset==a->asset && m->worldTransform.values==a->worldTransform.values &&
+                        m->clock==a->clock && m->priority==a->priority,"auction fallback preserves full native RGBA matrix clock priority");
+                }
+                context=true;
+            }
+        }
+        require(phases.size()==196 && leavesObserved>=196,"all196 authored auction record phases observed independently");
+        std::cout<<"[PASS] all11 auction owners /196 authored phases; fixed54x15 pixels, native clocks and full fallback\n";
+    }
+
     void testScoreTokenImages()
     {
         const auto raster=[](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
@@ -1471,6 +1598,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

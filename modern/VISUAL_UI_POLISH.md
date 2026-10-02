@@ -922,7 +922,7 @@ these five captures.
 Deed-picker and Future-popup guards have not yet been exercised live. A later
 Deeds click returned to Main unexpectedly; NotifyTradeFinished is only a candidate,
 with cause unproven. These captures do not establish a routing fix. The separate
-60-second warm FPS sample is still running; no result is published yet.
+warm sample is distinct from the completed ten-minute session below.
 
 Completed pass53 warm telemetry: 120 samples over 60 seconds, median 60 FPS,
 p5 58.9 and minimum 58; 73.3333% at least 60 and 83.3333% at least 59.5.
@@ -930,3 +930,44 @@ Evidence: `build/polish-continuation-20261001/pass53-warm-fps.csv` and
 `pass53-warm-fps-summary.txt`. No concurrent build or other GPU test ran.
 This title telemetry covers Portfolio interactions and return to Main;
 it does not establish per-frame timings or a continuous 60 FPS minimum.
+
+The completed 600-second live session in process 24436 has 1181 window-title FPS
+samples: median 60, p5 59, minimum 55.5, 81.7104% at least 60 and 92.2100% at
+least 59.5. No other GPU work or build overlapped it. Evidence is
+`build/polish-continuation-20261001/pass53-long-real-fps.csv` and
+`pass53-long-real-fps-summary.txt`. It does not establish individual frame times,
+a continuous 60 FPS minimum or endgame coverage.
+
+Actual Services25 acknowledgement paid 510→535. After AI rounds and a roll of 6
+to unowned Indiana23, a real human auction bid of 425 won: funds became 110 and
+Indiana ownership was confirmed. Inspected captures are
+`pass53-indiana-auction-offer-real.png`, `pass53-auction-human-bid425-live.png`,
+`pass53-auction-human-won-balance110-live.png` and
+`pass53-auction-human-indiana-owner110-live.png` in that qualification directory.
+This qualifies a human bid and its result, beyond the earlier AI-only auction.
+
+Mortgage of St. Charles added 70 to reach 180; unmortgage deducted 77 to reach
+103. Captures `pass53-st-charles-mortgaged180-live.png` and
+`pass53-st-charles-unmortgaged103-live.png` retain that proof.
+`pass53-deeds-category-real.png` shows normal Deeds navigation working without a
+pending card; it does not resolve the earlier pending-card routing question.
+Private game5/t was saved with 103 funds at 02:11:53 on October 2. Its prior
+files are backed up as `game5-before-passes54-55` in the continuation directory.
+
+## Auction poses and calculator descriptions (passes54–55)
+
+Pass54's actual AuctionPlayback CPU qualification covers 196 poses and all 11
+tokens. Four matched 1920x1080 GPU pairs are retained under
+`build/polish-continuation-20261001/pass54-auction-gpu/`: auction-0-tick0,
+auction-0-tick40, auction-1-tick0 and auction-1-tick40, each with before/after
+PNGs. Two pairs were visually inspected and accepted. This is production-fixture
+proof; the updated auction has not yet been encountered in MonopolyModern.
+
+Pass55 qualifies all eight authentic LANG descriptions with real Arial CPU
+checks. Actual process 14816 at 1920x1080 produced the inspected
+`build/polish-continuation-20261001/pass55-networth-description-real-after.png`.
+Compared with `pass53-calculator-description-clear-real.png`, the cream text on
+teal is substantially more readable, with the same 510 funds and the pending card
+hidden during hover. This establishes the actual NetWorth description view;
+the other seven descriptions have CPU proof, not separate live captures.
+Release passes54–55 build successfully in `build/passes54-55-release-build.log`.

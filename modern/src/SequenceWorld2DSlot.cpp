@@ -146,11 +146,12 @@ namespace monopoly::engine
             const auto rasterWorld = sequence::multiply(raster,item.worldTransform);
             const bool menuOwner = modernMenuSkin_ && modernMenuSkin_->supports(owner.first);
             const bool idleCard=modernSkin_ && modernSkin_->supportsIdleCardPresentation(owner.first);
+            const bool auctionToken=modernSkin_ && modernSkin_->supportsAuctionToken(owner.first);
             auto replacement = menuOwner ? modernMenuSkin_->substitute(owner.first, assets.at(node), true) :
                 modernSkin_->substitute(owner.first, assets.at(node), true, rasterWorld,
-                    idleCard || (!item.bounds && item.metadata.originX == 0 && item.metadata.originY == 0) ?
-                        std::optional<std::uint16_t>{idleCard ? item.rootSequencePriority : item.priority} : std::nullopt,
-                    idleCard ? std::optional{item.worldTransform} : std::nullopt);
+                    idleCard || auctionToken || (!item.bounds && item.metadata.originX == 0 && item.metadata.originY == 0) ?
+                        std::optional<std::uint16_t>{idleCard || auctionToken ? item.rootSequencePriority : item.priority} : std::nullopt,
+                    idleCard || auctionToken ? std::optional{item.worldTransform} : std::nullopt);
             if (replacement == assets.at(node)) continue;
             assets[node] = std::move(replacement);
             for (const auto& item : items)

@@ -921,6 +921,216 @@ namespace monopoly::ibar
             }
             return boxes;
         }();
+        constexpr std::array<std::uint16_t,11> AuctionTokenRoots{4,5,6,10,8,7,3,12,9,13,11};
+        std::optional<unsigned> auctionToken(data::DataId root)
+        {
+            if(data::dataGroup(root)!=data::legacyGroupValue(data::LegacyGroupId::Patterns))return {};
+            const auto found=std::find(AuctionTokenRoots.begin(),AuctionTokenRoots.end(),data::dataTag(root));
+            return found==AuctionTokenRoots.end() ? std::optional<unsigned>{} :
+                std::optional{unsigned(found-AuctionTokenRoots.begin())};
+        }
+        struct AuctionTokenShape { std::uint16_t root,leaf,width,height; std::int16_t x,y; };
+        // Actual dat_pat aa00n..aa10n bitmap descriptions, including repeated
+        // UAPs at different positions. Static thumbnail255 has no spin mapping.
+        // Eleven decoded CNKs SHA256: 8b329f40d2531137c74257f9c6ab0040773d3478260dab709bfc684444e6b2c3.
+        constexpr std::array<AuctionTokenShape,196> AuctionTokenShapes{{
+            {0x04,0x0b0,42,22,-19,-19},
+            {0x04,0x0b5,42,21,-19,-21},
+            {0x04,0x0b6,43,20,-20,-22},
+            {0x04,0x0b7,44,21,-21,-22},
+            {0x04,0x0b8,46,20,-22,-22},
+            {0x04,0x0ba,49,18,-24,-18},
+            {0x04,0x0bb,55,16,-29,-12},
+            {0x04,0x0bc,53,17,-28,-13},
+            {0x04,0x0bd,30,30,-10,-28},
+            {0x04,0x0be,20,35,-3,-35},
+            {0x04,0x0bf,21,33,-4,-36},
+            {0x04,0x0c0,26,31,-6,-35},
+            {0x04,0x0c1,27,30,-8,-32},
+            {0x04,0x0c2,32,28,-11,-30},
+            {0x04,0x0c3,36,24,-15,-26},
+            {0x04,0x0c4,42,22,-19,-19},
+            {0x04,0x0c5,45,20,-21,-16},
+            {0x04,0x0c6,47,19,-23,-15},
+            {0x04,0x0c7,40,22,-18,-18},
+            {0x05,0x0c8,38,15,-18,-13},
+            {0x05,0x0c9,41,15,-19,-13},
+            {0x05,0x0ca,38,17,-15,-18},
+            {0x05,0x0cb,39,17,-12,-15},
+            {0x05,0x0cc,41,16,-13,-13},
+            {0x05,0x0cd,42,17,-14,-13},
+            {0x05,0x0ce,39,17,-13,-16},
+            {0x05,0x0cf,36,17,-11,-19},
+            {0x05,0x0d0,36,17,-10,-19},
+            {0x05,0x0d1,38,17,-10,-17},
+            {0x05,0x0d2,39,17,-9,-15},
+            {0x05,0x0d3,41,17,-9,-14},
+            {0x05,0x0d4,42,17,-10,-14},
+            {0x05,0x0d5,38,17,-10,-18},
+            {0x05,0x0d6,35,18,-12,-21},
+            {0x05,0x0d7,34,18,-18,-17},
+            {0x05,0x0d8,41,15,-19,-13},
+            {0x05,0x0d9,38,15,-18,-13},
+            {0x06,0x0da,29,21,-13,-18},
+            {0x06,0x0db,26,24,-13,-21},
+            {0x06,0x0dc,26,24,-13,-21},
+            {0x06,0x0dd,26,23,-13,-20},
+            {0x06,0x0de,29,20,-13,-17},
+            {0x06,0x0df,33,24,-13,-21},
+            {0x06,0x0e0,32,23,-13,-20},
+            {0x06,0x0e1,33,24,-13,-21},
+            {0x06,0x0e2,32,23,-13,-20},
+            {0x06,0x0e3,31,21,-13,-18},
+            {0x06,0x0e4,30,21,-13,-18},
+            {0x06,0x0e5,33,24,-13,-21},
+            {0x06,0x0e6,30,22,-13,-19},
+            {0x06,0x0e7,27,20,-13,-17},
+            {0x06,0x0e8,29,21,-13,-18},
+            {0x0a,0x12c,31,13,-15,-11},
+            {0x0a,0x12d,35,11,-17,-8},
+            {0x0a,0x12e,36,11,-18,-7},
+            {0x0a,0x12f,29,15,-14,-19},
+            {0x0a,0x130,20,18,-9,-33},
+            {0x0a,0x131,16,19,-7,-40},
+            {0x0a,0x132,18,18,-8,-44},
+            {0x0a,0x133,21,16,-10,-45},
+            {0x0a,0x134,28,15,-13,-44},
+            {0x0a,0x135,28,12,-13,-40},
+            {0x0a,0x136,29,12,-13,-36},
+            {0x0a,0x137,28,14,-12,-29},
+            {0x0a,0x138,20,17,-9,-21},
+            {0x0a,0x139,19,17,-8,-15},
+            {0x0a,0x13a,29,13,-13,-12},
+            {0x0a,0x13b,36,11,-18,-8},
+            {0x0a,0x13c,31,13,-15,-11},
+            {0x08,0x0fa,28,14,-13,-11},
+            {0x08,0x0fb,32,13,-15,-10},
+            {0x08,0x0fc,35,11,-17,-9},
+            {0x08,0x0fd,34,11,-16,-9},
+            {0x08,0x0fe,30,13,-14,-10},
+            {0x08,0x0ff,28,14,-13,-11},
+            {0x08,0x100,28,14,-13,-11},
+            {0x08,0x101,30,13,-14,-10},
+            {0x08,0x102,40,10,-19,-8},
+            {0x08,0x103,34,12,-16,-10},
+            {0x08,0x104,30,13,-14,-16},
+            {0x08,0x105,30,13,-14,-23},
+            {0x08,0x106,30,13,-14,-28},
+            {0x08,0x106,30,13,-14,-29},
+            {0x08,0x106,30,13,-14,-28},
+            {0x08,0x107,30,13,-14,-25},
+            {0x08,0x108,32,13,-15,-17},
+            {0x08,0x109,30,14,-14,-12},
+            {0x08,0x10a,36,11,-17,-9},
+            {0x08,0x10b,28,14,-13,-11},
+            {0x07,0x0e9,20,24,-9,-23},
+            {0x07,0x0ea,20,24,-9,-23},
+            {0x07,0x0eb,24,21,-11,-19},
+            {0x07,0x0ec,17,27,-7,-25},
+            {0x07,0x0ed,16,29,-7,-28},
+            {0x07,0x0ee,18,25,-8,-28},
+            {0x07,0x0ef,23,22,-11,-28},
+            {0x07,0x0f0,24,20,-11,-29},
+            {0x07,0x0f1,22,22,-10,-33},
+            {0x07,0x0f2,20,25,-9,-36},
+            {0x07,0x0f3,18,26,-8,-35},
+            {0x07,0x0f4,18,27,-8,-32},
+            {0x07,0x0f5,18,27,-8,-28},
+            {0x07,0x0f6,20,24,-9,-23},
+            {0x07,0x0f7,24,20,-11,-18},
+            {0x07,0x0f8,20,24,-9,-23},
+            {0x07,0x0f9,20,24,-9,-23},
+            {0x03,0x0a0,34,19,-16,-18},
+            {0x03,0x0a1,37,17,-17,-17},
+            {0x03,0x0a2,30,22,-14,-21},
+            {0x03,0x0a3,24,28,-11,-26},
+            {0x03,0x0a4,23,30,-10,-29},
+            {0x03,0x0a5,44,15,-21,-15},
+            {0x03,0x0a6,34,19,-16,-20},
+            {0x03,0x0a7,23,29,-10,-29},
+            {0x03,0x0a8,24,32,-10,-32},
+            {0x03,0x0a9,24,33,-10,-37},
+            {0x03,0x0a9,24,33,-10,-38},
+            {0x03,0x0aa,26,29,-11,-31},
+            {0x03,0x0ab,30,22,-14,-26},
+            {0x03,0x0ac,34,19,-16,-21},
+            {0x03,0x0ad,34,19,-16,-21},
+            {0x03,0x0ae,34,19,-16,-21},
+            {0x0c,0x14c,27,16,-13,-15},
+            {0x0c,0x14d,21,20,-7,-18},
+            {0x0c,0x14e,18,22,-4,-19},
+            {0x0c,0x14f,20,24,-6,-23},
+            {0x0c,0x150,21,26,-7,-29},
+            {0x0c,0x151,22,20,-11,-40},
+            {0x0c,0x152,23,17,-12,-38},
+            {0x0c,0x153,25,16,-14,-37},
+            {0x0c,0x154,27,16,-15,-36},
+            {0x0c,0x157,21,17,-12,-33},
+            {0x0c,0x158,22,19,-14,-20},
+            {0x0c,0x159,24,20,-13,-20},
+            {0x0c,0x15a,29,11,-16,-9},
+            {0x0c,0x15b,24,14,-11,-13},
+            {0x0c,0x15c,26,15,-12,-14},
+            {0x09,0x113,17,19,-8,-18},
+            {0x09,0x114,16,20,-7,-20},
+            {0x09,0x115,16,22,-7,-22},
+            {0x09,0x116,17,22,-8,-23},
+            {0x09,0x117,18,23,-9,-25},
+            {0x09,0x118,16,22,-7,-24},
+            {0x09,0x119,15,23,-7,-24},
+            {0x09,0x11a,17,22,-8,-22},
+            {0x09,0x11b,21,22,-9,-21},
+            {0x09,0x11c,21,22,-9,-21},
+            {0x09,0x11d,22,23,-10,-21},
+            {0x09,0x11e,19,23,-10,-21},
+            {0x09,0x11f,17,22,-10,-20},
+            {0x09,0x120,16,22,-10,-20},
+            {0x09,0x121,16,22,-10,-19},
+            {0x09,0x122,20,22,-14,-19},
+            {0x09,0x123,21,22,-15,-20},
+            {0x09,0x124,21,22,-14,-20},
+            {0x09,0x125,20,22,-13,-20},
+            {0x09,0x126,17,22,-10,-19},
+            {0x09,0x127,17,22,-9,-20},
+            {0x09,0x128,17,21,-8,-19},
+            {0x09,0x129,17,19,-8,-18},
+            {0x09,0x12a,17,19,-8,-18},
+            {0x09,0x12b,17,19,-8,-18},
+            {0x0d,0x15d,41,15,-24,-12},
+            {0x0d,0x15e,58,11,-32,-9},
+            {0x0d,0x15f,43,41,-19,-36},
+            {0x0d,0x160,19,55,4,-51},
+            {0x0d,0x161,20,57,4,-53},
+            {0x0d,0x162,14,57,10,-53},
+            {0x0d,0x163,15,57,9,-53},
+            {0x0d,0x164,15,57,8,-53},
+            {0x0d,0x165,20,57,3,-53},
+            {0x0d,0x166,21,56,2,-52},
+            {0x0d,0x167,21,56,3,-52},
+            {0x0d,0x168,20,56,4,-52},
+            {0x0d,0x169,19,56,4,-51},
+            {0x0d,0x160,19,55,4,-51},
+            {0x0d,0x15f,43,41,-19,-36},
+            {0x0d,0x15e,58,11,-32,-9},
+            {0x0d,0x15d,41,15,-24,-12},
+            {0x0b,0x13d,20,19,-9,-17},
+            {0x0b,0x13e,28,14,-13,-11},
+            {0x0b,0x13f,16,25,-7,-23},
+            {0x0b,0x140,18,21,-8,-28},
+            {0x0b,0x141,20,17,-9,-31},
+            {0x0b,0x13f,16,25,-7,-32},
+            {0x0b,0x143,18,18,-8,-33},
+            {0x0b,0x144,19,17,-8,-34},
+            {0x0b,0x144,19,17,-8,-35},
+            {0x0b,0x144,19,17,-8,-36},
+            {0x0b,0x145,18,20,-8,-36},
+            {0x0b,0x146,18,22,-8,-35},
+            {0x0b,0x147,17,25,-7,-34},
+            {0x0b,0x148,28,14,-12,-12},
+            {0x0b,0x149,19,21,-8,-18},
+            {0x0b,0x14a,20,19,-9,-17},
+            {0x0b,0x14b,20,19,-9,-17},
+        }};
         std::optional<unsigned> scoreToken(data::DataId root)
         {
             if (data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
@@ -1033,9 +1243,14 @@ namespace monopoly::ibar
         return language_==data::LanguageId::EnglishUs && presentationContext_ && idle && drawCards_.contains(*idle);
     }
 
+    bool ModernIBarSkin::supportsAuctionToken(data::DataId root) const noexcept
+    {
+        return auctionToken(root) && language_==data::LanguageId::EnglishUs && tokenImages_ && presentationContext_;
+    }
+
     bool ModernIBarSkin::supports(data::DataId root) const noexcept
     {
-        if(supportsCardFaceIn(root)) return true;
+        if(supportsCardFaceIn(root) || supportsAuctionToken(root)) return true;
         if(const auto p=property(root);p && p->miniature)
             return language_==data::LanguageId::EnglishUs && properties_ && propertyText_ && presentationContext_;
         const bool language = language_ == data::LanguageId::French ||
@@ -1101,7 +1316,8 @@ namespace monopoly::ibar
              w!=36 || h!=42 || original->image.pixels.size()!=std::size_t(w)*h*4 ||
              !presentationContext_ || !presentationContext_())) return original;
         const auto currentToken=currentPlayerToken(root);
-        if (const auto token = currentToken ? currentToken : scoreToken(root))
+        const auto auctionOwner=auctionToken(root);
+        if (const auto token = currentToken ? currentToken : auctionOwner ? auctionOwner : scoreToken(root))
         {
             std::optional<std::array<float,4>> currentRect;
             if (!principal || !presentationContext_ || !presentationContext_() ||
@@ -1127,9 +1343,45 @@ namespace monopoly::ibar
                     if(!std::isfinite(rasterToWorld->values[i]) ||
                         std::abs(rasterToWorld->values[i]-expected[i])>0.0001F) return original;
             }
+            else if(auctionOwner)
+            {
+                if(!rasterToWorld || !sequenceToWorld || !priority || *priority<316 || *priority>321 ||
+                    original->sourceType!=data::LegacyDataType::Uap ||
+                    data::dataGroup(original->dataId)!=data::legacyGroupValue(data::LegacyGroupId::Patterns))return original;
+                const unsigned player=*priority-316;
+                bool column=false;
+                for(unsigned count=player+1;count<=6;++count)
+                {
+                    const int width=count>4 ? 134 : 201;
+                    const int spacing=(800-int(count)*width)/int(count+1);
+                    const int center=spacing+int(player)*(width+spacing)+width/2;
+                    column=column || std::abs(sequenceToWorld->values[6]-center)<=0.0001F;
+                }
+                if(!column)return original;
+                const std::array<float,9> expectedSequence{1,0,0,0,1,0,sequenceToWorld->values[6],560,1};
+                for(unsigned i=0;i<9;++i)
+                    if(!std::isfinite(sequenceToWorld->values[i]) ||
+                        std::abs(sequenceToWorld->values[i]-expectedSequence[i])>0.0001F)return original;
+                const auto shape=std::find_if(AuctionTokenShapes.begin(),AuctionTokenShapes.end(),[&](const auto& value)
+                {
+                    if(value.root!=data::dataTag(root) || value.leaf!=data::dataTag(original->dataId) || value.width!=w || value.height!=h)return false;
+                    const std::array<float,9> expected{1,0,0,0,1,0,
+                        sequenceToWorld->values[6]+value.x,560.0F+value.y,1};
+                    for(unsigned i=0;i<9;++i)
+                        if(!std::isfinite(rasterToWorld->values[i]) ||
+                            std::abs(rasterToWorld->values[i]-expected[i])>0.0001F)return false;
+                    return true;
+                });
+                if(shape==AuctionTokenShapes.end())return original;
+                // Complete name surface ends550; cash surface starts565.
+                // Fixed54x15 logical canvas leaves both untouched for every phase.
+                currentRect=std::array<float,4>{-27,-10,27,5};
+            }
             else if(original->dataId!=root || w!=ScoreTokenSizes[*token][0] || h!=ScoreTokenSizes[*token][1]) return original;
-            const Key key{root,w,h,true,currentToken ? rasterToWorld->values : std::array<float,9>{},
-                0,{},currentToken ? original.get() : nullptr};
+            const bool retainSource=currentToken.has_value() || auctionOwner.has_value();
+            const Key key{root,w,h,true,currentToken ? rasterToWorld->values :
+                auctionOwner ? sequenceToWorld->values : std::array<float,9>{},
+                auctionOwner ? int(*priority) : 0,{},retainSource ? original.get() : nullptr};
             if (const auto found=cache_.find(key);found!=cache_.end())return found->second.replacement;
             const auto source=tokenImages_(std::uint8_t(*token));
             if (!source || source->width!=768 || source->height!=640 || source->pixels.size()!=std::size_t(768)*640*4)
@@ -1145,7 +1397,7 @@ namespace monopoly::ibar
             if(!transparent || right<=left || bottom<=top)return original;
             auto result=std::make_shared<data::BitmapRuntimeAsset>();
             result->dataId=original->dataId;result->sourceType=data::LegacyDataType::Native;
-            if(currentToken) result->source=original->source;
+            if(retainSource) result->source=original->source;
             result->preferLinearFiltering=true;
             result->presentationRect=currentRect ? currentRect : std::optional{std::array<float,4>{0,0,float(w),float(h)}};
             auto& image=result->image;
@@ -1163,7 +1415,7 @@ namespace monopoly::ibar
                 std::copy_n(source->pixels.data()+src,4,image.pixels.data()+dst);
             }
             if(cache_.size()>=128)cache_.clear();
-            cache_.emplace(key,CachedArtwork{result,currentToken ? original : nullptr});return result;
+            cache_.emplace(key,CachedArtwork{result,retainSource ? original : nullptr});return result;
         }
         const auto deed = deeds_.find(root);
         const auto idleOwner=illustratedCardIdleOwner(root);

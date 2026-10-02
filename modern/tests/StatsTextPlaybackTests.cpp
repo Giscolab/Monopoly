@@ -1,6 +1,8 @@
 #include "StatsTextPlayback.hpp"
 #include "StatsPlayerCashPlayback.hpp"
 #include "SyntheticTextResources.hpp"
+#include "ResourcePaths.hpp"
+#include "ResourceRuntime.hpp"
 #include <algorithm>
 #include <iostream>
 #include <limits>
@@ -235,5 +237,67 @@ void testModernModeRefreshPreservesSequence() {
     const auto native=*sequence.world2D().find(nodes.front());
     require(native.clock==clock && native.worldTransform.values==before.worldTransform.values && !native.asset->presentationRect && !native.asset->preferLinearFiltering && native.asset->image.pixels==before.asset->image.pixels,"native mode restores exact pixels placement and flags");
 }
+
+void testCalculatorDescriptionPresentation(const data::ResourceSnapshot& resources) {
+    fonts::Runtime font; loadRealTestArial(font);
+    require(font.setSize(17).has_value(),"caller size initializes");font.setWeight(700);font.setItalic(true);
+    const auto settings=font.settings();
+    rules::GameState game;statsui::State state;statsui::PlayerPlaybackInputs inputs;
+    statsui::CalculatorUIState calculator;calculator.visible=true;state.playerCount=0;statsui::FutureImmunityState future;statsui::AccountState accounts;
+    constexpr std::array<unsigned,8> ids{2005,2006,2007,2008,2009,2011,2010,2012};
+    for(unsigned index=0;index<ids.size();++index) {
+        calculator.hoveredFunction=index;
+        const auto plan=statsui::planStatsTextSurfaces(state,game,inputs,calculator,future,accounts,0,13,display::Screen2D::Portfolio,resources);
+        require(plan.has_value(),"description production plan");const auto& panel=surface(*plan,500);
+        const auto label=resources.language()->catalog->lookup(ids[index]);
+        require(label && *label && panel.text.front().text==*fonts::transcodeUtf8(std::u16string_view(***label)),"description preserves exact LANG source");
+        const auto native=statsui::renderStatsTextSurface(panel,font);
+        const auto modern=statsui::renderStatsTextSurface(panel,font,nullptr,true);
+        require(native && modern && modern->width==516 && modern->height==555,"description retains172x185 logical extent with3x raster");
+        require(modern->pixels[0]==22 && modern->pixels[1]==60 && modern->pixels[2]==61,"description uses qualified teal panel");
+        bool cream{},coverage{};
+        for(std::size_t offset=0;offset<modern->pixels.size();offset+=4) {
+            require(modern->pixels[offset+3]==255,"description stays entirely opaque");
+            cream|=modern->pixels[offset]==237 && modern->pixels[offset+1]==232 && modern->pixels[offset+2]==215;
+            coverage|=modern->pixels[offset]>22 && modern->pixels[offset]<237;
+        }
+        require(cream && coverage,"actual regular Arial body has cream ink and antialiased coverage");
+        require(font.settings()==settings,"modern description does not mutate caller font settings");
+        auto other=panel;other.key=501;
+        const auto untouched=statsui::renderStatsTextSurface(other,font,nullptr,true);
+        require(untouched && untouched->pixels[0]==0 && untouched->pixels[1]==0,"other text surfaces retain native black paint");
+        for(unsigned guard=0;guard<3;++guard) {
+            auto bad=panel;
+            if(guard==0)bad.priority=99;
+            if(guard==1)bad.text.front().text=std::string(1200,'W');
+            if(guard==2) {bad.text.front().text.clear();for(int line=0;line<50;++line)bad.text.front().text+="Complete description must fit ";}
+            auto reference=bad;reference.key=501;
+            const auto fallback=statsui::renderStatsTextSurface(bad,font,nullptr,true);
+            const auto expected=statsui::renderStatsTextSurface(reference,font,nullptr,true);
+            require(fallback && expected && fallback->pixels==expected->pixels,"unqualified/width/height failure returns entire original8/500 white-black painter");
+        }
+        std::cout<<"[PASS] actual description LANG"<<ids[index]<<" readable complete-raster/native fallback\n";
+    }
 }
-int main(){try{testPlayerCashPainterOrder();std::cout<<"[PASS] player cash painter order survives refresh/sort/reentry\n";testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+void testCalculatorDescriptionSequence() {
+    Fixture f;f.state.playerCount=0;f.calc.visible=true;f.calc.hoveredFunction=1;
+    fonts::Runtime font;loadRealTestArial(font);const auto settings=font.settings();
+    engine::SequencePlayback sequence(f.resources.service.snapshot());statsui::TextPlayback text;
+    const auto sync=[&](bool modern){return text.sync(f.state,f.game,f.inputs,f.calc,f.future,f.accounts,0,13,display::Screen2D::Portfolio,&font,sequence,modern);};
+    require(sync(false).has_value() && sequence.update(0).has_value(),"description initial native publication");
+    const auto nodes=sequence.world2D().order();require(nodes.size()==1,"one description node");
+    const auto before=*sequence.world2D().find(nodes.front());require(sequence.update(8).has_value(),"description clock advances");
+    const auto clock=sequence.world2D().find(nodes.front())->clock;
+    require(sync(true).has_value() && sequence.commands().pendingCount()==0 && sequence.update(8).has_value(),"description appearance refresh does not enqueue/restart");
+    const auto after=*sequence.world2D().find(nodes.front());
+    require(after.clock==clock && after.priority==before.priority && after.contentsDataId==before.contentsDataId && after.worldTransform.values[6]==before.worldTransform.values[6] && after.worldTransform.values[7]==before.worldTransform.values[7],"description preserves node clock priority source and native placement");
+    const auto asset=after.asset;require(sync(true).has_value() && sequence.runtimeBitmaps().asset(after.contentsDataId)==asset,"warm description reuses immutable asset");
+    require(font.settings()==settings,"publication does not mutate shared font state");
+    require(sync(false).has_value() && sequence.update(8).has_value(),"description modern context turns off without restart");
+    const auto restored=*sequence.world2D().find(nodes.front());
+    require(restored.asset->image.pixels==before.asset->image.pixels && restored.clock==clock && sequence.world2D().order()==nodes,"context fallback restores complete native pixels and same clock/order");
+    f.calc.hoveredFunction=2;require(sync(true).has_value(),"new description content invalidates cache");
+    require(sequence.runtimeBitmaps().asset(after.contentsDataId)!=asset,"new source description publishes new immutable pixels");
+}
+}
+int main(int argc,char** argv){try{if(argc==3 && std::string_view(argv[1])=="--calculator-description-qualify"){const auto paths=data::ResourcePaths::create(std::array{std::filesystem::absolute(argv[2])});data::ResourceRuntime resources;require(paths && resources.initialize(*paths).has_value(),"actual calculator DAT resources initialize");testCalculatorDescriptionPresentation(*resources.snapshot());testCalculatorDescriptionSequence();return 0;}testCalculatorDescriptionSequence();std::cout<<"[PASS] modern calculator description cache and sequence lifecycle\n";testPlayerCashPainterOrder();std::cout<<"[PASS] player cash painter order survives refresh/sort/reentry\n";testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

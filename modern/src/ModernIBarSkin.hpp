@@ -91,6 +91,8 @@ namespace monopoly::ibar
         void configureLayoutProvider(LayoutProvider provider)
         { layout_ = std::move(provider); cache_.clear(); }
         [[nodiscard]] bool supports(data::DataId root) const noexcept;
+        // Exact auction token owners require root priority and native column provenance.
+        [[nodiscard]] bool supportsAuctionToken(data::DataId root) const noexcept;
         // Only the measured background leaves change; animated siblings remain retail.
         [[nodiscard]] bool supportsCardFaceIn(data::DataId root) const noexcept;
         // Exact USA action transition UAPs may retain native geometry/printed

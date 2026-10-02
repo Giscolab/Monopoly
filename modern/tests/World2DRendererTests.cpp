@@ -11,6 +11,7 @@
 #include "TradeCashDialogPlayback.hpp"
 #include "BoardBackdropPlayback.hpp"
 #include "AuctionPennyBagsPlayback.hpp"
+#include "AuctionPlayback.hpp"
 #include "IBarCardPlayback.hpp"
 #include "TradePartnerSelectionPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
@@ -1224,6 +1225,98 @@ namespace
         std::cout<<"[PASS] actual RaceCar/TopHat narrow-wide fixed framebuffer, Horse Roll clearance, Moneybag regression and exact native fallback\n";
     }
 
+
+    void captureAuctionTokens(SDL_GPUDevice* device,engine::World2DRenderer& renderer,
+        const std::filesystem::path& retailRoot,const std::filesystem::path& previewRoot,
+        const std::filesystem::path& output)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{retailRoot});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual auction resources open");
+        menu::ModernTokenPreview previews(previewRoot);std::filesystem::create_directories(output);
+        std::ofstream manifest(output/"auction-token-gpu.tsv");
+        manifest<<"composition\ttick\tplayer\ttoken\troot\tleaf\tpriority\tclock\tcanvasWorld\n";
+        std::set<unsigned> tokens;
+        constexpr unsigned width=1920,height=1080;
+        for(unsigned composition=0;composition<2;++composition)for(int tick:std::array{0,40})
+        {
+            rules::GameState game;game.numberOfPlayers=6;
+            auctionui::State state;state.playersAllowedToBid=63;state.backdropWidth=134;
+            state.propertyForSale=26; // Native property index26 is Park Place.
+            for(unsigned player=0;player<6;++player)
+            {
+                game.players[player].token=std::uint8_t(composition*5+player);
+                game.players[player].colour=std::uint8_t(player);
+                state.backdropCenterX[player]=67+134*int(player);
+            }
+            engine::SequencePlayback playback(resources.snapshot());auctionui::Playback consumer;
+            require(consumer.sync(state,game,display::Screen2D::Auction,0,playback).has_value(),
+                "production AuctionPlayback queues actual panels and token roots with native priorities");
+            for(int frame=0;frame<=tick;++frame)require(playback.update(frame).has_value(),
+                "auction authored clocks advance without overrides");
+            auto items=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+            require(items && !items->empty(),"actual auction frame contains authentic raster leaves");
+            const auto order=playback.world2D().order();
+            std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> originals;
+            for(auto& item:*items)
+            {
+                const auto* object=playback.world2D().find(item.node);
+                require(object!=nullptr,"native auction slot has same real node");
+                originals.emplace(item.node,*object);item.runtimeAsset=object->asset;
+            }
+            const auto before=capture(device,renderer,playback.world2D(),width,height);
+            bool context=true;auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+                ibar::ModernIBarSkin::TextRasterizer{});
+            skin->configurePresentationContext([&]{return context;});
+            skin->configureTokenImages([&](std::uint8_t token){return previews.image(token,255);});
+            playback.world2D().configureModernIBarSkin(skin);data::BitmapRuntimeCache cache;
+            require(playback.world2D().sync(*items,cache).has_value(),"actual auction reaches qualified presentation seam");
+            require(playback.world2D().order()==order,"auction presentation keeps native node traversal");
+            unsigned changed=0;
+            for(const auto& item:*items)
+            {
+                const auto& original=originals.at(item.node);const auto* modern=playback.world2D().find(item.node);
+                require(modern && modern->priority==original.priority && modern->clock==original.clock &&
+                    modern->contentsDataId==original.contentsDataId,"all auction nodes retain native priority clock identity");
+                if(!skin->supportsAuctionToken(item.rootSequenceDataId))
+                {
+                    require(modern->asset==original.asset && modern->worldTransform.values==original.worldTransform.values,
+                        "auction property trays panels and other leaves are untouched");continue;
+                }
+                ++changed;const unsigned player=item.rootSequencePriority-316;
+                const auto token=game.players[player].token;tokens.insert(token);
+                require(modern->asset!=original.asset && modern->asset->image.width==162 && modern->asset->image.height==45 &&
+                    modern->asset->presentationRect==std::optional{std::array<float,4>{-27,-10,27,5}},
+                    "six authentic auction token leaves receive fixed54x15 photo canvas");
+                const int center=state.backdropCenterX[player];
+                require(engine::SequenceWorld2DSlot::transformPoint(modern->worldTransform,0,0)==
+                    std::array<std::int32_t,2>{center-27,550} &&
+                    engine::SequenceWorld2DSlot::transformPoint(modern->worldTransform,162,45)==
+                    std::array<std::int32_t,2>{center+27,565},"GPU canvas clears complete native name/cash surface bounds");
+                manifest<<composition<<'\t'<<tick<<'\t'<<player<<'\t'<<unsigned(token)<<'\t'
+                    <<item.rootSequenceDataId<<'\t'<<item.contentsDataId<<'\t'<<modern->priority<<'\t'
+                    <<modern->clock<<'\t'<<center-27<<",550,"<<center+27<<",565\n";
+            }
+            require(changed==6,"both actual six-player auction compositions replace precisely six tokens");
+            const auto after=capture(device,renderer,playback.world2D(),width,height);
+            require(after!=before,"realGPU modern auction token pixels differ from retail metallic leaves");
+            const auto name="auction-"+std::to_string(composition)+"-tick"+std::to_string(tick);
+            writeBmp(output/(name+"-before.bmp"),before,width,height);
+            writeBmp(output/(name+"-after.bmp"),after,width,height);
+            context=false;require(playback.world2D().sync(*items,cache).has_value(),"auction live context loss resyncs");
+            for(const auto& [node,original]:originals)
+            {
+                const auto* fallback=playback.world2D().find(node);
+                require(fallback && fallback->asset==original.asset && fallback->priority==original.priority &&
+                    fallback->clock==original.clock && fallback->worldTransform.values==original.worldTransform.values,
+                    "all real auction nodes recover exact native assets and matrices without commands");
+            }
+            require(capture(device,renderer,playback.world2D(),width,height)==before,
+                "auction GPU fallback restores byteidentical native framebuffer");
+        }
+        require(tokens.size()==11 && bool(manifest),"eleven actual auction owners have paired1920x1080 GPU records");
+        std::cout<<"[PASS] actual AuctionPlayback six-player layouts/all11 thumbnails/native frame fallback\n";
+    }
+
     void captureRetailNativeActions(SDL_GPUDevice* device,engine::World2DRenderer& renderer,const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1853,6 +1946,12 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==5 && std::string_view(argv[1])=="--auction-token-qualify")
+        {
+            captureAuctionTokens(device,*renderer,std::filesystem::path(argv[2]),
+                std::filesystem::path(argv[3]),std::filesystem::path(argv[4]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==5 && std::string_view(argv[1])=="--current-token-qualify")
         {
             captureCurrentPlayerFixedOwners(device,*renderer,std::filesystem::path(argv[2]),

@@ -300,6 +300,93 @@ namespace monopoly::statsui
         if (!font.ready()) return std::unexpected("UDStats font runtime is not ready");
         if (surface.width <= 0 || surface.height <= 0 || surface.width > 800 || surface.height > 600)
             return std::unexpected("UDStats text surface dimensions are invalid");
+        // This one opaque calculator description is presentation-only. Check
+        // the entire independent-face raster before publishing any new pixels;
+        // every failure continues through the complete original painter below.
+        if (modernAA && surface.key == 500 && surface.x == 611 && surface.y == 19 &&
+            surface.width == 172 && surface.height == 185 && surface.priority == 100 &&
+            surface.opaque && !surface.blackRect && surface.history.empty() && surface.text.size() == 1)
+        {
+            const auto& run = surface.text.front();
+            if (run.x == 5 && run.y == 0 && run.width == 162 && run.height == 185 &&
+                run.size == 8 && run.weight == 500 && run.colour == 0xFFFFFF &&
+                run.alignment == TextAlignment::Left && run.wrap && !run.shrink &&
+                run.singleLineY == -1 && run.maxLines == 0 && run.wrappedX == -1 &&
+                !run.text.empty() && run.text.size() <= 4096)
+            {
+                auto candidate = [&]() -> std::optional<data::LegacyBitmapRGBA8>
+                {
+                    const auto measure = [&](std::string_view text)
+                    {
+                        return font.renderPresentation(text.empty() ? " " : text,
+                            0xFFFFFF, 10, 400, false, false, false, false);
+                    };
+                    std::vector<data::LegacyBitmapRGBA8> lines;
+                    std::string remaining = run.text;
+                    unsigned logicalHeight{}, rasterHeight{};
+                    for (;;)
+                    {
+                        const auto whole = measure(remaining);
+                        const auto wholeRaster = font.renderPresentation(remaining,
+                            0x00D7E8ED, 30, 400, false);
+                        if (!whole || !wholeRaster) return {};
+                        std::size_t cut = remaining.size(), resume = cut;
+                        if (whole->width > unsigned(run.width) || wholeRaster->width > unsigned(run.width * 3))
+                        {
+                            // Ordinary word boundaries only. An unbreakable
+                            // oversized word returns the whole native panel.
+                            bool found{};
+                            for (auto search = remaining.size(); search != 0;)
+                            {
+                                const auto space = remaining.rfind(' ', search - 1);
+                                if (space == std::string::npos) break;
+                                auto end = space;
+                                while (end && remaining[end - 1] == ' ') --end;
+                                if (end)
+                                {
+                                    const auto prefix = measure(std::string_view(remaining).substr(0, end));
+                                    const auto prefixRaster = font.renderPresentation(
+                                        std::string_view(remaining).substr(0, end), 0x00D7E8ED, 30, 400, false);
+                                    if (!prefix || !prefixRaster) return {};
+                                    if (prefix->width <= unsigned(run.width) && prefixRaster->width <= unsigned(run.width * 3))
+                                    { cut = end; resume = space + 1; found = true; break; }
+                                }
+                                search = space;
+                            }
+                            if (!found) return {};
+                        }
+                        auto line = remaining.substr(0, cut);
+                        if (resume != remaining.size()) std::replace(line.begin(), line.end(), '_', ' ');
+                        const auto native = measure(line);
+                        auto raster = font.renderPresentation(line.empty() ? " " : line,
+                            0x00D7E8ED, 30, 400, false);
+                        if (!native || !raster || native->width > unsigned(run.width) ||
+                            raster->width > unsigned(run.width * 3) ||
+                            raster->pixels.size() != std::size_t(raster->width) * raster->height * 4)
+                            return {};
+                        logicalHeight += native->height;
+                        rasterHeight += raster->height;
+                        if (logicalHeight > unsigned(run.height) || rasterHeight > unsigned(run.height * 3))
+                            return {};
+                        lines.push_back(std::move(*raster));
+                        if (resume == remaining.size()) break;
+                        remaining.erase(0, resume);
+                    }
+                    data::LegacyBitmapRGBA8 result{516, 555, {}};
+                    result.pixels.resize(std::size_t(result.width) * result.height * 4);
+                    for (std::size_t i = 0; i < result.pixels.size(); i += 4)
+                    { result.pixels[i] = 22; result.pixels[i + 1] = 60; result.pixels[i + 2] = 61; result.pixels[i + 3] = 255; }
+                    int y{};
+                    for (const auto& line : lines)
+                    {
+                        if (!data::blitStraightRGBA8(result, line, 15, y, data::BitmapBlitMode::SourceOver)) return {};
+                        y += static_cast<int>(line.height);
+                    }
+                    return result;
+                }();
+                if (candidate) return std::move(*candidate);
+            }
+        }
         struct Restore
         {
             fonts::Runtime& font;
