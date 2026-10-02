@@ -23,7 +23,9 @@ namespace
         auto render = std::make_shared<data::MeshRenderData>();
         render->bounds = {{-1.0F, -1.0F, 10.0F}, {1.0F, 1.0F, 12.0F}};
         return std::make_shared<const data::MeshRuntimeAsset>(
-            data::MeshRuntimeAsset{id, {}, std::move(render)});
+            data::MeshRuntimeAsset{
+                .dataId = id,
+                .renderData = std::move(render)});
     }
 
     sequence::SequenceMeshRenderItem item(sequence::SequenceNodeId node,
@@ -31,7 +33,13 @@ namespace
     {
         auto matrix = sequence::identity3D();
         matrix.values[12] = x;
-        return {node, id, 7, 3, matrix, asset(id)};
+        return {
+            .node = node,
+            .contentsDataId = id,
+            .priority = 7,
+            .clock = 3,
+            .worldTransform = matrix,
+            .asset = asset(id)};
     }
 
     void testCameraCommandResolution()

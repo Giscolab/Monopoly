@@ -8,6 +8,7 @@
 #include "RenderSlots.hpp"
 #include "RulesEngine.hpp"
 #include "RuntimeState.hpp"
+#include "StartupResources.hpp"
 #include "TimeStep.hpp"
 #include "Timers.hpp"
 #include "UDUtils.hpp"
@@ -366,6 +367,16 @@ namespace
         expect(game::startup(), "missing-bank failure permits a corrected-root retry");
         game::shutdown();
         expectStopped();
+    }
+}
+
+namespace monopoly::startup
+{
+    // This fixture selects USA/English retail banks without loose overrides.
+    data::ResourceContext resourceContext() noexcept { return {}; }
+    std::optional<std::filesystem::path> dataOverrideManifest()
+    {
+        return std::nullopt;
     }
 }
 

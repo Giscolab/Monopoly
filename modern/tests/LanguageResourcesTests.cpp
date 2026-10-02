@@ -672,7 +672,7 @@ namespace
 
         const auto absentArchive = LanguageCatalog::open(
             LanguageId::EnglishUs,
-            nullptr);
+            std::shared_ptr<LegacyDataArchive>{});
         expect(
             !absentArchive && absentArchive.error().code ==
                 DataErrorCode::ArchiveClosed,

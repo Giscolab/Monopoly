@@ -2234,6 +2234,7 @@ if(BUILD_TESTING)
     add_executable(MonopolyVoiceChatAudioRuntimeTests
         tests/VoiceChatAudioRuntimeTests.cpp
         src/AudioRuntime.cpp
+        src/AudioWaveDecoder.cpp
         src/VoiceChatAudioRuntime.cpp
         src/Gsm610Codec.cpp
         src/Messaging.cpp)
@@ -4159,7 +4160,8 @@ if(BUILD_TESTING)
         src/PlayerSelection.cpp src/PlayerSetupFlow.cpp src/PlayerSetupSound.cpp
         src/PlayerSelectionHistory.cpp src/RuleOptions.cpp)
     target_include_directories(MonopolyPlayerSelectionTests PRIVATE src tests)
-    target_link_libraries(MonopolyPlayerSelectionTests PRIVATE MonopolyDataCore SDL3::SDL3)
+    target_link_libraries(MonopolyPlayerSelectionTests PRIVATE
+        MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     add_test(NAME Monopoly.PlayerSelection COMMAND MonopolyPlayerSelectionTests)
 
     add_executable(MonopolyUDSoundRuntimeTests tests/UDSoundRuntimeTests.cpp
