@@ -12,6 +12,7 @@
 #include "BoardBackdropPlayback.hpp"
 #include "AuctionPennyBagsPlayback.hpp"
 #include "AuctionPlayback.hpp"
+#include "StatsPlayerCashPlayback.hpp"
 #include "IBarCardPlayback.hpp"
 #include "TradePartnerSelectionPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
@@ -1226,6 +1227,62 @@ namespace
     }
 
 
+
+    void capturePlayerCashCoins(SDL_GPUDevice* device,engine::World2DRenderer& renderer,
+        const std::filesystem::path& retailRoot,const std::filesystem::path& output)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{retailRoot});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths),"actual Player cash DAT opens");
+        rules::GameState game;game.numberOfPlayers=6;statsui::State state;state.playerCount=6;
+        for(unsigned player=0;player<6;++player)state.playerOrder[player]=rules::PlayerNumber(player);
+        engine::SequencePlayback playback(resources.snapshot());statsui::PlayerCashPlayback consumer;
+        require(consumer.sync(state,game,{},display::Screen2D::Portfolio,playback).has_value(),
+            "real PlayerCashPlayback queues six raw cash UAPs at authentic positions");
+        require(playback.update(0).has_value() && playback.update(60).has_value(),"real raw coin clocks advance60");
+        auto items=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
+        require(items && items->size()==6,"real Player consumer publishes exactly six cash icons");
+        std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> originals;
+        for(auto& item:*items)
+        {const auto* native=playback.world2D().find(item.node);require(native!=nullptr,"raw cash node exists");
+            originals.emplace(item.node,*native);item.runtimeAsset=native->asset;}
+        constexpr unsigned width=1920,height=1080;
+        const auto before=capture(device,renderer,playback.world2D(),width,height);
+        bool context=true;auto skin=std::make_shared<ibar::ModernIBarSkin>(data::LanguageId::EnglishUs,
+            ibar::ModernIBarSkin::TextRasterizer{});skin->configurePresentationContext([&]{return context;});
+        playback.world2D().configureModernIBarSkin(skin);data::BitmapRuntimeCache cache;
+        require(playback.world2D().sync(*items,cache).has_value(),"raw cash publishes through existing qualified skin seam");
+        for(const auto& [node,native]:originals)
+        {
+            const auto* modern=playback.world2D().find(node);
+            require(modern && modern->asset!=native.asset && modern->priority==501 && modern->clock==native.clock &&
+                modern->contentsDataId==native.contentsDataId && modern->asset->image.width==156 && modern->asset->image.height==135,
+                "six production coins replace pixels only with unchanged identity and clock");
+            require(engine::SequenceWorld2DSlot::transformPoint(modern->worldTransform,0,0)==
+                engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,0,0) &&
+                engine::SequenceWorld2DSlot::transformPoint(modern->worldTransform,156,135)==
+                engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,52,45),
+                "real GPU modern cash canvas preserves exact authored placement and footprint");
+            for(unsigned y=0;y<135;++y)for(unsigned x=0;x<156;++x)
+            {
+                const auto a=(std::size_t(y)*156+x)*4,b=(std::size_t(y/3)*52+x/3)*4;
+                require(modern->asset->image.pixels[a+3]==native.asset->image.pixels[b+3],"GPU input retains exact native alpha mask");
+                if(y>=93)require(std::equal(modern->asset->image.pixels.begin()+a,modern->asset->image.pixels.begin()+a+4,
+                    native.asset->image.pixels.begin()+b),"GPU input retains pixel-exact native socle RGBA");
+            }
+        }
+        const auto after=capture(device,renderer,playback.world2D(),width,height);
+        require(before!=after,"realGPU coin palette and vector glyph visibly differ from retail");
+        std::filesystem::create_directories(output);writeBmp(output/"player-cash-before.bmp",before,width,height);
+        writeBmp(output/"player-cash-after.bmp",after,width,height);
+        context=false;require(playback.world2D().sync(*items,cache).has_value(),"cash live context fallback publishes");
+        for(const auto& [node,native]:originals)
+        {const auto* fallback=playback.world2D().find(node);require(fallback && fallback->asset==native.asset &&
+            fallback->worldTransform.values==native.worldTransform.values && fallback->priority==native.priority &&
+            fallback->clock==native.clock,"all native coin identities transforms clocks and RGBA restore exactly");}
+        require(capture(device,renderer,playback.world2D(),width,height)==before,"realGPU coin fallback restores original framebuffer exactly");
+        std::cout<<"[PASS] real PlayerCashPlayback six coins/3x palette/exact mask and socle inputs/authored clocks/native GPU fallback\n";
+    }
+
     void captureAuctionTokens(SDL_GPUDevice* device,engine::World2DRenderer& renderer,
         const std::filesystem::path& retailRoot,const std::filesystem::path& previewRoot,
         const std::filesystem::path& output)
@@ -1946,6 +2003,11 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify")
+        {
+            capturePlayerCashCoins(device,*renderer,std::filesystem::path(argv[2]),std::filesystem::path(argv[3]));
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==5 && std::string_view(argv[1])=="--auction-token-qualify")
         {
             captureAuctionTokens(device,*renderer,std::filesystem::path(argv[2]),

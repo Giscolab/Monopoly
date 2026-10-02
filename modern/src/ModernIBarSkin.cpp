@@ -1229,6 +1229,79 @@ namespace monopoly::ibar
             return metadata && metadata->width==found->width && metadata->height==found->height &&
                 metadata->originX==found->x && metadata->originY==found->y;
         }
+
+        bool playerCashPlacement(const sequence::Matrix2D& world)
+        {
+            bool column=false;
+            for(int width:{130,198})for(int index=0;index<(width==130?6:4);++index)
+                for(int shown:{0,index})
+                    column=column || std::abs(world.values[6]-(index*width+8+shown*3))<=.0001F;
+            const std::array<float,9> expected{1,0,0,0,1,0,world.values[6],254,1};
+            for(unsigned i=0;i<9;++i)
+                if(!std::isfinite(world.values[i]) || std::abs(world.values[i]-expected[i])>.0001F)return false;
+            return column;
+        }
+        bool originalPlayerCash(const data::BitmapRuntimeAsset& asset)
+        {
+            if(asset.dataId!=0x00020355 || asset.sourceType!=data::LegacyDataType::Uap || !asset.source ||
+                asset.source->size()!=4404 || asset.image.width!=52 || asset.image.height!=45 ||
+                asset.image.pixels.size()!=52*45*4)return false;
+            const auto header=data::inspectLegacyUap(*asset.source);
+            if(!header || header->originX || header->originY || header->width!=52 || header->height!=45 ||
+                header->flags!=6 || header->colourCount!=256 || header->alphaCount!=17)return false;
+            // Exact retail bytes and decoded RGBA, not merely an arbitrary52x45 icon.
+            // Payload SHA2566727a50b4bb0a4aca60e08539585c907311f44896765d0086d5cbed0698e3718.
+            std::uint64_t source=14695981039346656037ULL,pixels=source;
+            for(const auto value:*asset.source)source=(source^std::to_integer<std::uint8_t>(value))*1099511628211ULL;
+            for(const auto value:asset.image.pixels)pixels=(pixels^value)*1099511628211ULL;
+            return source==0x9cf37537e7999931ULL && pixels==0x7a62522977daf2e7ULL;
+        }
+        data::LegacyBitmapRGBA8 playerCashCoin(const data::LegacyBitmapRGBA8& native)
+        {
+            data::LegacyBitmapRGBA8 image{156,135,std::vector<std::uint8_t>(156*135*4)};
+            const auto segment=[](float x,float y,float ax,float ay,float bx,float by)
+            {
+                const auto dx=bx-ax,dy=by-ay;
+                const float t=std::clamp(((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy),0.0F,1.0F);
+                return std::hypot(x-ax-t*dx,y-ay-t*dy);
+            };
+            const auto curve=[](float t,const std::array<float,8>& p)
+            {
+                const float u=1-t;
+                return std::array<float,2>{u*u*u*p[0]+3*u*u*t*p[2]+3*u*t*t*p[4]+t*t*t*p[6],
+                    u*u*u*p[1]+3*u*u*t*p[3]+3*u*t*t*p[5]+t*t*t*p[7]};
+            };
+            constexpr std::array<std::array<float,8>,2> strokes{{
+                {30,9,20,5,19,15,26,15},{26,15,34,15,33,25,22,21}}};
+            for(unsigned y=0;y<135;++y)for(unsigned x=0;x<156;++x)
+            {
+                const auto at=(std::size_t(y)*156+x)*4,old=(std::size_t(y/3)*52+x/3)*4;
+                std::copy_n(native.pixels.begin()+old,4,image.pixels.begin()+at);
+                if(y>=93)continue; // Socle31..44 retains every straight RGBA byte exactly.
+                const float px=(x+.5F)/3,py=(y+.5F)/3;
+                const float radius=std::hypot(px-26,py-15);
+                std::array<float,3> color{22,55,56};
+                const auto mix=[&](std::array<float,3> ink,float coverage)
+                {for(unsigned c=0;c<3;++c)color[c]+=std::clamp(coverage,0.0F,1.0F)*(ink[c]-color[c]);};
+                mix({192,158,90},(14.1F-radius)*3+.5F);
+                mix({242,231,197},(11.8F-radius)*3+.5F);
+                float distance=segment(px,py,26,5.5F,26,25);
+                for(const auto& stroke:strokes)
+                {
+                    auto previous=curve(0,stroke);
+                    for(unsigned step=1;step<=24;++step)
+                    {
+                        const auto next=curve(float(step)/24,stroke);
+                        distance=std::min(distance,segment(px,py,previous[0],previous[1],next[0],next[1]));
+                        previous=next;
+                    }
+                }
+                mix({22,69,70},(.8F-distance)*3+.5F);
+                for(unsigned c=0;c<3;++c)image.pixels[at+c]=image.pixels[at+3]?std::uint8_t(std::lround(color[c])):native.pixels[old+c];
+                // Preserve the native transparent/partial-alpha mask exactly at3x.
+            }
+            return image;
+        }
         bool backdrop(data::DataId root)
         {
             return data::dataGroup(root) == data::legacyGroupValue(data::LegacyGroupId::Main) &&
@@ -1251,6 +1324,7 @@ namespace monopoly::ibar
     bool ModernIBarSkin::supports(data::DataId root) const noexcept
     {
         if(supportsCardFaceIn(root) || supportsAuctionToken(root)) return true;
+        if(root==0x00020355)return language_==data::LanguageId::EnglishUs && bool(presentationContext_);
         if(const auto p=property(root);p && p->miniature)
             return language_==data::LanguageId::EnglishUs && properties_ && propertyText_ && presentationContext_;
         const bool language = language_ == data::LanguageId::French ||
@@ -1276,6 +1350,18 @@ namespace monopoly::ibar
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
         if (!w || !h || w > 1600 || h > 600) return original;
+        if(root==0x00020355)
+        {
+            if(!principal || !presentationContext_ || !presentationContext_() || !priority || *priority!=501 ||
+                !rasterToWorld || !playerCashPlacement(*rasterToWorld) || !originalPlayerCash(*original))return original;
+            const Key key{root,w,h,true,{},501,{},original.get()};
+            if(const auto found=cache_.find(key);found!=cache_.end())return found->second.replacement;
+            auto result=std::make_shared<data::BitmapRuntimeAsset>();result->dataId=original->dataId;
+            result->sourceType=data::LegacyDataType::Native;result->source=original->source;
+            result->image=playerCashCoin(original->image);result->preferLinearFiltering=true;
+            result->presentationRect=std::array<float,4>{0,0,52,45};
+            if(cache_.size()>=128)cache_.clear();cache_.emplace(key,CachedArtwork{result,original});return result;
+        }
         if(faceIdleRoot(root))
         {
             if(!supportsCardFaceIn(root) || !presentationContext_() || original->sourceType!=data::LegacyDataType::Uap || !valid(original->image)) return original;

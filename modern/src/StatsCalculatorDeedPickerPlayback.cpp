@@ -127,7 +127,10 @@ namespace monopoly::statsui
             if (!playback.commands().enqueue(
                     sequence::StartSequenceCommand{
                         backgroundProgram,
-                        CalculatorDeedPickerPriority,
+                        // Retail composites the miniatures into this background.
+                        // Separate modern roots must paint above it; equal-priority
+                        // roots insert newest first and would leave the black fill last.
+                        CalculatorDeedPickerPriority - 1,
                         {},
                         sequence::moveXYTransform(
                             CalculatorDeedPickerBackgroundX,
@@ -160,7 +163,7 @@ namespace monopoly::statsui
             if (!background_ ||
                 !playback.commands().enqueue(
                     sequence::StopSequenceCommand{
-                        *background_, CalculatorDeedPickerPriority, false}))
+                        *background_, CalculatorDeedPickerPriority - 1, false}))
                 return std::unexpected(
                     "validated calculator deed picker background stop rejected");
         }

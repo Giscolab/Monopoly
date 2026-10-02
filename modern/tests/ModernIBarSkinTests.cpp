@@ -2,6 +2,7 @@
 #include "EuropeanDeed.hpp"
 #include "FontRuntime.hpp"
 #include <chrono>
+#include <fstream>
 #include <iomanip>
 #include "ResourcePaths.hpp"
 #include "ResourceRuntime.hpp"
@@ -1300,6 +1301,83 @@ namespace
 
 
     constexpr std::array<unsigned,11> AuctionRoots{4,5,6,10,8,7,3,12,9,13,11};
+
+    void testActualPlayerCashCoin(const std::filesystem::path& root,const std::filesystem::path& output)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"actual coin DAT opens");
+        const auto bytes=resources.snapshot()->data().load(0x20355);require(bool(bytes),"exact retail coin payload loads");
+        data::BitmapRuntimeCache cache;const auto original=cache.resolve(0x20355,data::LegacyDataType::Uap,*bytes);
+        require(bool(original),"real52x45 cash icon decodes");
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,{});bool context=true;
+        skin.configurePresentationContext([&]{return context;});
+        const auto first=skin.substitute(0x20355,*original,true,sequence::translate2D(8,254),501);
+        require(first!=*original && first->image.width==156 && first->image.height==135 &&
+            first->dataId==(*original)->dataId && first->presentationRect==std::optional{std::array<float,4>{0,0,52,45}},
+            "real coin gets3x raster with exact52x45 footprint and identity");
+        unsigned changed=0;
+        for(unsigned y=0;y<135;++y)for(unsigned x=0;x<156;++x)
+        {
+            const auto a=(std::size_t(y)*156+x)*4,b=(std::size_t(y/3)*52+x/3)*4;
+            require(first->image.pixels[a+3]==(*original)->image.pixels[b+3],"coin native alpha mask replicated exactly3x");
+            if(y>=93)require(std::equal(first->image.pixels.begin()+a,first->image.pixels.begin()+a+4,
+                (*original)->image.pixels.begin()+b),"entire socle31..44 retains pixel-exact straight RGBA");
+            else changed+=!std::equal(first->image.pixels.begin()+a,first->image.pixels.begin()+a+3,
+                (*original)->image.pixels.begin()+b);
+        }
+        require(changed>1000,"actual coin colors change materially within allowed upper31 rows");
+        for(unsigned count=1;count<=6;++count)for(unsigned column=0;column<count;++column)
+            for(unsigned shown:std::array<unsigned,2>{0,column})
+        {
+            const int width=count>4?130:198,x=int(column)*width+8+3*int(shown);
+            const auto world=sequence::translate2D(x,254);
+            require(skin.substitute(0x20355,*original,true,world,501)==first,
+                "normal and BSSM subset columns share same immutable qualified coin");
+            context=false;require(skin.substitute(0x20355,*original,true,world,501)==*original,
+                "live qualification loss restores entire original before cached hit");context=true;
+        }
+        const auto world=sequence::translate2D(8,254);
+        require(skin.substitute(0x20355,*original,true,world,500)==*original &&
+            skin.substitute(0x20355,*original,false,world,501)==*original &&
+            skin.substitute(0x20355,*original,true,sequence::translate2D(9,254),501)==*original &&
+            skin.substitute(0x20355,*original,true,sequence::translate2D(8,255),501)==*original,
+            "coin priority principal and exact authored translation are required");
+        for(unsigned mode=0;mode<5;++mode)
+        {
+            auto bad=std::make_shared<data::BitmapRuntimeAsset>(**original);
+            if(mode==0)bad->source.reset();
+            if(mode==1)bad->sourceType=data::LegacyDataType::Native;
+            if(mode==2)bad->dataId=0x30355;
+            if(mode==3)bad->image.pixels[100]^=1;
+            if(mode==4){auto payload=std::make_shared<data::DataBytes>(*bad->source);(*payload)[100]^=std::byte{1};bad->source=payload;}
+            require(skin.substitute(0x20355,bad,true,world,501)==bad,
+                "arbitrary header-compatible or mutated source/RGBA retains full native fallback");
+        }
+        const auto program=sequence::SequenceProgram::load(resources.snapshot(),0x20355);
+        sequence::SequenceRuntime runtime;require(program && runtime.start(*program,501),"actual raw coin root starts");
+        require(runtime.moveMatching(0x20355,501,sequence::moveXYTransform(8,254))==1 && runtime.update(60),
+            "actual raw coin advances unchanged native clock");
+        const auto items=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());
+        engine::SequenceWorld2DSlot native,modern;modern.configureModernIBarSkin(std::make_shared<ibar::ModernIBarSkin>(skin));
+        require(items && native.sync(*items,cache) && modern.sync(*items,cache),"real coin reaches existing slot seam");
+        for(const auto node:native.order())
+        {
+            const auto* a=native.find(node);const auto* m=modern.find(node);
+            require(m && m->clock==a->clock && m->priority==a->priority && m->contentsDataId==a->contentsDataId &&
+                engine::SequenceWorld2DSlot::transformPoint(m->worldTransform,156,135)==std::array<std::int32_t,2>{60,299},
+                "raw coin clocks priority and full authored52x45 world footprint unchanged");
+        }
+        std::filesystem::create_directories(output);
+        const auto write=[&](const char* name,const data::LegacyBitmapRGBA8& image)
+        {
+            std::ofstream file(output/name,std::ios::binary);
+            file.write(reinterpret_cast<const char*>(image.pixels.data()),std::streamsize(image.pixels.size()));
+            require(bool(file),"actual coin raw RGBA CPU preview saved");
+        };
+        write("coin-before-52x45.rgba",(*original)->image);write("coin-after-156x135.rgba",first->image);
+        std::cout<<"[PASS] exact retail coin/source/RGBA qualification,3x palette, native alpha/socle/clock/geometry and fallback\n";
+    }
+
     void testAuctionTokenImages()
     {
         constexpr std::array<std::array<int,5>,11> shapes{{
@@ -1598,6 +1676,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify"){testActualPlayerCashCoin(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

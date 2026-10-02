@@ -994,3 +994,36 @@ unchanged 510 cash, as captured in `pass56-cash-sort-trace-real.png`,
 `pending-card-deeds-trace-real.png` and `pending-card-bank-trace-real.png` in that
 qualification directory. The earlier unexpected Main return was not reproduced;
 these observations do not establish that its cause has been resolved.
+
+## Modern Portfolio coins and deed picker (passes57–58)
+
+Pass57's actual PlayerCashPlayback GPU fixture covers six players at 1920x1080.
+The inspected `build/polish-continuation-20261001/pass57-coin-gpu/player-cash-before.png`
+and `player-cash-after.png` are lossless conversions of the original BMPs;
+unsupported-context fallback is framebuffer byte-exact. Actual game process 32860
+also produced `pass57-modern-coins-real-after.png`, compared with
+`pass56-player-cash-real-after.png` at the same six balances
+618/510/1334/1710/992/1208. Both fixture and live coin presentation were accepted.
+
+Pass58's inspected `pass58-deed-picker-real-after.png` shows all 28 deeds,
+compared with the black picker in `pass53-deed-picker-pending-card-real.png`.
+`pass58-deed-picker-hover-boardwalk-real.png` shows readable Boardwalk in the
+upper-right without Services-card occlusion. Selecting Boardwalk closes the
+picker with result 0 in `pass58-boardwalk-future-result-real.png`; the human
+already owns Boardwalk, so this is selection/result presentation proof, not deep
+economic-calculation qualification. CLEAR was observed restoring the pending
+card and 510 cash in two unsaved views; no capture file is claimed for those.
+The before/after category backgrounds differ, so this comparison qualifies the
+foreground picker rather than a matched whole framebuffer.
+
+Pass58 CPU logs qualify all 28 actually decoded deeds and open/close/hover
+behavior. Release passes57–58 build successfully in
+`build/passes57-58-trace-release-build.log`. Captures above are in
+`build/polish-continuation-20261001/` unless otherwise specified.
+
+The diagnostic trace proves an autonomous Dog5↔Race2 trade at AI level 2, ending
+with Finish A2/B0 and changing Portfolio→Trade→Main without inputs. Evidence is
+`passes57-58-input-trace-real.log` and
+`pass59-before-main-after-autonomous-trade-real.png` in that directory. This
+explains the observed autonomous transition; the pass59 fix is still in progress
+and has not yet been qualified.
