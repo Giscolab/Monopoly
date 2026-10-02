@@ -30,8 +30,8 @@ les mesures ponctuelles et les contrôles ciblés. Les derniers réglages de vue
 de dessus et d’options attendent encore leur qualification visuelle.
 
 La [synthèse du portage](PORTING_STATUS.md) indique les limites restantes et
-la référence CTest globale du 27 septembre. Les journaux plus récents ne sont
-pas une nouvelle validation globale. Les banques Europe/français restent
+la référence CI du 2 octobre : compilation Windows et **158/158 suites CTest**
+au code `bb0bb6a`. Les banques Europe/français restent
 manquantes ; le décor Paris n’en tient pas lieu.
 
 ## Explorer la documentation

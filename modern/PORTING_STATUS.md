@@ -14,7 +14,7 @@ Synthèse du code publié jusqu’à `bc9d85f`, à partir des qualifications con
 - **Présentation et interface** : menus, aide, cartes, sélection des pions, Portfolio, échanges et grilles de propriétés ont reçu les corrections détaillées dans le journal. Les passes 64–65 documentent l’hypothèque et la grille auxiliaire en application réelle. Les passes 66–67 sont implémentées mais attendent encore la qualification visuelle du cadrage de dessus et des options On/Off.
 - **Audio** : l’erreur de format WAVE signalée lors des premières captures a été corrigée dans `a58c16f`. Une capture loopback Windows de 180 secondes documente une sortie logicielle ; l’audibilité physique reste à confirmer.
 - **Cadence** : les mesures et sessions documentées restent attachées à leurs révisions. Le dernier échantillon de 120 secondes des passes 60–63 donne une médiane de 60 FPS et un minimum de 44,8 FPS sur 237 relevés du titre. Il ne prouve ni un minimum continu de 60 FPS ni la performance des modifications suivantes.
-- **Inventaire** : 79 entrées, dont 37 complètes/remplacées, 1 écart actif et 29 comparaisons à mener. Ces catégories ne remplacent pas une qualification fonctionnelle. La référence CTest globale reste celle du 27 septembre ci-dessous.
+- **Inventaire** : 79 entrées, dont 37 complètes/remplacées, 1 écart actif et 29 comparaisons à mener. Ces catégories ne remplacent pas une qualification fonctionnelle. La validation CI globale passe désormais **158/158 suites CTest** au code `bb0bb6a`, le 2 octobre ; voir la référence ci-dessous.
 
 ## Ce qui est implémenté
 
@@ -101,9 +101,15 @@ Les commits `e956f30`, `bfefa14` et `bda7326` modernisent la présentation sans 
 
 ## Validation de référence
 
-Validation de référence : **140/140 suites CTest passées** — code `7aab3c0`, Windows/MSVC Debug, 27 septembre 2026.
+Validation de référence : **158/158 suites CTest passées** — code `bb0bb6a`, GitHub Actions Windows/MSVC Debug, 2 octobre 2026.
 
-Les commits DATA `10ca017..c1c5cdc`, la présentation `e956f30..bda7326`, l’audio GSM610 et le pont Blender/GLB ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Le probe décode les six GLB exportés ; le runtime active les cinq idles statiques sûrs disponibles (voiture, chapeau, bateau, bottine, dé à coudre) et conserve le chien retail pour son idle multi-HMD. Aucune nouvelle campagne CTest n’a été lancée pour ces lots ; la référence 140/140 reste donc `7aab3c0`.
+Le [workflow de référence](https://github.com/Giscolab/Monopoly/actions/runs/37038080816) valide l’audit structurel, la configuration CMake, la compilation Windows et les 158 suites CTest en 109,62 secondes d’exécution des tests, sans suite ignorée. Le correctif documentaire répare l’encodage UTF-8 ; la compilation débloquée a ensuite révélé cinq cibles de tests à remettre en cohérence avec les dépendances et signatures actuelles. Le commit `bb0bb6a` corrige ces cibles sans supprimer leurs assertions. Cette validation automatisée ne clôt pas les qualifications Q01–Q05.
+
+### Historique des qualifications locales — 27 septembre au 1er octobre
+
+La référence locale précédente était **140/140 suites CTest passées** au code `7aab3c0`, Windows/MSVC Debug, le 27 septembre 2026. Les paragraphes suivants décrivent cette campagne et les lots ciblés qui l’ont suivie, avant la validation CI globale du 2 octobre.
+
+Les commits DATA `10ca017..c1c5cdc`, la présentation `e956f30..bda7326`, l’audio GSM610 et le pont Blender/GLB ont été compilés localement jusqu’à `MonopolyModern.exe` sous Windows/MSVC Debug. Le probe décode les six GLB exportés ; le runtime active les cinq idles statiques sûrs disponibles (voiture, chapeau, bateau, bottine, dé à coudre) et conserve le chien retail pour son idle multi-HMD. Aucune nouvelle campagne CTest globale n’avait été lancée lors de ces lots ; leur référence historique restait donc `7aab3c0`.
 
 Application compilée ; CTest global réussi en 8,25 s avec six exécutions parallèles. Deux cas internes ResourcePaths restent non exécutés (collision dépendant de la casse et permissions de liens symboliques). Aucun test CTest ni test GPU n’est converti en skip. Cette validation comprend les scénarios humains/IA et TCP, les refus d’actions, les cartes et faillites, les régressions de séquences et de caches, ainsi que les lectures de pixels GPU ; elle ne remplace pas Q01–Q05.
 
