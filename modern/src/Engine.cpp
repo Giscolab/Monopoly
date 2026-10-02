@@ -1200,6 +1200,16 @@ namespace monopoly::engine
         modernSceneOptions = options;
     }
 
+    bool modernTradePresentationEnabled() noexcept
+    {
+        const auto resources = startup::resources();
+        const auto& view = display::stateReadOnly();
+        return modernSceneOptions.proceduralBoard && resources &&
+            resources->context().board == data::BoardEdition::Usa &&
+            resources->context().language == data::LanguageId::EnglishUs &&
+            view.city == 0 && view.system == 13 && view.customBoardPath.empty();
+    }
+
     SequencePlayback* sequencePlayback()
     {
         if (!gpuDevice) return nullptr;
@@ -2501,12 +2511,7 @@ namespace monopoly::engine
             if (!statsCalculatorPickerSync)
                 return SDL_SetError("UDStats calculator deed picker: %s",
                     statsCalculatorPickerSync.error().c_str());
-            const auto tradeTextResources = session->resources();
-            const bool modernTradeText = modernSceneOptions.proceduralBoard && tradeTextResources &&
-                tradeTextResources->context().board == data::BoardEdition::Usa &&
-                tradeTextResources->context().language == data::LanguageId::EnglishUs &&
-                displayState.city == 0 && displayState.system == 13 &&
-                displayState.customBoardPath.empty();
+            const bool modernTradeText = modernTradePresentationEnabled();
             const auto optionsVisualSync = optionsVisualPlayback.sync(
                 userinterface::optionsState(), displayState.desired2DView,
                 tick, fontPlayback(), *session, modernTradeText);

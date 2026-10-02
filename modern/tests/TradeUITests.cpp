@@ -1042,10 +1042,92 @@ namespace
             "Cancel clears local editor and requests Main without fabricating a RULE action");
     }
 
+    void testAutonomousPortfolioReturn()
+    {
+        using namespace monopoly;
+        struct Fixture { rules::GameState game; tradeui::State state; };
+        const auto fixture = [](display::Screen2D origin = display::Screen2D::Portfolio)
+        {
+            Fixture f{gameWithPlayers(6), {}};
+            f.game.players[5].aiPlayerLevel = 2;
+            f.game.players[2].aiPlayerLevel = 2;
+            actions::Message start{};
+            start.action = actions::Type::NotifyTradeStarted;
+            start.numberA = 5;
+            (void)tradeui::processRuleMessage(f.state, f.game, start, origin, 1u << 1, true);
+            // Production host/local echo: the second Started clears aiProposing.
+            (void)tradeui::processRuleMessage(f.state, f.game, start,
+                display::Screen2D::Trade, 1u << 1, true);
+            (void)tradeui::processRuleMessage(f.state, f.game,
+                tradeItem(5, 2, rules::TradeItemKind::Cash, 50),
+                display::Screen2D::Trade, 1u << 1, true);
+            return f;
+        };
+        const auto finish = [](Fixture& f, int result, display::Screen2D view, bool enabled)
+        {
+            actions::Message message{};
+            message.action = actions::Type::NotifyTradeFinished;
+            message.numberA = result;
+            return tradeui::processRuleMessage(f.state, f.game, message, view, 1u << 1, enabled);
+        };
+        for (const int terminal : {0, 1, 2})
+        {
+            auto f = fixture();
+            expect(!f.state.aiProposing && f.state.formerView == display::Screen2D::Portfolio &&
+                   f.state.playerA == 5 && f.state.playerB == 2,
+                "duplicate Started production trace retains actual AI participants and Portfolio origin");
+            const auto cash = f.game.players[5].cash;
+            const auto update = finish(f, terminal, display::Screen2D::Trade, true);
+            expect(update.requestedBackdrop == display::Screen2D::Portfolio &&
+                   !f.game.tradeInProgress && f.state.playerA == rules::MaxPlayers &&
+                   f.state.playerB == rules::MaxPlayers && f.state.items.empty() &&
+                   f.game.players[5].cash == cash,
+                "modern terminal AI trade restores Portfolio with original cleanup and no cash mutation");
+        }
+        auto native = fixture();
+        actions::Message terminal{};
+        terminal.action = actions::Type::NotifyTradeFinished;
+        terminal.numberA = 2;
+        expect(tradeui::processRuleMessage(native.state, native.game, terminal,
+                   display::Screen2D::Trade, 1u << 1).requestedBackdrop == display::Screen2D::Main,
+            "default native policy still requests Main after terminal AI trade");
+        for (const auto player : {5, 2})
+        {
+            auto f = fixture();
+            f.game.players[player].aiPlayerLevel = 0;
+            expect(finish(f, 1, display::Screen2D::Trade, true).requestedBackdrop == display::Screen2D::Main,
+                "either human participant retains native terminal routing");
+        }
+        auto tradeOrigin = fixture(display::Screen2D::Trade);
+        expect(finish(tradeOrigin, 1, display::Screen2D::Trade, true).requestedBackdrop == display::Screen2D::Main,
+            "Trade origin does not restore Portfolio");
+        for (const auto view : {display::Screen2D::Main, display::Screen2D::Options})
+        {
+            auto f = fixture();
+            expect(finish(f, 1, view, true).requestedBackdrop == display::Screen2D::Main,
+                "explicitly changed view keeps native terminal routing");
+        }
+        for (const bool invalidA : {false, true})
+        {
+            auto f = fixture();
+            (invalidA ? f.state.playerA : f.state.playerB) = rules::MaxPlayers;
+            expect(finish(f, 1, display::Screen2D::Trade, true).requestedBackdrop == display::Screen2D::Main,
+                "invalid trade participant fails closed to native routing");
+        }
+        auto inactive = fixture();
+        inactive.game.numberOfPlayers = 5;
+        expect(finish(inactive, 1, display::Screen2D::Trade, true).requestedBackdrop == display::Screen2D::Main,
+            "inactive AI participant cannot enable Portfolio restoration");
+        auto counter = fixture();
+        expect(finish(counter, -1, display::Screen2D::Trade, true).requestedBackdrop == display::Screen2D::Main,
+            "autonomous counteroffer preserves native routing");
+    }
+
 }
 
 int main()
 {
+    testAutonomousPortfolioReturn();
     testPlayerSelectGeometryAndEntryGuard();
     testTwoPlayerShortcutAndPartnerValidation();
     testTradeItemListSemantics();

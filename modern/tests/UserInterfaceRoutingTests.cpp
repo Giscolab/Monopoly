@@ -183,6 +183,7 @@ namespace monopoly::engine
     // This routing fixture has no live font/resources or capture owner.
     // Production save-dialog logic is linked below and sees the same nullable
     // dependencies as application startup before those services exist.
+    bool modernTradePresentationEnabled() noexcept { return false; }
     fonts::Runtime* fontPlayback() { return nullptr; }
     statsui::AccountRuntime* statsAccounts() noexcept { return nullptr; }
     bool startVoiceChat() noexcept { return false; }

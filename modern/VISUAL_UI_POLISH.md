@@ -1025,5 +1025,35 @@ The diagnostic trace proves an autonomous Dog5↔Race2 trade at AI level 2, endi
 with Finish A2/B0 and changing Portfolio→Trade→Main without inputs. Evidence is
 `passes57-58-input-trace-real.log` and
 `pass59-before-main-after-autonomous-trade-real.png` in that directory. This
-explains the observed autonomous transition; the pass59 fix is still in progress
-and has not yet been qualified.
+explains the observed autonomous transition; subsequent pass59 qualification is
+recorded below with separate CPU and live-observation limits.
+
+## Autonomous trade presentation restoration (pass59)
+
+Focused CPU tests replay the actual duplicate Started and terminal A=0/1/2
+sequence from the trace: aiProposing is false, both participants are actual AI
+level 2, and the origin is Portfolio. Native flag false, human participants,
+invalid participants, current-menu cases and counter -1 preserve default behavior.
+All focused root CPU tests pass, including the TCP repeat recorded in
+`build/polish-continuation-20261001/pass59-game-session-root-repeat.log`;
+a child socket failure was not reproduced in the root run. Release builds pass
+in `build/pass59-release-build.log`.
+
+Actual process 8680 at 1920x1080 produced
+`pass59-portfolio-before-autonomous-trade-real.png` and later
+`pass59-portfolio-restored-after-autonomous-trade-real.png` after calculator-state
+reset, in the continuation directory. Portfolio retains 510 funds and the pending
+card. These views are consistent with restoration; the brief intervening Trade
+view was not captured, and no new runtime event trace was added. The exact
+duplicate-event behavior is independently replayed by the CPU tests.
+
+Additional pass58 live FutureOther selection uses Baltic→RaceCar:
+`pass58-other-player-picker-real.png` and `pass58-baltic-other-player-result-real.png`
+show the player picker and result 0. This uses production futureValue logic,
+not a stub; unowned rent 0 is authentic. The Bank/Players cases still retain 510
+funds without CardSeen acknowledgement.
+
+The 45-minute actual process8680 FPS test is still in progress, split into four
+600-second segments and one 300-second segment under
+`pass59-active45min-segment1..5` CSVs. No completed result or estimated FPS is
+published for that unfinished session.

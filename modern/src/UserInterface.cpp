@@ -976,7 +976,9 @@ namespace monopoly::userinterface
 
         const auto tradeUpdate = tradeui::processRuleMessage(
             tradeProjection, uiRuleState, message,
-            display::state().desired2DView, localHumanPlayerMask());
+            display::state().desired2DView, localHumanPlayerMask(),
+            engine::modernTradePresentationEnabled() &&
+                display::stateReadOnly().current2DView == display::Screen2D::Trade);
         if (tradeUpdate.requestedBackdrop)
             display::setBackdrop(*tradeUpdate.requestedBackdrop);
         if (message.action == actions::Type::NotifyTradeAcceptanceDecision)

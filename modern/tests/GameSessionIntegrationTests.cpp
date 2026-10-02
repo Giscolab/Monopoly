@@ -76,6 +76,7 @@ namespace
 
 namespace monopoly::engine
 {
+    bool modernTradePresentationEnabled() noexcept { return false; }
     fonts::Runtime* fontPlayback() { return nullptr; }
     statsui::AccountRuntime* statsAccounts() noexcept { return nullptr; }
     bool startVoiceChat() noexcept { return false; }

@@ -1584,7 +1584,8 @@ namespace monopoly::tradeui
         rules::GameState& gameState,
         const actions::Message& message,
         display::Screen2D currentView,
-        std::uint32_t localHumanMask)
+        std::uint32_t localHumanMask,
+        bool restoreAutonomousPortfolio)
     {
         RuleUpdate result{};
 
@@ -1654,9 +1655,22 @@ namespace monopoly::tradeui
         case actions::Type::NotifyTradeFinished:
             if (message.numberA != -1)
             {
+                // Presentation only: terminal autonomous trades may return to
+                // the Portfolio they interrupted. Duplicate Started echoes can
+                // reset aiProposing, so qualify the actual participants instead.
+                const auto actualAI = [&](rules::PlayerNumber player)
+                {
+                    return player < gameState.numberOfPlayers && player < rules::MaxPlayers &&
+                        gameState.players[player].aiPlayerLevel > 0;
+                };
+                const bool restorePortfolio = restoreAutonomousPortfolio &&
+                    state.formerView == display::Screen2D::Portfolio &&
+                    currentView == display::Screen2D::Trade &&
+                    actualAI(state.playerA) && actualAI(state.playerB);
                 gameState.tradeInProgress = false;
                 reset(state);
-                result.requestedBackdrop = display::Screen2D::Main;
+                result.requestedBackdrop = restorePortfolio
+                    ? display::Screen2D::Portfolio : display::Screen2D::Main;
             }
             else
             {

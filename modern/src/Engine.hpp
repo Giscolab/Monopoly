@@ -25,6 +25,7 @@ namespace monopoly::udsound
 namespace monopoly::engine
 {
     void configureModernScene(data::ModernSceneOptions options) noexcept;
+    [[nodiscard]] bool modernTradePresentationEnabled() noexcept;
     class SequencePlayback;
     // Available after DATA startup; no implicit retail sequence is invented.
     SequencePlayback* sequencePlayback();

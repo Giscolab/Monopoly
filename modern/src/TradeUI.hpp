@@ -232,5 +232,6 @@ namespace monopoly::tradeui
         rules::GameState& gameState,
         const actions::Message& message,
         display::Screen2D currentView,
-        std::uint32_t localHumanMask);
+        std::uint32_t localHumanMask,
+        bool restoreAutonomousPortfolio = false);
 }
