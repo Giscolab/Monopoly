@@ -14,14 +14,17 @@ INPUT                  = modern/src \
                          modern/FULL_HELP.md \
                          modern/VIDEO_RUNTIME.md \
                          modern/RESOURCE_SETUP.md \
+                         modern/ARCHIVE_ASSEMBLY.md \
                          modern/PRESENTATION.md \
                          modern/PROCEDURAL_PLAY.md \
                          modern/BLENDER_INTEGRATION_SPEC.md \
+                         modern/tools/SHADER_TOOLCHAIN.md \
                          modern/VISUAL_POLISH.md \
                          modern/VISUAL_UI_POLISH.md \
                          modern/PORTING_AUDIT.md
 RECURSIVE              = YES
 FILE_PATTERNS          = *.cpp *.hpp *.md
+FILTER_PATTERNS        = *.md="python docs/markdown_filter.py"
 EXCLUDE_PATTERNS       = */build/* */build-*/* */_deps/*
 
 USE_MDFILE_AS_MAINPAGE = docs/mainpage.md

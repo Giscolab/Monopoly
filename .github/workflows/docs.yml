@@ -64,6 +64,30 @@ jobs:
             test -s "modern/build-docs/html/$page.html"
           done
           test -s modern/build-docs/html/porting-progress.svg
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class Links(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.targets = set()
+
+              def handle_starttag(self, tag, attrs):
+                  if tag == "a":
+                      self.targets.update(value for key, value in attrs if key == "href")
+
+          links = Links()
+          links.feed(Path("modern/build-docs/html/index.html").read_text(encoding="utf-8"))
+          required = {
+              "porting_status.html", "resource_setup.html", "presentation.html",
+              "procedural_play.html", "blender_integration.html",
+              "visual_polish.html", "visual_ui_polish.html",
+          }
+          missing = required - links.targets
+          if missing:
+              raise SystemExit(f"Missing guide links on the main page: {sorted(missing)}")
+          PY
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v5
