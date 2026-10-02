@@ -68,6 +68,15 @@ void testModernPlayerPropertyRects()
     game.cards[0].jailOwner = 2;
     expect(statsui::playerPropertyRect(state,game,5,1) == baseline(),
         "held jail-free card retains native geometry to avoid icon overlap");
+    state.modernJailLayoutQualified = true;
+    for (const auto square : {25,35,9}) game.squares[square].owner = rules::NobodyPlayer;
+    expect(statsui::modernPlayerGridActive(state,game,2),
+        "six deeds and exact qualified jail assets enable grid");
+    game.squares[9].owner = 2;
+    expect(!statsui::modernPlayerGridActive(state,game,2),
+        "seven deeds with jail assets retain native layout");
+    for (const auto square : {25,35,9}) game.squares[square].owner = 2;
+    state.modernJailLayoutQualified = false;
     game.cards[0].jailOwner = rules::NobodyPlayer;
     for (const auto kind : {rules::CountHitType::FutureRent, rules::CountHitType::RentImmunity})
     {

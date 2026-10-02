@@ -266,7 +266,7 @@ namespace monopoly::menu
         }
         bool caption(data::LegacyBitmapRGBA8& target, const data::LegacyBitmapRGBA8& text,
             bool heading, bool upperPanel = false, unsigned panelHeight = 0, unsigned panelTop = 0,
-            unsigned verticalPadding = 24)
+            unsigned verticalPadding = 24, std::array<unsigned, 3> ink = {245, 235, 211})
         {
             if (!text.width || !text.height || text.width > 4096 || text.height > 512 ||
                 text.pixels.size() != std::size_t(text.width) * text.height * 4 ||
@@ -285,7 +285,6 @@ namespace monopoly::menu
                     const auto src = (std::size_t(y * text.height / h) * text.width + x * text.width / w) * 4;
                     const auto dst = (std::size_t(y + oy) * target.width + x + ox) * 4;
                     const auto alpha = unsigned(text.pixels[src + 3]);
-                    constexpr std::array<unsigned, 3> ink{245, 235, 211};
                     for (unsigned c = 0; c < 3; ++c)
                         target.pixels[dst + c] = std::uint8_t((ink[c] * alpha +
                             target.pixels[dst + c] * (255 - alpha) + 127) / 255);
@@ -329,6 +328,19 @@ namespace monopoly::menu
     {
         if (!original || !supports(root)) return original;
         const auto descriptor = *describe(root);
+        const bool selectedToggle = descriptor.kind == Kind::SelectedToggle;
+        if (selectedToggle)
+        {
+            if (!principal || original->sourceType != data::LegacyDataType::Uap || !original->source) return original;
+            const auto metadata = data::inspectLegacyUap(*original->source);
+            const auto leaf = original->dataId;
+            const bool measured = root == 0x0005026C ?
+                leaf == 0x00051062 || leaf == 0x00051064 || leaf == 0x00051066 || leaf == 0x00051067 :
+                leaf == 0x0005106D || leaf == 0x0005106F || leaf == 0x00051071 || leaf == 0x00051072;
+            if (!measured || !metadata || metadata->width != 59 || metadata->height != 33 ||
+                metadata->originX != 0 || metadata->originY != 0 || metadata->flags != 6 ||
+                original->image.width != 59 || original->image.height != 33) return original;
+        }
         const bool auctionBackdrop = descriptor.kind == Kind::AuctionBackground;
         if (auctionBackdrop)
         {
@@ -643,10 +655,11 @@ namespace monopoly::menu
                 const bool auctionPlayer = descriptor.kind == Kind::AuctionPlayer;
                 const bool playerPanel = descriptor.kind == Kind::StatsPanel;
                 const bool tradeRail = descriptor.kind == Kind::TradeRail;
-                const bool sourceAlpha = descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey ||
+                const bool sourceAlpha = selectedToggle || descriptor.kind == Kind::TradeOffer || statsPanel || statsControl || calculatorKey ||
                     playerCardTransition || citySelector || tradeCash;
                 const unsigned auctionBandX = root < 0x00030376 ? 99 : 0;
-                const std::array<unsigned, 3> fill = background ? std::array<unsigned, 3>{13, 35, 38} :
+                const std::array<unsigned, 3> fill = selectedToggle ? std::array<unsigned, 3>{188, 157, 94} :
+                    background ? std::array<unsigned, 3>{13, 35, 38} :
                     selected ? std::array<unsigned, 3>{42, 85, 82} : std::array<unsigned, 3>{22, 60, 61};
                 constexpr std::array<unsigned, 3> brass{188, 157, 94};
                 // Actual F03/F04 skyline uses gray69..116; the premultiplied
@@ -669,7 +682,7 @@ namespace monopoly::menu
                             (x < 9 || x + 9 >= w) && (y < 9 || y + 9 >= h);
                         if (rounded || (optionsHeader && y >= 135)) return;
                         for (unsigned c = 0; c < 3; ++c)
-                            image.pixels[offset + c] = std::uint8_t(rim ? brass[c] : fill[c] + rowGradient);
+                            image.pixels[offset + c] = std::uint8_t(rim ? brass[c] : fill[c] + (selectedToggle ? 0 : rowGradient));
                         image.pixels[offset + 3] = 255;
                         // Native black name glyphs are published separately at x13/y16,
                         // 67x14. Give that untouched surface a cream band with two pixels padding.
@@ -780,7 +793,8 @@ namespace monopoly::menu
                         descriptor.kind == Kind::StatsBarHeading, calculatorKey) :
                         caption(image, *text, descriptor.kind == Kind::Background, descriptor.kind == Kind::Confirmation,
                             optionsHeader ? 135U : citySelector ? 60U : 0U, citySelector ? 264U : 0U,
-                            citySelector ? 6U : 24U);
+                            citySelector ? 6U : 24U, selectedToggle ? std::array<unsigned,3>{22,60,61} :
+                                std::array<unsigned,3>{245,235,211});
                     if (!painted) return original;
 
                 }

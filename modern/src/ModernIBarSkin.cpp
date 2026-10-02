@@ -2018,10 +2018,49 @@ namespace monopoly::ibar
                 auto last = propertyText_(line);
                 if (!last || !valid(*last)) return original;
                 lines.push_back(std::move(*last));
-                const unsigned textHeight = image.height - 54;
+                const bool mortgageBadge = p->miniature && p->style == 2;
+                const auto readableCaption = [&](const data::LegacyBitmapRGBA8& text, unsigned height,
+                    unsigned minimumInkHeight)
+                {
+                    const float scale = std::min({1.0F, float(image.width - 12) / float(text.width),
+                        float(height) / float(text.height)});
+                    unsigned first = text.height, last = 0;
+                    for (unsigned y = 0; y < text.height; ++y)
+                        for (unsigned x = 0; x < text.width; ++x)
+                            if (text.pixels[(std::size_t(y) * text.width + x) * 4 + 3] > 16)
+                            {
+                                first = std::min(first, y);
+                                last = std::max(last, y);
+                            }
+                    if (first == text.height) return false;
+                    const unsigned inkHeight = last - first + 1;
+                    // Runtime uses 96 DPI: a point-size18 surface is27px high.
+                    // Judge fitted visible ink, not its transparent font padding.
+                    return float(inkHeight) * scale >= float(std::min(minimumInkHeight, inkHeight));
+                };
+                if (mortgageBadge)
+                {
+                    // Authentic US TRANS label: EuropeanDeedText.inc / retail UDPENNY.
+                    // Style 1 is the unselected face, not a mortgage indicator.
+                    auto label = propertyText_("Mortgaged");
+                    if (!label || !valid(*label) || !readableCaption(*label, 18, 14)) return original;
+                    for (unsigned y = 23; y < 42; ++y)
+                        for (unsigned x = 3; x + 3 < image.width; ++x)
+                        {
+                            const auto i = (std::size_t(y) * image.width + x) * 4;
+                            image.pixels[i] = 155;
+                            image.pixels[i + 1] = 57;
+                            image.pixels[i + 2] = 54;
+                        }
+                    caption(image, *label, 24, 18, 241);
+                }
+                const unsigned textHeight = mortgageBadge ? image.height - 72 : image.height - 54;
                 if (lines.size() > textHeight) return original;
                 const unsigned lineHeight = std::max(1U, textHeight / unsigned(lines.size()));
-                unsigned y = 28;
+                if (mortgageBadge)
+                    for (const auto& name : lines)
+                        if (!readableCaption(name, lineHeight, 10)) return original;
+                unsigned y = mortgageBadge ? 46 : 28;
                 for (const auto& name : lines)
                 {
                     caption(image, name, y, lineHeight, p->style == 1 ? 115 : 25);
@@ -2030,7 +2069,8 @@ namespace monopoly::ibar
                 if (!descriptor->purchaseText.empty())
                 {
                     auto price = propertyText_(descriptor->purchaseText);
-                    if (!price || !valid(*price)) return original;
+                    if (!price || !valid(*price) ||
+                        (mortgageBadge && !readableCaption(*price, 17, 12))) return original;
                     caption(image, *price, image.height - 23, 17, p->style == 1 ? 115 : 25);
                 }
             }

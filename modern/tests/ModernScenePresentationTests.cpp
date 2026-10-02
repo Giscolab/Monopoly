@@ -41,6 +41,59 @@ namespace
         require(close(cleared.location[0]-cleared.location[1]*cleared.forward[0]/cleared.forward[1],
             raw.location[0]-raw.location[1]*raw.forward[0]/raw.forward[1]),"Both adaptations retain same aim");
     }
+    void testVerticalBoardFit()
+    {
+        engine::World3DCamera original;
+        original.location={242.9F,1200,243};original.forward={.0045F,-.99999F,0};original.up={1,0,0};
+        original.nearPlane=10;original.farPlane=3000;
+        const data::MeshBounds board{{-20,-1,-20},{510,4,510}};
+        for(const float aspect : {800.0F/450,1920.0F/810})
+        {
+            const auto fitted=engine::fitModernTopDownBoard(board,original,aspect);
+            require(fitted.forward==original.forward && fitted.up==original.up,"Vertical fit preserves authored roll and direction");
+            require(fitted.nearPlane==original.nearPlane && fitted.farPlane==original.farPlane,"Vertical fit preserves depth planes");
+            const float magnitude=std::hypot(fitted.forward[0],fitted.forward[1],fitted.forward[2]);
+            const float fx=fitted.forward[0]/magnitude,fy=fitted.forward[1]/magnitude;
+            const float ux=-fy,uy=fx;
+            const float tangent=std::tan(fitted.fieldOfView*.5F);
+            for(unsigned corner=0;corner<8;++corner)
+            {
+                const float x=((corner&1)?board.maximum[0]:board.minimum[0])-fitted.location[0];
+                const float y=((corner&2)?board.maximum[1]:board.minimum[1])-fitted.location[1];
+                const float z=((corner&4)?board.maximum[2]:board.minimum[2])-fitted.location[2];
+                const float depth=x*fx+y*fy;
+                require(std::abs(z/depth/tangent)<.927F && std::abs((x*ux+y*uy)/depth/tangent*aspect)<.927F,
+                    "Every board corner fits above controls with margin in actual Main aspect");
+            }
+        }
+        require(close(engine::modernBoardControlReservation({0,0,800,450},1920,1080,450),.25F),
+            "Independent 16:9 world and 4:3 UI transformations reserve bottom quarter at1080p");
+        require(close(engine::modernBoardControlReservation({0,0,800,450},1600,1200,450),1.0F/6),
+            "4:3 window computes its actual smaller overlap");
+        require(close(engine::modernBoardControlReservation({0,0,800,450},4096,2160,450),.25F),
+            "Fullscreen uses actual transforms rather than a guessed viewport height");
+        require(engine::modernBoardControlReservation({0,0,800,450},0,0,450)==0,
+            "Minimized target has no fabricated reserve");
+        const auto reserved=engine::fitModernTopDownBoard(board,original,800.0F/600,.25F);
+        const float reservedTan=std::tan(reserved.fieldOfView*.5F);
+        const float fLength=std::hypot(reserved.forward[0],reserved.forward[1],reserved.forward[2]);
+        const float fX=reserved.forward[0]/fLength,fY=reserved.forward[1]/fLength;
+        for(unsigned corner=0;corner<8;++corner)
+        {
+            const float x=((corner&1)?board.maximum[0]:board.minimum[0])-reserved.location[0];
+            const float y=((corner&2)?board.maximum[1]:board.minimum[1])-reserved.location[1];
+            const float depth=x*fX+y*fY;
+            const float screenY=(-x*fY+y*fX)/depth/reservedTan*(800.0F/600);
+            require(screenY>=-.5F && screenY<=1,"Actual full-height CNK viewport retains all board corners above bottom quarter controls");
+        }
+        auto invalid=board;invalid.minimum[0]=std::numeric_limits<float>::quiet_NaN();
+        require(engine::fitModernTopDownBoard(invalid,original,1.7F)==original,"Invalid geometry leaves original exact");
+        require(engine::fitModernTopDownBoard(board,original,0)==original,"Invalid viewport leaves original exact");
+        auto parallel=original;parallel.up=parallel.forward;
+        require(engine::fitModernTopDownBoard(board,parallel,1.7F)==parallel,"Parallel up does not create invalid GPU projection");
+        auto clipped=original;clipped.farPlane=20;
+        require(engine::fitModernTopDownBoard(board,clipped,1.7F)==clipped,"Invalid depth fit falls back exact");
+    }
     void testBuildingAvoidance()
     {
         engine::World3DCamera camera;
@@ -72,6 +125,6 @@ namespace
 }
 int main()
 {
-    try { testMeasuredTravel();testBuildingAvoidance(); std::cout<<"Modern presentation camera tests passed\n"; return 0; }
+    try { testMeasuredTravel();testBuildingAvoidance();testVerticalBoardFit(); std::cout<<"Modern presentation camera tests passed\n"; return 0; }
     catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "World3DProjection.hpp"
+#include "LogicalViewport.hpp"
 #include "World3DRenderer.hpp"
 #include <algorithm>
 #include <cmath>
@@ -111,6 +112,78 @@ namespace monopoly::engine
         const float length=std::sqrt(lengthSquared);
         for (unsigned axis=0; axis<3; ++axis) result.forward[axis]=aim[axis]/length;
         return result;
+    }
+    inline float modernBoardControlReservation(const World3DRect& viewport,
+        int pixelWidth, int pixelHeight, int controlsTop) noexcept
+    {
+        const auto ui=logicalviewport::makeTransform(pixelWidth,pixelHeight);
+        const auto world=logicalviewport::makeWorld3DTransform(pixelWidth,pixelHeight);
+        if(!ui.valid() || !world.valid() || viewport.empty())return 0;
+        const auto pixels=logicalviewport::logicalToPixelRect(world,
+            {double(viewport.left),double(viewport.top),double(viewport.right-viewport.left),
+                double(viewport.bottom-viewport.top)});
+        if(pixels.height<=0)return 0;
+        const double uiTop=ui.offsetY+ui.scale*controlsTop;
+        return float(std::clamp((pixels.y+pixels.height-uiTop)/pixels.height,0.0,0.4));
+    }
+    // Fit measured board bounds in the configured viewport while retaining authored roll.
+    inline World3DCamera fitModernTopDownBoard(const data::MeshBounds& bounds,
+        const World3DCamera& original, float aspect, float bottomReservedFraction = 0) noexcept
+    {
+        auto dot=[](const auto& a,const auto& b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];};
+        if(!std::isfinite(aspect) || aspect<=0 || !std::isfinite(bottomReservedFraction) || !std::isfinite(original.nearPlane) ||
+            !std::isfinite(original.farPlane) || original.nearPlane<=0 ||
+            original.farPlane<=original.nearPlane)return original;
+        std::array<float,3> target{},forward=original.forward,up=original.up;
+        for(unsigned axis=0;axis<3;++axis)
+        {
+            if(!std::isfinite(bounds.minimum[axis]) || !std::isfinite(bounds.maximum[axis]) ||
+                bounds.maximum[axis]<bounds.minimum[axis] || !std::isfinite(original.location[axis]) ||
+                !std::isfinite(forward[axis]) || !std::isfinite(up[axis]))return original;
+            target[axis]=(bounds.minimum[axis]+bounds.maximum[axis])*.5F;
+        }
+        const float forwardLength=std::sqrt(dot(forward,forward));
+        if(!std::isfinite(forwardLength) || forwardLength<=.000001F)return original;
+        for(auto& value:forward)value/=forwardLength;
+        const float parallel=dot(up,forward);
+        for(unsigned axis=0;axis<3;++axis)up[axis]-=forward[axis]*parallel;
+        const float upLength=std::sqrt(dot(up,up));
+        if(!std::isfinite(upLength) || upLength<=.000001F)return original;
+        for(auto& value:up)value/=upLength;
+        const std::array<float,3> right{up[1]*forward[2]-up[2]*forward[1],
+            up[2]*forward[0]-up[0]*forward[2],up[0]*forward[1]-up[1]*forward[0]};
+        std::array<float,3> delta{};
+        for(unsigned axis=0;axis<3;++axis)delta[axis]=target[axis]-original.location[axis];
+        const float distance=dot(delta,forward);
+        if(!std::isfinite(distance) || distance<=original.nearPlane)return original;
+        auto camera=original;
+        float fittedTan=0;
+        for(unsigned iteration=0;iteration<8;++iteration)
+        {
+            for(unsigned axis=0;axis<3;++axis)camera.location[axis]=target[axis]-forward[axis]*distance;
+            float minX=std::numeric_limits<float>::max(),minY=minX,maxX=-minX,maxY=-minX;
+            for(unsigned corner=0;corner<8;++corner)
+            {
+                std::array<float,3> relative{};
+                for(unsigned axis=0;axis<3;++axis)relative[axis]=
+                    ((corner&(1U<<axis))?bounds.maximum[axis]:bounds.minimum[axis])-camera.location[axis];
+                const float z=dot(relative,forward);
+                if(!std::isfinite(z) || z<=original.nearPlane || z>=original.farPlane)return original;
+                const float x=dot(relative,right)/z,y=dot(relative,up)/z;
+                minX=std::min(minX,x);maxX=std::max(maxX,x);minY=std::min(minY,y);maxY=std::max(maxY,y);
+            }
+            fittedTan=std::max(std::max(std::abs(minX),std::abs(maxX)),
+                std::max(std::abs(minY),std::abs(maxY))*aspect);
+            if(iteration<7)for(unsigned axis=0;axis<3;++axis)
+                target[axis]+=distance*((minX+maxX)*.5F*right[axis]+(minY+maxY)*.5F*up[axis]);
+        }
+        if(!std::isfinite(fittedTan) || fittedTan<=0)return original;
+        const float reserved=std::clamp(bottomReservedFraction,0.0F,0.4F);
+        const float horizontalTan=fittedTan*1.08F/(1-reserved);
+        camera.fieldOfView=2*std::atan(horizontalTan);
+        for(unsigned axis=0;axis<3;++axis)
+            camera.location[axis]-=up[axis]*distance*(horizontalTan/aspect)*reserved;
+        return camera;
     }
     // Presentation only: measured immutable geometry; no sequencer/game state.
     inline World3DCamera modernBoardPresentationCamera(const data::MeshBounds& bounds,

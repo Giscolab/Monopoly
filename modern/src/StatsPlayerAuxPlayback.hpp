@@ -32,6 +32,8 @@ namespace monopoly::statsui
             std::optional<FutureImmunityIcon> icon;
             friend bool operator==(const Published&, const Published&) = default;
         };
+        // Call before Player rendering so deed and aux fallbacks agree this frame.
+        void prepareLayout(State& state, const engine::SequencePlayback& playback) const;
         [[nodiscard]] std::expected<void, std::string> sync(
             const State& state, const rules::GameState& gameState,
             const PlayerPlaybackInputs& inputs,

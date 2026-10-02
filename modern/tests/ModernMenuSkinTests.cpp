@@ -3,6 +3,8 @@
 #include "ResourceRuntime.hpp"
 #include "SequenceRuntime.hpp"
 #include "SequenceWorld2DSlot.hpp"
+#include "OptionsTogglePlayback.hpp"
+#include "FontRuntime.hpp"
 #include <set>
 #include <algorithm>
 #include <array>
@@ -266,9 +268,8 @@ namespace
         {
             const auto idle = skin.substitute(first,toggle);
             const auto selected = skin.substitute(first+1,toggle);
-            require(idle != toggle && selected != toggle && idle->image.pixels != selected->image.pixels &&
-                selected->image.width == 177 && selected->image.height == 99,
-                "actual On/Off roots preserve toggle footprint and distinct selected-state contrast");
+            require(idle != toggle && selected == toggle && idle->image.width == 177 && idle->image.height == 99,
+                "idle presentation stays unchanged; unproven selected art remains exact retail fallback");
         }
         require(!skin.supports(0x00050228) && !skin.supports(0x00050294),
                 "neighbors of wizard rules owners do not enter the whitelist");
@@ -1353,6 +1354,109 @@ namespace
         require(uk.substitute(0x5118A,shell)==shell,"Cash popup remains USA/en-US only");
     }
 
+    void qualifyActualOptionsToggles(const std::filesystem::path& root)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"Actual toggle DAT opens");
+        fonts::Runtime font;
+        require(font.setFont("C:/Windows/Fonts/arial.ttf","Arial").has_value(),"Actual Arial opens");
+        const auto settings=font.settings();
+        const auto draw=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {
+            auto image=font.renderPresentation(text,0xFFFFFF,54,700,false);
+            if(!image)return std::unexpected("Arial caption failed");
+            return std::move(*image);
+        };
+        auto skin=std::make_shared<menu::ModernMenuSkin>(data::BoardEdition::Usa,data::LanguageId::EnglishUs,draw);
+        data::BitmapRuntimeCache cache;
+        unsigned poses=0;
+        for(const auto owner:{0x5026BU,0x5026CU,0x50272U,0x50273U})
+        {
+            const bool selected=owner==0x5026C || owner==0x50273;
+            const bool on=owner>=0x50272;
+            const std::array<data::DataId,4> idle=on ? std::array<data::DataId,4>{0x51072,0x51071,0x5106F,0x5106D} :
+                std::array<data::DataId,4>{0x51067,0x51066,0x51064,0x51062};
+            const auto program=sequence::SequenceProgram::load(resources.snapshot(),owner);
+            require(program.has_value(),"Actual toggle CNK loads");
+            sequence::SequenceRuntime runtime;
+            const auto started=runtime.start(*program,57);
+            require(started.has_value(),"Actual toggle CNK starts");
+            require(runtime.setEndingAction(*started,optionsui::ToggleStayAtEnd).has_value(),"Actual StayAtEnd remains authored");
+            unsigned index=0;
+            for(const int tick:{0,4,8,12,64})
+            {
+                require(runtime.update(tick).has_value(),"Actual toggle clock advances");
+                const auto items=sequence::collectSequenceBitmapRenderData(runtime,resources.snapshot());
+                require(items && items->size()==1,"Actual toggle has one bitmap even after StayAtEnd");
+                const auto expected=idle[selected ? 3-std::min(index,3U) : std::min(index,3U)];
+                require(items->front().contentsDataId==expected,"Actual authored toggle phase and terminal leaf match DAT");
+                engine::SequenceWorld2DSlot native,modern;modern.configureModernMenuSkin(skin);
+                require(native.sync(*items,cache) && modern.sync(*items,cache),"Both actual toggle slots publish");
+                require(native.order()==modern.order(),"Toggle leaf order remains authored");
+                const auto* a=native.find(native.order().front());const auto* b=modern.find(modern.order().front());
+                require(a && b && a->clock==b->clock && a->priority==b->priority && a->contentsDataId==b->contentsDataId,
+                    "Selection presentation preserves leaf identity clock and priority");
+                const auto& source=a->asset;
+                const auto before=source->image.pixels;
+                require(b->asset!=source && b->asset->image.width==177 && b->asset->image.height==99,
+                    "Actual selected and idle toggles preserve intrinsic59x33 footprint at3x");
+                for(const auto corner:std::array{std::array{0,0},std::array{59,33}})
+                    require(engine::SequenceWorld2DSlot::transformPoint(a->worldTransform,corner[0],corner[1])==
+                        engine::SequenceWorld2DSlot::transformPoint(b->worldTransform,corner[0]*3,corner[1]*3),
+                        "Actual toggle geometry and hit footprint never move");
+                if(selected)
+                {
+                    unsigned darkInk=0,brassFill=0;
+                    for(unsigned y=0;y<99;++y)for(unsigned x=0;x<177;++x)
+                    {
+                        const auto at=(std::size_t(y)*177+x)*4;
+                        require(b->asset->image.pixels[at+3]==source->image.pixels[(std::size_t(y/3)*59+x/3)*4+3],
+                            "Selected presentation preserves every actual animated alpha sample");
+                        if(b->asset->image.pixels[at+3])
+                        {
+                            darkInk+=b->asset->image.pixels[at]==22 && b->asset->image.pixels[at+1]==60 && b->asset->image.pixels[at+2]==61;
+                            brassFill+=b->asset->image.pixels[at]==188 && b->asset->image.pixels[at+1]==157 && b->asset->image.pixels[at+2]==94;
+                        }
+                    }
+                    require(darkInk>20 && brassFill>100,"Real Arial dark teal glyphs contrast against selected brass fill");
+                    require(skin->substitute(owner,source)==b->asset && source->image.pixels==before,
+                        "Selected immutable cache reuses derivative and leaves source pixels untouched");
+                    require(skin->substitute(owner,source,false)==source,"Secondary art stays exact native");
+                    menu::ModernMenuSkin uk(data::BoardEdition::Usa,data::LanguageId::EnglishUk,draw);
+                    require(uk.substitute(owner,source)==source,"Non-US locale stays exact native");
+                    menu::ModernMenuSkin broken(data::BoardEdition::Usa,data::LanguageId::EnglishUs,
+                        [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>{return std::unexpected("missing font");});
+                    require(broken.substitute(owner,source)==source,"Font failure falls back to entire native toggle");
+                    for(unsigned mutation=0;mutation<6;++mutation)
+                    {
+                        auto wrong=std::make_shared<data::BitmapRuntimeAsset>(*source);
+                        if(mutation==0)wrong->dataId=0x51063;
+                        if(mutation==1)wrong->source.reset();
+                        if(mutation==2)wrong->sourceType=data::LegacyDataType::Bitmap;
+                        if(mutation==3)--wrong->image.height;
+                        if(mutation>=4)
+                        {
+                            auto bytes=std::make_shared<data::DataBytes>(*source->source);
+                            (*bytes)[mutation==4 ? 4 : 8]=std::byte{1};wrong->source=bytes;
+                        }
+                        require(skin->substitute(owner,wrong)==wrong,"Unexpected leaf source type shape origin or alpha metadata stays exact native");
+                    }
+                }
+                ++index;++poses;
+                std::cout<<"toggle owner="<<std::hex<<owner<<" leaf="<<expected<<std::dec<<" tick="<<tick
+                    <<" selected="<<selected<<" size=59x33 clock="<<a->clock<<'\n';
+            }
+        }
+        for(const auto field:optionsui::SupportedOptionToggles)for(const bool value:{false,true})
+        {
+            require(optionsui::toggleSequence(false,value)==(value?0x5026BU:0x5026CU) &&
+                optionsui::toggleSequence(true,value)==(value?0x50273U:0x50272U) && optionsui::togglePriority(field)>=50,
+                "All eight actual options map exactly one selected side without changing priority");
+        }
+        require(poses==20 && font.settings()==settings,"Twenty actual poses including terminal clocks leave native font settings untouched");
+        std::cout<<"[PASS] actual DAT four toggle roots, all eight option mappings, animated alpha, StayAtEnd, Arial and fallback\n";
+    }
+
     void qualifyActualTradeCash(const std::filesystem::path& root)
     {
         const auto paths=data::ResourcePaths::create(std::array{root});data::ResourceRuntime resources;
@@ -1562,10 +1666,11 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify" || std::string_view(argv[1])=="--trade-cash-qualify" || std::string_view(argv[1])=="--auction-backdrop-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify|--trade-cash-qualify|--auction-backdrop-qualify ABSOLUTE_DATA_ROOT]");
+    try { if(argc!=1 && !(argc==3 && (std::string_view(argv[1])=="--profile-qualify" || std::string_view(argv[1])=="--city-qualify" || std::string_view(argv[1])=="--trade-cash-qualify" || std::string_view(argv[1])=="--auction-backdrop-qualify" || std::string_view(argv[1])=="--options-toggle-qualify")))throw std::runtime_error("usage: [--profile-qualify|--city-qualify|--trade-cash-qualify|--auction-backdrop-qualify|--options-toggle-qualify ABSOLUTE_DATA_ROOT]");
         if(argc==3) { if(std::string_view(argv[1])=="--city-qualify") qualifyActualCitySelector(std::filesystem::path(argv[2]));
             else if(std::string_view(argv[1])=="--trade-cash-qualify")qualifyActualTradeCash(std::filesystem::path(argv[2]));
             else if(std::string_view(argv[1])=="--auction-backdrop-qualify")qualifyActualAuctionBackdrop(std::filesystem::path(argv[2]));
+            else if(std::string_view(argv[1])=="--options-toggle-qualify")qualifyActualOptionsToggles(std::filesystem::path(argv[2]));
             else qualifyActualPlayerCards(std::filesystem::path(argv[2])); }
         testTradeCashPopup();
         testAuctionBackdropArt();

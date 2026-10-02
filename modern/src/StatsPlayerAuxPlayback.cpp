@@ -153,13 +153,37 @@ namespace monopoly::statsui
                     result.push_back({languageId(static_cast<data::DataTag>(
                             ids.jailBase + deck)), PlayerAuxPriority,
                         static_cast<int>(column) * boxWidth + deedGapOffset + 10,
-                        385 + static_cast<int>(deck) * 30});
+                        (modernPlayerGridActive(state, gameState, player) ? 394 : 385) +
+                            static_cast<int>(deck) * 30});
                 }
                 iconGapOffset += 3;
             }
             return result;
         }
     }
+    void PlayerAuxPlayback::prepareLayout(State& state, const engine::SequencePlayback& playback) const
+    {
+        state.modernJailLayoutQualified = false;
+        const auto resources = playback.resources();
+        if (!state.modernPlayerLayout || !resources || state.playerCount <= 4 ||
+            state.playerCount > rules::MaxPlayers ||
+            resources->context().board != data::BoardEdition::Usa ||
+            resources->context().language != data::LanguageId::EnglishUs) return;
+        constexpr std::array<std::array<int,4>,2> expected{{{{43,28,737,524}},{{42,26,714,504}}}};
+        for (std::size_t deck = 0; deck < expected.size(); ++deck)
+        {
+            const auto id = languageId(static_cast<data::DataTag>(PlayerJailUsBaseTag + deck));
+            const auto metadata = resources->data().metadata(id);
+            const auto bytes = resources->data().load(id);
+            if (!metadata || metadata->type != data::LegacyDataType::Uap || !bytes) return;
+            const auto image = data::inspectLegacyUap(**bytes);
+            const auto& e = expected[deck];
+            if (!image || image->width != e[0] || image->height != e[1] ||
+                image->originX != e[2] || image->originY != e[3] || image->flags != 6) return;
+        }
+        state.modernJailLayoutQualified = true;
+    }
+
     std::vector<FutureImmunityIcon> PlayerAuxPlayback::iconHits() const
     {
         std::vector<FutureImmunityIcon> result;

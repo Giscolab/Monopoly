@@ -1154,3 +1154,40 @@ play. Its 237 window-title samples have median 60, p5 60, minimum 44.8,
 This is not GPU frame-time measurement or a strict 60 FPS minimum. Temporary
 tracing is absent; the four Engine comments and CRLF were restored without
 behavior changes.
+
+## Auxiliary grid and Mortgage badge (passes64–65); pending passes66–67
+
+Passes64–65 now have accepted full-application proof, bringing passes39–65 to
+27 qualified milestones. Passes66–67 remain pending actual qualification and
+are not counted. The earlier FPS samples retain their original scope.
+
+Pass64 repairs actual font fitting for an authentic style2 Mortgaged badge.
+All 28 actual retail pairs and regular CPU checks now pass: the earlier font
+failure was repaired using measured 96-DPI glyph bounds. In actual process20872,
+mortgage changes 736→806. The same Cash-sort St. Charles comparison is
+`pass64-mortgage-face-cash-sort-real-before.png` and its after PNG in
+`build/polish-continuation-20261001/`: the authentic red Mortgaged badge is clear,
+with name and price retained. Unmortgage changes 806→729 in
+`pass64-unmortgage729-real-after.png`; `pass64-restored-normal-title-real-after.png`
+shows the restored normal face without the badge.
+
+Pass65 qualifies the shared auxiliary header at actual 43x28/42x26 extents,
+flags6 and measured origins, plus the maximum six-cell Jail grid. Y394/424
+placement preserves native pixels, IDs, priority and clock. Focused StatsUI,
+Auxiliary, actual retail headers and regular CPU checks pass. Actual same-private-
+game5 Turn-order and Cash-sort views retain the balances (including 736/1040).
+The inspected `pass65-aux-fan-real-before.png` and `pass65-aux-grid-real-after.png`
+plus the Cash-sort after view show all six TopHat deeds in a visible 3x2 grid.
+The earlier five-deed observation missed a sixth occluded deed. The native Jail-
+Free item is separated at y+9; other players' grids and hit mapping are unchanged.
+These are accepted full-application views in Release64–67, process20872.
+
+Pass66 fits the strict settled top-down preset (verticalSquare0) to the actual
+viewport. `build/polish-continuation-20261001/pass66-top-down-settled-real-before.png`
+shows the cropped board before. Forward/up vectors and projection planes remain
+preserved, without additional overlay reserve or controller-clock changes.
+Two focused CPU tests and review pass; matched GPU proof remains pending.
+
+Pass67 gives selected Options On/Off controls brass with dark ink, guarded to
+four authored poses and their alpha. Its CPU checks now pass for four roots, 20 poses and eight mappings, plus
+regular tests. Actual runtime qualification remains pending.

@@ -1,6 +1,8 @@
 #include "ModernIBarSkin.hpp"
 #include "EuropeanDeed.hpp"
 #include "FontRuntime.hpp"
+#include "BoardRules.hpp"
+#include "MoneyFormat.hpp"
 #include <chrono>
 #include <fstream>
 #include <iomanip>
@@ -714,11 +716,20 @@ namespace
     void testPortfolioMiniatures()
     {
         bool context=true,failFont=false;
+        unsigned badBadge=0;
         std::vector<std::string> labels;
         unsigned requested=99;
         const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string> {
             labels.emplace_back(text);
-            if(failFont)return std::unexpected("font unavailable");
+            if(failFont || (text=="Mortgaged" && badBadge==1))return std::unexpected("font unavailable");
+            if(text=="Mortgaged" && badBadge==2)
+                return data::LegacyBitmapRGBA8{37,10,std::vector<std::uint8_t>(37*10*4,0)};
+            if(text=="Mortgaged" && badBadge==3)
+                return data::LegacyBitmapRGBA8{400,10,std::vector<std::uint8_t>(400*10*4,127)};
+            if(text=="Mortgaged" && badBadge==4)
+                return data::LegacyBitmapRGBA8{37,10,std::vector<std::uint8_t>(3,127)};
+            if((badBadge==5 && text!="Mortgaged" && text!="$350") || (badBadge==6 && text=="$350"))
+                return data::LegacyBitmapRGBA8{400,10,std::vector<std::uint8_t>(400*10*4,127)};
             return data::LegacyBitmapRGBA8{unsigned(text.size()*4+1),10,
                 std::vector<std::uint8_t>((text.size()*4+1)*10*4,127)};
         };
@@ -740,9 +751,40 @@ namespace
         const auto header=(std::size_t(10)*108+30)*4;
         require(modern->image.pixels[header]==45 && modern->image.pixels[header+1]==65 && modern->image.pixels[header+2]==144,
             "Park Place preserves canonical darkblue group header");
+        require(std::find(labels.begin(),labels.end(),"Mortgaged")==labels.end(),
+            "normal face never requests mortgage label");
+        const auto unselected=bitmap(0x00020199,36,42);
+        const auto unselectedModern=skin.substitute(unselected->dataId,unselected);
+        const auto pixelHash=[](const auto& pixels){std::uint64_t value=14695981039346656037ULL;
+            for(const auto byte:pixels){value^=byte;value*=1099511628211ULL;}return value;};
+        // Frozen pre-badge rasters for this deterministic descriptor/font fixture.
+        require(pixelHash(modern->image.pixels)==0x9FF79835E37AF505ULL &&
+            pixelHash(unselectedModern->image.pixels)==0xAFE44F4CCCB7B2B5ULL,
+            "normal and style1 retain every pre-badge RGBA byte");
+        require(unselectedModern!=unselected &&
+            std::find(labels.begin(),labels.end(),"Mortgaged")==labels.end(),
+            "style1 unselected face retains original caption layout without mortgage label");
         const auto mortgaged=skin.substitute(mortgage->dataId,mortgage);
         require(mortgaged!=mortgage && requested==26 && mortgaged->image.pixels!=modern->image.pixels,
             "mortgage miniature retains same property identity and visibly distinct state");
+        require(std::count(labels.begin(),labels.end(),"Mortgaged")==1,
+            "style2 requests exact authentic US Mortgaged label once");
+        const auto badge=(std::size_t(25)*108+4)*4;
+        const auto badgeInk=(std::size_t(25)*108+40)*4;
+        require(mortgaged->image.pixels[badge]==155 && mortgaged->image.pixels[badge+1]==57 &&
+            mortgaged->image.pixels[badge+2]==54 && mortgaged->image.pixels[badgeInk]>155,
+            "mortgage face carries visible cream label on red badge below group band");
+        const auto name=(std::size_t(46)*108+40)*4;
+        require(mortgaged->image.pixels[name]<242,
+            "canonical property name is retained below badge with separate price region");
+        for(unsigned y=0;y<22;++y)for(unsigned x=0;x<108;++x)
+        {
+            // Existing mortgage header differs only by its original red diagonal.
+            const auto i=(std::size_t(y)*108+x)*4;
+            if(x>=3 && x+3<108 && y>=3 && (x+y)%108>=4)
+                require(std::equal(mortgaged->image.pixels.begin()+i,mortgaged->image.pixels.begin()+i+3,
+                    modern->image.pixels.begin()+i),"mortgage label leaves canonical group band intact");
+        }
         for(const auto& pair:{std::pair{normal,modern},std::pair{mortgage,mortgaged}})
             for(unsigned y=0;y<126;++y)for(unsigned x=0;x<108;++x)
                 require(pair.second->image.pixels[(std::size_t(y)*108+x)*4+3]==
@@ -786,6 +828,39 @@ namespace
         const auto railroad=bitmap(0x000305E8,36,42);
         require(skin.substitute(railroad->dataId,railroad)!=railroad && requested==2,
             "miniature index remains board-order property identity rather than player ownership order");
+        for(unsigned failure=1;failure<=6;++failure)
+        {
+            badBadge=failure;
+            const auto native=bitmap(0x000305D0,36,42);
+            const auto before=native->image.pixels;
+            require(skin.substitute(native->dataId,native)==native && native->image.pixels==before,
+                "missing blank oversized malformed label or unfit name/price retains complete native face");
+            const auto front=bitmap(0x000305EC,36,42);
+            require(skin.substitute(front->dataId,front)!=front,
+                "mortgage-only label failure does not reject normal front face");
+        }
+        badBadge=0;
+        {
+            // Measured production Arial18 at96DPI:27px surface,22px label ink,
+            // and17px Mediterranean ink. Transparent padding must not reject it.
+            const auto paddedRaster=[](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            {
+                const unsigned width=text=="Mortgaged"?113:text=="Mediterranean"?152:
+                    text=="Avenue"?80:text=="$60"?39:240;
+                const unsigned inkHeight=text=="Mortgaged"?22:text=="$60"?20:17;
+                data::LegacyBitmapRGBA8 image{width,27,std::vector<std::uint8_t>(width*27*4,0)};
+                for(unsigned y=2;y<2+inkHeight;++y)for(unsigned x=1;x+1<width;++x)
+                    image.pixels[(std::size_t(y)*width+x)*4+3]=255;
+                return image;
+            };
+            ibar::ModernIBarSkin padded(data::LanguageId::EnglishUs,paddedRaster);
+            padded.configurePresentationContext([]{return true;});
+            padded.configurePropertyDescriptors([](unsigned)->std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
+                {return ibar::ModernIBarSkin::PropertyDescriptor{"Mediterranean Avenue",0,"$60"};},paddedRaster);
+            const auto native=bitmap(0x305CA,36,42);
+            require(padded.substitute(native->dataId,native)!=native,
+                "measured96DPI font padding retains legible label14px name10px and price12px ink");
+        }
         failFont=true;
         const auto uncached=bitmap(0x000305E9,36,42);
         require(skin.substitute(uncached->dataId,uncached)==uncached,"font failure publishes complete retail fallback");
@@ -796,6 +871,80 @@ namespace
         ibar::ModernIBarSkin french(data::LanguageId::French,raster);
         require(!french.supports(normal->dataId),"miniature qualification remains USA English only");
     }
+    void testActualMortgageMiniatures(const std::filesystem::path& root,const std::filesystem::path& fontPath)
+    {
+        const auto paths=data::ResourcePaths::create(std::array{std::filesystem::absolute(root)});
+        data::ResourceRuntime resources;
+        require(paths && resources.initialize(*paths).has_value(),"mortgage miniatures actual DAT initializes");
+        const auto snapshot=resources.snapshot();
+        require(snapshot->language() && snapshot->language()->catalog,"actual USA LANG available");
+        fonts::Runtime font;
+        require(font.setFont(std::filesystem::absolute(fontPath),"Arial").has_value() &&
+            font.setSize(12).has_value(),"mortgage miniatures actual Arial initializes");
+        font.setWeight(400);
+        const auto settings=font.settings();
+        bool context=true;
+        unsigned labels=0,calls=0;
+        const auto raster=[&](std::string_view text)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        {
+            ++calls;
+            labels+=text=="Mortgaged";
+            auto image=font.renderPresentation(text,0xFFFFFF,18,400,false,false,false,true);
+            if(!image)return std::unexpected(image.error().detail);
+            return std::move(*image);
+        };
+        data::BitmapRuntimeCache bitmaps;
+        unsigned count=0;
+        for(int square=0;square<40;++square)
+        {
+            const int index=ibar::layout::propertyIndex(square);
+            if(index<0)continue;
+            const auto text=snapshot->language()->catalog->lookup(1001U+unsigned(square));
+            require(text && *text,"authentic property LANG name present");
+            const auto name=fonts::transcodeUtf8(std::u16string_view(***text));
+            const auto& definition=rules::board::originalDefinition(static_cast<rules::board::SquareType>(square));
+            const auto price=money::format(definition.purchaseCost,13,true,data::BoardEdition::Usa);
+            require(name && price,"canonical name and original purchase price available");
+            ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,raster);
+            skin.configurePresentationContext([&]{return context;});
+            skin.configurePropertyDescriptors([&](unsigned requested)->std::optional<ibar::ModernIBarSkin::PropertyDescriptor>
+            {
+                require(requested==unsigned(index),"actual face retains exact board property index");
+                return ibar::ModernIBarSkin::PropertyDescriptor{*name,std::uint8_t(definition.group),*price};
+            },raster);
+            for(const bool mortgage:{false,true})
+            {
+                const data::DataId id=(mortgage?0x305CAU:0x305E6U)+unsigned(index);
+                const auto metadata=snapshot->data().metadata(id);
+                const auto bytes=snapshot->data().load(id);
+                require(metadata && bytes,"actual miniature payload present");
+                const auto native=bitmaps.resolve(id,metadata->type,*bytes);
+                require(native.has_value(),"actual miniature decodes");
+                const auto before=(*native)->image.pixels;
+                const auto labelCount=labels;
+                const auto modern=skin.substitute(id,*native);
+                require(modern!=*native && modern->image.width==108 && modern->image.height==126 &&
+                    modern->dataId==id && !modern->presentationRect && modern->preferLinearFiltering,
+                    "all28 actual mortgage names and prices fit unchanged36x42 geometry");
+                require(labels==labelCount+unsigned(mortgage),"exact Mortgaged label appears only on actual mortgage face");
+                require(font.settings()==settings && (*native)->image.pixels==before,
+                    "real font callback restores caller and never mutates native source");
+                for(unsigned y=0;y<126;++y)for(unsigned x=0;x<108;++x)
+                    require(modern->image.pixels[(std::size_t(y)*108+x)*4+3]==
+                        before[(std::size_t(y/3)*36+x/3)*4+3],"every actual source alpha byte retained");
+                const auto cachedCalls=calls;
+                require(skin.substitute(id,*native)==modern && calls==cachedCalls,"actual derivative caches label and names");
+                context=false;
+                require(skin.substitute(id,*native)==*native,"unqualified live context restores complete actual retail face");
+                context=true;
+                std::cout<<"square="<<square<<" root="<<id<<" mortgage="<<mortgage<<" name="<<*name<<'\n';
+            }
+            ++count;
+        }
+        require(count==28,"all28 actual property miniature pairs qualify");
+        std::cout<<"[PASS] 28 actual mortgage/front pairs; authentic names/prices/label; source alpha/cache/context/font restore; CPU only\n";
+    }
+
     void testMeasuredNavigationAA()
     {
         using Slot=ibar::layout::ActionButtonSlot;
@@ -1696,6 +1845,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify"){testActualPlayerCashCoin(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==4 && std::string_view(argv[1])=="--mortgage-miniature-qualify"){testActualMortgageMiniatures(argv[2],argv[3]);return 0;}if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify"){testActualPlayerCashCoin(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

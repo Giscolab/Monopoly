@@ -20,6 +20,19 @@ namespace monopoly::boardcamera
             !state.demoModeDesired && state.worldCamera==preset(overview);
     }
 
+    bool isPresentationSquareDefault(const display::State& state) noexcept
+    {
+        constexpr auto overview=pieces::BoardCameraView::TopDownSquare;
+        return state.desired2DView==display::Screen2D::Main &&
+            state.viewportInUse==display::Viewport3D::Main &&
+            state.desiredBoardCamera==overview && state.currentBoardCamera==overview &&
+            !state.manualMouseCamLock && !state.manualCameraRequested &&
+            !state.mouseLeftPressed && !state.mouseRightPressed &&
+            state.bssmCameraState==0 && !state.diceCameraControlActive &&
+            !state.desiredCameraInvalidatedLock && !state.floatingCameraActive &&
+            !state.demoModeDesired && state.worldCamera==preset(overview);
+    }
+
     namespace
     {
         constexpr float Fov45 = 0.7853981633974483F;

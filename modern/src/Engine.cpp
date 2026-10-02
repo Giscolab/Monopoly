@@ -2633,6 +2633,7 @@ namespace monopoly::engine
                 statsPlayerInputs.iBarPlayerLocalHuman,
                 bssmAvailability.buildProperties, bssmAvailability.sellProperties,
                 bssmAvailability.mortgageProperties, modernTradeText);
+            statsPlayerAuxPlayback.prepareLayout(userinterface::statsState(), *session);
             const auto statsPlayerSync = statsPlayerPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
@@ -3121,7 +3122,15 @@ namespace monopoly::engine
                 else
                 {
                     retailWorldView = std::pair{viewport, camera};
-                    if (modernBoardBounds && boardcamera::isPresentationDefault(displayState))
+                    if (modernBoardBounds && boardcamera::isPresentationSquareDefault(displayState))
+                    {
+                        int pixelWidth=0,pixelHeight=0;
+                        if(SDL_GetWindowSizeInPixels(gameWindow,&pixelWidth,&pixelHeight))
+                            camera = fitModernTopDownBoard(*modernBoardBounds, camera,
+                                static_cast<float>(viewport.right-viewport.left)/(viewport.bottom-viewport.top),
+                                modernBoardControlReservation(viewport,pixelWidth,pixelHeight,desiredWorldViewport.bottom));
+                    }
+                    else if (modernBoardBounds && boardcamera::isPresentationDefault(displayState))
                         camera = modernBoardPresentationCamera(*modernBoardBounds,
                         static_cast<float>(viewport.right-viewport.left)/(viewport.bottom-viewport.top),
                         modernSceneOptions.proceduralEnvironment ? 42.0F : 48.0F,

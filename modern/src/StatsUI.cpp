@@ -349,12 +349,32 @@ namespace monopoly::statsui
         bool modernPlayerLayout) noexcept
     {
         state.modernPlayerLayout = modernPlayerLayout;
+        if (!modernPlayerLayout) state.modernJailLayoutQualified = false;
         state.propertyActionMode = mode;
         state.propertyActionPlayer = player;
         state.propertyActionPlayerLocalHuman = localHuman;
         state.buildProperties = buildProperties;
         state.sellProperties = sellProperties;
         state.mortgageProperties = mortgageProperties;
+    }
+
+    bool modernPlayerGridActive(const State& state,
+        const rules::GameState& gameState, rules::PlayerNumber player) noexcept
+    {
+        const auto count = std::min<std::size_t>(state.playerCount,
+            std::min<std::size_t>(gameState.numberOfPlayers, rules::MaxPlayers));
+        if (!state.modernPlayerLayout || count <= 4 || player >= gameState.numberOfPlayers ||
+            player >= rules::MaxPlayers) return false;
+        int ownedCount = 0;
+        for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
+            if (gameState.squares[static_cast<std::size_t>(square)].owner == player &&
+                ibar::layout::propertyBarOrder(square) >= 0) ++ownedCount;
+        if (std::any_of(gameState.countHits.begin(), gameState.countHits.end(), [&](const auto& hit)
+            { return hit.toPlayer == player && (hit.hitType == rules::CountHitType::FutureRent ||
+                hit.hitType == rules::CountHitType::RentImmunity); })) return false;
+        const bool jail = std::any_of(gameState.cards.begin(), gameState.cards.end(),
+            [&](const auto& card) { return card.jailOwner == player; });
+        return jail ? state.modernJailLayoutQualified && ownedCount <= 6 : ownedCount <= 9;
     }
 
     std::optional<Rect> playerPropertyRect(
@@ -371,28 +391,17 @@ namespace monopoly::statsui
             gameState.squares[static_cast<std::size_t>(square)].owner != player)
             return std::nullopt;
         std::array<bool, 11> counted{};
-        int ownedCount = 0;
         int rank = 0;
         for (int other = 0; other < static_cast<int>(rules::SquareCount); ++other)
         {
             if (gameState.squares[static_cast<std::size_t>(other)].owner != player) continue;
             const int otherOrder = ibar::layout::propertyBarOrder(other);
             if (otherOrder < 0) continue;
-            ++ownedCount;
             if (otherOrder < order) ++rank;
             counted[static_cast<std::size_t>(otherOrder / 3)] = true;
         }
-        const bool hasJailCard = std::any_of(gameState.cards.begin(), gameState.cards.end(),
-            [&](const auto& card) { return card.jailOwner == player; });
-        const bool hasContractIcon = std::any_of(gameState.countHits.begin(), gameState.countHits.end(),
-            [&](const auto& hit)
-            {
-                return hit.toPlayer == player && (hit.hitType == rules::CountHitType::FutureRent ||
-                    hit.hitType == rules::CountHitType::RentImmunity);
-            });
         const int columnIndex = static_cast<int>(column);
-        if (state.modernPlayerLayout && count > 4 && ownedCount <= 9 &&
-            !hasJailCard && !hasContractIcon)
+        if (modernPlayerGridActive(state, gameState, player))
         {
             // Local BSSM displays only its player's box; its gap remains 3.
             const int gap = state.propertyActionPlayerLocalHuman &&

@@ -301,6 +301,28 @@ int main()
         expect(!monopoly::boardcamera::isPresentationDefault(requested),
             "requested camera motion retains control of the real camera");
     }
+    auto square=overview;
+    square.currentBoardCamera=square.desiredBoardCamera=monopoly::pieces::BoardCameraView::TopDownSquare;
+    square.worldCamera=monopoly::boardcamera::preset(square.desiredBoardCamera);
+    expect(monopoly::boardcamera::isPresentationSquareDefault(square),"settled vertical preset permits measured board fit");
+    expect(!monopoly::boardcamera::isPresentationSquareDefault(overview),"Soccer retains its existing policy");
+    for(bool monopoly::display::State::* flag : {
+        &monopoly::display::State::manualMouseCamLock,&monopoly::display::State::manualCameraRequested,
+        &monopoly::display::State::mouseLeftPressed,&monopoly::display::State::mouseRightPressed,
+        &monopoly::display::State::diceCameraControlActive,&monopoly::display::State::floatingCameraActive,
+        &monopoly::display::State::desiredCameraInvalidatedLock,&monopoly::display::State::demoModeDesired})
+    {
+        auto excluded=square;excluded.*flag=true;
+        expect(!monopoly::boardcamera::isPresentationSquareDefault(excluded),"Square input and transitions retain authored framing");
+    }
+    auto altered=square;altered.worldCamera.location[1]+=1;
+    expect(!monopoly::boardcamera::isPresentationSquareDefault(altered),"Manual vertical zoom is unchanged");
+    altered=square;altered.currentBoardCamera=monopoly::pieces::BoardCameraView::TopDownSoccer;
+    expect(!monopoly::boardcamera::isPresentationSquareDefault(altered),"Interpolated vertical move is unchanged");
+    altered=square;altered.bssmCameraState=1;
+    expect(!monopoly::boardcamera::isPresentationSquareDefault(altered),"Building mode keeps its authored camera");
+    altered=square;altered.desired2DView=monopoly::display::Screen2D::Portfolio;
+    expect(!monopoly::boardcamera::isPresentationSquareDefault(altered),"Portfolio camera remains authored");
     auto moving=overview; moving.worldCamera.location[0]+=1;
     expect(!monopoly::boardcamera::isPresentationDefault(moving),
         "intermediate or manually rotated pose is never replaced by fixed framing");

@@ -19,6 +19,7 @@ namespace monopoly::boardcamera
     // Presentation framing may replace only the settled default overview.
     // Authored sequence views, interpolation and player camera input keep ownership.
     [[nodiscard]] bool isPresentationDefault(const display::State& state) noexcept;
+    [[nodiscard]] bool isPresentationSquareDefault(const display::State& state) noexcept;
 
     struct Update
     {

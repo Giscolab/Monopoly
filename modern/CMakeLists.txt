@@ -458,8 +458,8 @@ if(BUILD_TESTING)
     if(MSVC)
         target_compile_options(MonopolyModernMenuRasterBenchmark PRIVATE /W4 /permissive-)
     endif()
-    add_executable(MonopolyModernMenuSkinTests tests/ModernMenuSkinTests.cpp)
-    target_link_libraries(MonopolyModernMenuSkinTests PRIVATE MonopolyDataCore)
+    add_executable(MonopolyModernMenuSkinTests tests/ModernMenuSkinTests.cpp src/FontRuntime.cpp)
+    target_link_libraries(MonopolyModernMenuSkinTests PRIVATE MonopolyDataCore SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     if(MSVC)
         target_compile_options(MonopolyModernMenuSkinTests PRIVATE /W4 /permissive- /utf-8)
     endif()
@@ -1633,6 +1633,10 @@ if(BUILD_TESTING)
         MonopolyStatsPlayerAuxPlaybackTests
         tests/StatsPlayerAuxPlaybackTests.cpp
         src/StatsPlayerAuxPlayback.cpp
+        src/StatsUI.cpp
+        src/IBarLayout.cpp
+        src/AIUtility.cpp
+        src/BoardRules.cpp
     )
     target_include_directories(MonopolyStatsPlayerAuxPlaybackTests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -3909,7 +3913,7 @@ if(BUILD_TESTING)
     add_test(NAME Monopoly.VideoDecoder COMMAND MonopolyVideoDecoderTests)
     set_tests_properties(Monopoly.VideoDecoder PROPERTIES TIMEOUT 90)
 
-    add_executable(MonopolyModernScenePresentationTests tests/ModernScenePresentationTests.cpp)
+    add_executable(MonopolyModernScenePresentationTests tests/ModernScenePresentationTests.cpp src/LogicalViewport.cpp)
     target_include_directories(MonopolyModernScenePresentationTests PRIVATE src tests)
     target_link_libraries(MonopolyModernScenePresentationTests PRIVATE MonopolyDataCore SDL3::SDL3)
     add_test(NAME Monopoly.ModernScenePresentation COMMAND MonopolyModernScenePresentationTests)
