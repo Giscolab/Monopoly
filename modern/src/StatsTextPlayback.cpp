@@ -422,6 +422,29 @@ namespace monopoly::statsui
             if (run.text.empty()) return {};
             if (run.width <= 0 || run.height <= 0 || run.width > 800 || run.height > 600)
                 return std::unexpected("UDStats text clipping rectangle is invalid");
+            if (modernAA && surface.key >= 100 && surface.key < 100 + int(rules::MaxPlayers) &&
+                surface.y == 224 && surface.priority == PlayerCashPriority + 1 &&
+                !surface.opaque && !surface.blackRect && surface.history.empty() &&
+                ((surface.width == 130 && surface.height == 226) ||
+                 (surface.width == 198 && surface.height == 222)) &&
+                surface.x >= 3 && (surface.x - 3) % (surface.width + 3) == 0 &&
+                (surface.x - 3) / (surface.width + 3) < (surface.width == 130 ? 6 : 4) &&
+                surface.text.size() == 2 && &run == &surface.text[1] &&
+                run.x == 15 && run.y == 62 && run.width == surface.width - 15 && run.height == 20 &&
+                run.size == 8 && run.weight == 500 && run.colour == 0xC8C8C8 &&
+                run.alignment == TextAlignment::Left && !run.wrap && !run.shrink &&
+                run.singleLineY == -1 && run.maxLines == 0 && run.wrappedX == -1 && run.text.size() <= 128)
+            {
+                const auto native = font.renderPresentation(run.text, 0x00D7E8ED, 12, 400, false);
+                const auto raster = font.renderPresentation(run.text, 0x00D7E8ED, 36, 400, false);
+                if (native && raster && native->width <= unsigned(run.width) && native->height <= unsigned(run.height) &&
+                    raster->width <= unsigned(run.width * rasterScale) && raster->height <= unsigned(run.height * rasterScale) &&
+                    raster->pixels.size() == std::size_t(raster->width) * raster->height * 4)
+                    return data::blitStraightRGBA8(target, *raster, run.x * rasterScale, run.y * rasterScale,
+                        data::BitmapBlitMode::SourceOver);
+                // No new pixels were painted: keep the entire native cash run,
+                // including its8-point layout and colour, on every failure.
+            }
             if (const auto resized = font.setSize(run.size); !resized)
                 return std::unexpected(resized.error().detail);
             font.setWeight(run.weight);

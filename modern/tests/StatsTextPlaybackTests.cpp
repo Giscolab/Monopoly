@@ -5,6 +5,7 @@
 #include "ResourceRuntime.hpp"
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include <limits>
 #include <stdexcept>
 
@@ -299,5 +300,49 @@ void testCalculatorDescriptionSequence() {
     f.calc.hoveredFunction=2;require(sync(true).has_value(),"new description content invalidates cache");
     require(sequence.runtimeBitmaps().asset(after.contentsDataId)!=asset,"new source description publishes new immutable pixels");
 }
+
+void testPlayerCashPresentation(const data::ResourceSnapshot& resources,const std::filesystem::path& captureRoot={}) {
+    fonts::Runtime font;loadRealTestArial(font);require(font.setSize(17).has_value(),"cash caller size");font.setWeight(700);font.setItalic(true);const auto settings=font.settings();
+    rules::GameState game;statsui::State state;statsui::PlayerPlaybackInputs inputs;statsui::CalculatorUIState calc;statsui::FutureImmunityState future;statsui::AccountState accounts;
+    constexpr std::array<std::int64_t,6> values{1252,0,-784,1020,std::numeric_limits<std::int64_t>::max(),std::numeric_limits<std::int64_t>::min()};
+    game.numberOfPlayers=6;state.playerCount=6;
+    for(unsigned player=0;player<6;++player){game.players[player].name=L"Player "+std::to_wstring(player+1);game.players[player].cash=values[player];state.playerOrder[player]=static_cast<rules::PlayerNumber>(player);}
+    const auto plan=statsui::planStatsTextSurfaces(state,game,inputs,calc,future,accounts,0,13,display::Screen2D::Portfolio,resources);
+    require(plan && plan->size()==6,"six actual production cash columns");
+    std::array<data::LegacyBitmapRGBA8,2> captures;
+    if(!captureRoot.empty())for(auto& capture:captures){capture={2400,1800,std::vector<std::uint8_t>(2400*1800*4)};for(std::size_t i=0;i<capture.pixels.size();i+=4){capture.pixels[i]=22;capture.pixels[i+1]=60;capture.pixels[i+2]=61;capture.pixels[i+3]=255;}}
+    for(const auto& panel:*plan) {
+        const auto& cash=panel.text[1];require(cash.text==std::to_string(values[panel.key-100]),"model signed cash content remains exact");
+        auto reference=panel;reference.key=900;
+        const auto native=statsui::renderStatsTextSurface(reference,font,nullptr,true);
+        const auto modern=statsui::renderStatsTextSurface(panel,font,nullptr,true);
+        require(native && modern && modern->width==native->width && modern->height==native->height,"cash preserves authoritative raster extent");
+        const auto glyph=font.renderPresentation(cash.text,0x00D7E8ED,36,400,false);
+        if(panel.key<104) {
+            require(glyph && glyph->width<=unsigned(cash.width*3) && glyph->height<=60,"normal signed model values fit entire36pt glyph");
+            auto expected=*native;
+            for(int y=186;y<246;++y)for(unsigned x=45;x<modern->width;++x){const auto pixel=(std::size_t(y)*modern->width+x)*4;for(unsigned c=0;c<4;++c)expected.pixels[pixel+c]=0;}
+            require(data::blitStraightRGBA8(expected,*glyph,45,186,data::BitmapBlitMode::SourceOver).has_value() && expected.pixels==modern->pixels,"only cash rectangle changes to full independent regular cream glyph");
+        } else require(modern->pixels==native->pixels,"extreme int64 model cash falls back to full original cash run");
+        require(font.settings()==settings,"cash painter restores caller font state");
+        auto bad=panel;bad.priority=99;const auto unmatched=statsui::renderStatsTextSurface(bad,font,nullptr,true);require(unmatched && unmatched->pixels==native->pixels,"unqualified cash shape keeps complete native presentation");
+        if(!captureRoot.empty()){require(data::blitStraightRGBA8(captures[0],*native,panel.x*3,panel.y*3,data::BitmapBlitMode::SourceOver).has_value(),"cash native CPU fixture");require(data::blitStraightRGBA8(captures[1],*modern,panel.x*3,panel.y*3,data::BitmapBlitMode::SourceOver).has_value(),"cash modern CPU fixture");}
+    }
+    if(!captureRoot.empty()) {
+        std::filesystem::create_directories(captureRoot);
+        for(unsigned i=0;i<2;++i){std::ofstream file(captureRoot/(i?"cash-text-after.ppm":"cash-text-before.ppm"),std::ios::binary);file<<"P6\n"<<captures[i].width<<' '<<captures[i].height<<"\n255\n";for(std::size_t offset=0;offset<captures[i].pixels.size();offset+=4)file.write(reinterpret_cast<const char*>(captures[i].pixels.data()+offset),3);require(bool(file),"CPU text-only qualification PPM written");}
+        std::cout<<"captures=CPU production text-plan only; teal inspection background; no cash icons or GPU/live-game claim\n";
+    }
+    // Amount changes invalidate existing immutable publication; the same authored
+    // root remains alive when only the modern mode is toggled.
+    Fixture f;f.game.numberOfPlayers=6;f.state.playerCount=6;for(unsigned i=0;i<6;++i){f.state.playerOrder[i]=static_cast<rules::PlayerNumber>(i);f.game.players[i].cash=values[i];}
+    engine::SequencePlayback sequence(f.resources.service.snapshot());statsui::TextPlayback text;
+    const auto sync=[&](bool modern){return text.sync(f.state,f.game,f.inputs,f.calc,f.future,f.accounts,0,13,display::Screen2D::Portfolio,&font,sequence,modern);};
+    require(sync(false).has_value() && sequence.update(0).has_value(),"cash native initial publication");const auto nodes=sequence.world2D().order();const auto before=*sequence.world2D().find(nodes.front());require(sequence.update(9).has_value(),"cash clock advances");const auto clock=sequence.world2D().find(nodes.front())->clock;
+    require(sync(true).has_value() && sequence.commands().pendingCount()==0 && sequence.update(9).has_value(),"cash mode refresh preserves sequence root");const auto after=*sequence.world2D().find(nodes.front());require(after.clock==clock && after.priority==before.priority && after.contentsDataId==before.contentsDataId && after.worldTransform.values[6]==before.worldTransform.values[6] && after.worldTransform.values[7]==before.worldTransform.values[7],"cash clock priority identity and coordinates remain native");const auto asset=after.asset;
+    require(sync(true).has_value() && sequence.runtimeBitmaps().asset(after.contentsDataId)==asset,"warm cash retains immutable cached raster");require(sync(false).has_value() && sequence.update(9).has_value() && sequence.world2D().find(nodes.front())->asset->image.pixels==before.asset->image.pixels,"context off restores native cash pixels");
+    f.game.players[0].cash=99;require(sync(true).has_value() && sequence.runtimeBitmaps().asset(before.contentsDataId)!=asset,"changed genuine model cash invalidates publication");require(font.settings()==settings,"cash lifecycle restores caller settings");
+    std::cout<<"[PASS] six model cash values regular cream/extreme fallback/cache/clock/context\n";
 }
-int main(int argc,char** argv){try{if(argc==3 && std::string_view(argv[1])=="--calculator-description-qualify"){const auto paths=data::ResourcePaths::create(std::array{std::filesystem::absolute(argv[2])});data::ResourceRuntime resources;require(paths && resources.initialize(*paths).has_value(),"actual calculator DAT resources initialize");testCalculatorDescriptionPresentation(*resources.snapshot());testCalculatorDescriptionSequence();return 0;}testCalculatorDescriptionSequence();std::cout<<"[PASS] modern calculator description cache and sequence lifecycle\n";testPlayerCashPainterOrder();std::cout<<"[PASS] player cash painter order survives refresh/sort/reentry\n";testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+}
+int main(int argc,char** argv){try{if(argc==3 && std::string_view(argv[1])=="--player-cash-qualify"){const auto paths=data::ResourcePaths::create(std::array{std::filesystem::absolute(argv[2])});data::ResourceRuntime resources;require(paths && resources.initialize(*paths).has_value(),"actual cash DAT resources initialize");testPlayerCashPresentation(*resources.snapshot(),"modern/build/player-cash-text-polish-20261002");return 0;}if(argc==3 && std::string_view(argv[1])=="--calculator-description-qualify"){const auto paths=data::ResourcePaths::create(std::array{std::filesystem::absolute(argv[2])});data::ResourceRuntime resources;require(paths && resources.initialize(*paths).has_value(),"actual calculator DAT resources initialize");testCalculatorDescriptionPresentation(*resources.snapshot());testCalculatorDescriptionSequence();return 0;}{Fixture cashFixture;testPlayerCashPresentation(*cashFixture.resources.service.snapshot());}testCalculatorDescriptionSequence();std::cout<<"[PASS] modern calculator description cache and sequence lifecycle\n";testPlayerCashPainterOrder();std::cout<<"[PASS] player cash painter order survives refresh/sort/reentry\n";testPlayerBankAndFuture();std::cout<<"[PASS] player bank history and future text\n";testCalculatorInteractionAndDeedFloater();std::cout<<"[PASS] calculator input and deed floater\n";testCalculatorPopupSuppressesFloaterText();std::cout<<"[PASS] popup suppresses and restores normal deed text\n";testWrappedHistoryViewport();std::cout<<"[PASS] wrapped journal viewport and scroll limit\n";testPublicationAndFailures();std::cout<<"[PASS] publication and failures\n";testModernCoverageAndHistory();std::cout<<"[PASS] modern coverage and native history geometry\n";testModernModeRefreshPreservesSequence();std::cout<<"[PASS] modern mode preserves sequence lifecycle\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

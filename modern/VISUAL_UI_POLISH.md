@@ -971,3 +971,26 @@ teal is substantially more readable, with the same 510 funds and the pending car
 hidden during hover. This establishes the actual NetWorth description view;
 the other seven descriptions have CPU proof, not separate live captures.
 Release passes54–55 build successfully in `build/passes54-55-release-build.log`.
+
+Two additional pass55 descriptions were inspected live in
+`build/polish-continuation-20261001/pass55-future-description-real-after.png`
+and `pass55-general-income-description-real-after.png`, covering FutureToYou
+and GeneralIncome beyond the earlier NetWorth view.
+
+## Larger Portfolio cash text (pass56)
+
+Actual process 28272 at 1920x1080 produced the accepted
+`build/polish-continuation-20261001/pass56-player-cash-real-after.png`.
+Compared with `pass55-networth-description-real-after.png`, the same six balances
+618/510/1334/1710/992/1208 remain intact. Larger regular cream text at size 12
+fits the strip without obscuring deeds. CPU qualification covers six cash cases,
+including int64 extremes and complete native fallback, in
+`pass56-cash-real-cpu.log` and `pass56-stats-regular.log`. The Release build passes
+in `build/pass56-trace-release-build.log`; its temporary tracing is diagnostic
+work, not a committable part of this presentation change.
+
+Actual Cash sort, Deeds and Bank work with Services25 pending, no CardSeen and
+unchanged 510 cash, as captured in `pass56-cash-sort-trace-real.png`,
+`pending-card-deeds-trace-real.png` and `pending-card-bank-trace-real.png` in that
+qualification directory. The earlier unexpected Main return was not reproduced;
+these observations do not establish that its cause has been resolved.
