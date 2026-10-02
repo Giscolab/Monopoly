@@ -28,8 +28,75 @@ namespace
     }
 }
 
+void testModernPlayerPropertyRects()
+{
+    using namespace monopoly;
+    auto game = makeState(); game.numberOfPlayers = 6;
+    constexpr std::array<int,9> deeds{1,3,5,6,8,9,15,25,35};
+    for (const auto square : deeds) game.squares[square].owner = 2;
+    statsui::State state{}; state.playerCount = 6; state.portfolioVisible = true;
+    for (int column = 0; column < 6; ++column)
+    {
+        for (int index = 0; index < 6; ++index) state.playerOrder[index] = (index + 2 + 6 - column) % 6;
+        statsui::setPropertyActionContext(state, ibar::RuleMode::Mortgage, 2, true, 0, 0,
+            0xffffffffu, true);
+        for (const auto square : deeds)
+        {
+            int rank = 0;
+            for (const auto other : deeds)
+                if (ibar::layout::propertyBarOrder(other) < ibar::layout::propertyBarOrder(square)) ++rank;
+            const auto rect = statsui::playerPropertyRect(state, game, column, square);
+            const int x = column * 130 + 3 + 5 + 42 * (rank % 3);
+            const int y = 308 + 44 * (rank / 3);
+            expect(rect == statsui::Rect{x,y,x+36,y+42} &&
+                   statsui::propertyActionHit(state, game, x+18,y+21) == square,
+                "nine-deed grid has exact renderer/picking rectangles through all six player columns");
+        }
+    }
+    const auto baseline = [&]
+    {
+        auto native = state; native.modernPlayerLayout = false;
+        return statsui::playerPropertyRect(native, game, 5, 1);
+    };
+    expect(statsui::playerPropertyRect(state,game,6,1) == std::nullopt &&
+           statsui::playerPropertyRect(state,game,5,0) == std::nullopt,
+        "invalid column and nondeed have no rectangle");
+    game.squares[11].owner = 2;
+    expect(statsui::playerPropertyRect(state,game,5,1) == baseline(),
+        "ten deeds retain exact native geometry");
+    game.squares[11].owner = rules::NobodyPlayer;
+    game.cards[0].jailOwner = 2;
+    expect(statsui::playerPropertyRect(state,game,5,1) == baseline(),
+        "held jail-free card retains native geometry to avoid icon overlap");
+    game.cards[0].jailOwner = rules::NobodyPlayer;
+    for (const auto kind : {rules::CountHitType::FutureRent, rules::CountHitType::RentImmunity})
+    {
+        game.countHits[0].toPlayer = 2; game.countHits[0].hitType = kind;
+        expect(statsui::playerPropertyRect(state,game,5,1) == baseline(),
+            "authored future/immunity icons retain native geometry even with zero hit count");
+    }
+    game.countHits[0].toPlayer = rules::NobodyPlayer;
+    statsui::setPropertyActionContext(state,ibar::RuleMode::Build,2,true,ibar::layout::propertyBit(1),0,0,true);
+    const auto one = statsui::playerPropertyRect(state,game,5,1);
+    const auto other = statsui::playerPropertyRect(state,game,5,3);
+    expect(one && other && statsui::propertyActionHit(state,game,one->left+18,one->top+21)==1 &&
+           !statsui::propertyActionHit(state,game,other->left+18,other->top+21),
+        "grid picking preserves genuine Build eligibility");
+    statsui::setPropertyActionContext(state,ibar::RuleMode::Mortgage,2,true,0,0,0xffffffffu);
+    expect(!state.modernPlayerLayout && statsui::playerPropertyRect(state,game,5,1)==baseline(),
+        "default native context resets grid before cached state can be reused");
+    state.playerCount = 4; state.playerOrder[0] = 2; state.modernPlayerLayout = true;
+    auto native = state; native.modernPlayerLayout = false;
+    expect(statsui::playerPropertyRect(state,game,0,1)==statsui::playerPropertyRect(native,game,0,1),
+        "large one-to-four player panes stay native");
+    state.playerCount = 5; native = state; native.modernPlayerLayout = false;
+    expect(statsui::playerPropertyRect(state,game,0,1) != statsui::playerPropertyRect(native,game,0,1),
+        "five-player compact pane enables qualified grid too");
+}
+
 int main()
 {
+    testModernPlayerPropertyRects();
     using namespace monopoly;
     statsui::State projection{};
     statsui::reset(projection);

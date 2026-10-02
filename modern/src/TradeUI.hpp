@@ -111,6 +111,8 @@ namespace monopoly::tradeui
         bool proposed{};
         bool showPropose{};
         bool aiProposing{};
+        // Presentation configuration; retained by reset, never part of RULE.
+        bool modernHoldingsLayout{};
         display::Screen2D formerView{display::Screen2D::Invalid};
         int desiredTradePanels{-1};
         std::array<std::int64_t, 4> cashDesired{};

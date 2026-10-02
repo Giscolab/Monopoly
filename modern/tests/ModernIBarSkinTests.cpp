@@ -1336,6 +1336,24 @@ namespace
             context=false;require(skin.substitute(0x20355,*original,true,world,501)==*original,
                 "live qualification loss restores entire original before cached hit");context=true;
         }
+        constexpr std::array<std::array<int,2>,4> tradePositions{{{9,395},{609,395},{209,358},{409,358}}};
+        for(unsigned icon=0;icon<4;++icon)
+        {
+            const auto& position=tradePositions[icon];const auto tradeWorld=sequence::translate2D(position[0],position[1]);
+            require(skin.substitute(0x20355,*original,true,tradeWorld,100+icon)==first,
+                "four authentic Trade cash positions reuse exact qualified coin57 without another raster");
+            context=false;require(skin.substitute(0x20355,*original,true,tradeWorld,100+icon)==*original,
+                "Trade eligibility loss restores entire native source before shared coin cache");context=true;
+            for(unsigned other=0;other<4;++other)if(other!=icon)
+                require(skin.substitute(0x20355,*original,true,tradeWorld,100+other)==*original,
+                    "Trade cash priority and placement cannot be mixed between owners");
+            auto shifted=tradeWorld;shifted.values[6]+=1;
+            auto scaled=tradeWorld;scaled.values[0]=.99F;
+            require(skin.substitute(0x20355,*original,true,shifted,100+icon)==*original &&
+                skin.substitute(0x20355,*original,true,scaled,100+icon)==*original &&
+                skin.substitute(0x20355,*original,true,tradeWorld,501)==*original,
+                "unmeasured Trade translations scales and Portfolio priority remain exact native fallback");
+        }
         const auto world=sequence::translate2D(8,254);
         require(skin.substitute(0x20355,*original,true,world,500)==*original &&
             skin.substitute(0x20355,*original,false,world,501)==*original &&
@@ -1352,6 +1370,8 @@ namespace
             if(mode==4){auto payload=std::make_shared<data::DataBytes>(*bad->source);(*payload)[100]^=std::byte{1};bad->source=payload;}
             require(skin.substitute(0x20355,bad,true,world,501)==bad,
                 "arbitrary header-compatible or mutated source/RGBA retains full native fallback");
+            require(skin.substitute(0x20355,bad,true,sequence::translate2D(9,395),100)==bad,
+                "Trade also rejects every arbitrary or mutated source/RGBA");
         }
         const auto program=sequence::SequenceProgram::load(resources.snapshot(),0x20355);
         sequence::SequenceRuntime runtime;require(program && runtime.start(*program,501),"actual raw coin root starts");

@@ -219,30 +219,9 @@ namespace monopoly::statsui
         {
             const auto count = std::min<std::size_t>(state.playerCount,
                 std::min<std::size_t>(gameState.numberOfPlayers, rules::MaxPlayers));
-            const int boxWidth = count > 4 ? 130 : 198;
-            const int deedBoxWidth = count > 4 ? 120 : 130;
-            const int deedBoxX = count > 4 ? 5 : 61;
-            const int deedBoxY = count > 4 ? 300 : 275;
             for (std::size_t column = 0; column < count; ++column)
             {
                 if (state.playerOrder[column] != state.propertyActionPlayer) continue;
-                std::array<bool, 11> counted{};
-                for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
-                {
-                    if (gameState.squares[static_cast<std::size_t>(square)].owner !=
-                        state.propertyActionPlayer) continue;
-                    const int order = ibar::layout::propertyBarOrder(square);
-                    if (order >= 0) counted[static_cast<std::size_t>(order / 3)] = true;
-                }
-
-                std::array<int, 11> compressed{};
-                compressed.fill(-1);
-                int numberOfColumns = 0;
-                for (std::size_t index = 0; index < counted.size(); ++index)
-                    if (counted[index]) compressed[index] = numberOfColumns++;
-                int widthApart = numberOfColumns == 0 ? 0 :
-                    (deedBoxWidth - 8 - 36) / numberOfColumns;
-                widthApart = std::min(widthApart, 72);
                 int bestSquare = -1;
                 int bestPriority = -1;
                 for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
@@ -250,16 +229,8 @@ namespace monopoly::statsui
                     if (!propertyEligible(state, gameState, square)) continue;
                     const int order = ibar::layout::propertyBarOrder(square);
                     if (order < 0) continue;
-                    const int group = compressed[static_cast<std::size_t>(order / 3)];
-                    if (group < 0) continue;
-                    const int depth = order % 3;
-                    const int x = static_cast<int>(column) * boxWidth +
-                        3 + 3 * static_cast<int>(column) + deedBoxX +
-                        group * widthApart + 4 * depth;
-
-                    const int y = deedBoxY + 20 * depth;
-                    if (mouseX >= x && mouseX < x + 36 &&
-                        mouseY >= y && mouseY < y + 42)
+                    const auto rect = playerPropertyRect(state, gameState, column, square);
+                    if (rect && rect->contains(mouseX, mouseY))
                     {
                         const int priority = 510 + order;
                         if (priority > bestPriority)
@@ -374,14 +345,74 @@ namespace monopoly::statsui
         rules::PlayerNumber player, bool localHuman,
         ibar::layout::PropertyMask buildProperties,
         ibar::layout::PropertyMask sellProperties,
-        ibar::layout::PropertyMask mortgageProperties) noexcept
+        ibar::layout::PropertyMask mortgageProperties,
+        bool modernPlayerLayout) noexcept
     {
+        state.modernPlayerLayout = modernPlayerLayout;
         state.propertyActionMode = mode;
         state.propertyActionPlayer = player;
         state.propertyActionPlayerLocalHuman = localHuman;
         state.buildProperties = buildProperties;
         state.sellProperties = sellProperties;
         state.mortgageProperties = mortgageProperties;
+    }
+
+    std::optional<Rect> playerPropertyRect(
+        const State& state, const rules::GameState& gameState,
+        std::size_t column, int square) noexcept
+    {
+        const auto count = std::min<std::size_t>(state.playerCount,
+            std::min<std::size_t>(gameState.numberOfPlayers, rules::MaxPlayers));
+        if (column >= count || square < 0 || square >= static_cast<int>(rules::SquareCount))
+            return std::nullopt;
+        const auto player = state.playerOrder[column];
+        const int order = ibar::layout::propertyBarOrder(square);
+        if (player >= gameState.numberOfPlayers || player >= rules::MaxPlayers || order < 0 ||
+            gameState.squares[static_cast<std::size_t>(square)].owner != player)
+            return std::nullopt;
+        std::array<bool, 11> counted{};
+        int ownedCount = 0;
+        int rank = 0;
+        for (int other = 0; other < static_cast<int>(rules::SquareCount); ++other)
+        {
+            if (gameState.squares[static_cast<std::size_t>(other)].owner != player) continue;
+            const int otherOrder = ibar::layout::propertyBarOrder(other);
+            if (otherOrder < 0) continue;
+            ++ownedCount;
+            if (otherOrder < order) ++rank;
+            counted[static_cast<std::size_t>(otherOrder / 3)] = true;
+        }
+        const bool hasJailCard = std::any_of(gameState.cards.begin(), gameState.cards.end(),
+            [&](const auto& card) { return card.jailOwner == player; });
+        const bool hasContractIcon = std::any_of(gameState.countHits.begin(), gameState.countHits.end(),
+            [&](const auto& hit)
+            {
+                return hit.toPlayer == player && (hit.hitType == rules::CountHitType::FutureRent ||
+                    hit.hitType == rules::CountHitType::RentImmunity);
+            });
+        const int columnIndex = static_cast<int>(column);
+        if (state.modernPlayerLayout && count > 4 && ownedCount <= 9 &&
+            !hasJailCard && !hasContractIcon)
+        {
+            // Local BSSM displays only its player's box; its gap remains 3.
+            const int gap = state.propertyActionPlayerLocalHuman &&
+                propertyActionMode(state.propertyActionMode) ? 3 : 3 + 3 * columnIndex;
+            const int x = columnIndex * 130 + gap + 5 + (rank % 3) * 42;
+            const int y = 224 + 84 + (rank / 3) * 44;
+            return Rect{x, y, x + 36, y + 42};
+        }
+        std::array<int, 11> compressed{};
+        compressed.fill(-1);
+        int columns = 0;
+        for (std::size_t index = 0; index < counted.size(); ++index)
+            if (counted[index]) compressed[index] = columns++;
+        const int width = count > 4 ? 120 : 130;
+        const int apart = columns == 0 ? 0 : std::min((width - 8 - 36) / columns, 72);
+        const int x = columnIndex * (count > 4 ? 130 : 198) + 3 + 3 * columnIndex +
+            (count > 4 ? 5 : 61) + compressed[static_cast<std::size_t>(order / 3)] * apart +
+            4 * (order % 3);
+        const int y = (count > 4 ? 300 : 275) + 20 * (order % 3);
+        return Rect{x, y, x + 36, y + 42};
     }
 
     std::optional<int> propertyActionHit(const State& state,

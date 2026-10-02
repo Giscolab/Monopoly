@@ -111,35 +111,12 @@ namespace monopoly::statsui
                 if (colour >= rules::MaxPlayerColours)
                     return std::unexpected(
                         "UDStats Player colour is out of range");
-                const int deedColumnOffset = 3 + 3 * static_cast<int>(column);
                 result.push_back({
                     mainId(static_cast<data::DataTag>(geometry.boxBaseTag + colour)),
                     PlayerBoxPriority,
                     static_cast<int>(column) * geometry.boxWidth + boxGapOffset,
                     224});
                 boxGapOffset += 3;
-
-                std::array<bool, 11> counted{};
-                for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
-                {
-                    if (gameState.squares[static_cast<std::size_t>(square)].owner != player)
-                        continue;
-                    const int order = ibar::layout::propertyBarOrder(square);
-                    if (order < 0) continue;
-                    counted[static_cast<std::size_t>(order / 3)] = true;
-                }
-
-                std::array<int, 11> compressed{};
-                compressed.fill(-1);
-                int numberOfColumns = 0;
-                for (std::size_t index = 0; index < counted.size(); ++index)
-                    if (counted[index]) compressed[index] = numberOfColumns++;
-
-                int widthApart = 0;
-                if (numberOfColumns != 0)
-                    widthApart = (geometry.deedBoxWidth - 8 - PlayerDeedWidth) /
-                        numberOfColumns;
-                widthApart = std::min(widthApart, PlayerDeedWidth * 2);
 
                 for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
                 {
@@ -148,15 +125,10 @@ namespace monopoly::statsui
                     const int order = ibar::layout::propertyBarOrder(square);
                     if (order < 0 || !deedVisible(gameState, square, inputs))
                         continue;
-                    const int groupColumn = compressed[static_cast<std::size_t>(order / 3)];
-                    if (groupColumn < 0)
-                        return std::unexpected(
-                            "UDStats Player deed column compression failed");
-                    const int depth = order % 3;
-                    const int x = static_cast<int>(column) * geometry.boxWidth +
-                        deedColumnOffset + geometry.deedBoxX +
-                        groupColumn * widthApart + 4 * depth;
-                    const int y = geometry.deedBoxY + 20 * depth;
+                    const auto rect = playerPropertyRect(state, gameState, column, square);
+                    if (!rect) return std::unexpected("UDStats Player deed geometry failed");
+                    const int x = rect->left;
+                    const int y = rect->top;
                     const auto id = deedId(square,
                         deedUsesMortgagedFace(gameState, square, inputs.mode));
                     if (id == data::EmptyDataId)

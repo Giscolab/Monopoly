@@ -2280,6 +2280,7 @@ namespace monopoly::engine
         // appelee. Un cycle moteur correspond maintenant a une soumission
         // de frame, comme le cycle d'affichage ArtLib original.
         std::optional<std::pair<World3DRect, World3DCamera>> retailWorldView;
+        bool modernBoardPublished = false;
         auto* session = sequencePlayback();
         if (session)
         {
@@ -2631,7 +2632,7 @@ namespace monopoly::engine
                 userinterface::statsState(), effectiveRuleMode, iBarActivePlayer,
                 statsPlayerInputs.iBarPlayerLocalHuman,
                 bssmAvailability.buildProperties, bssmAvailability.sellProperties,
-                bssmAvailability.mortgageProperties);
+                bssmAvailability.mortgageProperties, modernTradeText);
             const auto statsPlayerSync = statsPlayerPlayback.sync(
                 userinterface::statsStateReadOnly(), ruleState, statsPlayerInputs,
                 displayState.desired2DView, *session);
@@ -3169,6 +3170,8 @@ namespace monopoly::engine
                     lightingSync.error().c_str());
             if (worldRenderer)
             {
+                // Derived from the actual published board, not the requested option.
+                modernBoardPublished = modernBoardBounds.has_value();
                 worldRenderer->setModernPresentation(modernBoardBounds.has_value());
                 worldRenderer->setPresentationShadows(modernBoardBounds.has_value());
                 worldRenderer->setPresentationAntialiasing(modernBoardBounds.has_value());
@@ -3220,6 +3223,7 @@ namespace monopoly::engine
                 }
                 if (modernBoardRejected)
                 {
+                    modernBoardPublished = false;
                     (void)cache->retainStaticAssets({});
                     worldRenderer->setModernPresentation(false);
                     worldRenderer->setPresentationShadows(false);
@@ -3245,8 +3249,18 @@ namespace monopoly::engine
              presentationState.current2DView == display::Screen2D::PlayerSelectRules ||
              presentationState.current2DView == display::Screen2D::Auction ||
              presentationState.current2DView == display::Screen2D::Trade);
-        const SDL_FColor backdrop = (modernMenuBackdrop || openingMoviePresentation.active()) ?
-            SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
+        const auto presentationResources = session ? session->resources() : nullptr;
+        const bool modernBoardBackdrop = modernBoardPublished && modernSceneOptions.proceduralBoard &&
+            presentationResources && presentationResources->context().board == data::BoardEdition::Usa &&
+            presentationResources->context().language == data::LanguageId::EnglishUs &&
+            !openingMovies.active() && !openingMoviePresentation.active() &&
+            presentationState.city == 0 && presentationState.system == 13 &&
+            presentationState.customBoardPath.empty() &&
+            (presentationState.current2DView == display::Screen2D::Portfolio ||
+             presentationState.current2DView == display::Screen2D::Main);
+        const SDL_FColor backdrop = modernBoardBackdrop ? SDL_FColor{22.0F/255, 60.0F/255, 61.0F/255, 1} :
+            (modernMenuBackdrop || openingMoviePresentation.active()) ?
+                SDL_FColor{13.0F/255, 35.0F/255, 38.0F/255, 1} : SDL_FColor{0, 0, 0, 1};
         const bool profilePresent = startupCPUProfile.published && !startupCPUProfile.presented;
         const auto presentStarted = profilePresent ? startupCPUProfile.start() : StartupCPUProfile::Clock::time_point{};
         const auto presented=gpuframe::present(gpuDevice, gameWindow,

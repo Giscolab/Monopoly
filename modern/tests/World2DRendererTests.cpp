@@ -13,6 +13,7 @@
 #include "AuctionPennyBagsPlayback.hpp"
 #include "AuctionPlayback.hpp"
 #include "StatsPlayerCashPlayback.hpp"
+#include "TradeCashTextPlayback.hpp"
 #include "IBarCardPlayback.hpp"
 #include "TradePartnerSelectionPlayback.hpp"
 #include "TradePropertyPlayback.hpp"
@@ -1229,18 +1230,30 @@ namespace
 
 
     void capturePlayerCashCoins(SDL_GPUDevice* device,engine::World2DRenderer& renderer,
-        const std::filesystem::path& retailRoot,const std::filesystem::path& output)
+        const std::filesystem::path& retailRoot,const std::filesystem::path& output,bool trade=false)
     {
         const auto paths=data::ResourcePaths::create(std::array{retailRoot});data::ResourceRuntime resources;
         require(paths && resources.initialize(*paths),"actual Player cash DAT opens");
         rules::GameState game;game.numberOfPlayers=6;statsui::State state;state.playerCount=6;
         for(unsigned player=0;player<6;++player)state.playerOrder[player]=rules::PlayerNumber(player);
         engine::SequencePlayback playback(resources.snapshot());statsui::PlayerCashPlayback consumer;
-        require(consumer.sync(state,game,{},display::Screen2D::Portfolio,playback).has_value(),
+        fonts::Runtime font;tradeui::CashTextPlayback tradeConsumer;
+        if(trade)
+        {
+            const auto fontRoots=std::array{std::filesystem::path("C:/Windows/Fonts")};
+            const auto arial=fonts::resolveRetailArial(fontRoots);
+            require(arial && font.setFont(*arial) && font.setSize(12) && font.saveSettings(0),"actual Trade cash Arial initializes");
+            require(font.setSize(8).has_value(),"native cash font size8 selected");font.setWeight(500);
+            require(font.saveSettings(8).has_value() && font.restoreSettings(0).has_value(),"native cash font slot8 preserved");
+            tradeui::State tradeState;tradeState.playerA=0;tradeState.playerB=1;tradeState.cashDesired={0,0,90,107};
+            require(tradeConsumer.sync(tradeState,game,display::Screen2D::Trade,13,&font,playback).has_value(),
+                "real TradeCashTextPlayback queues four raw coin owners and native cash text surfaces");
+        }
+        else require(consumer.sync(state,game,{},display::Screen2D::Portfolio,playback).has_value(),
             "real PlayerCashPlayback queues six raw cash UAPs at authentic positions");
         require(playback.update(0).has_value() && playback.update(60).has_value(),"real raw coin clocks advance60");
-        auto items=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources());
-        require(items && items->size()==6,"real Player consumer publishes exactly six cash icons");
+        auto items=sequence::collectSequenceBitmapRenderData(playback.runtime(),playback.resources(),&playback.runtimeBitmaps());
+        require(items && items->size()==(trade?8U:6U),"actual Trade publishes four coins plus four runtime cash texts; Portfolio publishes six coins");
         std::map<sequence::SequenceNodeId,engine::SequenceWorld2DObject> originals;
         for(auto& item:*items)
         {const auto* native=playback.world2D().find(item.node);require(native!=nullptr,"raw cash node exists");
@@ -1251,12 +1264,27 @@ namespace
             ibar::ModernIBarSkin::TextRasterizer{});skin->configurePresentationContext([&]{return context;});
         playback.world2D().configureModernIBarSkin(skin);data::BitmapRuntimeCache cache;
         require(playback.world2D().sync(*items,cache).has_value(),"raw cash publishes through existing qualified skin seam");
+        unsigned changed=0,texts=0;
         for(const auto& [node,native]:originals)
         {
             const auto* modern=playback.world2D().find(node);
-            require(modern && modern->asset!=native.asset && modern->priority==501 && modern->clock==native.clock &&
+            if(native.contentsDataId!=0x20355)
+            {
+                ++texts;
+                constexpr std::array<std::array<int,2>,4> textPositions{{{10,428},{610,428},{210,391},{410,391}}};
+                bool position=false;
+                for(const auto& point:textPositions)
+                    position=position || native.worldTransform.values==sequence::translate2D(point[0],point[1]).values;
+                require(trade && data::isRuntimeBitmapDataId(native.contentsDataId) && native.priority==474 &&
+                    native.asset->image.width==50 && native.asset->image.height==11 && position,
+                    "four authentic Trade native cash fonts retain clipped50x11 surfaces and original placements");
+                require(modern && modern->asset==native.asset && modern->worldTransform.values==native.worldTransform.values &&
+                    modern->priority==native.priority && modern->clock==native.clock,"Trade text surface pixels clock and placement are unchanged");continue;
+            }
+            ++changed;
+            require(modern && modern->asset!=native.asset && modern->priority==native.priority && modern->clock==native.clock &&
                 modern->contentsDataId==native.contentsDataId && modern->asset->image.width==156 && modern->asset->image.height==135,
-                "six production coins replace pixels only with unchanged identity and clock");
+                "authentic Portfolio or Trade coins replace pixels only with unchanged identity and clock");
             require(engine::SequenceWorld2DSlot::transformPoint(modern->worldTransform,0,0)==
                 engine::SequenceWorld2DSlot::transformPoint(native.worldTransform,0,0) &&
                 engine::SequenceWorld2DSlot::transformPoint(modern->worldTransform,156,135)==
@@ -1270,17 +1298,20 @@ namespace
                     native.asset->image.pixels.begin()+b),"GPU input retains pixel-exact native socle RGBA");
             }
         }
+        require(changed==(trade?4U:6U) && texts==(trade?4U:0U),"precisely the authentic cash coin owners receive palette replacements");
         const auto after=capture(device,renderer,playback.world2D(),width,height);
         require(before!=after,"realGPU coin palette and vector glyph visibly differ from retail");
-        std::filesystem::create_directories(output);writeBmp(output/"player-cash-before.bmp",before,width,height);
-        writeBmp(output/"player-cash-after.bmp",after,width,height);
+        std::filesystem::create_directories(output);
+        const std::string name=trade?"trade-cash":"player-cash";
+        writeBmp(output/(name+"-before.bmp"),before,width,height);writeBmp(output/(name+"-after.bmp"),after,width,height);
         context=false;require(playback.world2D().sync(*items,cache).has_value(),"cash live context fallback publishes");
         for(const auto& [node,native]:originals)
         {const auto* fallback=playback.world2D().find(node);require(fallback && fallback->asset==native.asset &&
             fallback->worldTransform.values==native.worldTransform.values && fallback->priority==native.priority &&
             fallback->clock==native.clock,"all native coin identities transforms clocks and RGBA restore exactly");}
         require(capture(device,renderer,playback.world2D(),width,height)==before,"realGPU coin fallback restores original framebuffer exactly");
-        std::cout<<"[PASS] real PlayerCashPlayback six coins/3x palette/exact mask and socle inputs/authored clocks/native GPU fallback\n";
+        std::cout<<(trade?"[PASS] real TradeCashTextPlayback four coins/four native clipped text surfaces/unchanged clocks and placements/exact GPU fallback\n":
+            "[PASS] real PlayerCashPlayback six coins/3x palette/exact mask and socle inputs/authored clocks/native GPU fallback\n");
     }
 
     void captureAuctionTokens(SDL_GPUDevice* device,engine::World2DRenderer& renderer,
@@ -2003,6 +2034,11 @@ int main(int argc, char** argv)
         if (!loaded) std::cout << loaded.error() << '\n';
         require(loaded.has_value(),"2D pipeline and shared quad upload succeed");
         auto renderer=std::move(*loaded);
+        if(argc==4 && std::string_view(argv[1])=="--trade-cash-coin-qualify")
+        {
+            capturePlayerCashCoins(device,*renderer,std::filesystem::path(argv[2]),std::filesystem::path(argv[3]),true);
+            renderer.reset();SDL_DestroyGPUDevice(device);device=nullptr;SDL_Quit();return 0;
+        }
         if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify")
         {
             capturePlayerCashCoins(device,*renderer,std::filesystem::path(argv[2]),std::filesystem::path(argv[3]));

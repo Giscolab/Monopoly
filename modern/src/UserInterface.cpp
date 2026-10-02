@@ -178,6 +178,7 @@ namespace monopoly::userinterface
     }
     tradeui::State& tradeState() noexcept
     {
+        tradeProjection.modernHoldingsLayout = engine::modernTradePresentationEnabled();
         return tradeProjection;
     }
     const tradeui::State& tradeStateReadOnly() noexcept
@@ -497,6 +498,7 @@ namespace monopoly::userinterface
         if (source == rules::MaxPlayers)
             return false;
 
+        tradeProjection.modernHoldingsLayout = engine::modernTradePresentationEnabled();
         const bool storedTradeValid =
             tradeProjection.tradeFrom < rules::MaxPlayers &&
             tradeProjection.playerA < rules::MaxPlayers &&
@@ -547,6 +549,7 @@ namespace monopoly::userinterface
         dicePrompt = {};
         iBarRuleProjection.reset();
         auctionui::reset(auctionProjection);
+        tradeProjection.modernHoldingsLayout = false;
         tradeui::reset(tradeProjection);
         optionsui::reset(optionsProjection);
         optionsSaveProjection = {};
@@ -974,6 +977,7 @@ namespace monopoly::userinterface
 
         completeLoadedGameIBarSetup();
 
+        tradeProjection.modernHoldingsLayout = engine::modernTradePresentationEnabled();
         const auto tradeUpdate = tradeui::processRuleMessage(
             tradeProjection, uiRuleState, message,
             display::state().desired2DView, localHumanPlayerMask(),
@@ -1649,6 +1653,7 @@ namespace monopoly::userinterface
                 (void)ibar::activateProperty(*square);
         }
 
+        tradeProjection.modernHoldingsLayout = engine::modernTradePresentationEnabled();
         const bool tradePartnerDialogWasVisible = tradeProjection.playerSelectVisible;
         if (const auto partner = tradeui::planPartnerSelection(
                 tradeProjection, uiRuleState, display::state().desired2DView,

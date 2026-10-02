@@ -1,4 +1,5 @@
 #include "StatsPlayerPlayback.hpp"
+#include "BoardRules.hpp"
 #include "SyntheticSequenceResources.hpp"
 
 #include <iostream>
@@ -94,6 +95,70 @@ namespace
             "fifth compact player box keeps retail spacing and accumulated 3px gaps");
     }
 
+    void testModernGridRenderAndHit()
+    {
+        rules::GameState game{}; game.numberOfPlayers = 6;
+        rules::board::initializeForOptions(game.options);
+        for (auto& square : game.squares) square.owner = rules::NobodyPlayer;
+        for (int player = 0; player < 6; ++player)
+        {
+            game.players[player].colour = player;
+            game.players[player].cash = 1500 - player * 100;
+        }
+        constexpr std::array<int,9> deeds{1,3,5,6,8,9,15,25,35};
+        for (const auto square : deeds) game.squares[square].owner = 2;
+        auto state = playerState(6); state.portfolioVisible = true;
+        SyntheticSequenceResources resources;
+        engine::SequencePlayback sequence(resources.service.snapshot());
+        statsui::PlayerPlayback playback;
+        const auto verify = [&](const statsui::PlayerPlaybackInputs& inputs, int tick)
+        {
+            require(playback.sync(state,game,inputs,display::Screen2D::Portfolio,sequence) && sequence.update(tick),
+                "modern nine-deed renderer sync succeeds");
+            std::size_t column = 0;
+            while (state.playerOrder[column] != 2) ++column;
+            for (const auto square : deeds)
+            {
+                const auto id = data::packDataId(data::LegacyGroupId::Patterns,
+                    static_cast<data::DataTag>(statsui::PlayerDeedNormalBaseTag + ibar::layout::propertyIndex(square)));
+                const auto roots = sequence.runtime().matching(id,
+                    statsui::PlayerDeedBasePriority + ibar::layout::propertyBarOrder(square),false);
+                const auto view = roots.empty() ? std::optional<sequence::SequenceNodeView>{}
+                    : sequence.runtime().inspect(roots.front());
+                const auto rect = statsui::playerPropertyRect(state,game,column,square);
+                require(view && rect && std::get<sequence::Matrix2D>(view->localTransform).values[6] == rect->left &&
+                    std::get<sequence::Matrix2D>(view->localTransform).values[7] == rect->top,
+                    "published deed transform uses shared grid/native rectangle with unchanged resource and priority");
+            }
+        };
+        int tick = 0;
+        for (int sort = 0; sort < 4; ++sort)
+        {
+            require(statsui::selectSort(state,sort,game), "all four player sorts refresh grid ordering");
+            statsui::setPropertyActionContext(state,ibar::RuleMode::Nothing,rules::NobodyPlayer,false,0,0,0,true);
+            verify({},tick++);
+        }
+        statsui::PlayerPlaybackInputs inputs{};
+        inputs.mode = ibar::RuleMode::Mortgage; inputs.iBarPlayer = 2; inputs.iBarPlayerLocalHuman = true;
+        for (const auto square : deeds) inputs.mortgageProperties |= ibar::layout::propertyBit(square);
+        statsui::setPropertyActionContext(state,inputs.mode,2,true,0,0,inputs.mortgageProperties,true);
+        verify(inputs,tick++);
+        std::size_t column = 0; while (state.playerOrder[column] != 2) ++column;
+        for (const auto square : deeds)
+        {
+            const auto rect = statsui::playerPropertyRect(state,game,column,square);
+            require(rect && statsui::propertyActionHit(state,game,rect->left+18,rect->top+21) == square,
+                "actual rendered local Mortgage grid remains clickable for every eligible deed");
+        }
+        require(playback.sync(state,game,inputs,display::Screen2D::Main,sequence) && sequence.update(tick++),
+            "leaving Portfolio retires grid roots");
+        verify(inputs,tick++);
+        game.cards[0].jailOwner = 2; verify(inputs,tick++);
+        game.cards[0].jailOwner = rules::NobodyPlayer;
+        statsui::setPropertyActionContext(state,inputs.mode,2,true,0,0,inputs.mortgageProperties);
+        verify(inputs,tick++);
+    }
+
     void testBssmFilteringAndTeardown()
     {
         rules::GameState game{};
@@ -157,6 +222,7 @@ int main()
 {
     try
     {
+        testModernGridRenderAndHit();
         testLargePlayerLayout();
         testSmallPlayerLayout();
         testBssmFilteringAndTeardown();

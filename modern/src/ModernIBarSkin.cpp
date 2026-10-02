@@ -1241,6 +1241,18 @@ namespace monopoly::ibar
                 if(!std::isfinite(world.values[i]) || std::abs(world.values[i]-expected[i])>.0001F)return false;
             return column;
         }
+        bool cashCoinPlacement(const sequence::Matrix2D& world,std::uint16_t priority)
+        {
+            if(priority==501)return playerCashPlacement(world);
+            if(priority<100 || priority>103)return false;
+            // UDTrade StartXY TAB_snpscsh1: exact four owner/priority positions.
+            constexpr std::array<std::array<float,2>,4> positions{{{9,395},{609,395},{209,358},{409,358}}};
+            const auto& position=positions[priority-100];
+            const auto expected=sequence::translate2D(position[0],position[1]);
+            for(unsigned i=0;i<9;++i)
+                if(!std::isfinite(world.values[i]) || std::abs(world.values[i]-expected.values[i])>.0001F)return false;
+            return true;
+        }
         bool originalPlayerCash(const data::BitmapRuntimeAsset& asset)
         {
             if(asset.dataId!=0x00020355 || asset.sourceType!=data::LegacyDataType::Uap || !asset.source ||
@@ -1352,8 +1364,8 @@ namespace monopoly::ibar
         if (!w || !h || w > 1600 || h > 600) return original;
         if(root==0x00020355)
         {
-            if(!principal || !presentationContext_ || !presentationContext_() || !priority || *priority!=501 ||
-                !rasterToWorld || !playerCashPlacement(*rasterToWorld) || !originalPlayerCash(*original))return original;
+            if(!principal || !presentationContext_ || !presentationContext_() || !priority ||
+                !rasterToWorld || !cashCoinPlacement(*rasterToWorld,*priority) || !originalPlayerCash(*original))return original;
             const Key key{root,w,h,true,{},501,{},original.get()};
             if(const auto found=cache_.find(key);found!=cache_.end())return found->second.replacement;
             auto result=std::make_shared<data::BitmapRuntimeAsset>();result->dataId=original->dataId;

@@ -192,18 +192,21 @@ namespace monopoly::tradeui
         void layoutPropertyBox(
             PropertyProjection& projection,
             int box,
-            PropertyMask visible) noexcept
+            PropertyMask visible,
+            bool modernHoldingsLayout) noexcept
         {
             if (box < 0 || box >= static_cast<int>(TradePropertyBoxOrigins.size())) return;
 
             std::array<bool, 11> columns{};
             int columnCount = 0;
+            int cardCount = 0;
             for (int square = 0; square < static_cast<int>(rules::SquareCount); ++square)
             {
                 const auto bit = ibar::layout::propertyBit(square);
                 if (bit == 0 || (visible & bit) == 0) continue;
                 const int order = ibar::layout::propertyBarOrder(square);
                 if (order < 0) continue;
+                ++cardCount;
                 const int column = order / 3;
                 if (!columns[static_cast<std::size_t>(column)])
                 {
@@ -262,6 +265,21 @@ namespace monopoly::tradeui
                     x += compactColumns[static_cast<std::size_t>(column)] * widthApart;
                 }
 
+                if (modernHoldingsLayout && box <= 1 && cardCount <= 8)
+                {
+                    // The same geometry feeds rendering, picking and transfer
+                    // endpoints. Keep retail geometry for crowded holdings/offers.
+                    int gridIndex = 0;
+                    for (int other = 0; other < static_cast<int>(rules::SquareCount); ++other)
+                    {
+                        const auto otherBit = ibar::layout::propertyBit(other);
+                        if (otherBit && (visible & otherBit) &&
+                            ibar::layout::propertyBarOrder(other) < order) ++gridIndex;
+                    }
+                    x = 11 + (gridIndex % 4) * 44;
+                    y = TradePropertyTopY[static_cast<std::size_t>(box)] +
+                        (gridIndex / 4) * 48;
+                }
                 const auto& origin = TradePropertyBoxOrigins[static_cast<std::size_t>(box)];
                 const int left = origin[0] + x;
                 const int top = origin[1] + y;
@@ -851,13 +869,13 @@ namespace monopoly::tradeui
             ~projection.offeredMortgaged[1];
 
         layoutPropertyBox(
-            projection, 0, projection.before[0] | projection.beforeMortgaged[0]);
+            projection, 0, projection.before[0] | projection.beforeMortgaged[0], state.modernHoldingsLayout);
         layoutPropertyBox(
-            projection, 1, projection.before[1] | projection.beforeMortgaged[1]);
+            projection, 1, projection.before[1] | projection.beforeMortgaged[1], state.modernHoldingsLayout);
         layoutPropertyBox(
-            projection, 2, projection.offered[0] | projection.offeredMortgaged[0]);
+            projection, 2, projection.offered[0] | projection.offeredMortgaged[0], state.modernHoldingsLayout);
         layoutPropertyBox(
-            projection, 3, projection.offered[1] | projection.offeredMortgaged[1]);
+            projection, 3, projection.offered[1] | projection.offeredMortgaged[1], state.modernHoldingsLayout);
         return projection;
     }
 

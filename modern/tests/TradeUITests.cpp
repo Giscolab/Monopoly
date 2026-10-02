@@ -1042,6 +1042,97 @@ namespace
             "Cancel clears local editor and requests Main without fabricating a RULE action");
     }
 
+    void testModernHoldingsGrid()
+    {
+        using namespace monopoly;
+        constexpr std::array<int, 8> deeds{1, 3, 5, 15, 25, 35, 31, 39};
+        for (int side = 0; side < 2; ++side)
+        {
+            auto game = gameWithPlayers(2);
+            for (const auto square : deeds) game.squares[square].owner = side;
+            game.squares[3].mortgaged = true;
+            tradeui::State state{};
+            state.modernHoldingsLayout = true;
+            expect(tradeui::beginLocalTrade(state, game, 0) && state.modernHoldingsLayout,
+                "local entry retains explicitly configured presentation policy");
+            const auto grid = tradeui::projectProperties(state, game);
+            auto nativeState = state;
+            nativeState.modernHoldingsLayout = false;
+            const auto native = tradeui::projectProperties(nativeState, game);
+            expect(grid.before == native.before && grid.beforeMortgaged == native.beforeMortgaged &&
+                   grid.after == native.after && grid.priorities == native.priorities,
+                "grid changes no holdings, mortgages, outcome or native priorities");
+            for (const auto square : deeds)
+            {
+                int rank = 0;
+                for (const auto other : deeds)
+                    if (ibar::layout::propertyBarOrder(other) < ibar::layout::propertyBarOrder(square)) ++rank;
+                const int x = side * 600 + 11 + (rank % 4) * 44;
+                const int y = 225 + 40 + (rank / 4) * 48;
+                const auto rect = grid.hitRects[side][square];
+                expect(rect == tradeui::Rect{x, y, x + 36, y + 42} &&
+                       tradeui::propertyHit(grid, x + 18, y + 21) == side * 100 + square,
+                    "all eight cards render and hit at exact distinct 4x2 cells");
+                for (const auto other : deeds)
+                {
+                    if (other == square) continue;
+                    const auto r = grid.hitRects[side][other];
+                    expect(rect.right <= r.left || r.right <= rect.left ||
+                           rect.bottom <= r.top || r.bottom <= rect.top,
+                        "holding card cells do not overlap");
+                }
+            }
+            expect(grid.hitRects[2] == native.hitRects[2] && grid.hitRects[3] == native.hitRects[3],
+                "empty offer panels remain native");
+            const int chosen = deeds[0];
+            const auto source = grid.hitRects[side][chosen];
+            uimsg::Message click{};
+            click.type = uimsg::Type::MouseLeftDown;
+            click.numberA = source.left + 18; click.numberB = source.top + 21;
+            (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+            const auto offered = tradeui::projectProperties(state, game);
+            expect(state.items.size() == 1 && state.items.front().numberD == chosen &&
+                   state.propertyMove && state.propertyMove->from == source &&
+                   state.propertyMove->to == offered.hitRects[side + 2][chosen] &&
+                   game.squares[chosen].owner == side,
+                "grid click uses exact render source and native offer destination without ownership mutation");
+            nativeState = state; nativeState.modernHoldingsLayout = false;
+            const auto nativeOffered = tradeui::projectProperties(nativeState, game);
+            expect(offered.hitRects[2] == nativeOffered.hitRects[2] &&
+                   offered.hitRects[3] == nativeOffered.hitRects[3],
+                "populated offer panels keep retail positions");
+            // Production PropertyPlayback retires the completed transfer first.
+            state.propertyMove.reset();
+            const auto returnSource = offered.hitRects[side + 2][chosen];
+            click.numberA = returnSource.left + 18; click.numberB = returnSource.top + 21;
+            (void)tradeui::processInput(state, game, display::Screen2D::Trade, click);
+            expect(state.items.empty() && state.propertyMove &&
+                   state.propertyMove->from == returnSource && state.propertyMove->to == source,
+                "offer removal returns to identical eight-card grid animation endpoint");
+            game.squares[6].owner = side;
+            const auto crowded = tradeui::projectProperties(state, game);
+            nativeState = state; nativeState.modernHoldingsLayout = false;
+            expect(crowded.hitRects == tradeui::projectProperties(nativeState, game).hitRects,
+                "nine holdings fall back to exact native layout");
+            tradeui::reset(state);
+            expect(state.modernHoldingsLayout && state.items.empty(),
+                "Trade reset retains only presentation configuration");
+        }
+        auto game = gameWithPlayers(6);
+        game.players[5].aiPlayerLevel = 2;
+        game.squares[5].owner = 5; game.squares[15].owner = 5;
+        tradeui::State state{}; state.modernHoldingsLayout = true;
+        actions::Message start{}; start.action = actions::Type::NotifyTradeStarted; start.numberA = 5;
+        (void)tradeui::processRuleMessage(state, game, start, display::Screen2D::Portfolio, 1u << 1);
+        (void)tradeui::processRuleMessage(state, game, start, display::Screen2D::Trade, 1u << 1);
+        (void)tradeui::processRuleMessage(state, game,
+            tradeItem(5, 2, rules::TradeItemKind::Cash, 50), display::Screen2D::Trade, 1u << 1);
+        expect(state.modernHoldingsLayout &&
+               tradeui::projectProperties(state, game).hitRects[0][15] == tradeui::Rect{11,265,47,307} &&
+               tradeui::projectProperties(state, game).hitRects[0][5] == tradeui::Rect{55,265,91,307},
+            "AI duplicate Started preserves shared grid policy");
+    }
+
     void testAutonomousPortfolioReturn()
     {
         using namespace monopoly;
@@ -1127,6 +1218,7 @@ namespace
 
 int main()
 {
+    testModernHoldingsGrid();
     testAutonomousPortfolioReturn();
     testPlayerSelectGeometryAndEntryGuard();
     testTwoPlayerShortcutAndPartnerValidation();

@@ -961,7 +961,7 @@ tokens. Four matched 1920x1080 GPU pairs are retained under
 `build/polish-continuation-20261001/pass54-auction-gpu/`: auction-0-tick0,
 auction-0-tick40, auction-1-tick0 and auction-1-tick40, each with before/after
 PNGs. Two pairs were visually inspected and accepted. This is production-fixture
-proof; the updated auction has not yet been encountered in MonopolyModern.
+proof; the subsequent full-game encounter is recorded below.
 
 Pass55 qualifies all eight authentic LANG descriptions with real Arial CPU
 checks. Actual process 14816 at 1920x1080 produced the inspected
@@ -1053,7 +1053,104 @@ show the player picker and result 0. This uses production futureValue logic,
 not a stub; unowned rent 0 is authentic. The Bank/Players cases still retain 510
 funds without CardSeen acknowledgement.
 
-The 45-minute actual process8680 FPS test is still in progress, split into four
-600-second segments and one 300-second segment under
-`pass59-active45min-segment1..5` CSVs. No completed result or estimated FPS is
-published for that unfinished session.
+The completed 45-minute process8680 FPS test comprises four 600-second segments
+and one 300-second segment under `pass59-active45min-segment1..5` CSVs. The
+combined result and live-session limits are recorded below.
+
+Pass54 was subsequently encountered in the actual full application during the
+process8680 long session. The inspected
+`build/polish-continuation-20261001/pass54-auction-modern-thumbnails-fullgame-real.png`
+shows six stable PNG portraits with balanced names and money. At unowned Oriental,
+the human had 731 funds and requested Auction at raw point (667,512). The actual
+current bid was 500 from Battleship, with human bid 0. No winner had yet been
+observed, so this qualifies the live auction presentation, not its outcome.
+
+That session also confirmed GO funds 735 followed by Baltic rent 4 paid to Horse,
+leaving human funds 731 and Horse funds 426, captured in
+`pass59-longsession-baltic-rent731-real.png` in the continuation directory.
+The completed 45-minute FPS result follows below.
+
+## Completed 45-minute actual session (pass59)
+
+Process 8680 remained alive after the completed 2700-second sample at 1920x1080.
+The 5319 window-title samples span October 2, 01:16:33.634–02:01:33.557 UTC.
+Median FPS is 60, p5 is 59, minimum is 54.4; 79.7894% are at least 60 and
+92.1602% at least 59.5. All five segment medians are 60, with minima
+57.1/55.6/54.4/57.8/55.9. Evidence is
+`build/polish-continuation-20261001/pass59-active45min-combined-summary.json`
+and the five segment CSVs.
+
+This actual six-player human/AI session includes menus, Portfolio, calculator,
+Trade, auction and animations, not 2700 seconds of continuous movement. Actual
+transactions were Chance GO 535→735, Baltic rent 4→731, Electric rent 24→707,
+receipts 50→757, Tennessee rent 14→743, receipts 50→793, Ventnor rent 22→771
+and Park Place rent 35→736. Private game5/t was saved with 736 funds at 04:02:14
+local time; all six original files in slots 1–3 retain identical SHA hashes.
+
+This is title telemetry, not individual frame-time proof, a continuous 60 FPS
+minimum or endgame qualification. The unfinished passes60–62 have no GPU
+qualification yet and are not counted in this result.
+
+## Portfolio gutters and property grid (passes60 and63)
+
+The accepted same-private-game5 comparison is
+`build/polish-continuation-20261001/pass60-portfolio-gutters-real-before.png`
+and `passes60-63-portfolio-fixed-save-real-after.png`. Black foot gutters become
+teal and the frame is clear. Qualification requires the actual board to be
+published; rejection/native fallback and movie exclusion remain guarded.
+
+The after view retains the same six balances and holdings. Eight Horse cells,
+three human cells, five RaceCar cells and four Dog cells are readable. TopHat's
+Jail-free card keeps exact native fallback. Actual Cash sorting is captured in
+`pass63-portfolio-cash-sort-real.png`. BSSM Mortgage selection of St. Charles in
+column 4 pays 70 (736→806); Unmortgage deducts 77 (806→729). Inspected captures
+are `pass63-mortgage-grid-real.png`, `pass63-grid-mortgage-st-charles806-real.png`,
+`pass63-unmortgage-grid-real.png` and `pass63-grid-unmortgage-st-charles729-real.png`
+in that qualification directory.
+
+Focused StatsUI, PlayerPlayback, Trade, Routing and Skin CPU checks and clean
+Release builds pass in `build/passes60-63*.log`. Engine routes the existing
+modernTradeText setting through the existing setter; temporary tracing has been
+removed. Passes61–62 now have separate actual qualification below.
+Passes39–63 total 25 qualified milestones in this continuation.
+
+Three actual intro views show the copyright, Artech and real MIntro Horse:
+`opening-trademark-real-before.png`, `intro-trace-visible-logo-real.png` and
+`intro-trace-mintro-visible-real.png` in the continuation directory. No intro bug
+was reproduced, so these observations are not an improvement milestone. The
+nine-second authored splash is not demonstrated to be a loading bottleneck.
+
+## Trade coins and shared property grid (passes61–62)
+
+Pass61's GPU test passes in
+`build/polish-continuation-20261001/pass61-trade-coins-gpu.log`, covering four
+actual coins and four text surfaces with exact fallback. The original 1920x1080 trade-cash-before/after GPU PNGs were subsequently
+inspected and accepted: four clean modern coins retain the same dollar values
+and clocks, with framebuffer byte-exact native fallback. The accepted full-game
+same-private-game5 comparison is `passes61-62-fixed-save-trade-real-before.png`
+and `passes61-62-fixed-save-trade-real-after.png` in the continuation directory.
+Horse's eight holdings now form a 4x2 grid; the human retains three holdings.
+`pass61-three-trade-coins-real-after.png` shows only three live coins, not all
+four fixture coins.
+
+Actual Boardwalk selection at (257,325) moves its offer card to (374,349), then
+returns it to (257,325). Captures `pass62-boardwalk-offer-grid-real.png` and
+`pass62-boardwalk-return-grid-real.png` retain that proof. Cash remains 736/1040,
+and Propose was never clicked, so this qualifies draft editing/return rather
+than an accepted trade. The shared grid hit mapping also supports the actual
+pass63 St. Charles mortgage 736→806 and unmortgage 806→729 recorded above.
+Private game5 was subsequently restored to 736 funds.
+
+The previously recorded completed 45-minute telemetry and F11 checks retain
+their original scope; they do not measure performance of these later grid and
+coin changes. Intro trademark, logos and movie were visible, with no reproduced
+intro defect and temporary tracing removed.
+
+A separate final 120-second actual clean-Release sample in process 2888 includes
+initial Load, Main, Portfolio and BSSM Mortgage/Unmortgage, not only steady warm
+play. Its 237 window-title samples have median 60, p5 60, minimum 44.8,
+96.6245% at least 60 and 98.3122% at least 59.5. Evidence is
+`build/polish-continuation-20261001/passes60-63-final-fps.log` and its CSV.
+This is not GPU frame-time measurement or a strict 60 FPS minimum. Temporary
+tracing is absent; the four Engine comments and CRLF were restored without
+behavior changes.

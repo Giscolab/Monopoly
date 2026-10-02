@@ -62,6 +62,7 @@ namespace monopoly::statsui
         ibar::RuleMode propertyActionMode{ibar::RuleMode::Nothing};
         rules::PlayerNumber propertyActionPlayer{rules::NobodyPlayer};
         bool propertyActionPlayerLocalHuman{};
+        bool modernPlayerLayout{};
         ibar::layout::PropertyMask buildProperties{};
         ibar::layout::PropertyMask sellProperties{};
         ibar::layout::PropertyMask mortgageProperties{};
@@ -101,7 +102,12 @@ namespace monopoly::statsui
         rules::PlayerNumber player, bool localHuman,
         ibar::layout::PropertyMask buildProperties,
         ibar::layout::PropertyMask sellProperties,
-        ibar::layout::PropertyMask mortgageProperties) noexcept;
+        ibar::layout::PropertyMask mortgageProperties,
+        bool modernPlayerLayout = false) noexcept;
+    // Shared owned-deed positions for Player rendering and BSSM picking.
+    [[nodiscard]] std::optional<Rect> playerPropertyRect(
+        const State& state, const rules::GameState& gameState,
+        std::size_t column, int square) noexcept;
     [[nodiscard]] std::optional<int> propertyActionHit(
         const State& state, const rules::GameState& gameState,
         int x, int y) noexcept;
