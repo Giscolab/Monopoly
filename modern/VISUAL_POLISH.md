@@ -1,4 +1,4 @@
-# Visual polish qualification - 1 October 2026
+# Visual polish qualification - 1 October 2026 {#visual_polish}
 
 Baseline: `89d6e76`, `build/final-procedural-scene-gpu-20261001.png`.
 Captures: `build/visual-polish-20261001/`, actual Direct3D12 production renderer,

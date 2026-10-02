@@ -6,6 +6,16 @@ Reproduire les comportements actifs du Monopoly d’origine dans le runtime C++2
 
 Le portage est fonctionnel sur des contrats testés, mais **sa fidélité complète au jeu retail n’est pas établie**. Aucun pourcentage fonctionnel n’est actuellement justifié. Les 79 entrées sont conservées dans l’[inventaire détaillé](PORTING_MATRIX.md), avec les écarts connus séparés des comparaisons restant à mener.
 
+## Point courant — 2 octobre 2026
+
+Synthèse du code publié jusqu’à `bc9d85f`, à partir des qualifications consignées dans [le parcours jouable procédural](PROCEDURAL_PLAY.md) et [le journal UI/runtime](VISUAL_UI_POLISH.md). Les captures et journaux locaux cités par ces documents ne sont pas distribués dans le dépôt ; cette mise à jour documentaire ne constitue pas une nouvelle qualification du jeu.
+
+- **Jeu réel USA/anglais** : `modern/PlayModern.cmd` sélectionne Release lorsqu’il est disponible, avec repli Debug. Plateau procédural, ville récupérée, pions modernes, sauvegarde/rechargement et tours humains/IA ont un parcours documenté. Les données retail restent nécessaires ; le décor Paris ne remplace pas les règles ni les banques françaises manquantes.
+- **Présentation et interface** : menus, aide, cartes, sélection des pions, Portfolio, échanges et grilles de propriétés ont reçu les corrections détaillées dans le journal. Les passes 64–65 documentent l’hypothèque et la grille auxiliaire en application réelle. Les passes 66–67 sont implémentées mais attendent encore la qualification visuelle du cadrage de dessus et des options On/Off.
+- **Audio** : l’erreur de format WAVE signalée lors des premières captures a été corrigée dans `a58c16f`. Une capture loopback Windows de 180 secondes documente une sortie logicielle ; l’audibilité physique reste à confirmer.
+- **Cadence** : les mesures et sessions documentées restent attachées à leurs révisions. Le dernier échantillon de 120 secondes des passes 60–63 donne une médiane de 60 FPS et un minimum de 44,8 FPS sur 237 relevés du titre. Il ne prouve ni un minimum continu de 60 FPS ni la performance des modifications suivantes.
+- **Inventaire** : 79 entrées, dont 37 complètes/remplacées, 1 écart actif et 29 comparaisons à mener. Ces catégories ne remplacent pas une qualification fonctionnelle. La référence CTest globale reste celle du 27 septembre ci-dessous.
+
 ## Ce qui est implémenté
 
 - Initialisation, boucle de jeu, timers, slots, règles, IA, messages locaux, archives et restauration de partie.
@@ -18,7 +28,7 @@ Le portage est fonctionnel sur des contrats testés, mais **sa fidélité compl�
 
 « Implémenté » décrit la présence du contrat moderne ; les comparaisons sémantiques et qualifications encore ouvertes sont détaillées ci-dessous. Le panneau Future/Immunity est terminé et n’est plus une tâche restante.
 
-La qualification finale reconstruit `MonopolyModern`, ex�cute la cible proc�durale r�elle, v�rifie son staging et capture ses quatre assets avec PBR/IBL actif. Le d�marrage USA dure 25,35 secondes ; cela ne prouve pas une partie interactive, les transitions F11 ou le son audible.
+La qualification initiale des assets reconstruit `MonopolyModern`, exécute la cible procédurale réelle, vérifie son staging et capture ses quatre assets avec PBR/IBL actif. Son démarrage USA de 25,35 secondes était une preuve bornée. Les parties interactives, transitions F11 et sorties audio logicielles documentées ensuite sont distinguées dans le point courant ci-dessus ; le son physiquement audible reste non qualifié.
 
 ## Code à terminer
 
@@ -63,7 +73,7 @@ MIDI est désactivé par `CE_ARTLIB_EnableSystemMidi=0`. Les cas HMD reset/joint
 
 | ID | Qualification | Limite actuelle |
 |---|---|---|
-| Q01 | Parties jouables avec DAT/LANG/CNK retail, règles, IA, UI et langues. | Les banques USA locales permettent des démarrages bornés ; neuf chargements d'idles modernes ne prouvent pas une partie. Le démarrage Europe/français est bloqué par D02. |
+| Q01 | Parties jouables avec DAT/LANG/CNK retail, règles, IA, UI et langues. | Sessions USA réelles avec tours humains/IA, cartes, achats, prison, échanges et sauvegarde/rechargement documentées dans [le journal UI/runtime](VISUAL_UI_POLISH.md). La couverture de toutes les animations, règles et d’une partie complète reste ouverte. Le démarrage Europe/français est bloqué par D02. |
 | Q02 | Voix entre deux processus puis deux machines, capture et écoute physiques. | Les tests de transport/codec ne prouvent pas le parcours utilisateur ni le matériel. Voir [réseau et voix](NETWORK_VOICE.md). |
 | Q03 | Textures/UV/HMD, éditions, devises et scénarios Board Editor personnalisés. | Géométrie HMD locale décodée et contrôles PBR disponibles ; la comparaison visuelle des éditions/devises et des vues personnalisées reste à qualifier. Le plateau standard ne dépend pas de ces vues externes. |
 | Q04 | Films Indeo/Bink réels et synchronisation audiovisuelle, installation FFmpeg. | Runtime et tests disponibles ; médias retail absents. |
@@ -104,6 +114,7 @@ Les journaux locaux de cette référence sont `modern/build/trade-return-culling
 - Ce fichier contient le plan courant et la référence de qualification ; [PORTING_MATRIX.md](PORTING_MATRIX.md) contient l’unique inventaire des statuts.
 - GitHub Actions contrôle la structure CMake et les scripts, génère [PORTING_AUDIT.md](PORTING_AUDIT.md) et `porting-progress.svg`, puis compile et exécute CTest sous Windows. FFmpeg/FFprobe sont provisionnés et vérifiés pour les tests vidéo.
 - La documentation Doxygen inclut le plan, la matrice et le rapport généré. Les changements de ces documents déclenchent leur publication.
+- Les guides de ressources, de présentation, de jeu procédural, d’intégration Blender et les journaux de qualification sont également publiés. Les fichiers Markdown doivent rester en UTF-8 : l’audit conserve un décodage strict, sans ignorer ni remplacer silencieusement les caractères invalides.
 - L’audit structurel n’est pas un audit de fidélité. Les compteurs d’inventaire ne sont pas des pourcentages d’achèvement : familles et sous-contrats se recouvrent.
 - Ne modifier manuellement ni le SVG ni le rapport généré. Supprimer une tâche seulement après correction vérifiée ou exclusion justifiée ; conserver les décisions utiles dans la matrice, les anciens checkpoints dans l’historique Git.
 
@@ -229,16 +240,21 @@ fenêtres différent ; aucune parité exacte n'est affirmée. Le target
 `MonopolyExportProceduralScene` et le cache vide par défaut
 `MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT` sont décrits dans les ressources.
 
-Sept tests ciblés de présentation/audio passent avec audio dummy. Le GUI
-interactif, F11, le son audible et le FPS d'une partie complète restent à qualifier.
+Sept tests ciblés de présentation/audio passaient avec audio dummy lors de ce
+lot initial. Les preuves GUI, F11 et audio logiciel ultérieures figurent dans
+le journal UI/runtime ; le son physiquement audible et la cadence d’une partie
+complète restent à qualifier.
 
 
-### Visual polish qualification - 1 October 2026
+### Présentation et jeu réel — 1er et 2 octobre 2026
 
-Nine visually inspected GPU passes, an opt-in faithful USA board path, real
-mesh shadows/4xMSAA, readable Paris prints and UI-safe framing are recorded in
-[VISUAL_POLISH.md](VISUAL_POLISH.md). Real USA play opens at 1920x1080 with
-about 60FPS title telemetry; F11 and the repaired toolbar projection were tested.
-Audio playback reports an unsupported WAVE format; sustained complete-game FPS
-and turn-animation traversal remain unqualified. Missing French DAT banks still
-block Paris in-game. Retail fallbacks and immutable Source/ remain preserved.
+Les premières passes GPU, le plateau USA optionnel, les ombres de meshes,
+le MSAA 4x et la correction de projection UI sont consignés dans
+[VISUAL_POLISH.md](VISUAL_POLISH.md). Le parcours procédural réel et son
+lanceur sont décrits dans [PROCEDURAL_PLAY.md](PROCEDURAL_PLAY.md).
+
+La suite des travaux jusqu’à `bc9d85f`, les parties réelles, le correctif WAVE,
+les mesures de chargement/cadence et les qualifications visuelles restantes
+figurent dans [VISUAL_UI_POLISH.md](VISUAL_UI_POLISH.md). Ce journal remplace
+les limites initiales désormais résolues sans qualifier toutes les animations,
+une partie complète, l’audibilité physique ou les banques françaises absentes.

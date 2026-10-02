@@ -1,4 +1,4 @@
-# Blender / glTF integration contract
+# Blender / glTF integration contract {#blender_integration}
 
 ## Goal
 

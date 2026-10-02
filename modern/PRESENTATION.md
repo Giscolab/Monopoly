@@ -1,4 +1,20 @@
-# Présentation moderne
+# Présentation moderne {#presentation}
+
+## État courant — 2 octobre 2026
+
+Le lanceur `modern/PlayModern.cmd` ouvre le parcours USA/anglais avec la scène
+procédurale récupérée et les assets modernes installés. Les menus, cartes,
+Portfolio et échanges ont désormais des présentations modernes qualifiées
+dans les contextes décrits par le [journal UI/runtime](VISUAL_UI_POLISH.md).
+Les contextes non pris en charge conservent leurs assets retail.
+
+Le [guide de jeu procédural](PROCEDURAL_PLAY.md) décrit le lancement et les
+exports. Les parties réelles, F11 et la capture de sortie audio Windows
+documentés les 1er et 2 octobre complètent les preuves initiales ci-dessous.
+Les limites de chaque mesure restent valables : aucune garantie de cadence
+minimale continue, de toutes les animations ou d’audibilité physique.
+
+## Espaces logiques
 
 Le runtime conserve deux espaces logiques distincts :
 
@@ -135,6 +151,7 @@ sont conservés. La comparaison native de la gare garde une MAE foreground RGB
 de 0,027318 et une différence de contraste des fenêtres, sans parité exacte.
 Voir le [workflow de ressources](RESOURCE_SETUP.md).
 
-Sept tests ciblés de présentation/audio passent. L'audio est exercé avec le
-driver dummy ; ces tests ne prouvent ni sortie audible ni comportement GUI
-interactif, F11 ou cadence de partie complète.
+Sept tests ciblés de présentation/audio du lot initial passent avec le driver
+audio dummy. Ils ne constituent pas la preuve GUI/F11/audio logiciel : les
+observations ultérieures correspondantes sont consignées séparément dans
+[VISUAL_UI_POLISH.md](VISUAL_UI_POLISH.md).

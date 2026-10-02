@@ -30,6 +30,14 @@ La documentation Doxygen du portage moderne est publiée automatiquement sur
 `modern/src/`, le suivi de portage et l'audit structurel, avec le thème
 Doxygen Awesome.
 
+Le [point courant du 2 octobre](modern/PORTING_STATUS.md) reprend les dernières
+avancées de jeu et d’interface, en distinguant les qualifications acquises de
+celles qui restent ouvertes. Pour lancer l’installation Windows configurée,
+utiliser `modern/PlayModern.cmd` ; les prérequis sont dans le
+[guide de jeu procédural](modern/PROCEDURAL_PLAY.md) et le
+[guide des ressources](modern/RESOURCE_SETUP.md). Les preuves et limites des
+dernières passes sont consignées dans le [journal UI/runtime](modern/VISUAL_UI_POLISH.md).
+
 ## Sources et crédits
 
 Le code d'origine est désormais accessible publiquement. Sa provenance reste

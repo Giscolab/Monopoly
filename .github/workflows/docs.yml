@@ -6,11 +6,7 @@ on:
       - master
     paths:
       - 'modern/src/**'
-      - 'modern/PORTING_*.md'
-      - 'modern/NETWORK_VOICE.md'
-      - 'modern/NETWORK_GAME.md'
-      - 'modern/FULL_HELP.md'
-      - 'modern/VIDEO_RUNTIME.md'
+      - 'modern/*.md'
       - 'modern/porting-progress.svg'
       - 'docs/**'
       - '.github/scripts/**'
@@ -61,7 +57,13 @@ jobs:
         run: doxygen docs/Doxyfile
 
       - name: Verify generated site
-        run: test -f modern/build-docs/html/index.html
+        shell: bash
+        run: |
+          set -euo pipefail
+          for page in index porting_status porting_matrix porting_audit resource_setup presentation procedural_play blender_integration visual_polish visual_ui_polish; do
+            test -s "modern/build-docs/html/$page.html"
+          done
+          test -s modern/build-docs/html/porting-progress.svg
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v5

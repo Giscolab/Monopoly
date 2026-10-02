@@ -1,4 +1,4 @@
-# Ressources au démarrage
+# Ressources au démarrage {#resource_setup}
 
 Au démarrage, Monopoly Modern vérifie les huit banques et le catalogue LANG du
 contexte choisi. Le défaut est USA/anglais US ; `--edition=usa|europe` et
@@ -197,7 +197,7 @@ pas une preuve de partie complète. Voir le [contrat Blender](BLENDER_INTEGRATIO
 
 Le bundle procédural est optionnel et distinct des exports normaux. La cible
 `MonopolyExportProceduralScene` écrit sous `modern/build/procedural-assets`.
-Pour copier un bundle existant dans le dossier de l�ex�cutable, configurer `MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT`
+Pour copier un bundle existant dans le dossier de l’exécutable, configurer `MONOPOLY_PROCEDURAL_SCENE_ASSET_ROOT`
 avec son chemin absolu ; sa valeur par défaut reste vide. Le staging remplace
 seulement les répertoires plateau/décor et conserve les pions normaux :
 

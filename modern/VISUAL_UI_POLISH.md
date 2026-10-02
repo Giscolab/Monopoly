@@ -1,4 +1,4 @@
-# UI and runtime continuation â€” 2026-10-01
+# UI and runtime continuation — 2026-10-01 / 2026-10-02 {#visual_ui_polish}
 
 Continuation from `a58c16f`; no gameplay, rule or sequence-clock changes.
 The existing recovered procedural Blender model remains the authoring source.
@@ -7,14 +7,14 @@ All screenshots and runtime logs below are generated under
 
 ## Qualified changes
 
-- CPU decode of the actual 17 city GLBs (5,184,501 vertices): 11.2249 â†’ 5.3240 s
+- CPU decode of the actual 17 city GLBs (5,184,501 vertices): 11.2249 → 5.3240 s
   in the same Debug loader benchmark. All raw geometry/material/bounds signatures
   remain identical. This measures CPU decode, not total launch or GPU upload.
   Milestone `725edd7`; evidence `build/city-hoist-qualification.json`.
 - Menu pass 01 replaces exact USA/English menu owners with teal/brass shells.
   Actual screenshot `menu-pass01.jpg` exposed an empty background and rough text.
 - Menu pass 02 adds a static preview captured by the actual GPU scene probe,
-  3Ã— derivatives with linear filtering, and exact navigation owner skins.
+  3× derivatives with linear filtering, and exact navigation owner skins.
   Actual settled screenshots `menu-pass02.jpg`, `load-menu-pass02.jpg` and
   `file-menu-pass02.jpg` retain authored positions, entry animation and hit areas.
 - Pass 03 adds opt-in blended font coverage and exact player-setup/options
@@ -27,7 +27,7 @@ All screenshots and runtime logs below are generated under
   `player-select-pass04-contrast-before.jpg`, `player-select-pass05.jpg`,
   `escape-modal-pass05.jpg`. All dynamic player names remain original leaves.
 - USA deed text uses immutable original rule definitions with clean catalog
-  titles. `deed-pass01.jpg` shows a real Vermont Avenue purchase: $923 â†’ $823.
+  titles. `deed-pass01.jpg` shows a real Vermont Avenue purchase: $923 → $823.
   Full Chance/Community bodies come from the decoded USA idle faces; occluded
   words are corroborated by associated read-only narration comments. Only idle
   face owners are replaced; transitions retain original artwork and clocks.
@@ -40,16 +40,16 @@ All screenshots and runtime logs below are generated under
 
 ## Real session and audio evidence
 
-A real two-player game ran 10:16:44â€“10:39:18 UTC (22 min 34 s), with dice,
+A real two-player game ran 10:16:44–10:39:18 UTC (22 min 34 s), with dice,
 modern car/Dog movement, AI purchases, third-double jail, paying jail, rent,
 passing GO, Community Chest and saving/reloading. The saved cash state
 Dog $927 / human $923 was reproduced after restart. Subsequent real turns bought
 Vermont and States Avenue; another save retained Dog $227 / human $683.
-Settled 1920Ã—1080 title samples are 59.9â€“60.1 FPS; this is sampled telemetry,
+Settled 1920×1080 title samples are 59.9–60.1 FPS; this is sampled telemetry,
 not a continuous minimum-FPS guarantee. Native window captures are DPI-scaled.
 
 The 180-second Windows default-render-endpoint loopback recorded 48 kHz stereo,
-nonzero signal in all 178 reported intervals, RMS âˆ’28.08 dBFS, peak âˆ’1.33 dBFS,
+nonzero signal in all 178 reported intervals, RMS −28.08 dBFS, peak −1.33 dBFS,
 no nonfinite samples or timestamp errors, and 17 discontinuity flags. The
 Realtek USB speaker endpoint was unmuted at volume 1; immediately afterwards
 Monopoly was the only active unmuted session observed. Evidence:

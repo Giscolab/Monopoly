@@ -1,4 +1,4 @@
-# Play the recovered procedural scene
+# Play the recovered procedural scene {#procedural_play}
 
 On the configured Windows checkout, double-click `modern/PlayModern.cmd`.
 It opens `MonopolyModern.exe` at 1920x1080 with the procedural board, complete
@@ -65,7 +65,7 @@ A fresh MonopolyModern.exe session rendered at 1920x1080 with shadows and 4x
 MSAA. Five two-second title telemetry samples measured 60.0-60.1 FPS during a
 real turn; this is a short runtime sample, not a complete-game stability claim.
 These initial measurements predate the continuation recorded in
-VISUAL_UI_POLISH.md. The first Debug city load could take tens of seconds; the title shows Loading
+[VISUAL_UI_POLISH.md](VISUAL_UI_POLISH.md). The first Debug city load could take tens of seconds; the title shows Loading
 game while the recovered geometry loads. Menus and Chance/deed artwork still
 use retail assets. French Paris DAT banks remain unavailable. Physical audio
 audibility and every animation state remain unverified.

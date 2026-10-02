@@ -13,6 +13,12 @@ INPUT                  = modern/src \
                          modern/NETWORK_GAME.md \
                          modern/FULL_HELP.md \
                          modern/VIDEO_RUNTIME.md \
+                         modern/RESOURCE_SETUP.md \
+                         modern/PRESENTATION.md \
+                         modern/PROCEDURAL_PLAY.md \
+                         modern/BLENDER_INTEGRATION_SPEC.md \
+                         modern/VISUAL_POLISH.md \
+                         modern/VISUAL_UI_POLISH.md \
                          modern/PORTING_AUDIT.md
 RECURSIVE              = YES
 FILE_PATTERNS          = *.cpp *.hpp *.md

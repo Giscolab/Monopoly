@@ -20,6 +20,20 @@
        alt="Progression automatisée du portage Monopoly" />
 </div>
 
+## État au 2 octobre 2026
+
+Le point courant couvre le code publié jusqu’à `bc9d85f`. Le parcours
+USA/anglais dispose d’une scène procédurale jouable, de pions modernes et de
+présentations actualisées pour les menus, cartes, Portfolio et échanges.
+Les qualifications consignées dans le dépôt distinguent les sessions réelles,
+les mesures ponctuelles et les contrôles ciblés. Les derniers réglages de vue
+de dessus et d’options attendent encore leur qualification visuelle.
+
+La [synthèse du portage](PORTING_STATUS.md) indique les limites restantes et
+la référence CTest globale du 27 septembre. Les journaux plus récents ne sont
+pas une nouvelle validation globale. Les banques Europe/français restent
+manquantes ; le décor Paris n’en tient pas lieu.
+
 ## Explorer la documentation
 
 <div class="doc-grid">
@@ -51,7 +65,13 @@
 
 ## Démarrage rapide
 
-Le projet moderne se configure directement depuis la racine du dépôt :
+Sur l’installation Windows déjà construite et équipée des ressources requises,
+lancer `modern/PlayModern.cmd`. Il privilégie Release, ouvre la présentation
+procédurale en 1920x1080 et permet de basculer le plein écran avec F11.
+Le [guide de jeu procédural](PROCEDURAL_PLAY.md) détaille les exports et
+le [guide des ressources](RESOURCE_SETUP.md) décrit les banques retail à fournir.
+
+Pour construire le code depuis la racine du dépôt :
 
 ```bash
 cmake -S modern -B modern/build -DBUILD_TESTING=ON
@@ -65,6 +85,17 @@ ou via les variables documentées dans `modern/VIDEO_RUNTIME.md`.
 Les dépendances nécessaires sont récupérées par CMake lorsque cela est prévu
 par le projet. Le détail des cibles et composants est visible dans la
 documentation des fichiers et dans `modern/CMakeLists.txt`.
+
+## Guides et preuves de qualification
+
+| Document | Contenu |
+|---|---|
+| [Ressources au démarrage](RESOURCE_SETUP.md) | Banques DAT, langues et staging des assets |
+| [Présentation moderne](PRESENTATION.md) | Fenêtre, F11, espaces UI/3D et rendu GPU |
+| [Scène procédurale jouable](PROCEDURAL_PLAY.md) | Lanceur Windows, exports et premières parties réelles |
+| [Intégration Blender/glTF](BLENDER_INTEGRATION_SPEC.md) | Contrats d’export, matériaux et repli retail |
+| [Premières passes visuelles](VISUAL_POLISH.md) | Cadrage, ombres, MSAA et preuves initiales |
+| [Journal UI/runtime des 1er et 2 octobre](VISUAL_UI_POLISH.md) | Corrections récentes, mesures et qualifications encore ouvertes |
 
 ## Organisation du dépôt
 
