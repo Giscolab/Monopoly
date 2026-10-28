@@ -727,7 +727,8 @@ namespace monopoly::engine
                 modernFragment.spotlightAttenuationTheta = vertexUniforms.spotlightAttenuationTheta;
                 modernFragment.spotlightPhi = vertexUniforms.spotlightPhi;
                 modernFragment.mapFlags = {
-                    batch.material.baseColorTexture ? 1.0F : 0.0F,
+                    (batch.material.baseColorTexture ? 1.0F : 0.0F) +
+                        (batch.material.proceduralSurface[0] > 0.5F ? 2.0F : 0.0F),
                     batch.material.metallicRoughnessTexture ? 1.0F : 0.0F,
                     batch.material.normalTexture ? 1.0F : 0.0F,
                     batch.material.emissiveTexture ? 1.0F : 0.0F};
@@ -736,6 +737,11 @@ namespace monopoly::engine
                     batch.material.normalTexture ? batch.material.normalTexture->scale : 1.0F,
                     batch.material.occlusionTexture ? batch.material.occlusionTexture->scale : 1.0F,
                     batch.material.alphaCutoff};
+                // Preserve the fixed 336-byte PBR ABI. spotlightPhi.yzw are unused
+                // by lighting and carry the optional procedural micro-surface.
+                modernFragment.spotlightPhi[1] = batch.material.proceduralSurface[1];
+                modernFragment.spotlightPhi[2] = batch.material.proceduralSurface[2];
+                modernFragment.spotlightPhi[3] = batch.material.proceduralSurface[3];
                 if (lightProjection) modernFragment.shadowViewProjection = lightProjection->values;
                 modernFragment.shadowParameters = {shadowsActive_ ? 1.0F : 0.0F,
                     1.0F/static_cast<float>(ShadowSize),0.00025F,modernPresentation_ ? 1.0F : 0.0F};

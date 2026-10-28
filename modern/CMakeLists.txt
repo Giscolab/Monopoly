@@ -293,6 +293,7 @@ add_library(
     src/SequenceTransforms.cpp
     src/LegacyMeshData.cpp
     src/MeshRuntime.cpp
+    src/ModernMeshRefinement.cpp
     src/ModernGltfMesh.cpp
     src/ModernImageDecoder.cpp
     src/ModernTokenCatalog.cpp
@@ -303,6 +304,9 @@ add_library(
     src/ModernMenuSkin.cpp
     src/ModernTokenPreview.cpp
     src/IBarLayout.cpp
+    src/VintageUiLayout.cpp
+    src/VintageUiModel.cpp
+    src/VintageUiRenderer.cpp
     src/SequenceRenderData.cpp
     src/SequenceBitmapRenderData.cpp
     src/BitmapRuntime.cpp
@@ -471,6 +475,15 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyModernIBarSkinTests PRIVATE /W4 /permissive- /utf-8)
     endif()
     add_test(NAME Monopoly.ModernIBarSkin COMMAND MonopolyModernIBarSkinTests)
+    add_executable(MonopolyVintageUiLayoutTests tests/VintageUiLayoutTests.cpp)
+    target_link_libraries(MonopolyVintageUiLayoutTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.VintageUiLayout COMMAND MonopolyVintageUiLayoutTests)
+    add_executable(MonopolyVintageUiModelTests tests/VintageUiModelTests.cpp)
+    target_link_libraries(MonopolyVintageUiModelTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.VintageUiModel COMMAND MonopolyVintageUiModelTests)
+    add_executable(MonopolyVintageUiRendererTests tests/VintageUiRendererTests.cpp)
+    target_link_libraries(MonopolyVintageUiRendererTests PRIVATE MonopolyDataCore)
+    add_test(NAME Monopoly.VintageUiRenderer COMMAND MonopolyVintageUiRendererTests)
     add_executable(MonopolyModernTokenPreviewTests tests/ModernTokenPreviewTests.cpp)
     target_link_libraries(MonopolyModernTokenPreviewTests PRIVATE MonopolyDataCore)
     if(MSVC)
@@ -486,6 +499,14 @@ if(BUILD_TESTING)
         target_compile_options(MonopolyModernGltfMeshTests PRIVATE /W4 /permissive- /utf-8)
     endif()
     add_test(NAME Monopoly.ModernGltfMesh COMMAND MonopolyModernGltfMeshTests)
+    add_executable(MonopolyModernMeshRefinementTests tests/ModernMeshRefinementTests.cpp)
+    target_link_libraries(MonopolyModernMeshRefinementTests PRIVATE MonopolyDataCore)
+    if(MSVC)
+        target_compile_options(MonopolyModernMeshRefinementTests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME Monopoly.ModernMeshRefinement COMMAND MonopolyModernMeshRefinementTests)
+    add_executable(MonopolyRetailDogRefinementProbe tools/RetailDogRefinementProbe.cpp)
+    target_link_libraries(MonopolyRetailDogRefinementProbe PRIVATE MonopolyDataCore)
     add_executable(MonopolyModernTokenCatalogTests tests/ModernTokenCatalogTests.cpp)
     target_link_libraries(MonopolyModernTokenCatalogTests PRIVATE MonopolyDataCore)
     if(MSVC)
@@ -750,6 +771,27 @@ add_custom_target(MonopolyRuntimeShaders
     COMMAND_EXPAND_LISTS
     VERBATIM
 )
+if(TARGET MonopolyCompileShaders)
+    # Developer machines with the pinned shader toolchain must run the current
+    # HLSL through the compiler before staging runtime shaders. This prevents a
+    # fresh C++ executable from silently loading stale checked-in DXIL/SPIR-V/MSL.
+    add_dependencies(MonopolyRuntimeShaders MonopolyCompileShaders)
+    add_custom_command(TARGET MonopolyRuntimeShaders POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/ModernPBR.vert.dxil"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/ModernPBR.frag.dxil"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/ModernPBR.vert.msl"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/ModernPBR.frag.msl"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/ModernPBR.vert.spv"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/ModernPBR.frag.spv"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/World3D.vert.dxil"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/World3D.frag.dxil"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/World3D.vert.msl"
+            "${CMAKE_CURRENT_BINARY_DIR}/compiled-shaders/World3D.frag.msl"
+            "$<TARGET_FILE_DIR:MonopolyModern>/shaders"
+        VERBATIM
+    )
+endif()
 add_dependencies(MonopolyModern MonopolyRuntimeShaders)
 
 # Generated Blender assets are optional. Normal builds stage whatever has

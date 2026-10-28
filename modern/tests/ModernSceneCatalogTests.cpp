@@ -62,6 +62,15 @@ int main()
         !defaultArguments->options.house && !defaultArguments->options.environment &&
         defaultArguments->remaining.empty(),
         "absent scene flags keep retail defaults");
+    const std::array<std::string_view, 1> vintageArgument{"--ui=vintage"};
+    const auto vintage = parseModernSceneArguments(vintageArgument);
+    expect(vintage && vintage->options.vintageUi && vintage->remaining.empty(),
+        "vintage UI is explicitly enabled and consumed");
+    expect(!defaultArguments->options.vintageUi, "vintage UI defaults off");
+    const std::array<std::string_view, 2> duplicateUi{"--ui=vintage", "--ui=vintage"};
+    const std::array<std::string_view, 1> invalidUi{"--ui=other"};
+    expect(!parseModernSceneArguments(duplicateUi) && !parseModernSceneArguments(invalidUi),
+        "invalid and duplicate UI modes are rejected");
     const std::array<std::string_view, 6> configuredArguments{
         "--language=fr", "--modern-board=paris", "--modern-buildings=house", "--modern-environment=paris", "--smoke", "asset-root"};
     const auto parsed = parseModernSceneArguments(configuredArguments);

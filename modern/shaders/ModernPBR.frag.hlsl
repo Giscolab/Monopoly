@@ -94,6 +94,40 @@ float3 fresnelSchlick(float cosine, float3 f0)
 {
     return f0 + (1.0f - f0) * pow(1.0f - saturate(cosine), 5.0f);
 }
+float hash31(float3 p)
+{
+    p = frac(p * 0.1031f);
+    p += dot(p, p.yzx + 33.33f);
+    return frac((p.x + p.y) * p.z);
+}
+float valueNoise3(float3 p)
+{
+    const float3 i = floor(p);
+    float3 f = frac(p);
+    f = f*f*(3.0f-2.0f*f);
+    const float n000=hash31(i+float3(0,0,0));
+    const float n100=hash31(i+float3(1,0,0));
+    const float n010=hash31(i+float3(0,1,0));
+    const float n110=hash31(i+float3(1,1,0));
+    const float n001=hash31(i+float3(0,0,1));
+    const float n101=hash31(i+float3(1,0,1));
+    const float n011=hash31(i+float3(0,1,1));
+    const float n111=hash31(i+float3(1,1,1));
+    return lerp(lerp(lerp(n000,n100,f.x),lerp(n010,n110,f.x),f.y),
+                lerp(lerp(n001,n101,f.x),lerp(n011,n111,f.x),f.y),f.z);
+}
+float fbm5(float3 p)
+{
+    float sum=0.0f, amp=0.5f;
+    [unroll] for(int octave=0; octave<5; ++octave)
+    {
+        sum += amp * valueNoise3(p);
+        p = p * 2.03f + 17.17f;
+        amp *= 0.5f;
+    }
+    return sum / 0.96875f;
+}
+
 float visibilityGGX(float nDotV, float nDotL, float alphaSquared)
 {
     const float ggxV = nDotL * sqrt(nDotV * nDotV * (1.0f - alphaSquared) + alphaSquared);
@@ -240,7 +274,7 @@ float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
     // The same real mesh/alpha-mask shader writes light-space depth into an
     // R32_FLOAT target, with a hardware depth attachment choosing the nearest.
     if (shadowParameters.x < -0.5f) return float4(input.position.z, 0.0f, 0.0f, 1.0f);
-    const float3 albedo = sampledBaseColor.rgb;
+    float3 albedo = sampledBaseColor.rgb;
     float metallic = metallicRoughness.x;
     float roughness = metallicRoughness.y;
     if (mapFlags.y > 0.5f)
@@ -250,7 +284,27 @@ float4 main(PixelInput input, bool frontFace : SV_IsFrontFace) : SV_Target0
         metallic *= texel.b;
     }
     metallic = saturate(metallic);
-    const float3 n = mappedNormal(input, safeNormalize(input.normal)) * (frontFace ? 1.0f : -1.0f);
+    float3 n = mappedNormal(input, safeNormalize(input.normal)) * (frontFace ? 1.0f : -1.0f);
+    if (mapFlags.x > 1.5f)
+    {
+        // Blender reference: Generated -> Mapping (Y x15) -> Noise (Scale 2,
+        // Detail 5, Roughness 1) -> ColorRamp + Bump. World-space frequency
+        // is normalized for Monopoly's scene scale, while preserving the
+        // elongated Y grain from the reference graph.
+        const float frequency = max(spotlightPhi.y, 0.0001f) * 0.02f;
+        const float3 p = input.worldPosition * float3(frequency, frequency * 15.0f, frequency);
+        const float h = fbm5(p);
+        const float variation = (h - 0.5f) * spotlightPhi.w;
+        albedo = saturate(albedo + variation.xxx);
+
+        const float eps = 0.035f;
+        const float3 grad = float3(
+            fbm5(p + float3(eps,0,0)) - fbm5(p - float3(eps,0,0)),
+            fbm5(p + float3(0,eps,0)) - fbm5(p - float3(0,eps,0)),
+            fbm5(p + float3(0,0,eps)) - fbm5(p - float3(0,0,eps))) / (2.0f * eps);
+        const float3 tangentGrad = grad - n * dot(grad,n);
+        n = safeNormalize(n - tangentGrad * spotlightPhi.z);
+    }
     const float3 v = safeNormalize(cameraPosition.xyz - input.worldPosition);
     const float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
     const float3 fresnel = fresnelSchlick(saturate(dot(n, v)), f0);

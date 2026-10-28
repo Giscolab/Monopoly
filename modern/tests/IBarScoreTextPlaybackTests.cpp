@@ -72,6 +72,19 @@ void testPresentation() {
             modern->preferLinearFiltering && modern->presentationRect ==
             std::optional<std::array<float, 4>>{{0, 0, 184, 32}},
             "Modern score raster is 3x with unchanged explicit logical footprint");
+    checked(text.sync(plan, states, 13, data::BoardEdition::Usa, &font, playback, true, true));
+    checked(playback.update(0));
+    const auto vintage = textObject(playback).asset;
+    require(vintage->image.pixels != modern->image.pixels, "Opt-in vintage cash has a distinct counter");
+    bool darkFace = false;
+    for (std::size_t i = 0; i < vintage->image.pixels.size(); i += 4)
+        if (vintage->image.pixels[i] == 29 && vintage->image.pixels[i+1] == 24 &&
+            vintage->image.pixels[i+2] == 18 && vintage->image.pixels[i+3] == 255) darkFace = true;
+    require(darkFace, "Counter face is rendered from code");
+    sync(true);
+    const auto restoredModern = textObject(playback).asset;
+    require(restoredModern->image.pixels == modern->image.pixels,
+        "Opt-out returns exact modern rendering");
     const auto logical = playback.runtimeBitmaps().extent(old.contentsDataId);
     require(logical && logical->width == 184 && logical->height == 32,
             "Runtime surface retains native logical extent");
@@ -103,7 +116,7 @@ void testPresentation() {
     require(ink(modern->image, 54, 96, 0, 531) && !ink(modern->image, 54, 96, 531, 552),
             "Displayed cash retains scaled lower line and native seven-pixel right margin");
     sync(true);
-    require(textObject(playback).asset == modern, "Unchanged modern contents reuse immutable raster");
+    require(textObject(playback).asset == restoredModern, "Unchanged modern contents reuse immutable raster");
     states[0].displayedCash = 1350; sync(true);
     const auto cashChanged = textObject(playback).asset;
     require(cashChanged->image.pixels != modern->image.pixels,

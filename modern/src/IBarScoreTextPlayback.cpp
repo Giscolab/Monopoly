@@ -51,18 +51,18 @@ namespace monopoly::ibar
             fonts::Runtime& fontRuntime,
             std::string_view text,
             int x,
-            int y, bool antialiased)
+            int y, bool antialiased, std::uint32_t color = Black)
         {
             if (text.empty()) return {};
             if (antialiased)
             {
-                const auto rendered = fontRuntime.render(text, Black, true);
+                const auto rendered = fontRuntime.render(text, color, true);
                 if (!rendered) return std::unexpected(rendered.error().detail);
                 return data::blitStraightRGBA8(destination, *rendered, x, y,
                     data::BitmapBlitMode::SourceOver);
             }
             const auto blitted = fontRuntime.blitText(
-                destination, text, x, y, Black);
+                destination, text, x, y, color);
             if (!blitted) return std::unexpected(blitted.error().detail);
             return {};
         }
@@ -86,9 +86,10 @@ namespace monopoly::ibar
         int monetarySystem,
         data::BoardEdition edition,
         fonts::Runtime* fontRuntime,
-        engine::SequencePlayback& playback, bool presentation)
+        engine::SequencePlayback& playback, bool presentation, bool vintage)
     {
         const bool modern = presentation && edition == data::BoardEdition::Usa;
+        vintage = vintage && modern;
         const int scale = modern ? 3 : 1;
         if (fontRuntime == nullptr || !fontRuntime->ready())
         {
@@ -127,7 +128,7 @@ namespace monopoly::ibar
             const bool large = desired.width == layout::ScoreBoxLargeWidth;
             const bool wideCurrency = monetarySystem == 2;
             const std::string key = name + '\n' + *cash + '\n' +
-                (large ? "L" : "S") + (wideCurrency ? "W" : "N") + (modern ? "A" : "R");
+                (large ? "L" : "S") + (wideCurrency ? "W" : "N") + (modern ? "A" : "R") + (vintage ? "V" : "N");
 
             const bool contentChanged =
                 !cache_[player] || *cache_[player] != key;
@@ -151,7 +152,27 @@ namespace monopoly::ibar
                 const auto metrics = fontRuntime->measure(*cash);
                 if (!metrics) return std::unexpected(metrics.error().detail);
                 const int cashX = desired.width * scale - metrics->width - 7 * scale;
-                if (const auto drawn = draw(image, *fontRuntime, *cash, cashX, 18 * scale, modern); !drawn)
+                if (vintage)
+                {
+                    // A brass-framed counter behind the live formatted balance.
+                    const int left = std::max(0, cashX - 3 * scale);
+                    const int right = std::min(int(desired.width * scale) - 7 * scale,
+                        cashX + metrics->width + 3 * scale);
+                    const int top = 18 * scale, bottom = 31 * scale;
+                    for (int y = top; y < bottom; ++y)
+                        for (int x = left; x < right; ++x)
+                        {
+                            const bool rim = x < left + scale || x >= right - scale ||
+                                y < top + scale || y >= bottom - scale;
+                            const auto at = (std::size_t(y) * image.width + unsigned(x)) * 4;
+                            image.pixels[at] = rim ? 173 : 29;
+                            image.pixels[at+1] = rim ? 130 : 24;
+                            image.pixels[at+2] = rim ? 65 : 18;
+                            image.pixels[at+3] = 255;
+                        }
+                }
+                if (const auto drawn = draw(image, *fontRuntime, *cash, cashX, 18 * scale,
+                        modern, vintage ? 0xF3E0B9U : Black); !drawn)
                     return drawn;
 
                 const auto updated = modern

@@ -17,6 +17,7 @@
 #include "GPUFrame.hpp"
 #include "LegacyAssets.hpp"
 #include "ModernGltfMesh.hpp"
+#include "ModernMeshRefinement.hpp"
 #include "ModernTokenCatalog.hpp"
 #include "ModernSceneCatalog.hpp"
 #include "ModernTokenVariants.hpp"
@@ -163,6 +164,8 @@ namespace monopoly::engine
             std::shared_ptr<const data::MeshRenderData>,
             data::ModernTokenCount> modernTokenMeshes{};
         std::array<bool, data::ModernTokenCount> modernTokenAttempted{};
+        std::map<data::DataId, std::shared_ptr<const data::MeshRenderData>> proceduralDogMeshes;
+        std::unordered_set<data::DataId> proceduralDogAttempted;
         data::ModernSceneOptions modernSceneOptions{};
         struct StartupCPUProfile
         {
@@ -1095,6 +1098,58 @@ namespace monopoly::engine
             {
                 if (auto scene = resolveModernScene(id, rootSequenceDataId, priority))
                     return scene;
+
+                // The dog is a procedural remaster of the actual 1999 HMD
+                // requested by CNK, not a separately sculpted replacement.
+                // Every original dog HMD therefore keeps its authored shape,
+                // timing and selection while gaining deterministic subdivision
+                // and the modern metallic/roughness material.
+                const auto tokenForMesh = data::tokenForLegacyMesh(id);
+                if (tokenForMesh && *tokenForMesh == std::uint8_t{2})
+                {
+                    if (const auto found = proceduralDogMeshes.find(id);
+                        found != proceduralDogMeshes.end())
+                        return std::optional{found->second};
+                    if (!proceduralDogAttempted.contains(id))
+                    {
+                        proceduralDogAttempted.insert(id);
+                        const auto resources = startup::resources();
+                        if (resources)
+                        {
+                            auto source = data::openLegacyMeshData(resources->data(), id);
+                            if (source)
+                            {
+                                const auto mime = source->mimePoses();
+                                const bool hasInternalDeformation = mime &&
+                                    std::any_of(mime->begin(), mime->end(), [](const auto& pose)
+                                        { return pose.vertex.has_value() || pose.normal.has_value(); });
+                                if (hasInternalDeformation)
+                                    return std::optional<std::shared_ptr<const data::MeshRenderData>>{};
+                                auto runtime = data::MeshXRuntime::build(
+                                    std::make_shared<const data::LegacyMeshData>(std::move(*source)));
+                                if (runtime)
+                                {
+                                    auto refined = data::refineClassicTokenMesh(
+                                        data::makeMeshRenderData(*runtime));
+                                    if (refined)
+                                    {
+                                        auto published = std::make_shared<const data::MeshRenderData>(
+                                            std::move(*refined));
+                                        proceduralDogMeshes.emplace(id, published);
+                                        std::cerr << "Procedural 1999 dog HMD 0x" << std::hex
+                                            << static_cast<unsigned>(id) << std::dec
+                                            << ": refined to " << published->vertices.size()
+                                            << " vertices / " << published->indices.size()/3
+                                            << " triangles.\n";
+                                        return std::optional{std::move(published)};
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Refinement is optional presentation. Any failure continues
+                    // into the already-qualified GLB path and ultimately retail.
+                }
                 if (data::qualifiedModernTokenVariantSequence(id, rootSequenceDataId, priority))
                 {
                     const char* base = SDL_GetBasePath();
@@ -1186,6 +1241,8 @@ namespace monopoly::engine
             startupCPUProfile = {};
             modernTokenMeshes = {};
             modernTokenAttempted = {};
+            proceduralDogMeshes.clear();
+            proceduralDogAttempted.clear();
             modernSceneMeshes = {};
             modernSceneAttempted = {};
             modernTokenVariants.reset();
@@ -1296,6 +1353,7 @@ namespace monopoly::engine
                     auto skin = std::make_shared<ibar::ModernIBarSkin>(
                         startup::resources()->context().language,
                         [rasterText](std::string_view text) { return rasterText(text, 12); });
+                    skin->configureVintage(modernSceneOptions.vintageUi);
                     skin->configureTokenImages([tokenPreviews](std::uint8_t token)
                         { return tokenPreviews->image(token,255); });
                     skin->configureActionText([rasterText](std::string_view text) { return rasterText(text, 36); });
@@ -2831,7 +2889,7 @@ namespace monopoly::engine
                 resources->context().board == data::BoardEdition::Usa &&
                 resources->context().language == data::LanguageId::EnglishUs &&
                 displayState.city == 0 && displayState.system == 13 &&
-                displayState.customBoardPath.empty());
+                displayState.customBoardPath.empty(), modernSceneOptions.vintageUi);
             if (!scoreTextSync)
                 return SDL_SetError("IBar score text playback: %s",
                     scoreTextSync.error().c_str());

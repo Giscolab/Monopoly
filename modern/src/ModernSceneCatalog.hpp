@@ -30,6 +30,7 @@ namespace monopoly::data
         // This does not claim a French resource/rules qualification.
         bool proceduralBoard{};
         bool proceduralEnvironment{};
+        bool vintageUi{};
     };
 
     struct ParsedModernSceneOptions

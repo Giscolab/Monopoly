@@ -1359,6 +1359,13 @@ namespace monopoly::ibar
         std::optional<sequence::Matrix2D> rasterToWorld, std::optional<std::uint16_t> priority,
         std::optional<sequence::Matrix2D> sequenceToWorld)
     {
+        const bool vintageActive = vintage_ && language_ == data::LanguageId::EnglishUs &&
+            presentationContext_ && presentationContext_();
+        if (lastVintageActive_ != vintageActive)
+        {
+            cache_.clear();
+            lastVintageActive_ = vintageActive;
+        }
         if (!original || !supports(root)) return original;
         const auto w = original->image.width, h = original->image.height;
         if (!w || !h || w > 1600 || h > 600) return original;
@@ -1718,9 +1725,19 @@ namespace monopoly::ibar
                 if(!pixels[i+3] || high<=48 || low>=240)continue;
                 if(high-low>24) continue; // Authored coloured caption/glow pixels stay exact.
                 chrome=true;
-                result->image.pixels[i]=std::uint8_t((unsigned(pixels[i])*70+50)/100);
-                result->image.pixels[i+1]=std::uint8_t((unsigned(pixels[i+1])*92+50)/100);
-                result->image.pixels[i+2]=std::uint8_t((unsigned(pixels[i+2])*88+50)/100);
+                if (vintageActive)
+                {
+                    const unsigned luminance=(unsigned(pixels[i])+pixels[i+1]+pixels[i+2])/3;
+                    result->image.pixels[i]=std::uint8_t(luminance);
+                    result->image.pixels[i+1]=std::uint8_t((luminance*90+50)/100);
+                    result->image.pixels[i+2]=std::uint8_t((luminance*72+50)/100);
+                }
+                else
+                {
+                    result->image.pixels[i]=std::uint8_t((unsigned(pixels[i])*70+50)/100);
+                    result->image.pixels[i+1]=std::uint8_t((unsigned(pixels[i+1])*92+50)/100);
+                    result->image.pixels[i+2]=std::uint8_t((unsigned(pixels[i+2])*88+50)/100);
+                }
             }
             if(!chrome)return original;
             result->sourceType=data::LegacyDataType::Native;
@@ -1796,9 +1813,14 @@ namespace monopoly::ibar
                 const auto label=actionText_((language_==data::LanguageId::French?French:English)[b->index]);
                 if(!label || !valid(*label))return original;
                 const bool pressed=b->state==3;
-                const std::array<unsigned,3> fill=b->grey?std::array<unsigned,3>{35,55,57}:
-                    pressed?std::array<unsigned,3>{13,47,48}:std::array<unsigned,3>{22,69,70};
-                const std::array<unsigned,3> trim=b->grey?std::array<unsigned,3>{110,116,104}:std::array<unsigned,3>{188,157,94};
+                // Carved brass bezel and ivory key face.  Keep the native alpha,
+                // placement and state clocks: this is presentation only.
+                const std::array<unsigned,3> fill = vintageActive ?
+                    (b->grey ? std::array<unsigned,3>{151,140,120} : pressed ? std::array<unsigned,3>{190,166,128} : std::array<unsigned,3>{232,216,181}) :
+                    (b->grey ? std::array<unsigned,3>{35,55,57} : pressed ? std::array<unsigned,3>{13,47,48} : std::array<unsigned,3>{22,69,70});
+                const std::array<unsigned,3> trim = vintageActive ?
+                    (b->grey ? std::array<unsigned,3>{91,78,60} : std::array<unsigned,3>{159,112,48}) :
+                    (b->grey ? std::array<unsigned,3>{110,116,104} : std::array<unsigned,3>{188,157,94});
                 for(unsigned y=unsigned(band.top)*3;y<unsigned(band.bottom)*3;++y)
                     for(unsigned x=unsigned(band.left)*3;x<unsigned(band.right)*3;++x)
                     {
@@ -1806,7 +1828,15 @@ namespace monopoly::ibar
                         const auto native=(std::size_t(y/3)*w+x/3)*4;
                         const bool edge=x<unsigned(band.left)*3+2 || y<unsigned(band.top)*3+2 ||
                             x+2>=unsigned(band.right)*3 || y+2>=unsigned(band.bottom)*3;
-                        for(unsigned c=0;c<3;++c)image.pixels[i+c]=std::uint8_t(edge?trim[c]:fill[c]);
+                        const unsigned top=unsigned(band.top)*3, bottom=unsigned(band.bottom)*3;
+                        const unsigned left=unsigned(band.left)*3, right=unsigned(band.right)*3;
+                        const bool innerRim=vintageActive && !edge && (x<left+5 || x+5>=right || y<top+5 || y+5>=bottom);
+                        const int light=vintageActive ? (pressed ? -5 : int(12*(bottom-y)/(bottom-top))) : 0;
+                        for(unsigned c=0;c<3;++c)
+                        {
+                            const int v=edge ? int(trim[c]) : innerRim ? int(trim[c])+40 : int(fill[c])+light;
+                            image.pixels[i+c]=std::uint8_t(std::clamp(v,0,255));
+                        }
                         image.pixels[i+3]=original->image.pixels[native+3];
                     }
                 const float fit=std::min({1.0F,float((band.right-band.left-8)*3)/label->width,float((band.bottom-band.top-6)*3)/label->height});
@@ -1820,7 +1850,7 @@ namespace monopoly::ibar
                     const unsigned alpha=label->pixels[src+3];
                     for(unsigned c=0;c<3;++c)
                     {
-                        const unsigned ink=b->grey?180:(c==2?214:239);
+                        const unsigned ink=vintageActive ? (b->grey?72:(c==0?49:c==1?37:25)) : (b->grey?180:(c==2?214:239));
                         image.pixels[dst+c]=std::uint8_t((ink*alpha+image.pixels[dst+c]*(255-alpha)+127)/255);
                     }
                 }
@@ -2096,10 +2126,12 @@ namespace monopoly::ibar
                     const int gradient = int(8 * (h - y) / h);
                     const bool pressed = b && b->state == 3;
                     const bool grey = b && b->grey;
-                    const std::array<int, 3> fill = playerColour ? std::array<int, 3>{237, 232, 215} : grey ? std::array<int, 3>{57, 64, 65} :
-                        pressed ? std::array<int, 3>{13, 47, 48} : std::array<int, 3>{22, 69, 70};
-                    const std::array<int, 3> trim = playerColour ? std::array<int, 3>{22, 69, 70} : grey ? std::array<int, 3>{104, 111, 111} :
-                        std::array<int, 3>{188, 157, 94};
+                    const std::array<int, 3> fill = playerColour ? std::array<int, 3>{237, 232, 215} : vintageActive ?
+                        (grey ? std::array<int,3>{151,140,120} : pressed ? std::array<int,3>{190,166,128} : std::array<int,3>{232,216,181}) :
+                        (grey ? std::array<int,3>{57,64,65} : pressed ? std::array<int,3>{13,47,48} : std::array<int,3>{22,69,70});
+                    const std::array<int, 3> trim = playerColour ? std::array<int, 3>{22, 69, 70} : vintageActive ?
+                        (grey ? std::array<int,3>{91,78,60} : std::array<int,3>{159,112,48}) :
+                        (grey ? std::array<int,3>{104,111,111} : std::array<int,3>{188,157,94});
                     for (unsigned c = 0; c < 3; ++c)
                     {
                         // Black name/cash overlays require a light interior. The
@@ -2109,6 +2141,17 @@ namespace monopoly::ibar
                         image.pixels[i + c] = std::uint8_t(stripe ? PlayerColours[*playerColour][c] :
                             brass ? std::array<int, 3>{188, 157, 94}[c] :
                             edge ? trim[c] : fill[c] + (playerColour ? 0 : gradient));
+                    }
+                    if (vintageActive && backdrop(root) && !playerColour && !b)
+                    {
+                        // Procedural grain avoids bitmap assets while giving the
+                        // real IBar a continuous dark walnut cabinet and brass rim.
+                        const int grain = int(4*std::sin(float(y)*0.37F + float(x)*0.018F)) +
+                            int(3*std::sin(float(y)*1.11F + float(x)*0.006F));
+                        const std::array<int,3> walnut{72,39,21};
+                        const std::array<int,3> brass{177,132,65};
+                        for (unsigned c=0;c<3;++c)
+                            image.pixels[i+c]=std::uint8_t(std::clamp(edge ? brass[c] : walnut[c]+grain,0,255));
                     }
                     image.pixels[i + 3] = b || playerColour ? 255 : 244;
                 }
@@ -2131,7 +2174,7 @@ namespace monopoly::ibar
                         const unsigned a = label->pixels[src + 3];
                         for (unsigned c = 0; c < 3; ++c)
                         {
-                            const unsigned ink = b->grey ? 180 : (c == 2 ? 214 : 239);
+                            const unsigned ink = vintageActive ? (b->grey ? 72 : (c == 0 ? 49 : c == 1 ? 37 : 25)) : (b->grey ? 180 : (c == 2 ? 214 : 239));
                             image.pixels[dst + c] = std::uint8_t((ink * a + image.pixels[dst + c] * (255 - a) + 127) / 255);
                         }
                     }

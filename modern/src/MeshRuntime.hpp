@@ -146,6 +146,9 @@ namespace monopoly::data
         std::optional<ModernTextureBinding> normalTexture;
         std::optional<ModernTextureBinding> emissiveTexture;
         std::optional<ModernTextureBinding> occlusionTexture;
+        // Optional shader-only micro-surface inspired by the Blender token
+        // material: x enabled, y noise scale, z bump strength, w colour variation.
+        std::array<float,4> proceduralSurface{};
     };
 
     struct MeshGroupRuntime

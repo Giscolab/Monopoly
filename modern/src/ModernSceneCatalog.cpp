@@ -44,6 +44,7 @@ namespace monopoly::data
         bool boardSeen{};
         bool buildingsSeen{};
         bool environmentSeen{};
+        bool uiSeen{};
         for (const auto argument : arguments)
         {
             if (argument == "--modern-board" || argument.starts_with("--modern-board="))
@@ -73,6 +74,14 @@ namespace monopoly::data
                 { parsed.options.environment = true; parsed.options.proceduralEnvironment = true; }
                 else if (argument == "--modern-environment=retail") parsed.options.environment = false;
                 else return std::unexpected("--modern-environment requires paris, procedural or retail");
+            }
+            else if (argument == "--ui" || argument.starts_with("--ui="))
+            {
+                if (uiSeen) return std::unexpected("duplicate --ui option");
+                uiSeen = true;
+                if (argument == "--ui=vintage") parsed.options.vintageUi = true;
+                else if (argument == "--ui=modern") parsed.options.vintageUi = false;
+                else return std::unexpected("--ui requires vintage or modern");
             }
             else parsed.remaining.push_back(argument);
         }

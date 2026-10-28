@@ -945,6 +945,97 @@ namespace
         std::cout<<"[PASS] 28 actual mortgage/front pairs; authentic names/prices/label; source alpha/cache/context/font restore; CPU only\n";
     }
 
+    void testVintageWoodBackdrop()
+    {
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return data::LegacyBitmapRGBA8{1,1,std::vector<std::uint8_t>(4,255)}; });
+        skin.configurePresentationContext([] { return true; });
+        skin.configureVintage(true);
+        const auto source=bitmap(0x0002015B,120,40);
+        const auto before=source->image.pixels;
+        const auto painted=skin.substitute(0x0002015B,source);
+        require(painted!=source && painted->image.width==120 && painted->image.height==40 &&
+            !painted->presentationRect && source->image.pixels==before,
+            "Vintage cabinet preserves backdrop geometry and source data");
+        const auto pixel=[&](unsigned x,unsigned y,unsigned c)
+            { return painted->image.pixels[(std::size_t(y)*120+x)*4+c]; };
+        require(pixel(60,10,0)>pixel(60,10,1) && pixel(60,10,1)>pixel(60,10,2),
+            "Cabinet interior has a warm walnut colour");
+        bool grain=false;
+        for(unsigned y=2;y<38;++y)
+            if(pixel(60,y,0)!=pixel(60,10,0))grain=true;
+        require(grain,"Cabinet has procedural grain rather than a uniform fill");
+        require(pixel(60,0,0)>pixel(60,10,0) && pixel(60,0,1)>pixel(60,10,1),
+            "Cabinet has a lighter brass edge");
+        const auto unknown=bitmap(0x00020161,120,40);
+        require(skin.substitute(0x00020161,unknown)==unknown,
+            "Neighbouring unqualified owner does not receive cabinet artwork");
+    }
+
+    void testVintageSkinToggle()
+    {
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return data::LegacyBitmapRGBA8{1,1,std::vector<std::uint8_t>(4,255)}; });
+        bool context=true;
+        skin.configurePresentationContext([&context] { return context; });
+        const auto source=bitmap(0x0002015B,120,40);
+        const auto fallback=skin.substitute(0x0002015B,source);
+        require(fallback!=source,"Default skin renders historical backdrop");
+        const auto pixels=fallback->image.pixels;
+        skin.configureVintage(true);
+        const auto vintage=skin.substitute(0x0002015B,source);
+        require(vintage!=fallback && vintage->image.pixels!=pixels,
+            "Enabling vintage invalidates fallback cache and changes presentation");
+        context=false;
+        const auto unqualified=skin.substitute(0x0002015B,source);
+        require(unqualified->image.pixels==pixels,
+            "Unqualified context restores fallback even after a cached vintage draw");
+        context=true;
+        require(skin.substitute(0x0002015B,source)->image.pixels==vintage->image.pixels,
+            "Requalified context recovers the vintage appearance");
+        skin.configureVintage(false);
+        const auto restored=skin.substitute(0x0002015B,source);
+        require(restored!=vintage && restored->image.pixels==pixels,
+            "Disabling vintage restores exactly the historical skin pixels");
+    }
+
+    void testVintageNavigationFace()
+    {
+        ibar::ModernIBarSkin skin(data::LanguageId::EnglishUs,
+            [](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+            { return std::unexpected("AA action text must be used"); });
+        skin.configureLayoutProvider([] { return ibar::layout::ActionButtonLayout::General; });
+        skin.configurePresentationContext([] { return true; });
+        skin.configureActionText([](std::string_view)->std::expected<data::LegacyBitmapRGBA8,std::string>
+        { return data::LegacyBitmapRGBA8{36, 18, std::vector<std::uint8_t>(36*18*4, 255)}; });
+        skin.configureVintage(true);
+        const auto source=bitmap(0x0005140E,60,32);
+        const auto before=source->image.pixels;
+        const auto raster=sequence::translate2D(70,454);
+        const auto result=skin.substitute(0x000500D6,source,true,raster);
+        require(result!=source && result->image.width==180 && result->image.height==96 &&
+            !result->presentationRect && source->image.pixels==before,
+            "Vintage Trade keeps the real control geometry and source bitmap");
+        const auto sample=[&](unsigned x,unsigned y,unsigned c)
+            {return result->image.pixels[(std::size_t(y)*180+x)*4+c];};
+        require(sample(30,30,0)>180 && sample(30,30,1)>160 && sample(30,30,2)>120 &&
+            sample(30,30,0)>sample(30,30,2),
+            "Trade face is warm ivory, independently of the old teal palette");
+        require(sample(90,48,0)<100 && sample(90,48,1)<100 && sample(90,48,2)<100,
+            "Trade caption uses dark ink on the light button face");
+        require(sample(1,4,0)>sample(1,4,2), "Trade border uses warm brass");
+        const auto hit=ibar::layout::actionButtonRect(ibar::layout::ActionButtonSlot::Trade);
+        for(unsigned y=0;y<96;++y)for(unsigned x=0;x<180;++x)
+        {
+            const float wx=(x+.5F)/3+70,wy=(y+.5F)/3+454;
+            const bool inside=wx>=hit.left&&wx<hit.right&&wy>=hit.top&&wy<hit.bottom;
+            require(sample(x,y,3)==(inside?source->image.pixels[(std::size_t(y/3)*60+x/3)*4+3]:0),
+                "Vintage button preserves source alpha and original hit clipping");
+        }
+    }
+
     void testMeasuredNavigationAA()
     {
         using Slot=ibar::layout::ActionButtonSlot;
@@ -1845,6 +1936,6 @@ namespace
 }
 int main(int argc,char** argv)
 {
-    try{if(argc==4 && std::string_view(argv[1])=="--mortgage-miniature-qualify"){testActualMortgageMiniatures(argv[2],argv[3]);return 0;}if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify"){testActualPlayerCashCoin(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
+    try{if(argc==4 && std::string_view(argv[1])=="--mortgage-miniature-qualify"){testActualMortgageMiniatures(argv[2],argv[3]);return 0;}if(argc==4 && std::string_view(argv[1])=="--player-cash-coin-qualify"){testActualPlayerCashCoin(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--auction-token-qualify"){testActualAuctionTokens(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--readable-card-qualify"){testActualLoanFooter(argv[2],argv[3],true);return 0;}if(argc==4 && std::string_view(argv[1])=="--loan-card-qualify"){testActualLoanFooter(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-trade-qualify"){testActualIdleCardTrade(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--current-token-qualify"){testActualCurrentPlayerTokens(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--out-card-qualify"){testActualNativeOutCards(argv[2]);return 0;}if(argc==4 && std::string_view(argv[1])=="--deed-benchmark"){benchmarkActualDeeds(argv[2],argv[3]);return 0;}if(argc==3 && std::string_view(argv[1])=="--idle-card-qualify"){testActualNativeIdleCards(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--chance-idle-qualify"){testActualNativeIdleCards(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-inspect"){testActualCardFaces(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--card-face-qualify"){testActualCardFaces(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-qualify"){testActualActionButtons(argv[2]);return 0;}if(argc==3 && std::string_view(argv[1])=="--native-action-qualify"){inspectActionButtons(argv[2],true);return 0;}if(argc==3 && std::string_view(argv[1])=="--action-inspect"){inspectActionButtons(argv[2]);return 0;}testCardFaceIn();testChanceNativeIdle();testAllNativeIdleSources();testMeasuredStCharlesIdleCard();testPortfolioMiniatures();testAcceptedDeedLineReuse();testMeasuredDeedArtwork();testMeasuredRetailTrade();testMeasuredNavigationAA();testVintageNavigationFace();testVintageWoodBackdrop();testVintageSkinToggle();testScoreTokenImages();testCurrentPlayerTokenImages();testAuctionTokenImages();testPurchaseDeedPlacement();std::cout<<"[PASS] measured Trade footprint and context fallback\n";return 0;}
     catch(const std::exception& e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

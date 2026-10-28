@@ -21,6 +21,9 @@ namespace monopoly::ibar
             std::string>(std::string_view)>;
         ModernIBarSkin(data::LanguageId language, TextRasterizer text)
             : language_(language), text_(std::move(text)) {}
+        // Opt-in only; switching presentation invalidates every cached raster.
+        void configureVintage(bool enabled)
+        { if (vintage_ != enabled) { vintage_ = enabled; cache_.clear(); } }
         using TokenImageProvider = std::function<std::shared_ptr<const data::LegacyBitmapRGBA8>(std::uint8_t token)>;
         void configureTokenImages(TokenImageProvider provider)
         { tokenImages_ = std::move(provider); cache_.clear(); }
@@ -104,6 +107,8 @@ namespace monopoly::ibar
             std::optional<std::uint16_t> priority = {},
             std::optional<sequence::Matrix2D> sequenceToWorld = {});
     private:
+        bool vintage_ = false;
+        bool lastVintageActive_ = false;
         data::LanguageId language_;
         TextRasterizer text_;
         TextRasterizer actionText_;

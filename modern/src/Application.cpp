@@ -251,7 +251,7 @@ namespace monopoly
                     "[--present-mode vsync|mailbox|immediate] "
                     "[--modern-board=retail|paris|usa|procedural] [--modern-buildings=retail|house] "
                     "[--modern-environment=retail|paris|procedural] "
-                    "[--edition=usa|europe] [--language=en-us|en-uk|fr] "
+                    "[--edition=usa|europe] [--language=en-us|en-uk|fr] [--ui=modern|vintage] "
                     "[--data-root <absolute folder>] "
                     "[--data-overrides <absolute manifest.tsv>] "
                     "[--check-resources] [--voice-host IPv4:port | "
